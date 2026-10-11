@@ -16,16 +16,20 @@ For reverse-proxy deployments, owner request checks use `SITE_DATA_CONTROL_PLANE
 
 Every new collection defaults to `admin` read and `admin` write. Permissions are independent:
 
-| Read  | Write  | Public behavior                                     |
-| ----- | ------ | --------------------------------------------------- |
-| admin | admin  | No document access.                                 |
-| world | admin  | Read published blog posts.                          |
-| world | create | Read and submit comments; cannot replace or delete. |
-| admin | create | Submit private messages for owner review.           |
-| admin | world  | Create, replace and delete, but not read.           |
-| world | world  | Read, create, replace and delete.                   |
+| Read   | Write  | Public behavior                                     |
+| ------ | ------ | --------------------------------------------------- |
+| admin  | admin  | No document access.                                 |
+| world  | admin  | Read published blog posts.                          |
+| world  | create | Read and submit comments; cannot replace or delete. |
+| admin  | create | Submit private messages for owner review.           |
+| admin  | world  | Create, replace and delete, but not read.           |
+| world  | world  | Read, create, replace and delete.                   |
+| member | member | Members read, add, and change their own documents.  |
+| world  | member | Anyone reads; members post and edit their own.      |
 
-“Admin” means the authenticated Naru site owner, not another Naru user or a global platform administrator. Owners retain full document access. Only the control plane can create/delete collections or change permissions; website tokens cannot do so.
+“Admin” means the authenticated Naru site owner, not another Naru user or a global platform administrator.
+
+“Member” (SDK 1.1.0) means a visitor signed in to the site with their own Naru account; see [Site members](#site-members-sdk-110). `member` read admits members as well as the owner. `member` write lets members `add`, replace and delete the documents they created, and create or replace the one document whose ID is their member ID; the owner keeps full access. Members are visitors elsewhere: they may do in `create` and `world` collections what anyone may. Every document records the member who created it as `created_by` (`createdBy` on the wire), null for documents the owner or an anonymous visitor created; replacing a document keeps it. Owners retain full document access. Only the control plane can create/delete collections or change permissions; website tokens cannot do so.
 
 `create` allows only `POST /:collection` (`add` in the SDK), with a server-generated UUID. It does not allow `PUT`, even for a previously unused ID, or `DELETE`. Creation is insert-only and never overwrites an existing document. `world` writes remain unrestricted; use `create` for guestbooks and comments. Create-only does not moderate spam or allow visitors to edit their own submissions.
 
@@ -128,18 +132,41 @@ Control-plane session expiry/deletion, registration removal, token revocation, a
 
 Authorization approval and registration changes require same-origin owner requests. Token exchange and API access require the registered origin plus the explicit code/verifier or bearer token; CORS never grants authorization. The consent page disallows framing. An origin check cannot prevent use of a stolen bearer token by a non-browser client: scripts running on your editor page can exercise owner privileges while signed in. Use a minimal trusted editor without third-party scripts, avoid unsafe HTML rendering, and set a no-referrer policy on the callback page.
 
+## Site members (SDK 1.1.0)
+
+A member is a Naru account signed in to someone else's site. Any account can be a member of any site that has the database; a site needs nothing registered, only collections whose permissions mention members. The account never reaches the site: a member is a row in `site_members` (one per site and account, made at the first sign-in), and its UUID is the member ID the site sees, so two sites cannot match their members up.
+
+Sign-in is the owner's PKCE flow without a registration:
+
+1. `naru.members.signIn()` stores `{ verifier, state, startedAt, address }` in this tab's sessionStorage under `naru:member:<control-plane origin>:<site>:pending` and leaves for `/members/sign-in?site=&redirectUri=&challenge=&state=`. `redirectUri` is the page (origin and path) and must be one of the site's: its subdomain, an active verified custom domain, or loopback in development.
+2. The page asks a signed-out visitor to sign in to or create a Naru account (`/login` and `/signup` return to it), then asks to sign in to the site as that account. Approval (`POST /api/data-auth/member-authorize`, same-origin, with the Naru session) issues a single-use code for 60 seconds, bound to the member, the approving session and the page. Denial returns `error=access_denied`.
+3. `naru.members.session()` on the page exchanges it at `POST /api/data-auth/v1/member-token` with `{ code, verifier, redirectUri }` from the page's origin, and receives `{ accessToken, expiresIn, expiresAt, memberId }`. It restores the address the sign-in left from, query and fragment included, and keeps `{ accessToken, expiresAt, memberId }` in the site's localStorage under `naru:member:<control-plane origin>:<site>`, for every page and tab of the site.
+
+Member tokens are `m.` followed by 43 base64url characters, sent as `Authorization: Bearer`, and stored as hashes in `site_member_tokens` with the origin they were issued to; a request must come from that origin, which must still be the site's. A token is an idle window of seven days, renewed past its halfway mark the way an owner token is (the same `Naru-Owner-Expires`/`-In` headers), ending 30 days after it was issued, when the approving Naru session ends, or when the account is deleted. `POST /api/data-auth/v1/member-revoke` revokes the bearer token, idempotently, from its origin. There are at most 20 pending codes and 20 live tokens per member. `cleanup-site-data-grants` sweeps expired member codes and tokens too.
+
+Membership is free. Setting `SITE_MEMBERS_SUPPORTERS_ONLY=1` on the control plane limits it to accounts with a supporter plan: the sign-in page then asks others to become supporters, approval and exchange refuse them, and every member request checks it, so members already signed in are refused with 403 `ACCESS_DENIED` from then on. Unsetting it lets them back in without signing in again.
+
+Member requests always go through the control plane, which resolves the token and tells the site's object the member ID (`access.member`). The object applies the permissions above, counts a member's writes in fixed-minute buckets of 30 per member (visitors' IP buckets do not apply to them), and counts their requests against the site's monthly budget like visitors'. Members cannot use `_batch`, manage collections, or list or delete media.
+
+Members upload into the site's media through the owner's routes (`POST /_files`, then `PUT /_files/:id`). `site_data_files.member_id` records who uploaded what; a member finalizes only their own uploads and may authorize 30 files an hour. The site's quota applies as it does to the owner.
+
+Objects created before members had no author column: each adds `documents.created_by` as it starts, and documents written before then have no author.
+
 ## SDK releases
 
 Two URLs serve the SDK, and a site picks one:
 
 - `/sdk/1/naru.js` (and `/sdk/1/naru.d.ts`) is the newest 1.x release. A site that imports it picks up compatible fixes and additions without changing anything. This is what the docs and the example blog use.
-- `/sdk/1.0.0/naru.js` is one exact release, for a site that wants the same code on every load. **1.0.0 remains under active development and will continue to be updated until the project owner says otherwise**; once frozen it never changes, and fixes ship as 1.0.1 and so on.
+- `/sdk/1.0.0/naru.js` is one exact release, for a site that wants the same code on every load. It was frozen on 2026-10-12 and never changes (see [sdk-1.0.0-release.md](sdk-1.0.0-release.md)).
+- `/sdk/1.1.0/naru.js` adds members. **1.1.0 remains under active development and will continue to be updated until the project owner says otherwise**; once frozen it never changes, and fixes ship as 1.1.1 and so on.
 
 Each version is written in TypeScript at `control-plane/sdk/<version>/naru.ts`; `pnpm sdk:build` emits the served `naru.js` and `naru.d.ts` beside each other under `public/sdk/<version>/`, and those emitted files are committed, so a deploy serves exactly what was reviewed. `pnpm build` refuses to proceed while they are stale. Both are served `no-cache`, so browsers revalidate. `/sdk/1/` is an alias in `control-plane/sdk/aliases.json`; point it at the newest 1.x directory when one ships. In production the edge Worker serves `naru.pub/sdk/*` (`edge/src/sdk.ts`), with the committed files deployed as its static assets, so a site that imports the SDK keeps loading while the control plane is down; the control plane serves the same files and aliases for local development. Unversioned SDK URLs are not served. A change that would break a 1.x caller goes into `/sdk/2/`.
 
 The wire protocol is versioned separately, in the path: `/api/data/v1/:site` and `/api/data-auth/v1/*`. Every 1.x SDK file that was ever served keeps calling these, including copies cached or bundled by sites, so they stay compatible for as long as 1.x is supported: routes, parameters, response shapes and error codes. Breaking server changes need `/api/data/v2/` alongside v1.
 
 The 1.0.0 SDK is deliberately small. Its runtime exports are only `createNaru` and `NaruError`. A client has `collection()` and `auth`; a collection has `get()`, `list()`, `count()`, `pages()` and `add()` (plus `set()` and `delete()` for an admin); an admin client has `collection()`, `batch()`, `media.upload()` and `signOut()`. Media listing and deletion remain in the control panel. Features are added when a site needs them, not in advance.
+
+1.1.0 adds what a community site needed: `naru.members` with `session()` and `signIn()`; a member client with `id`, `collection()` (whose collections add `set()` and `delete()`), `media.upload()` and `signOut()`; and `createdBy` on every document. It also finishes only the sign-in whose `state` this tab sent, leaving any other `?code=` on the page alone, and returns to the address a sign-in left from.
 
 During 1.0.0 development the SDK dropped `createDatabase`, per-collection `parse`/`map`, `schemas`, `update` merge patches and `unset`, `count()`, `all()`, string `orderBy` with `direction`, `fresh`, `timeoutMs`, `createRequestChannel`, session events, application schema parsing and response validation, upload progress, image tuning options, and the file `get`, `update` and `usage` methods. The server removed the obsolete public endpoints and options. The SDK still validates JSON values and uses private transport parameters for cache bypass.
 
@@ -171,18 +198,22 @@ Website root: `/api/data/v1/:site`. Control-plane root: `/api/account/database` 
 | PUT    | `/_files/:id`                            | Admin-only finalize; verifies the stored bytes                    |
 | DELETE | `/_files/:id`                            | Control panel only: `{ success: true }`                           |
 
-A response to an owner request that renewed its token carries `Naru-Owner-Expires`, the new expiry as epoch milliseconds, and `Naru-Owner-Expires-In`, the same expiry as whole seconds from now, both exposed to the page through CORS. The SDK adds the duration to its own clock, so a device whose clock is wrong neither signs out early nor keeps a session past its end; the instant stays for SDK files that already read it. Both are additive, so an SDK that ignores them simply holds an expiry no later than the true one. A public write result is `{ id, data, revision, createdAt, updatedAt }`. A delete, alone or batched, refuses an absence condition. `_batch` takes `set` and `delete` operations only (a server-assigned id is `add`'s, outside transactions) and answers `{ success: true, results }`: in operation order, `{ id, revision, createdAt, updatedAt }` for a set and `null` for a delete, never the data. A website token may only authorize and finalize uploads; the media library is listed and deleted from the control panel. A private `fresh=1` query flag forces a non-cacheable read; it is not an SDK option. A list accepts `filter` and `sort` (URL-encoded JSON, exactly as passed to the SDK), `size`, `after` and `includeTotal=1`. An upload authorization takes `{ name, contentType, size }` and returns `{ id, uploadUrl, headers }`: PUT the bytes to `uploadUrl` with those headers, then finalize with `PUT /_files/:id`. The SDK returns a file's `{ url, name, contentType, size }`; the control panel's library reads `{ id, name, contentType, size, url, createdAt, updatedAt }`. The public route does not accept `PATCH`.
+A response to an owner request that renewed its token carries `Naru-Owner-Expires`, the new expiry as epoch milliseconds, and `Naru-Owner-Expires-In`, the same expiry as whole seconds from now, both exposed to the page through CORS. The SDK adds the duration to its own clock, so a device whose clock is wrong neither signs out early nor keeps a session past its end; the instant stays for SDK files that already read it. Both are additive, so an SDK that ignores them simply holds an expiry no later than the true one. A public write result is `{ id, data, revision, createdAt, updatedAt, createdBy }`; `createdBy`, added with members, reaches 1.0.0 pages too, which ignore it. A delete, alone or batched, refuses an absence condition. `_batch` takes `set` and `delete` operations only (a server-assigned id is `add`'s, outside transactions) and answers `{ success: true, results }`: in operation order, `{ id, revision, createdAt, updatedAt }` for a set and `null` for a delete, never the data. A website token may only authorize and finalize uploads; the media library is listed and deleted from the control panel. A private `fresh=1` query flag forces a non-cacheable read; it is not an SDK option. A list accepts `filter` and `sort` (URL-encoded JSON, exactly as passed to the SDK), `size`, `after` and `includeTotal=1`. An upload authorization takes `{ name, contentType, size }` and returns `{ id, uploadUrl, headers }`: PUT the bytes to `uploadUrl` with those headers, then finalize with `PUT /_files/:id`. The SDK returns a file's `{ url, name, contentType, size }`; the control panel's library reads `{ id, name, contentType, size, url, createdAt, updatedAt }`. The public route does not accept `PATCH`.
 
 All JSON request bodies require `Content-Type: application/json`. Website errors return `{ error: { code, message } }`, where `code` is one of the v1 codes in the [SDK reference](sdk-v1-api.md#errors-and-cancellation); the server sets it, and the HTTP status is diagnostic. A `DataError` names its code only where the status alone would be wrong (a failed condition and a full quota are both 409, for instance); otherwise 401, 403, 404, 429 and 5xx map to `AUTH_REQUIRED`, `ACCESS_DENIED`, `NOT_FOUND`, `RATE_LIMITED` and `UNAVAILABLE`, and any other status to `INVALID_REQUEST`. The v1 code list is closed: a new code needs a new protocol version, and the SDK reads a code it does not know by its status. The control-plane root keeps `{ error }` with a plain message. Public preflight needs no authentication. Errors, writes, and authenticated reads are not cached; anonymous reads from `world`-readable collections may use the short shared cache described below.
 
 Administrator authorization endpoints:
 
-| Endpoint                        | Purpose                                                                                                                      |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `GET /database/authorize`       | Login/consent UI; never issues a code on GET.                                                                                |
-| `POST /api/data-auth/authorize` | Same-origin owner approval with `site`, `redirectUri`, `challenge`, `state`, `collections`; returns validated redirect URL.  |
-| `POST /api/data-auth/v1/token`  | Exchange JSON `{ code, verifier, redirectUri }` from the registered Origin; returns `{ accessToken, expiresIn, expiresAt }`. |
-| `POST /api/data-auth/v1/revoke` | Revoke the bearer token supplied in Authorization; requires its registered Origin.                                           |
+| Endpoint                               | Purpose                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `GET /database/authorize`              | Login/consent UI; never issues a code on GET.                                                                                 |
+| `POST /api/data-auth/authorize`        | Same-origin owner approval with `site`, `redirectUri`, `challenge`, `state`, `collections`; returns validated redirect URL.   |
+| `POST /api/data-auth/v1/token`         | Exchange JSON `{ code, verifier, redirectUri }` from the registered Origin; returns `{ accessToken, expiresIn, expiresAt }`.  |
+| `POST /api/data-auth/v1/revoke`        | Revoke the bearer token supplied in Authorization; requires its registered Origin.                                            |
+| `GET /members/sign-in`                 | Member sign-in page (SDK 1.1.0): `site`, `redirectUri`, `challenge`, `state`; never issues a code on GET.                     |
+| `POST /api/data-auth/member-authorize` | Same-origin member approval with the same fields; returns the redirect URL with `code` and `state`.                           |
+| `POST /api/data-auth/v1/member-token`  | Exchange `{ code, verifier, redirectUri }` from the page's Origin; returns `{ accessToken, expiresIn, expiresAt, memberId }`. |
+| `POST /api/data-auth/v1/member-revoke` | Revoke the member bearer token supplied in Authorization; requires its Origin.                                                |
 
 There is no discovery request. A `clientId` sent by an SDK copy from before it was dropped, in the consent query or the token exchange, is ignored: the code is bound to one registration, and consent looks the registration up by the signed-in owner, `site` and callback page. The `v1/` endpoints are what websites call and answer with the coded error body. `POST /api/data-auth/authorize` is the consent screen's own same-origin call. Released SDKs also fix the consent page's query (`site`, `redirectUri`, `challenge`, `state`, `collections`) and the `code`, `state` and `error` it returns to the callback, so those change only compatibly too.
 | `GET/POST /api/account/database-clients` | Same-origin owner registration listing/creation (`{ redirectUri, collections }`). |
@@ -199,7 +230,7 @@ There are at most 20 registrations per site, 20 pending codes and 50 live tokens
 - Documents use JSON values with JavaScript number precision and no significant object key order. Application-visible ordering is defined by Naru, not by database collation.
 - Each site's Durable Object serializes document and collection operations in synchronous SQLite transactions, including permission and quota checks. Deletes free quota; account deletion erases the site's object. Media operations retain their PostgreSQL transaction path.
 - A site holds at most 10,000 media files: the byte quota alone does not bound row count, since the smallest accepted file is one byte.
-- Each individual replacement or delete is atomic. `admin.batch()` makes its ID-addressed sets and deletes one atomic server transaction. Writes are last-write-wins when no condition is supplied; `condition.revision` rejects stale writes and `condition.absent` guards creation. There are no realtime subscriptions, offline persistence, custom indexes, arbitrary query expressions, per-document rules, or visitor accounts in v1.
+- Each individual replacement or delete is atomic. `admin.batch()` makes its ID-addressed sets and deletes one atomic server transaction. Writes are last-write-wins when no condition is supplied; `condition.revision` rejects stale writes and `condition.absent` guards creation. There are no realtime subscriptions, offline persistence, custom indexes, arbitrary query expressions, or per-document rules beyond a member's own documents in v1.
 
 ## File uploads (SDK 1.0.0)
 
@@ -228,8 +259,8 @@ referenced stay until someone deletes them in the media library.
 URL을 복사하고, 파일을 삭제할 수 있습니다. 삭제 전에 해당 URL을 사용하는 문서를
 직접 확인해야 합니다.
 
-Uploads are owner-only and use the same tab-scoped website bearer token as
-document writes. Each file is limited to 25 MiB; each site is limited to 250
+Uploads use the same bearer token as document writes: an owner's, or from SDK
+1.1.0 a member's, limited per member (see [Site members](#site-members-sdk-110)). Each file is limited to 25 MiB; each site is limited to 250
 MiB. JPEG, PNG, WebP, AVIF, GIF, supported audio, PDF, ZIP, and
 plain text are accepted. HTML and SVG are rejected. Public objects are served
 from the separately isolated `media.naru.pub` origin. Deleting a file removes
@@ -262,11 +293,11 @@ is the same, headers and CORS preflight included, so the bucket's existing CORS
 rule covers it. `XMLHttpRequest` cannot refuse a redirect, so a response whose
 `responseURL` is not the signed URL is treated as a failed upload.
 
-Public access permits callers from any origin. Anonymous writes into `create` or `world` collections use fixed-minute limits of 60 successful writes per site and 20 per caller/IP per site. Each site's Durable Object stores and checks these counters in the write transaction. Owner writes do not count, and failed writes roll back their counters.
+Public access permits callers from any origin. Anonymous writes into `create` or `world` collections use fixed-minute limits of 60 successful writes per site and 20 per caller/IP per site. A member's writes use their own limit of 30 a minute instead. Each site's Durable Object stores and checks these counters in the write transaction. Owner writes do not count, and failed writes roll back their counters.
 
 The Worker reads the visitor IP from Cloudflare’s trusted header. Requests forwarded through the control plane share an `unknown` bucket (20/minute/site) unless trusted IP forwarding is enabled. Set `TRUST_CLOUDFLARE_IP=1` **only** when a trusted ingress replaces `CF-Connecting-IP` and direct access to the application is blocked. Otherwise clients can spoof the header to evade IP limits. The production gateway that `deploy-server.sh` renders satisfies this requirement: it recovers the visitor address from the Cloudflare Tunnel's `X-Forwarded-For` chain only for private tunnel peers, then overwrites `CF-Connecting-IP` before proxying to the application. With the setting enabled, valid IPs get separate buckets while invalid/missing headers still share `unknown`. Only a digest is stored in the bucket key; it is not guaranteed anonymization. The object removes expired buckets during anonymous-write admission.
 
-`cleanup-site-data-grants` periodically removes expired authorization codes and access tokens from PostgreSQL. It does not touch the object’s rate-limit buckets.
+`cleanup-site-data-grants` periodically removes expired authorization codes and access tokens, owners' and members', from PostgreSQL. It does not touch the object’s rate-limit buckets.
 
 These limits do not protect reads, invalid requests or authorization endpoints from high request volumes. The gateway's nginx config sets per-client limits for `/api/data/*` (30 r/s, burst 60) and `/api/data-auth/*` (2 r/s, burst 10) with matching body caps, keyed on the visitor address recovered from the trusted tunnel's forwarding chain. PostgreSQL backups cover authentication and media metadata, not the documents stored in Durable Objects. The existing hosted-file export does not include site database documents.
 
@@ -364,9 +395,9 @@ never cached. The zone's cache rule does not apply to Worker responses.
 
 ### Monthly request budget
 
-Each site answers at most 500,000 anonymous requests per calendar month (UTC)
-by default. Owner requests and requests answered from the edge cache do not
-count. After the budget is spent, visitors receive 429 `RATE_LIMITED` until
+Each site answers at most 500,000 anonymous and member requests per calendar
+month (UTC) by default. Owner requests and requests answered from the edge
+cache do not count. After the budget is spent, visitors receive 429 `RATE_LIMITED` until
 the next month. `SITE_MONTHLY_REQUESTS` sets the default; `monthlyRequests`
 in `configure` overrides it for a site. Counts are persisted every 25 requests,
 so an evicted object can forget up to 24 requests.

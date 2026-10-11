@@ -7,8 +7,9 @@ async function handle(
   context: { params: Promise<{ action: string }> },
 ) {
   const { action } = await context.params;
-  // What a website's SDK calls: exchange a code, revoke a token.
-  if (!["token", "revoke"].includes(action))
+  // What a website's SDK calls: exchange a code, revoke a token, for an
+  // owner or a member.
+  if (!["token", "revoke", "member-token", "member-revoke"].includes(action))
     return protocolError(404, "Not found.", undefined, {
       "Cache-Control": "no-store",
     });

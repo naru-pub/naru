@@ -13,8 +13,9 @@ const naru = createNaru({ site: "alice" });
 TypeScript declarations are at `https://naru.pub/sdk/1/naru.d.ts`.
 
 `/sdk/1/` is the newest 1.x release, so a site importing it gets compatible
-fixes automatically. It is the URL to import: 1.0.0 is still being changed, so
-no exact release is fixed enough to pin yet.
+fixes automatically. It is the URL to import. `/sdk/1.0.0/` is frozen and
+never changes. `/sdk/1.1.0/`, which adds members, is still being changed, so
+pin 1.0.0 if you need fixed bytes and do not need members.
 
 ## Start with reading
 
@@ -50,8 +51,9 @@ const saved = await naru.collection("guestbook").add({
 console.log(saved.data.message, saved.createdAt);
 ```
 
-Next, learn admin sign-in to edit posts, then pagination, and finally revision
-conditions and atomic batches. No API key or build tool is needed.
+Next, learn admin sign-in to edit posts, then members for a community, then
+pagination, and finally revision conditions and atomic batches. No API key or
+build tool is needed.
 
 ## Visitor collections and queries
 
@@ -138,6 +140,62 @@ await posts.delete("hello", {
 unconditional `set` is last-write-wins. Deleting an absent document succeeds
 unless a condition was supplied.
 
+## Members (1.1.0)
+
+A member is a visitor who signed in to your site with their own Naru account.
+Any Naru account can be a member of any site with the database; there is
+nothing to register. Members are what a community site is made of: give a
+collection `member` read access to keep it to members, and `member` write
+access to let them post.
+
+```js
+let member = await naru.members.session();
+if (!member) {
+  await naru.members.signIn();
+  // The browser leaves for Naru and comes back to this page, query included.
+}
+const board = member.collection("board");
+const post = await board.add({ title: "Hello" });
+post.createdBy === member.id; // true
+await board.set(post.id, { title: "Edited" }); // its author may
+await board.set(member.id, { nick: "bob" }); // the one ID only they may claim
+```
+
+`member.id` is the member's ID on this site, the same on every visit. It is
+not their Naru account name or email, which the site never receives, and
+another site sees a different ID for the same account. Keep display names in
+a document the member writes under their own ID.
+
+A member sign-in lasts across every page and tab of the site, in its
+`localStorage`, until the member signs out, signs out of Naru, or leaves it
+unused for seven days; it ends 30 days after signing in regardless. A
+member's handle has `collection()`, `media.upload()` and `signOut()`, and
+their collections add `set` and `delete` to a visitor's. What they may do
+there is the collection's permissions:
+
+| Collection access | A member may                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| read `member`     | Read it. Visitors cannot.                                                                    |
+| write `member`    | `add`; `set` and `delete` documents they created; `set` the document whose ID is their `id`. |
+| write `create`    | `add`, like any visitor.                                                                     |
+| write `world`     | Anything, like any visitor.                                                                  |
+| `admin`           | Nothing; it is the owner's.                                                                  |
+
+`naru.collection()` stays anonymous after a member signs in. Every document a
+member creates records them as `createdBy`; a replacement, by its author or the
+owner, keeps it. Members upload into the site's media, a limited number of
+files an hour each. They cannot batch, list or delete media, or change
+collections. A member's writes are rate limited per member, and members'
+requests count against the site's monthly budget like visitors'.
+
+A sign-in that was denied, took longer than ten minutes, or could not be
+completed resolves `session()` with `null`. Naru may limit membership to
+accounts with a supporter plan; then signing in shows that on Naru's page, and
+a member whose plan has ended gets `ACCESS_DENIED`.
+
+An owner's and a member's sign-in can share a page: each only finishes the
+sign-in this tab started for it.
+
 ## Documents, pages, and queries
 
 `get`, `add`, and `set` return a document envelope; `list` returns a page of
@@ -151,6 +209,7 @@ interface Document<T> {
   createdAt: string;
   updatedAt: string;
   revision: Revision;
+  createdBy: string | null; // 1.1.0: the member who created it, or null
 }
 
 interface Page<T> {
@@ -263,16 +322,16 @@ request fails.
 Service failures are `NaruError` instances. Application logic should use the stable
 `code`, not HTTP status or message:
 
-| Code              | Meaning                                                       |
-| ----------------- | ------------------------------------------------------------- |
-| `CONFLICT`        | A revision or absence condition failed.                       |
-| `QUOTA_EXCEEDED`  | The site's database or media storage is full.                 |
-| `AUTH_REQUIRED`   | Administrator authorization is missing, expired, or revoked.  |
-| `ACCESS_DENIED`   | The collection policy or admin scope denies the operation.    |
-| `NOT_FOUND`       | The requested site, collection, document, or media is absent. |
-| `RATE_LIMITED`    | The caller must wait before retrying.                         |
-| `INVALID_REQUEST` | Input is malformed or outside documented limits.              |
-| `UNAVAILABLE`     | The service, network, or response is temporarily unusable.    |
+| Code              | Meaning                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `CONFLICT`        | A revision or absence condition failed.                         |
+| `QUOTA_EXCEEDED`  | The site's database or media storage is full.                   |
+| `AUTH_REQUIRED`   | An owner's or member's sign-in is missing, expired, or revoked. |
+| `ACCESS_DENIED`   | The collection policy or admin scope denies the operation.      |
+| `NOT_FOUND`       | The requested site, collection, document, or media is absent.   |
+| `RATE_LIMITED`    | The caller must wait before retrying.                           |
+| `INVALID_REQUEST` | Input is malformed or outside documented limits.                |
+| `UNAVAILABLE`     | The service, network, or response is temporarily unusable.      |
 
 `error.message` is diagnostic and may change; a network failure's original
 error is the standard `error.cause`. Only the SDK creates `NaruError`s; check
@@ -296,8 +355,8 @@ roll back a write the server already accepted.
 The declarations export only what an application names itself: `createNaru`,
 `NaruError`, `NaruErrorCode`, `NaruClient`, `Admin`, `PublicCollection`,
 `AdminCollection`, `Document`, `Page`, `ListOptions`, `Filter`, `Sort`,
-`WriteCondition`, `Revision` and `Json`. Other option and result shapes are
-written out in place.
+`WriteCondition`, `Revision` and `Json`, and from 1.1.0 `Member` and
+`MemberCollection`. Other option and result shapes are written out in place.
 
 Naru v1 guarantees the public TypeScript shapes and behavior described here:
 

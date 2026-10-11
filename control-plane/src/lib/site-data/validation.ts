@@ -75,22 +75,23 @@ export function name(value: unknown): string {
   return value;
 }
 
-export function permission(value: unknown): "admin" | "world" {
-  if (value !== "admin" && value !== "world")
+/**
+ * Who may read a collection: its owner, any signed-in member of the site as
+ * well, or anyone.
+ */
+export function permission(value: unknown): "admin" | "member" | "world" {
+  if (value !== "admin" && value !== "member" && value !== "world")
     throw new DataError(400, "Invalid permission.");
   return value;
 }
 
-/** `refusal` says what a visitor cannot do, and where that is changed. */
-export function authorize(
-  access: string,
-  admin: boolean,
-  refusal = "Permission denied.",
-) {
-  if (!admin && access !== "world") throw new DataError(403, refusal);
-}
-
-export function writePermission(value: unknown): "admin" | "world" | "create" {
+/**
+ * Who may write to it. `create` lets anyone add documents and no one else
+ * change them; `member` lets members add documents and change their own.
+ */
+export function writePermission(
+  value: unknown,
+): "admin" | "create" | "member" | "world" {
   return value === "create" ? "create" : permission(value);
 }
 

@@ -571,12 +571,38 @@ export interface SiteDataFiles {
   content_type: string;
   created_at: Generated<Timestamp>;
   id: string;
+  member_id: string | null;
   object_key: string;
   original_name: string;
   size_bytes: number;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   user_id: string;
+}
+
+export interface SiteMemberCodes {
+  challenge: string;
+  expires_at: Timestamp;
+  hash: string;
+  member_id: string;
+  redirect_uri: string;
+  session_id: string;
+}
+
+export interface SiteMembers {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  site_user_id: string;
+  user_id: string;
+}
+
+export interface SiteMemberTokens {
+  expires_at: Timestamp;
+  hash: string;
+  issued_at: Generated<Timestamp>;
+  member_id: string;
+  origin: string;
+  session_id: string;
 }
 
 export interface Subscriptions {
@@ -723,6 +749,9 @@ export interface DB {
   site_data_auth_codes: SiteDataAuthCodes;
   site_data_clients: SiteDataClients;
   site_data_files: SiteDataFiles;
+  site_member_codes: SiteMemberCodes;
+  site_member_tokens: SiteMemberTokens;
+  site_members: SiteMembers;
   subscriptions: Subscriptions;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;

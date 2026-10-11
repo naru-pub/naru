@@ -19,8 +19,10 @@ const env = (files: Record<string, string>): SdkEnv => ({
 });
 
 const files = env({
-  "/1.0.0/naru.js": "export const createNaru = 1;",
+  "/1.0.0/naru.js": "export const createNaru = 0;",
   "/1.0.0/naru.d.ts": "export declare const createNaru: number;",
+  "/1.1.0/naru.js": "export const createNaru = 1;",
+  "/1.1.0/naru.d.ts": "export declare const createNaru: number;",
 });
 const get = (path: string, init?: RequestInit) =>
   serveSdk(new Request(`https://naru.pub${path}`, init), files);
@@ -28,8 +30,8 @@ const get = (path: string, init?: RequestInit) =>
 describe("paths", () => {
   test("names a release's files, through its line's alias too", () => {
     expect(sdkAsset("/sdk/1.0.0/naru.js")).toBe("/1.0.0/naru.js");
-    expect(sdkAsset("/sdk/1/naru.js")).toBe("/1.0.0/naru.js");
-    expect(sdkAsset("/sdk/1/naru.d.ts")).toBe("/1.0.0/naru.d.ts");
+    expect(sdkAsset("/sdk/1/naru.js")).toBe("/1.1.0/naru.js");
+    expect(sdkAsset("/sdk/1/naru.d.ts")).toBe("/1.1.0/naru.d.ts");
   });
 
   test("names nothing else", () => {
@@ -57,7 +59,7 @@ describe("serving", () => {
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff",
       "cache-control": "no-cache",
-      etag: '"/1.0.0/naru.js"',
+      etag: '"/1.1.0/naru.js"',
     });
   });
 
@@ -70,7 +72,7 @@ describe("serving", () => {
 
   test("answers a revalidation with 304", async () => {
     const response = await get("/sdk/1/naru.js", {
-      headers: { "If-None-Match": '"/1.0.0/naru.js"' },
+      headers: { "If-None-Match": '"/1.1.0/naru.js"' },
     });
     expect(response.status).toBe(304);
     expect(response.headers.get("cache-control")).toBe("no-cache");

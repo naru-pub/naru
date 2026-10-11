@@ -12,6 +12,12 @@ export type Access = {
   allowedIds: string[] | null;
   /** No credential at all: a visitor. Only such reads may be cached. */
   anonymous: boolean;
+  /**
+   * A signed-in member of the site, by their member ID: what `member`
+   * collections admit, and what the documents they write record as their
+   * author. Absent for everyone else.
+   */
+  member?: string | null;
 };
 
 export type ExecuteInput = {
@@ -51,6 +57,8 @@ export type StoredDocument = {
   version: number;
   created_at: number;
   updated_at: number;
+  /** The member who created it; null for the owner's and visitors'. */
+  created_by: string | null;
 };
 
 export type Snapshot = {

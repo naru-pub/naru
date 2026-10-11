@@ -50,8 +50,9 @@ export async function dataRequest(
       | { token: string; origin: string | null; expiresAt?: number }
       | undefined;
     if (!admin && authorization !== null) {
-      const match = /^Bearer ([A-Za-z0-9_-]{43})$/i.exec(authorization);
-      if (!match) throw new DataError(401, "Invalid owner token.");
+      // An owner token, or a member's, which starts with "m.".
+      const match = /^Bearer ((?:m\.)?[A-Za-z0-9_-]{43})$/i.exec(authorization);
+      if (!match) throw new DataError(401, "Invalid sign-in token.");
       bearer = { token: match[1], origin: request.headers.get("origin") };
     }
     // Only enable behind a proxy that replaces this header and blocks direct ingress.

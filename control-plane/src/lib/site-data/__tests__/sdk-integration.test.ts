@@ -36,6 +36,8 @@ import {
   type NaruClient,
   type Admin,
 } from "../../../../public/sdk/1.0.0/naru.js";
+import { createNaru as createNaru110 } from "../../../../public/sdk/1.1.0/naru.js";
+import { approveMemberSignIn, memberSignInInput } from "../member-auth";
 
 const integration =
   process.env.NARU_DATA_TEST === "1" ? describe : describe.skip;
@@ -293,6 +295,8 @@ integration("SDK and data API contract", () => {
       revision: "r1.1",
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
+      // Added with members, in SDK 1.1.0; a 1.0.0 page receives it as well.
+      createdBy: null,
     });
     // A write reports the very stamps the read comes back with, so a caller
     // rendering what it just saved never has to invent one.
@@ -318,6 +322,7 @@ integration("SDK and data API contract", () => {
       data: { replaced: true },
       createdAt: first.createdAt,
       updatedAt: expect.any(String),
+      createdBy: null,
     });
     const replaced = await posts.get(added.id);
     expect(replaced.createdAt).toBe(first.createdAt);
@@ -624,6 +629,110 @@ integration("SDK and data API contract", () => {
     // An anonymous read carries no session to renew.
     await naru.collection("crud").list();
     expect(stored()).toBe(renewed);
+  });
+
+  test("SDK 1.1.0 signs a member in, and the member writes as themselves", async () => {
+    const bob = (
+      await sql<{
+        id: string;
+      }>`insert into users(login_name) values ('bob') returning id`.execute(db)
+    ).rows[0].id;
+    await sql`insert into sessions values ('bob-session', ${bob}, now() + interval '1 hour')`.execute(
+      db,
+    );
+    const { id: alice } = await db
+      .selectFrom("users")
+      .select("id")
+      .where("login_name", "=", "alice")
+      .executeTakeFirstOrThrow();
+    await executeData({
+      site: "alice",
+      adminUserId: alice,
+      method: "POST",
+      path: [],
+      body: { name: "board", read: "member", write: "member" },
+    });
+    const verifier = "w".repeat(43);
+    const approval = await approveMemberSignIn(
+      bob,
+      "bob-session",
+      memberSignInInput({
+        site: "alice",
+        redirectUri: `${origin}/board/`,
+        state: "m".repeat(43),
+        challenge: digest(verifier),
+      }),
+    );
+    const local = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => local.get(key) ?? null,
+        setItem: (key: string, value: string) => local.set(key, value),
+        removeItem: (key: string) => local.delete(key),
+      },
+    });
+    try {
+      location.href = approval.redirect;
+      storage.set(
+        "naru:member:https://naru.pub:alice:pending",
+        JSON.stringify({
+          verifier,
+          state: "m".repeat(43),
+          startedAt: Date.now(),
+          address: `${origin}/board/?post=1`,
+        }),
+      );
+      const members = createNaru110({ site: "alice" });
+      const member = (await members.members.session())!;
+      expect(member.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(location.href).toBe(`${origin}/board/?post=1`);
+      const board = member.collection("board");
+      const post = await board.add({ title: "hello" });
+      expect(post.createdBy).toBe(member.id);
+      // The owner sees who wrote it.
+      expect(
+        await executeData({
+          site: "alice",
+          adminUserId: alice,
+          method: "GET",
+          path: ["board", post.id],
+        }),
+      ).toMatchObject({ document: { createdBy: member.id } });
+      expect(await board.set(member.id, { nick: "bob" })).toMatchObject({
+        id: member.id,
+        createdBy: member.id,
+      });
+      await expect(board.set("someone-else", {})).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+      });
+      // Visitors are not members.
+      await expect(naru.collection("board").list()).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+      });
+      const file = await member.media.upload(
+        new Blob(["log"], { type: "text/plain" }),
+      );
+      expect(file).toMatchObject({ contentType: "text/plain", size: 3 });
+      expect(
+        await db
+          .selectFrom("site_data_files")
+          .select("member_id")
+          .where("object_key", "like", `%${file.url.split("/").pop()}`)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ member_id: member.id });
+      // Every page of the site shares the sign-in.
+      expect(
+        (await createNaru110({ site: "alice" }).members.session())?.id,
+      ).toBe(member.id);
+      await member.signOut();
+      expect(await members.members.session()).toBeNull();
+      expect(
+        await db.selectFrom("site_member_tokens").selectAll().execute(),
+      ).toEqual([]);
+    } finally {
+      Reflect.deleteProperty(globalThis, "localStorage");
+    }
   });
 
   test("SDK signout revokes the real admin token", async () => {

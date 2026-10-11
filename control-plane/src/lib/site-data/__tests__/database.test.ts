@@ -659,6 +659,7 @@ integration("answering visitors at the edge", () => {
         revision: "r1.1",
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        createdBy: null,
       },
     });
     expect(passed).toEqual([]);

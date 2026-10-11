@@ -1,6 +1,5 @@
 /**
- * Naru Data SDK 1.0.0: browser SDK for data owned by one Naru site. This
- * release is still under active development.
+ * Naru Data SDK 1.0.0: browser SDK for data owned by one Naru site.
  * @packageDocumentation
  */
 

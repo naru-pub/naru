@@ -1,6 +1,7 @@
 import { db, requestDeadline } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
 import { callSiteObject } from "@/lib/edge/client";
+import { MEMBER_TOKEN, memberScope } from "./member-auth";
 import { tokenScope } from "./owner-auth";
 import { DataError, name } from "./validation";
 
@@ -18,7 +19,8 @@ export type DataCommand = {
   path: string[];
   method: string;
   adminUserId?: string;
-  // Mutable: tokenScope reports the expiry the renewed token now has.
+  // An owner's or a member's token. Mutable: tokenScope and memberScope
+  // report the expiry the renewed token now has.
   bearer?: { token: string; origin: string | null; expiresAt?: number };
   clientIp?: string;
   /** Cancels the call to the Worker; a write the object began still settles. */
@@ -71,10 +73,11 @@ function withDates(value: unknown): unknown {
 }
 
 /**
- * The owner, whether the site has the database feature, and the sign-in's
- * scope (renewing its token), in that order.
+ * The owner, whether the site has the database feature, and what the token
+ * signs in (renewing it), in that order: an owner token's collections, or a
+ * member token's member.
  */
-async function resolveSiteAccess(command: DataCommand) {
+export async function resolveSiteAccess(command: DataCommand) {
   return db.transaction().execute(async (tx) => {
     await requestDeadline(tx);
     const owner = await tx
@@ -85,10 +88,16 @@ async function resolveSiteAccess(command: DataCommand) {
     if (!owner) throw noSite(command.site);
     if (!(await userHasFeature(owner.id, "database", tx)))
       throw new DataError(403, "Database access is not enabled for this site.");
-    const allowedIds = command.bearer
-      ? await tokenScope(tx, owner.id, command.bearer)
+    const memberToken =
+      command.bearer !== undefined && MEMBER_TOKEN.test(command.bearer.token);
+    const allowedIds =
+      command.bearer && !memberToken
+        ? await tokenScope(tx, owner.id, command.bearer)
+        : undefined;
+    const memberId = memberToken
+      ? await memberScope(tx, owner.id, command.bearer!)
       : undefined;
-    return { owner, allowedIds };
+    return { owner, allowedIds, memberId };
   });
 }
 
@@ -96,7 +105,7 @@ export async function executeData(command: DataCommand) {
   const { path, adminUserId } = command;
   if (path.length > 2) throw new DataError(404, "Not found.");
   path.forEach(name);
-  const { owner, allowedIds } = await resolveSiteAccess(command);
+  const { owner, allowedIds, memberId } = await resolveSiteAccess(command);
   const admin = adminUserId === owner.id || allowedIds !== undefined;
   if (adminUserId !== undefined && !admin)
     throw new DataError(403, "Permission denied.");
@@ -112,6 +121,7 @@ export async function executeData(command: DataCommand) {
         admin,
         allowedIds: allowedIds?.map(String) ?? null,
         anonymous: command.bearer === undefined && adminUserId === undefined,
+        member: memberId ?? null,
       },
       path,
       method: command.method,

@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createNaru, NaruError } from "../public/sdk/1.0.0/naru.js";
+import { browser } from "./sdk-browser.mjs";
+
+// Every release this suite describes runs it: 1.0.0 here, and 1.1.0 through
+// naru-data-sdk-1.1.0.test.mjs, which sets the version and imports this file.
+const VERSION = process.env.NARU_SDK_VERSION ?? "1.0.0";
+const { createNaru, NaruError } = await import(
+  `../public/sdk/${VERSION}/naru.js`
+);
 
 const collection = (name, options) => createNaru(options).collection(name);
 const adminSession = (options) => createNaru(options).auth.session();
@@ -9,73 +16,6 @@ const signIn = ({ collections, ...options }) =>
 
 const SESSION =
   "naru:owner:https://naru.pub:alice:https://alice.naru.pub/admin.html";
-
-// The SDK reads location, sessionStorage and history as globals, the way a
-// page does. Each test gets a fresh set, and every call fetch receives.
-async function browser(
-  run,
-  { href = "https://alice.naru.pub/admin.html" } = {},
-) {
-  const names = ["location", "sessionStorage", "history", "fetch"];
-  const saved = names.map((name) =>
-    Object.getOwnPropertyDescriptor(globalThis, name),
-  );
-  const storage = new Map();
-  const calls = [];
-  let respond = () => Response.json({});
-  const location = {
-    href,
-    get origin() {
-      return new URL(this.href).origin;
-    },
-    get pathname() {
-      return new URL(this.href).pathname;
-    },
-    get hostname() {
-      return new URL(this.href).hostname;
-    },
-    assign(url) {
-      this.href = url;
-    },
-  };
-  const values = {
-    location,
-    sessionStorage: {
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, String(value)),
-      removeItem: (key) => storage.delete(key),
-    },
-    history: {
-      state: null,
-      replaceState: (_state, _title, url) => (location.href = url),
-    },
-    fetch: async (url, init = {}) => {
-      const call = { url: new URL(url), method: "GET", ...init };
-      calls.push(call);
-      return respond(call);
-    },
-  };
-  for (const name of names)
-    Object.defineProperty(globalThis, name, {
-      configurable: true,
-      writable: true,
-      value: values[name],
-    });
-  try {
-    await run({
-      calls,
-      storage,
-      location,
-      respond: (handler) => (respond = handler),
-    });
-  } finally {
-    names.forEach((name, index) =>
-      saved[index]
-        ? Object.defineProperty(globalThis, name, saved[index])
-        : delete globalThis[name],
-    );
-  }
-}
 
 const written = (id = "one", version = 1) => ({
   id,
@@ -421,7 +361,9 @@ test("signIn leaves for approval with a PKCE challenge and no request", async ()
       "https://alice.naru.pub/admin.html",
     );
     const pending = JSON.parse(storage.get(`${SESSION}:pending`));
+    // 1.1.0 also keeps the address the sign-in left from, to return to it.
     assert.deepEqual(Object.keys(pending).sort(), [
+      ...(VERSION === "1.0.0" ? [] : ["address"]),
       "startedAt",
       "state",
       "verifier",
@@ -501,7 +443,15 @@ test("a sign-in that did not complete is an ordinary signed-out visit", async ()
       const naru = createNaru();
       assert.equal(await naru.auth.session(), null);
       assert.equal(calls.length, 0);
-      assert.equal(location.href, "https://alice.naru.pub/admin.html");
+      // From 1.1.0, a state this tab did not send is not its sign-in coming
+      // back, so the address is the page's: an owner's and a member's sign-in
+      // on one page must not take each other's code.
+      assert.equal(
+        location.href,
+        VERSION !== "1.0.0" && query.includes("forged")
+          ? `https://alice.naru.pub/admin.html${query}`
+          : "https://alice.naru.pub/admin.html",
+      );
       // Reloading the page is an ordinary signed-out visit.
       assert.equal(await naru.auth.session(), null);
     });

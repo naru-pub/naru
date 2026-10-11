@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  authorize,
   DataError,
   MAX_COLLECTIONS,
   MAX_DOCUMENTS,
@@ -72,6 +71,8 @@ const nextMonth = (now: Date) =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 const rateLimited = () =>
   new DataError(429, "Public write rate limit reached. Try again next minute.");
+/** Writes a member may make a minute, across the site's collections. */
+const MEMBER_WRITES_PER_MINUTE = 30;
 
 function deletable(expected: number | undefined) {
   if (expected === 0)
@@ -129,6 +130,15 @@ export class SiteData extends DurableObject<Env> {
 
   private createTables() {
     this.sql.exec(SCHEMA);
+    // Objects made before members existed have no author column. Added here,
+    // as the object starts, rather than in a migration: there is no other
+    // place an object's schema changes.
+    if (
+      !this.rows("PRAGMA table_info(documents)").some(
+        (column) => column.name === "created_by",
+      )
+    )
+      this.sql.exec("ALTER TABLE documents ADD COLUMN created_by TEXT");
   }
   private run<T>(work: () => T): Outcome<T> {
     try {
@@ -212,9 +222,30 @@ export class SiteData extends DurableObject<Env> {
     }
   }
 
+  /** A member's writes a minute, in fixed-minute buckets like visitors'. */
+  private limitMemberWrite(member: string) {
+    const window = Math.floor(Date.now() / 60000) * 60000;
+    this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
+    const key = `member:${member}`;
+    const count = Number(
+      this.rows("SELECT count FROM rate_limits WHERE key = ?", key)[0]?.count ??
+        0,
+    );
+    if (count >= MEMBER_WRITES_PER_MINUTE)
+      throw new DataError(
+        429,
+        "Member write rate limit reached. Try again next minute.",
+      );
+    this.sql.exec(
+      "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
+      key,
+      window,
+    );
+  }
+
   private written(collectionId: string, id: string) {
     const row = this.rows(
-      "SELECT data, version, created_at, updated_at FROM documents WHERE collection_id = ? AND id = ?",
+      "SELECT data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
       collectionId,
       id,
     )[0];
@@ -223,19 +254,25 @@ export class SiteData extends DurableObject<Env> {
       version: Number(row.version),
       createdAt: new Date(Number(row.created_at)).toISOString(),
       updatedAt: new Date(Number(row.updated_at)).toISOString(),
+      createdBy: (row.created_by ?? null) as string | null,
     };
   }
 
+  /**
+   * `author` is the member writing, recorded only when the write creates the
+   * document: a replacement keeps who created it, as it keeps when.
+   */
   private upsert(
     collectionId: string,
     id: string,
     encoded: string,
     size: number,
+    author: string | null,
   ) {
     const now = Date.now();
     this.sql.exec(
-      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (collection_id, id) DO UPDATE SET data = excluded.data,
          size_bytes = excluded.size_bytes, updated_at = excluded.updated_at,
          version = documents.version + 1`,
@@ -245,6 +282,7 @@ export class SiteData extends DurableObject<Env> {
       size,
       now,
       now,
+      author,
     );
   }
 
@@ -292,7 +330,9 @@ export class SiteData extends DurableObject<Env> {
    * control panel, a signed-in website, or a visitor the edge sent on.
    */
   async execute(input: ExecuteInput) {
-    if (input.access.anonymous) {
+    // Members are counted like visitors: the budget is what the site's
+    // community may use, and only its owner is free of it.
+    if (input.access.anonymous || input.access.member) {
       const spent = this.run(() => this.spend());
       if (!spent.ok) return spent;
     }
@@ -441,17 +481,21 @@ export class SiteData extends DurableObject<Env> {
         publicRead,
       };
     }
+    const member = access.member ?? null;
     if (method === "GET") {
-      authorize(
-        collection.read_access,
-        admin,
-        `Collection ${collection.name} is not publicly readable. Change its read access in the control panel, or sign in.`,
-      );
+      const level = collection.read_access;
+      if (!(admin || level === "world" || (level === "member" && member)))
+        throw new DataError(
+          403,
+          level === "member"
+            ? `Collection ${collection.name} is for the site's members. Sign in as a member.`
+            : `Collection ${collection.name} is not publicly readable. Change its read access in the control panel, or sign in.`,
+        );
       // Identical rows for any stranger, so a shared cache may hold them.
-      publicRead = collection.read_access === "world" && access.anonymous;
+      publicRead = level === "world" && access.anonymous;
       if (path.length === 2) {
         const row = this.rows(
-          "SELECT id, data, version, created_at, updated_at FROM documents WHERE collection_id = ? AND id = ?",
+          "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
           collection.id,
           path[1],
         )[0];
@@ -461,28 +505,50 @@ export class SiteData extends DurableObject<Env> {
       return { result: this.list(collection, input), publicRead };
     }
     const creating = method === "POST" && path.length === 1;
-    if (!(creating && collection.write_access === "create"))
-      authorize(
-        collection.write_access,
-        admin,
-        creating
-          ? `Visitors cannot add to collection ${collection.name}. Change its write access in the control panel, or sign in.`
-          : `Only a signed-in owner can change documents in collection ${collection.name}.`,
+    const level = collection.write_access;
+    // Adding is open to anyone in `create` and to members in `member`.
+    // Replacing and deleting there is the owner's, and in `member` also the
+    // author's, checked against the document below.
+    const authorOnly = !admin && level === "member" && !creating;
+    if (
+      !(
+        admin ||
+        level === "world" ||
+        (level === "create" && creating) ||
+        (level === "member" && member)
+      )
+    )
+      throw new DataError(
+        403,
+        level === "member"
+          ? `Only the site's members can write to collection ${collection.name}. Sign in as a member.`
+          : creating
+            ? `Visitors cannot add to collection ${collection.name}. Change its write access in the control panel, or sign in.`
+            : `Only a signed-in owner can change documents in collection ${collection.name}.`,
       );
     // Every write past this point is reachable without an owner credential
     // when the collection allows it, so all of them are counted.
-    if (!admin) this.limitPublicWrite(input.clientIp);
+    if (member && !admin) this.limitMemberWrite(member);
+    else if (!admin) this.limitPublicWrite(input.clientIp);
     const expected = expectedVersion(input.ifVersion);
     const current = (id: string) =>
       this.rows(
-        "SELECT size_bytes, version FROM documents WHERE collection_id = ? AND id = ?",
+        "SELECT size_bytes, version, created_by FROM documents WHERE collection_id = ? AND id = ?",
         collection.id,
         id,
-      )[0] as { size_bytes: number; version: number } | undefined;
+      )[0] as
+        | { size_bytes: number; version: number; created_by: string | null }
+        | undefined;
     if (method === "DELETE" && path.length === 2) {
       deletable(expected);
-      if (expected !== undefined)
-        matchVersion(expected, current(path[1])?.version);
+      const existing = current(path[1]);
+      if (expected !== undefined) matchVersion(expected, existing?.version);
+      // A missing document is already gone, as it is for the owner.
+      if (authorOnly && existing && existing.created_by !== member)
+        throw new DataError(
+          403,
+          `Members can delete only the documents they created in collection ${collection.name}.`,
+        );
       this.sql.exec(
         "DELETE FROM documents WHERE collection_id = ? AND id = ?",
         collection.id,
@@ -497,6 +563,19 @@ export class SiteData extends DurableObject<Env> {
     const id = path[1] ?? randomUUID();
     const existing = current(id);
     if (expected !== undefined) matchVersion(expected, existing?.version);
+    // A member replaces what they created, and may create the one document
+    // named by their own member ID: a profile, say, that no one else can
+    // claim first.
+    if (
+      authorOnly &&
+      (existing ? existing.created_by !== member : id !== member)
+    )
+      throw new DataError(
+        403,
+        existing
+          ? `Members can replace only the documents they created in collection ${collection.name}.`
+          : `Members can create a document with a chosen ID only under their own member ID in collection ${collection.name}. Use add() for others.`,
+      );
     const { encoded, size } = encode(body.data);
     const usage = this.usage();
     if (
@@ -511,7 +590,7 @@ export class SiteData extends DurableObject<Env> {
     // Never overwrite on create, even in the event of an ID collision.
     if (creating && existing)
       throw new DataError(409, "Document ID collision. Retry creation.");
-    this.upsert(collection.id, id, encoded, size);
+    this.upsert(collection.id, id, encoded, size, admin ? null : member);
     return { result: { id, ...this.written(collection.id, id) }, publicRead };
   }
 
@@ -555,7 +634,6 @@ export class SiteData extends DurableObject<Env> {
           !input.allowedIds.includes(collection.id)
         )
           throw outsideScope(collectionName);
-        authorize(collection.write_access, true);
         const expected = expectedVersion(operation.ifVersion);
         if (operation.type === "delete") deletable(expected);
         if (expected !== undefined)
@@ -581,7 +659,7 @@ export class SiteData extends DurableObject<Env> {
         if (operation.type !== "set" || !Object.hasOwn(operation, "data"))
           throw new DataError(400, "Batch operations must be set or delete.");
         const { encoded, size } = encode(operation.data);
-        this.upsert(collection.id, id, encoded, size);
+        this.upsert(collection.id, id, encoded, size, null);
         const { version, createdAt, updatedAt } = this.written(
           collection.id,
           id,
@@ -652,7 +730,7 @@ export class SiteData extends DurableObject<Env> {
         "SELECT id, name, read_access, write_access FROM collections ORDER BY id",
       ) as unknown as Collection[],
       documents: this.rows(
-        `SELECT collection_id, id, data, size_bytes, version, created_at, updated_at
+        `SELECT collection_id, id, data, size_bytes, version, created_at, updated_at, created_by
          FROM documents ORDER BY collection_id, id`,
       ).map((row) => ({
         collection_id: row.collection_id as string,
@@ -662,6 +740,7 @@ export class SiteData extends DurableObject<Env> {
         version: Number(row.version),
         created_at: Number(row.created_at),
         updated_at: Number(row.updated_at),
+        created_by: (row.created_by ?? null) as string | null,
       })),
     }));
   }
@@ -688,8 +767,8 @@ export class SiteData extends DurableObject<Env> {
         );
       for (const document of snapshot.documents)
         this.sql.exec(
-          `INSERT INTO documents (collection_id, id, data, size_bytes, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO documents (collection_id, id, data, size_bytes, version, created_at, updated_at, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           document.collection_id,
           document.id,
           document.data,
@@ -697,6 +776,8 @@ export class SiteData extends DurableObject<Env> {
           document.version,
           document.created_at,
           document.updated_at,
+          // Snapshots taken before members existed have no author.
+          document.created_by ?? null,
         );
     });
   }

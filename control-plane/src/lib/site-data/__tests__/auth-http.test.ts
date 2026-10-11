@@ -11,6 +11,12 @@ jest.mock("../owner-auth", () => ({
   removeClient: jest.fn(),
   revokeClientTokens: jest.fn(),
 }));
+jest.mock("../member-auth", () => ({
+  approveMemberSignIn: jest.fn(),
+  exchangeMemberCode: jest.fn(),
+  memberSignInInput: jest.fn((x: unknown) => x),
+  revokeMemberToken: jest.fn(),
+}));
 const { ownerAuthRequest } =
   require("../auth-http") as typeof import("../auth-http");
 const auth = jest.mocked(
@@ -19,11 +25,14 @@ const auth = jest.mocked(
 const owner = jest.mocked(
   require("../owner-auth") as typeof import("../owner-auth"),
 );
+const member = jest.mocked(
+  require("../member-auth") as typeof import("../member-auth"),
+);
 beforeEach(() => {
   jest.clearAllMocks();
 });
 
-test.each(["authorize", "clients"])(
+test.each(["authorize", "clients", "member-authorize"])(
   "%s requires same-origin confirmation even with login cookies",
   async (action) => {
     for (const origin of ["https://alice.naru.pub", "null", ""]) {
@@ -168,4 +177,130 @@ test("website calls answer only under v1, and the consent approval only outside 
     });
   }
   expect(owner.approveAuthorization).not.toHaveBeenCalled();
+});
+
+test("a member's approval needs the member's own Naru sign-in, not the database", async () => {
+  const approve = (cookie: string) =>
+    ownerAuthRequest(
+      new Request("https://naru.pub/api/data-auth/member-authorize", {
+        method: "POST",
+        headers: {
+          Origin: "https://naru.pub",
+          "Content-Type": "application/json",
+          Cookie: cookie,
+        },
+        body: JSON.stringify({ site: "alice" }),
+      }),
+      "member-authorize",
+    );
+  auth.mockResolvedValue({ user: null, session: null });
+  expect((await approve("")).status).toBe(401);
+  expect(member.approveMemberSignIn).not.toHaveBeenCalled();
+  auth.mockResolvedValue({
+    user: { id: "bob" },
+    session: { id: "bob-session" },
+  } as never);
+  member.approveMemberSignIn.mockResolvedValue({
+    redirect: "https://alice.example/?code=c&state=s",
+  });
+  const response = await approve("auth_session=bob");
+  expect(response.status).toBe(200);
+  // The body as the (mocked) input parser returned it.
+  expect(member.approveMemberSignIn).toHaveBeenCalledWith(
+    "bob",
+    "bob-session",
+    expect.objectContaining({ site: "alice" }),
+  );
+});
+
+test("a member's code exchange and sign-out are website calls, with CORS for the page", async () => {
+  member.exchangeMemberCode.mockResolvedValue({
+    accessToken: `m.${"t".repeat(43)}`,
+    expiresIn: 604800,
+    expiresAt: Date.now() + 604800000,
+    memberId: "0190f1a2-0000-7000-8000-000000000001",
+  });
+  const body = {
+    code: "code",
+    verifier: "verifier",
+    redirectUri: "https://alice.example/board/",
+  };
+  const response = await ownerAuthRequest(
+    new Request("https://naru.pub/api/data-auth/v1/member-token", {
+      method: "POST",
+      headers: {
+        Origin: "https://alice.example",
+        "Content-Type": "application/json",
+        Cookie: "auth_session=bob",
+      },
+      body: JSON.stringify(body),
+    }),
+    "member-token",
+  );
+  expect(response.status).toBe(200);
+  expect(Object.keys(await response.json()).sort()).toEqual([
+    "accessToken",
+    "expiresAt",
+    "expiresIn",
+    "memberId",
+  ]);
+  expect(response.headers.get("access-control-allow-origin")).toBe(
+    "https://alice.example",
+  );
+  expect(member.exchangeMemberCode).toHaveBeenCalledWith(
+    body,
+    "https://alice.example",
+  );
+  expect(auth).not.toHaveBeenCalled();
+  // Only a member token is revoked here.
+  for (const authorization of ["", `Bearer ${"t".repeat(43)}`]) {
+    const refused = await ownerAuthRequest(
+      new Request("https://naru.pub/api/data-auth/v1/member-revoke", {
+        method: "POST",
+        headers: {
+          Origin: "https://alice.example",
+          Authorization: authorization,
+        },
+      }),
+      "member-revoke",
+    );
+    expect(refused.status).toBe(401);
+  }
+  const revoked = await ownerAuthRequest(
+    new Request("https://naru.pub/api/data-auth/v1/member-revoke", {
+      method: "POST",
+      headers: {
+        Origin: "https://alice.example",
+        Authorization: `Bearer m.${"t".repeat(43)}`,
+      },
+    }),
+    "member-revoke",
+  );
+  expect(revoked.status).toBe(200);
+  expect(member.revokeMemberToken).toHaveBeenCalledWith(
+    `m.${"t".repeat(43)}`,
+    "https://alice.example",
+  );
+});
+
+test("member routes answer where the SDK calls them, and nowhere else", async () => {
+  const legacy =
+    require("@/app/(main)/api/data-auth/[action]/route") as typeof import("@/app/(main)/api/data-auth/[action]/route");
+  const v1 =
+    require("@/app/(main)/api/data-auth/v1/[action]/route") as typeof import("@/app/(main)/api/data-auth/v1/[action]/route");
+  const post = (route: Pick<typeof v1, "POST">, action: string) =>
+    route.POST(
+      new Request(`https://naru.pub/api/data-auth/${action}`, {
+        method: "POST",
+        headers: {
+          Origin: "https://alice.example",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }),
+      { params: Promise.resolve({ action }) },
+    );
+  for (const action of ["member-token", "member-revoke"])
+    expect((await post(legacy, action)).status).toBe(404);
+  expect((await post(v1, "member-authorize")).status).toBe(404);
 });

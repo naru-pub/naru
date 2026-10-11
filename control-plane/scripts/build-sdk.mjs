@@ -15,7 +15,7 @@ import { format } from "prettier";
 import ts from "typescript";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const VERSIONS = ["1.0.0"];
+const VERSIONS = ["1.1.0"];
 const check = process.argv.includes("--check");
 
 // The SDK is one browser module with no dependencies, so it is compiled on its

@@ -24,6 +24,7 @@ import { up as dropSiteClientsUp } from "@/migrations/1790078516190_drop_site_da
 import { up as slideTokensUp } from "@/migrations/1790110700000_slide_site_data_access_tokens";
 
 import { up as orderingUp } from "@/migrations/1790200121054_explicit_document_ordering";
+import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
 
 /**
  * The site-data schema of a disposable naru_data_test database. Documents and
@@ -77,6 +78,12 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
     await sql`alter table ${sql.table(table)} alter column collection_ids type uuid[] using collection_ids::text[]::uuid[]`.execute(
       db,
     );
+  // Migration 1790817060775 defines it with time-ordered ids; this schema
+  // never ran that one, and nothing here depends on the ordering.
+  await sql`create function uuid_v7() returns uuid language sql as 'select gen_random_uuid()'`.execute(
+    db,
+  );
+  await membersUp(db);
 }
 export async function teardownTestDatabase() {
   // The last migrations cannot be reversed, so the schema goes as a whole.

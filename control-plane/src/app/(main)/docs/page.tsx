@@ -19,7 +19,7 @@ const guides = [
     summary: "이미지와 파일을 올리고 그 URL을 문서에 저장합니다.",
   },
   {
-    href: "/docs/sdk/1.0.0",
+    href: "/docs/sdk/1.1.0",
     title: "SDK 레퍼런스",
     summary: "웹 SDK의 모든 함수와 타입입니다.",
   },

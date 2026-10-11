@@ -14,10 +14,11 @@ const sections = [
   ["start", "01 · 빠른 시작"],
   ["collections", "02 · 컬렉션과 공개 범위"],
   ["admin", "03 · 관리자 로그인"],
-  ["write", "04 · 글 수정과 충돌 처리"],
-  ["read", "05 · 목록과 페이지 나누기"],
-  ["recipes", "06 · 사용 예"],
-  ["errors", "07 · 한도와 오류"],
+  ["members", "04 · 회원"],
+  ["write", "05 · 글 수정과 충돌 처리"],
+  ["read", "06 · 목록과 페이지 나누기"],
+  ["recipes", "07 · 사용 예"],
+  ["errors", "08 · 한도와 오류"],
 ];
 
 function Section({
@@ -73,7 +74,7 @@ export default function DatabaseDocs() {
         <DocsNav current="database" />
         <header className="mb-12 max-w-3xl space-y-5">
           <p className="text-sm text-muted-foreground">
-            NARU / DOCS / DATABASE / SDK 1.0.0
+            NARU / DOCS / DATABASE / SDK 1.1.0
           </p>
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
             정적 웹사이트에 데이터를 더하세요.
@@ -87,7 +88,7 @@ export default function DatabaseDocs() {
             <Link href="/board?kind=template&database=1">
               데이터베이스 템플릿 둘러보기 →
             </Link>
-            <a href="/docs/sdk/1.0.0">SDK 레퍼런스 →</a>
+            <a href="/docs/sdk/1.1.0">SDK 레퍼런스 →</a>
           </div>
         </header>
         <div className="grid gap-10 lg:grid-cols-[230px_minmax(0,1fr)]">
@@ -177,6 +178,14 @@ export default function DatabaseDocs() {
                       <code>pages</code>로 누구나 읽습니다.
                     </>,
                   ],
+                  [
+                    "읽기",
+                    "회원",
+                    <>
+                      나루 계정으로 이 사이트에{" "}
+                      <a href="#members">회원 로그인</a>한 방문자만 읽습니다.
+                    </>,
+                  ],
                   ["쓰기", "관리자만", "방문자는 쓸 수 없습니다."],
                   [
                     "쓰기",
@@ -184,6 +193,14 @@ export default function DatabaseDocs() {
                     <>
                       <code>add</code>로 새 문서만 만듭니다. 방명록에
                       알맞습니다.
+                    </>,
+                  ],
+                  [
+                    "쓰기",
+                    "회원 생성, 자기 문서 덮어쓰기·삭제",
+                    <>
+                      회원은 <code>add</code>로 글을 쓰고, 자기가 만든 문서만
+                      고치고 지웁니다. 게시판과 커뮤니티에 알맞습니다.
                     </>,
                   ],
                   [
@@ -232,7 +249,47 @@ export default function DatabaseDocs() {
 </script>`}</Code>
             </Section>
 
-            <Section id="write" title="04 · 글 수정과 충돌 처리">
+            <Section id="members" title="04 · 회원">
+              <p>
+                <strong>회원</strong>은 자기 나루 계정으로 이 사이트에 로그인한
+                방문자입니다. 나루 계정이 있으면 누구나 회원이 될 수 있고,
+                미리 등록할 것은 없습니다. 컬렉션의 읽기나 쓰기를 ‘회원’으로
+                설정하면 회원만 읽거나 쓸 수 있습니다. SDK 1.1.0부터 쓸 수
+                있습니다.
+              </p>
+              <Code language="html">{`<button id="join">회원 로그인</button>
+<script type="module">
+  import { createNaru } from "https://naru.pub/sdk/1/naru.js";
+  const naru = createNaru();
+  const member = await naru.members.session();
+  document.querySelector("#join").hidden = !!member;
+  document.querySelector("#join").onclick = () => naru.members.signIn();
+  if (member) {
+    const board = member.collection("board");
+    const post = await board.add({ title: "안녕하세요" });
+    // post.createdBy === member.id: 누가 썼는지 서버가 기록합니다.
+    await board.set(member.id, { nick: "나루" }); // 내 프로필
+  }
+</script>`}</Code>
+              <p>
+                <code>member.id</code>는 이 사이트에서만 쓰이는 회원 번호입니다.
+                회원의 나루 아이디와 이메일은 사이트에 전달되지 않습니다.
+                회원이 만든 문서에는 <code>createdBy</code>로 회원 번호가
+                남고, 회원은 자기가 만든 문서와 자기 회원 번호를 ID로 쓰는
+                문서만 고칠 수 있습니다. 닉네임처럼 회원마다 하나씩인 정보는{" "}
+                <code>set(member.id, …)</code>로 저장하세요.
+              </p>
+              <p>
+                회원 로그인은 사이트의 모든 페이지와 탭에서 유지되며, 7일 동안
+                쓰지 않거나 로그인한 지 30일이 지나면, 또는 나루에서
+                로그아웃하면 끝납니다. 회원은{" "}
+                <code>member.media.upload()</code>로 사이트의 미디어에 파일을
+                올릴 수 있고, 쓰기와 업로드에는 회원마다 횟수 제한이 있습니다.
+                관리자는 회원의 문서도 고치고 지울 수 있습니다.
+              </p>
+            </Section>
+
+            <Section id="write" title="05 · 글 수정과 충돌 처리">
               <Table
                 head={["호출", "동작"]}
                 rows={[
@@ -283,7 +340,7 @@ try {
 // saved.revision → 다음 저장의 condition`}</Code>
             </Section>
 
-            <Section id="read" title="05 · 목록과 페이지 나누기">
+            <Section id="read" title="06 · 목록과 페이지 나누기">
               <Code>{`const posts = naru.collection("posts");
 
 const post = await posts.get("hello");
@@ -341,7 +398,7 @@ for await (const { documents } of posts.pages({ ...query, size: 100 })) {
               </ul>
             </Section>
 
-            <Section id="recipes" title="06 · 사용 예">
+            <Section id="recipes" title="07 · 사용 예">
               <div className="grid gap-4 md:grid-cols-2">
                 {[
                   {
@@ -423,7 +480,7 @@ await posts.set(id, { ...post.data, cover: image.url },
               </p>
             </Section>
 
-            <Section id="errors" title="07 · 한도와 오류">
+            <Section id="errors" title="08 · 한도와 오류">
               <ul className="list-disc space-y-3 pl-6">
                 <li>
                   사이트당 컬렉션 100개, 문서 10,000개, 데이터 10 MiB. 요청

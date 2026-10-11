@@ -1,8 +1,25 @@
 # SDK 1.0.0 release checks
 
-The 1.0.0 SDK is still mutable at the owner's request. This checklist does not
-freeze, publish, or tag it. Keep the fixed `https://naru.pub` control-plane origin
-and versioned SDK URL; do not restore the unversioned URL.
+## Frozen
+
+1.0.0 was frozen on 2026-10-12, at the owner's instruction, when 1.1.0 (site
+members) was started from a copy of it. Its last change removed the
+development notice from its header. It is no longer in `VERSIONS` in
+`scripts/build-sdk.mjs`, so these are its bytes for good:
+
+```
+b126e994c1d32c8a23b8b69e1bfcf725d65418eeda3d81b501c3b2f8fc6b60e3  public/sdk/1.0.0/naru.js
+834f017bbc2fed42e002fcdf2d8dce4b29298cdd62c9c79e7912d2ac2c396b08  public/sdk/1.0.0/naru.d.ts
+```
+
+It was not tagged, and the live acceptance pass below was not run before the
+freeze, nor the browser fixture; the unit and integration suites were. The `1` alias
+now names 1.1.0, which is mutable until the owner freezes it; the checklist
+below applies to it in turn, with its own version in place of 1.0.0.
+
+What follows is the checklist as it stood before the freeze. Keep the fixed
+`https://naru.pub` control-plane origin and versioned SDK URL; do not restore
+the unversioned URL.
 
 ## Local verification
 

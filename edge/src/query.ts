@@ -37,6 +37,7 @@ export const SCHEMA = `
     version INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    created_by TEXT,
     PRIMARY KEY (collection_id, id)
   );
   CREATE INDEX IF NOT EXISTS documents_created ON documents (collection_id, created_at, id);
@@ -140,6 +141,7 @@ export function documentOf(row: Row) {
     version: Number(row.version),
     createdAt: new Date(Number(row.created_at)).toISOString(),
     updatedAt: new Date(Number(row.updated_at)).toISOString(),
+    createdBy: (row.created_by ?? null) as string | null,
   };
 }
 
@@ -229,7 +231,7 @@ export function listQuery(collectionId: string, input: ListInput) {
         : `${COLUMNS[item.orderBy]} AS cursor_value_${index}`,
   );
   const select: Query = {
-    sql: `SELECT id, data, version, created_at, updated_at, ${cursorColumns.join(", ")}
+    sql: `SELECT id, data, version, created_at, updated_at, created_by, ${cursorColumns.join(", ")}
        FROM documents WHERE ${pageWhere.join(" AND ")}
        ORDER BY ${order.join(", ")} LIMIT ?`,
     bindings: [...pageBindings, limit + 1],

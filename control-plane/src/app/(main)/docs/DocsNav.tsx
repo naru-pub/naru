@@ -2,7 +2,7 @@ const links = [
   ["/docs", "길잡이 홈", "home"],
   ["/docs/database", "데이터베이스", "database"],
   ["/docs/media", "미디어", "media"],
-  ["/docs/sdk/1.0.0", "SDK 1.0.0", "sdk"],
+  ["/docs/sdk/1.1.0", "SDK 1.1.0", "sdk"],
 ] as const;
 
 export default function DocsNav({ current }: { current: string }) {

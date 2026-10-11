@@ -14,9 +14,20 @@ import {
   revokeClientTokens,
   revokeToken,
 } from "./owner-auth";
+import {
+  approveMemberSignIn,
+  exchangeMemberCode,
+  memberSignInInput,
+  revokeMemberToken,
+} from "./member-auth";
 
 export async function ownerAuthRequest(request: Request, action: string) {
-  const crossOrigin = ["token", "revoke"].includes(action);
+  const crossOrigin = [
+    "token",
+    "revoke",
+    "member-token",
+    "member-revoke",
+  ].includes(action);
   const origin = request.headers.get("origin");
   const headers: Record<string, string> = {
     "Cache-Control": "no-store",
@@ -35,6 +46,22 @@ export async function ownerAuthRequest(request: Request, action: string) {
     if (crossOrigin) {
       if (request.method !== "POST")
         throw new DataError(405, "Method not allowed.");
+      if (action === "member-token") {
+        const { accessToken, expiresIn, expiresAt, memberId } =
+          await exchangeMemberCode(await jsonBody(request), origin);
+        return Response.json(
+          { accessToken, expiresIn, expiresAt, memberId },
+          { headers },
+        );
+      }
+      if (action === "member-revoke") {
+        const match = /^Bearer (m\.[A-Za-z0-9_-]{43})$/i.exec(
+          request.headers.get("authorization") ?? "",
+        );
+        if (!match) throw new DataError(401, "Invalid member token.");
+        await revokeMemberToken(match[1], origin);
+        return Response.json({ success: true }, { headers });
+      }
       if (action === "token") {
         // The SDK measures expiresIn on the browser's own clock, which may
         // disagree with this one; expiresAt stays for SDK files that read it.
@@ -54,11 +81,23 @@ export async function ownerAuthRequest(request: Request, action: string) {
       await revokeToken(match[1], origin);
       return Response.json({ success: true }, { headers });
     }
-    if (!["authorize", "prepare", "clients"].includes(action))
+    if (
+      !["authorize", "prepare", "clients", "member-authorize"].includes(action)
+    )
       throw new DataError(404, "Not found.");
     sameOrigin(request);
     const { user, session } = await validateRequest();
     if (!user || !session) throw new DataError(401, "Sign in required.");
+    // Any account may be a member; the site's own plan is checked instead.
+    if (action === "member-authorize" && request.method === "POST")
+      return Response.json(
+        await approveMemberSignIn(
+          user.id,
+          session.id,
+          memberSignInInput(await jsonBody(request)),
+        ),
+        { headers },
+      );
     if (!(await userHasFeature(user.id, "database")))
       throw new DataError(403, "Database access is not enabled for this site.");
     if (action === "clients" && request.method === "GET") {

@@ -235,7 +235,9 @@ export default function DatabaseManager({
                     </summary>
                     <p className="text-sm text-muted-foreground">
                       공개 읽기는 누구나 조회할 수 있습니다. 공개 생성은 추가만,
-                      전체 공개 쓰기는 덮어쓰기와 삭제까지 허용합니다.
+                      전체 공개 쓰기는 덮어쓰기와 삭제까지 허용합니다. 회원은
+                      나루 계정으로 이 사이트에 로그인한 방문자이며, 회원 쓰기는
+                      추가와 자기가 만든 문서의 덮어쓰기·삭제를 허용합니다.
                     </p>
                     <h2 className="font-bold">
                       <CollectionName name={selected} /> · 접근 권한
@@ -248,6 +250,7 @@ export default function DatabaseManager({
                           onChange={(e) => setRead(e.target.value)}
                         >
                           <option value="admin">관리자만</option>
+                          <option value="member">회원</option>
                           <option value="world">누구나</option>
                         </Select>
                       </label>
@@ -259,6 +262,9 @@ export default function DatabaseManager({
                         >
                           <option value="admin">관리자만</option>
                           <option value="create">누구나 생성만</option>
+                          <option value="member">
+                            회원 생성, 자기 문서 덮어쓰기·삭제
+                          </option>
                           <option value="world">
                             누구나 생성·덮어쓰기·삭제
                           </option>

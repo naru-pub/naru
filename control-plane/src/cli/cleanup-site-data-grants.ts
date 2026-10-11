@@ -15,11 +15,22 @@ async function main() {
     .deleteFrom("site_data_access_tokens")
     .where("expires_at", "<=", new Date())
     .executeTakeFirst();
+  // Members' grants, the same way.
+  const expiredMemberCodes = await db
+    .deleteFrom("site_member_codes")
+    .where("expires_at", "<=", new Date())
+    .executeTakeFirst();
+  const expiredMemberTokens = await db
+    .deleteFrom("site_member_tokens")
+    .where("expires_at", "<=", new Date())
+    .executeTakeFirst();
   const rows = (deleted: { numDeletedRows: bigint } | undefined) =>
     Number(deleted?.numDeletedRows ?? 0);
   console.log(
     `[site-data-cleanup] Removed ${rows(expiredCodes)} codes, ` +
-      `${rows(expiredTokens)} tokens`,
+      `${rows(expiredTokens)} tokens, ` +
+      `${rows(expiredMemberCodes)} member codes, ` +
+      `${rows(expiredMemberTokens)} member tokens`,
   );
 }
 

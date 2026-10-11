@@ -11,7 +11,7 @@ import { format } from "prettier";
 import { Application } from "typedoc";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const VERSIONS = ["1.0.0"];
+const VERSIONS = ["1.0.0", "1.1.0"];
 
 /* ---------------------------------------------------------------- types --- */
 

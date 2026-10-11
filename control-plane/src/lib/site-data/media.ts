@@ -10,8 +10,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { sql } from "kysely";
 import { db, requestDeadline } from "@/lib/database";
 import { s3Client } from "@/lib/s3";
-import { userHasFeature } from "@/lib/entitlements";
-import { tokenScope } from "./owner-auth";
+import { resolveSiteAccess } from "./service";
 import { DataError, uuidId } from "./validation";
 import { decodeCursor, encodeCursor, sorting } from "./pagination";
 
@@ -22,6 +21,9 @@ export const MAX_MEDIA_SITE_BYTES = 250 * 1024 * 1024;
 // the count still has to stop somewhere the cleanup job and the owner's own
 // library screen can cope with.
 export const MAX_MEDIA_FILES = 10000;
+// Members upload into the site's quota, which one of them could otherwise
+// fill for everyone; the owner's own uploads are not limited.
+export const MEMBER_UPLOADS_PER_HOUR = 30;
 const mediaBucket = () => process.env.SITE_DATA_MEDIA_BUCKET || "naru-media";
 const mediaOrigin = () =>
   (process.env.SITE_DATA_MEDIA_ORIGIN || "https://media.naru.pub").replace(
@@ -69,7 +71,8 @@ type MediaCommand = {
   path: string[];
   method: string;
   adminUserId?: string;
-  // Mutable: tokenScope reports the expiry the renewed token now has.
+  // An owner's or a member's token. Mutable: tokenScope and memberScope
+  // report the expiry the renewed token now has.
   bearer?: { token: string; origin: string | null; expiresAt?: number };
   body?: Record<string, unknown>;
   after?: string;
@@ -128,22 +131,10 @@ function uploadInput(body: Record<string, unknown>) {
 
 export async function executeMedia(command: MediaCommand) {
   if (command.path.length > 1) throw new DataError(404, "Not found.");
-  const owner = await db
-    .selectFrom("users")
-    .select("id")
-    .where("login_name", "=", command.site)
-    .executeTakeFirst();
-  if (!owner)
-    throw new DataError(404, `No Naru site is named ${command.site}.`);
-  if (!(await userHasFeature(owner.id, "database")))
-    throw new DataError(403, "Database access is not enabled for this site.");
-  const allowedIds = command.bearer
-    ? await db
-        .transaction()
-        .execute((tx) => tokenScope(tx, owner.id, command.bearer!))
-    : undefined;
+  const { owner, allowedIds, memberId } = await resolveSiteAccess(command);
   const admin = command.adminUserId === owner.id || allowedIds !== undefined;
-  if (!admin) throw new DataError(403, "Uploading needs an owner sign-in.");
+  if (!admin && memberId === undefined)
+    throw new DataError(403, "Uploading needs an owner or member sign-in.");
   if (command.adminUserId !== undefined && command.adminUserId !== owner.id)
     throw new DataError(403, "Permission denied.");
   // A website uploads; listing and deleting the library is the control
@@ -151,7 +142,7 @@ export async function executeMedia(command: MediaCommand) {
   const uploading =
     (command.method === "POST" && command.path.length === 0) ||
     (command.method === "PUT" && command.path.length === 1);
-  if (allowedIds !== undefined && !uploading)
+  if (command.bearer !== undefined && !uploading)
     throw new DataError(403, "Website tokens can only upload files.");
   const files = () =>
     db.selectFrom("site_data_files").where("user_id", "=", owner.id);
@@ -268,6 +259,19 @@ export async function executeMedia(command: MediaCommand) {
           "Media file count limit reached.",
           "QUOTA_EXCEEDED",
         );
+      if (memberId !== undefined) {
+        const recent = await tx
+          .selectFrom("site_data_files")
+          .where("member_id", "=", memberId)
+          .where("created_at", ">", new Date(Date.now() - 60 * 60 * 1000))
+          .select(sql<number>`count(*)`.as("count"))
+          .executeTakeFirstOrThrow();
+        if (Number(recent.count) >= MEMBER_UPLOADS_PER_HOUR)
+          throw new DataError(
+            429,
+            `A member can upload ${MEMBER_UPLOADS_PER_HOUR} files an hour. Try again later.`,
+          );
+      }
       return tx
         .insertInto("site_data_files")
         .values({
@@ -277,6 +281,7 @@ export async function executeMedia(command: MediaCommand) {
           original_name: input.filename,
           content_type: input.contentType,
           size_bytes: input.size,
+          member_id: memberId ?? null,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -302,7 +307,9 @@ export async function executeMedia(command: MediaCommand) {
       .where("id", "=", id)
       .selectAll()
       .executeTakeFirst();
-    if (!file) throw new DataError(404, "File not found.");
+    // A member finishes only their own upload.
+    if (!file || (memberId !== undefined && file.member_id !== memberId))
+      throw new DataError(404, "File not found.");
     let head;
     try {
       head = await mediaStorage.headObject(file.object_key);

@@ -205,7 +205,7 @@ export function DocsMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/docs/sdk/1.0.0" className="flex items-center gap-2">
+          <Link href="/docs/sdk/1.1.0" className="flex items-center gap-2">
             <Code2 size={16} />
             SDK 레퍼런스
           </Link>

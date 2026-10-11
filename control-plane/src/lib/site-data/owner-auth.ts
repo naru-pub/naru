@@ -106,7 +106,7 @@ export function sameCallback(registered: string, requested: string) {
 
 // Rechecked at registration, approval, exchange and every authenticated data call.
 // Removing or de-verifying a custom domain therefore invalidates its access.
-async function assertSiteOrigin(
+export async function assertSiteOrigin(
   tx: Kysely<DB>,
   userId: string,
   redirectUri: string,
