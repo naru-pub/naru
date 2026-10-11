@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
 import { db } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
+import { sql } from "kysely";
 import GitHubDeployTargetsCard from "../account/GitHubDeployTargetsCard";
+import GitHubAppCard, { type AppTarget } from "./GitHubAppCard";
 
 function arrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
@@ -14,7 +16,12 @@ function manifestFileCount(value: unknown) {
   return arrayLength((value as { files?: unknown }).files);
 }
 
-export default async function DeploysPage() {
+export default async function DeploysPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { github } = await searchParams;
   const { user } = await validateRequest();
 
   if (!user) {
@@ -38,8 +45,50 @@ export default async function DeploysPage() {
     ])
     .where("user_id", "=", user.id)
     .where("enabled", "=", true)
+    .where("installation_id", "is", null)
     .orderBy("created_at", "desc")
     .execute();
+  // Repositories connected through Naru's GitHub App, each with what its
+  // latest deployment left out.
+  const appTargets: AppTarget[] = (
+    await db
+      .selectFrom("github_deploy_targets as t")
+      .select((eb) => [
+        "t.id",
+        "t.github_repository",
+        "t.github_ref",
+        "t.source_dir",
+        "t.target_prefix",
+        "t.pending_sha",
+        "t.last_error",
+        "t.last_github_sha",
+        "t.last_deployed_at",
+        eb
+          .selectFrom("github_deployments as d")
+          .select(sql<number>`jsonb_array_length(d.skipped_paths)`.as("count"))
+          .whereRef("d.target_id", "=", "t.id")
+          .where("d.status", "=", "finalized")
+          .orderBy("d.created_at", "desc")
+          .limit(1)
+          .as("skipped_count"),
+      ])
+      .where("t.user_id", "=", user.id)
+      .where("t.enabled", "=", true)
+      .where("t.installation_id", "is not", null)
+      .orderBy("t.created_at", "desc")
+      .execute()
+  ).map((target) => ({
+    id: target.id,
+    githubRepository: target.github_repository,
+    branch: target.github_ref.replace(/^refs\/heads\//, ""),
+    sourceDir: target.source_dir,
+    targetPrefix: target.target_prefix,
+    pending: target.pending_sha !== null,
+    lastError: target.last_error,
+    lastGithubSha: target.last_github_sha,
+    lastDeployedAt: target.last_deployed_at?.toISOString() ?? null,
+    skippedCount: Number(target.skipped_count ?? 0),
+  }));
   const githubDeployTargets = githubDeployTargetRows.map((target) => ({
     id: target.id,
     githubRepository: target.github_repository,
@@ -87,6 +136,11 @@ export default async function DeploysPage() {
   return (
     <div className="bg-background min-h-screen">
       <div className="mx-auto max-w-4xl space-y-8 p-6">
+        <GitHubAppCard
+          loginName={user.loginName}
+          targets={appTargets}
+          notice={typeof github === "string" ? github : null}
+        />
         <GitHubDeployTargetsCard
           loginName={user.loginName}
           targets={githubDeployTargets}

@@ -343,63 +343,16 @@ export async function createGitHubDeploymentPlan(params: {
 
   assertGitHubClaimsAllowed(params.claims, target);
 
-  const previousFiles = manifestFiles(target.last_manifest);
-
-  const previousPaths = new Set(previousFiles.map((file) => file.path));
-  const nextPaths = new Set(manifest.files.map((file) => file.path));
-  const uploadedPaths = changedManifestPaths(previousFiles, manifest.files);
+  const { id, uploadPrefix, uploadedPaths, deletedPaths, expiresAt } =
+    await planDeployment({
+      target,
+      manifest,
+      repository: params.claims.repository,
+      repositoryId: params.claims.repository_id,
+      ref: params.claims.ref,
+      sha: params.claims.sha,
+    });
   const uploadedPathSet = new Set(uploadedPaths);
-  const deletedPaths = [...previousPaths].filter(
-    (path) => !nextPaths.has(path),
-  );
-
-  const id = deploymentId();
-  const uploadPrefix = `__deploy_uploads/${target.user_id}/${id}`;
-  const expiresAt = new Date(Date.now() + DEPLOYMENT_TTL_MS);
-  const claimedTarget = await db
-    .updateTable("github_deploy_targets")
-    .set((eb) => ({
-      deploy_generation: eb("deploy_generation", "+", 1),
-      github_repository_id: params.claims.repository_id,
-      updated_at: new Date(),
-    }))
-    .where("id", "=", target.id)
-    .where("enabled", "=", true)
-    .where((eb) =>
-      eb.or([
-        eb("github_repository_id", "is", null),
-        eb("github_repository_id", "=", params.claims.repository_id),
-      ]),
-    )
-    .returning("deploy_generation")
-    .executeTakeFirst();
-  if (!claimedTarget) {
-    throw new Error(
-      "Deploy target was disabled or is bound to a different GitHub repository identity",
-    );
-  }
-
-  await db
-    .insertInto("github_deployments")
-    .values({
-      id,
-      target_id: target.id,
-      user_id: target.user_id,
-      status: "planned",
-      github_repository: params.claims.repository,
-      github_repository_id: params.claims.repository_id,
-      github_ref: params.claims.ref,
-      github_sha: params.claims.sha,
-      target_prefix: targetPrefix,
-      upload_prefix: uploadPrefix,
-      delete_removed_files: true,
-      manifest: asJsonb(manifest),
-      deleted_paths: asJsonb(deletedPaths),
-      uploaded_paths: asJsonb(uploadedPaths),
-      deploy_generation: claimedTarget.deploy_generation,
-      expires_at: expiresAt,
-    })
-    .execute();
 
   const uploads = await Promise.all(
     manifest.files
@@ -432,11 +385,93 @@ export async function createGitHubDeploymentPlan(params: {
   };
 }
 
-export async function finalizeGitHubDeployment(params: {
-  claims: GitHubActionsClaims;
-  deploymentId: string;
+/**
+ * Records a planned deployment of `manifest` to `target`: which files changed
+ * since the target's last deploy (only those are uploaded, to a staging
+ * prefix) and which are gone. Claims the target's next generation, so an older
+ * deployment can no longer publish over it. Shared by Actions deploys (the
+ * workflow uploads) and App deploys (Naru uploads).
+ */
+export async function planDeployment(params: {
+  target: {
+    id: string;
+    user_id: string;
+    target_prefix: string;
+    last_manifest: unknown;
+  };
+  manifest: DeployManifest;
+  repository: string;
+  repositoryId: string;
+  ref: string;
+  sha: string;
+  skippedPaths?: string[];
 }) {
-  const deployment = await db
+  const { target, manifest } = params;
+  const targetPrefix = target.target_prefix;
+  const previousFiles = manifestFiles(target.last_manifest);
+
+  const previousPaths = new Set(previousFiles.map((file) => file.path));
+  const nextPaths = new Set(manifest.files.map((file) => file.path));
+  const uploadedPaths = changedManifestPaths(previousFiles, manifest.files);
+  const deletedPaths = [...previousPaths].filter(
+    (path) => !nextPaths.has(path),
+  );
+
+  const id = deploymentId();
+  const uploadPrefix = `__deploy_uploads/${target.user_id}/${id}`;
+  const expiresAt = new Date(Date.now() + DEPLOYMENT_TTL_MS);
+  const claimedTarget = await db
+    .updateTable("github_deploy_targets")
+    .set((eb) => ({
+      deploy_generation: eb("deploy_generation", "+", 1),
+      github_repository_id: params.repositoryId,
+      updated_at: new Date(),
+    }))
+    .where("id", "=", target.id)
+    .where("enabled", "=", true)
+    .where((eb) =>
+      eb.or([
+        eb("github_repository_id", "is", null),
+        eb("github_repository_id", "=", params.repositoryId),
+      ]),
+    )
+    .returning("deploy_generation")
+    .executeTakeFirst();
+  if (!claimedTarget) {
+    throw new Error(
+      "Deploy target was disabled or is bound to a different GitHub repository identity",
+    );
+  }
+
+  await db
+    .insertInto("github_deployments")
+    .values({
+      id,
+      target_id: target.id,
+      user_id: target.user_id,
+      status: "planned",
+      github_repository: params.repository,
+      github_repository_id: params.repositoryId,
+      github_ref: params.ref,
+      github_sha: params.sha,
+      target_prefix: targetPrefix,
+      upload_prefix: uploadPrefix,
+      delete_removed_files: true,
+      manifest: asJsonb(manifest),
+      deleted_paths: asJsonb(deletedPaths),
+      uploaded_paths: asJsonb(uploadedPaths),
+      deploy_generation: claimedTarget.deploy_generation,
+      expires_at: expiresAt,
+      skipped_paths: asJsonb(params.skippedPaths ?? []),
+    })
+    .execute();
+
+  return { id, uploadPrefix, uploadedPaths, deletedPaths, expiresAt };
+}
+
+/** A deployment, with what publishing it checks against its target. */
+function loadDeployment(id: string) {
+  return db
     .selectFrom("github_deployments")
     .innerJoin("users", "users.id", "github_deployments.user_id")
     .innerJoin(
@@ -465,17 +500,18 @@ export async function finalizeGitHubDeployment(params: {
       "github_deploy_targets.deploy_generation as current_deploy_generation",
       "users.login_name",
     ])
-    .where("github_deployments.id", "=", params.deploymentId)
+    .where("github_deployments.id", "=", id)
     .executeTakeFirst();
+}
+type LoadedDeployment = NonNullable<Awaited<ReturnType<typeof loadDeployment>>>;
 
+export async function finalizeGitHubDeployment(params: {
+  claims: GitHubActionsClaims;
+  deploymentId: string;
+}) {
+  const deployment = await loadDeployment(params.deploymentId);
   if (!deployment) {
     throw new Error("Deployment was not found");
-  }
-  if (deployment.status !== "planned") {
-    throw new Error("Deployment is not ready to finalize");
-  }
-  if (!deployment.enabled) {
-    throw new Error("Deploy target is disabled");
   }
   if (
     deployment.github_repository_id !== params.claims.repository_id ||
@@ -485,6 +521,33 @@ export async function finalizeGitHubDeployment(params: {
       "GitHub repository identity does not match this deployment",
     );
   }
+  assertGitHubClaimsAllowed(params.claims, deployment);
+  if (params.claims.sha !== deployment.github_sha) {
+    throw new Error("GitHub commit does not match this deployment");
+  }
+  return publishDeployment(deployment);
+}
+
+/**
+ * Publishes a planned deployment whose changed files are in its staging
+ * prefix: checks them against the manifest, copies them into the site,
+ * deletes what the commit no longer has, and records the target's new state.
+ * Refuses a deployment a newer one has overtaken. Shared by Actions and App
+ * deploys; the caller has checked who may publish it.
+ */
+export async function publishPlannedDeployment(deploymentId: string) {
+  const deployment = await loadDeployment(deploymentId);
+  if (!deployment) throw new Error("Deployment was not found");
+  return publishDeployment(deployment);
+}
+
+async function publishDeployment(deployment: LoadedDeployment) {
+  if (deployment.status !== "planned") {
+    throw new Error("Deployment is not ready to finalize");
+  }
+  if (!deployment.enabled) {
+    throw new Error("Deploy target is disabled");
+  }
   if (deployment.current_deploy_generation !== deployment.deploy_generation) {
     throw new Error(
       "A newer deployment has already updated this target; start a new deployment",
@@ -492,10 +555,6 @@ export async function finalizeGitHubDeployment(params: {
   }
   if (new Date(deployment.expires_at).getTime() <= Date.now()) {
     throw new Error("Deployment has expired");
-  }
-  assertGitHubClaimsAllowed(params.claims, deployment);
-  if (params.claims.sha !== deployment.github_sha) {
-    throw new Error("GitHub commit does not match this deployment");
   }
 
   const manifest = validateManifest(deployment.manifest);

@@ -68,6 +68,13 @@ export const MAINTENANCE_JOBS = [
     timeout: 120,
   },
   {
+    // Pushes to repositories connected through Naru's GitHub App.
+    name: "github-app-deploys",
+    script: "run-github-deploys.ts",
+    minutes: 1,
+    timeout: 600,
+  },
+  {
     name: "github-deployment-cleanup",
     script: "cleanup-expired-github-deployments.ts",
     minutes: 15,

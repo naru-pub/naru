@@ -8,6 +8,7 @@ module.exports = async () => {
       "<rootDir>/src/lib/maintenance/__tests__/*.test.ts",
       // Shares the payment suites' disposable database.
       "<rootDir>/src/lib/__tests__/scheduled-jobs-db.test.ts",
+      "<rootDir>/src/lib/deploy/__tests__/github-app-db.test.ts",
     ],
     moduleNameMapper: { "^@/(.*)$": "<rootDir>/src/$1" },
   })();

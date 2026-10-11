@@ -5,6 +5,14 @@
 
 import type { ColumnType } from "kysely";
 
+export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
+  ? U[]
+  : ArrayTypeImpl<T>;
+
+export type ArrayTypeImpl<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S[], I[], U[]>
+  : T[];
+
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
@@ -366,6 +374,7 @@ export interface GithubDeployments {
   github_sha: string;
   id: string;
   manifest: unknown;
+  skipped_paths: Generated<unknown>;
   status: Generated<string>;
   target_id: string;
   target_prefix: string;
@@ -378,15 +387,31 @@ export interface GithubDeployTargets {
   created_at: Generated<Timestamp>;
   delete_removed_files: Generated<boolean>;
   deploy_generation: Generated<number>;
+  deploying_at: Timestamp | null;
   enabled: Generated<boolean>;
   github_ref: string;
   github_repository: string;
   github_repository_id: string | null;
   id: Generated<string>;
+  installation_id: Int8 | null;
   last_deployed_at: Timestamp | null;
+  last_error: string | null;
   last_github_sha: string | null;
   last_manifest: unknown | null;
+  pending_at: Timestamp | null;
+  pending_sha: string | null;
+  source_dir: Generated<string>;
   target_prefix: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface GithubInstallations {
+  account_login: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  installation_id: Int8;
+  repository_ids: Generated<ArrayType<Int8>>;
   updated_at: Generated<Timestamp>;
   user_id: string;
 }
@@ -732,6 +757,7 @@ export interface DB {
   followers: Followers;
   github_deploy_targets: GithubDeployTargets;
   github_deployments: GithubDeployments;
+  github_installations: GithubInstallations;
   home_directory_exports: HomeDirectoryExports;
   pageview_daily_browsers: PageviewDailyBrowsers;
   pageview_daily_paths: PageviewDailyPaths;

@@ -6,6 +6,11 @@ site into a staging prefix and finalizes the deployment.
 
 GitHub CI deploys are available to supporter accounts.
 
+A site whose files are served as they are in the repository does not need a
+workflow: connecting the repository on `/deploys` deploys it on every push
+through Naru's GitHub App ([github-app.md](github-app.md)). Workflows are for
+sites that need a build step.
+
 Recommended official Action repository name: `naru-pub/deploy-action`.
 If Naru expects to publish multiple official actions, `naru-pub/actions` with
 the deploy action at `naru-pub/actions/deploy@v1` is also a good shape.
