@@ -141,11 +141,24 @@ export default async function DeploysPage({
           targets={appTargets}
           notice={typeof github === "string" ? github : null}
         />
-        <GitHubDeployTargetsCard
-          loginName={user.loginName}
-          targets={githubDeployTargets}
-          deployments={githubDeployments}
-        />
+        {/* Workflow deploys are for sites with a build step: kept out of the
+            way, unless the account already deploys that way. */}
+        <details className="group" open={githubDeployTargets.length > 0}>
+          <summary className="text-muted-foreground cursor-pointer text-sm select-none">
+            고급: GitHub Actions 워크플로로 배포하기
+          </summary>
+          <p className="text-muted-foreground mt-2 text-sm">
+            빌드가 필요한 사이트처럼, 저장소의 파일을 그대로 올리지 않고
+            워크플로에서 만든 결과를 배포할 때 씁니다.
+          </p>
+          <div className="mt-4">
+            <GitHubDeployTargetsCard
+              loginName={user.loginName}
+              targets={githubDeployTargets}
+              deployments={githubDeployments}
+            />
+          </div>
+        </details>
       </div>
     </div>
   );
