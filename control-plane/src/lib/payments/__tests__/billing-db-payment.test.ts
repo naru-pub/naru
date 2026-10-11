@@ -1172,7 +1172,8 @@ integration("payments against the database", () => {
 
     // Refunding an earlier allocation moves the prepaid year forward.
     test("refunding a month removes that duration from a stacked one-time year", async () => {
-      const periodEnd = new Date(Date.now() + 20 * DAY);
+      // A calendar month, not 30 days: the year stacks on the month's end.
+      const from = new Date(Date.now() - 10 * DAY);
       const userId = await makeUser();
       const subId = await makeSubscription(userId, { status: "incomplete" });
       const monthId = await makePendingPayment({
@@ -1188,7 +1189,7 @@ integration("payments against the database", () => {
         userId,
         interval: "month",
         amount: 1000,
-        from: new Date(periodEnd.getTime() - 30 * DAY),
+        from,
         payment: tossPayment("month-order", 1000),
         paymentId: monthId,
       });
@@ -1209,7 +1210,7 @@ integration("payments against the database", () => {
         state: "refunded",
       });
 
-      expect(year.periodStart).toEqual(periodEnd);
+      expect(year.periodStart).toEqual(month.periodEnd);
       expect(await supporterUntil(userId)).toEqual(
         new Date(
           year.periodEnd.getTime() -
