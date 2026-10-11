@@ -372,6 +372,97 @@ integration("GitHub App deploys", () => {
     expect(site("index.html")).toBe("eight");
   });
 
+  test("an App target and a workflow never deploy to the same or nested site folders", async () => {
+    const { createGitHubDeploymentPlan, upsertGitHubDeployTarget } =
+      require("../siteDeploy") as typeof import("../siteDeploy");
+    const actions = (prefix: string, user = userId) =>
+      upsertGitHubDeployTarget({
+        user: { id: user },
+        githubRepository: "owner/renamed",
+        githubRef: "refs/heads/main",
+        targetPrefix: prefix,
+      });
+    // The App deploys owner/renamed to the site root: a workflow can take
+    // neither the root nor a folder inside it.
+    await expect(actions("/")).rejects.toThrow("이미 사이트 폴더 /에");
+    await expect(actions("docs")).rejects.toThrow("/docs/와 겹칩니다");
+    // A workflow of the repository cannot publish over the App's target.
+    await expect(
+      createGitHubDeploymentPlan({
+        claims: {
+          iss: "https://token.actions.githubusercontent.com",
+          aud: "https://naru.pub",
+          sub: "repo:owner/renamed:ref:refs/heads/main",
+          exp: 0,
+          repository: "owner/renamed",
+          repository_id: "1001",
+          ref: "refs/heads/main",
+          sha: "sha-w",
+        },
+        site: login,
+        targetPrefix: "/",
+        manifest: {
+          files: [{ path: "index.html", sha256: "a".repeat(64), size: 1 }],
+        },
+      }),
+    ).rejects.toThrow("No enabled GitHub deploy target matches this request");
+    // Connecting the same target again is no conflict; another folder is.
+    branchHeadSha = "sha-8";
+    await expect(
+      deploys.connectRepository({
+        userId,
+        installationId: "77",
+        repositoryId: "1001",
+        branch: "main",
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      deploys.connectRepository({
+        userId,
+        installationId: "77",
+        repositoryId: "1001",
+        branch: "main",
+        targetPrefix: "blog",
+      }),
+    ).rejects.toThrow("겹칩니다");
+    // The other way round: a workflow first, then the App on its folder.
+    await actions("/", otherUserId);
+    await deploys.linkInstallations(otherUserId, [
+      { installationId: "77", accountLogin: "owner", repositoryIds: ["1001"] },
+    ]);
+    await expect(
+      deploys.connectRepository({
+        userId: otherUserId,
+        installationId: "77",
+        repositoryId: "1001",
+        branch: "main",
+      }),
+    ).rejects.toThrow(
+      "이미 GitHub Actions로 사이트 폴더 /에 배포하고 있습니다",
+    );
+    // Separate folders are fine.
+    await expect(
+      deploys.connectRepository({
+        userId: otherUserId,
+        installationId: "77",
+        repositoryId: "1001",
+        branch: "main",
+        targetPrefix: "mirror",
+      }),
+    ).rejects.toThrow("겹칩니다"); // still inside the workflow's root
+    await sql`update github_deploy_targets set target_prefix = 'app'
+      where user_id = ${otherUserId}`.execute(db);
+    await expect(
+      deploys.connectRepository({
+        userId: otherUserId,
+        installationId: "77",
+        repositoryId: "1001",
+        branch: "main",
+        targetPrefix: "mirror",
+      }),
+    ).resolves.toBeDefined();
+  });
+
   test("an uninstalled App or a removed repository stops deploying", async () => {
     await deploys.forgetInstallation("77", ["1001"]);
     expect(await target()).toMatchObject({ enabled: false });

@@ -6,6 +6,7 @@ import { db } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
 import { s3Client } from "@/lib/s3";
 import {
+  assertNoOverlappingTarget,
   normalizeTargetPrefix,
   planDeployment,
   publishPlannedDeployment,
@@ -148,6 +149,19 @@ export async function connectRepository(params: {
     throw new DeployError(`브랜치 ${branch}를 찾지 못했습니다.`);
   });
   const ref = `refs/heads/${branch}`;
+  try {
+    await assertNoOverlappingTarget({
+      userId: params.userId,
+      targetPrefix,
+      same: (target) =>
+        target.installation_id !== null &&
+        target.github_repository_id === repositoryId &&
+        target.github_ref === ref &&
+        target.target_prefix === targetPrefix,
+    });
+  } catch (error) {
+    throw new DeployError((error as Error).message);
+  }
   const values = {
     installation_id: installationId,
     github_repository: head.fullName,

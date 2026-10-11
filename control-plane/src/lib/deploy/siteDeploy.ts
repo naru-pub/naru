@@ -331,6 +331,9 @@ export async function createGitHubDeploymentPlan(params: {
     .where("github_deploy_targets.github_ref", "=", params.claims.ref)
     .where("github_deploy_targets.target_prefix", "=", targetPrefix)
     .where("github_deploy_targets.enabled", "=", true)
+    // A repository connected through the App is deployed by Naru, not by a
+    // workflow, which would otherwise publish over it on the same push.
+    .where("github_deploy_targets.installation_id", "is", null)
     .executeTakeFirst();
 
   if (!target) {
@@ -704,6 +707,62 @@ async function publishDeployment(deployment: LoadedDeployment) {
   }
 }
 
+const sitePath = (prefix: string) => (prefix ? `/${prefix}/` : "/");
+
+/**
+ * Refuses a deploy target whose site folder is, or is inside or around, the
+ * folder of another enabled target of the account: each deletes only what it
+ * published, but where both publish the same path the last one wins, and two
+ * kinds of deploy on one folder would take turns replacing each other's
+ * files. Saving the same target again (`same`) is not a conflict.
+ */
+export async function assertNoOverlappingTarget(params: {
+  userId: string;
+  targetPrefix: string;
+  same: (target: {
+    github_repository: string;
+    github_repository_id: string | null;
+    github_ref: string;
+    target_prefix: string;
+    installation_id: string | null;
+  }) => boolean;
+}) {
+  const targets = await db
+    .selectFrom("github_deploy_targets")
+    .select([
+      "github_repository",
+      "github_repository_id",
+      "github_ref",
+      "target_prefix",
+      "installation_id",
+    ])
+    .where("user_id", "=", params.userId)
+    .where("enabled", "=", true)
+    .execute();
+  const prefix = params.targetPrefix;
+  for (const target of targets) {
+    const row = {
+      ...target,
+      installation_id:
+        target.installation_id === null ? null : String(target.installation_id),
+    };
+    if (params.same(row)) continue;
+    const other = target.target_prefix;
+    if (
+      other === prefix ||
+      other === "" ||
+      prefix === "" ||
+      other.startsWith(`${prefix}/`) ||
+      prefix.startsWith(`${other}/`)
+    )
+      throw new Error(
+        other === prefix && row.installation_id === null
+          ? `${target.github_repository}이(가) 이미 GitHub Actions로 사이트 폴더 ${sitePath(other)}에 배포하고 있습니다. 고급에서 먼저 지우세요.`
+          : `${target.github_repository}이(가) 이미 사이트 폴더 ${sitePath(other)}에 배포하고 있어, ${sitePath(prefix)}와 겹칩니다. 겹치지 않는 폴더를 고르거나 그 배포를 먼저 지우세요.`,
+      );
+  }
+}
+
 export async function upsertGitHubDeployTarget(params: {
   user: UserRow;
   githubRepository: string;
@@ -724,6 +783,15 @@ export async function upsertGitHubDeployTarget(params: {
     );
   }
   const targetPrefix = normalizeTargetPrefix(params.targetPrefix);
+  await assertNoOverlappingTarget({
+    userId: params.user.id,
+    targetPrefix,
+    same: (target) =>
+      target.installation_id === null &&
+      target.github_repository === githubRepository &&
+      target.github_ref === githubRef &&
+      target.target_prefix === targetPrefix,
+  });
 
   await db
     .insertInto("github_deploy_targets")
@@ -747,6 +815,11 @@ export async function upsertGitHubDeployTarget(params: {
         .doUpdateSet({
           delete_removed_files: true,
           enabled: true,
+          // A disconnected App target of the same repository becomes a
+          // workflow's: Naru no longer deploys it on push.
+          installation_id: null,
+          pending_sha: null,
+          last_error: null,
           updated_at: new Date(),
         }),
     )

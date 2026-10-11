@@ -42,6 +42,20 @@ member publish a private repository they cannot read. A Naru account may
 connect, and keep deploying, only repositories its GitHub user could read when
 it last linked; linking again refreshes the list.
 
+## One deploy per site folder
+
+A connected repository and a workflow deploy are both rows of
+`github_deploy_targets`, and a workflow's plan matches only rows without an
+installation, so a workflow never publishes over an App target. Beyond that,
+no new target of either kind may use a site folder that is the same as, or
+inside or around, the folder of another enabled target of the account
+(`assertNoOverlappingTarget`): each deletes only what it published, but where
+two publish the same path the last one wins, and an App deploy and a build
+would take turns replacing each other's files. Saving the same target again is
+not a conflict, and targets in separate folders (say the repository at
+`/blog/` and a build at `/app/`) are fine. Targets that overlapped before this
+rule are left as they are.
+
 ## Deploying
 
 Connecting a repository (`POST /api/account/github-app`) creates or updates a

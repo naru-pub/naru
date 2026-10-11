@@ -9,7 +9,9 @@ GitHub CI deploys are available to supporter accounts.
 A site whose files are served as they are in the repository does not need a
 workflow: connecting the repository on `/deploys` deploys it on every push
 through Naru's GitHub App ([github-app.md](github-app.md)). Workflows are for
-sites that need a build step.
+sites that need a build step. A site folder is deployed by one target only: a workflow
+target cannot share or nest with another target's folder, an App target's
+included.
 
 Recommended official Action repository name: `naru-pub/deploy-action`.
 If Naru expects to publish multiple official actions, `naru-pub/actions` with
