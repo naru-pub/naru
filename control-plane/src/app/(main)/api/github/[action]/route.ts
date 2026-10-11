@@ -25,13 +25,17 @@ export const dynamic = "force-dynamic";
 // - callback: where GitHub returns either way, with the person's OAuth code;
 // - webhook: GitHub's deliveries, signed with the App's webhook secret.
 const STATE_COOKIE = "naru_github_state";
+// Behind the gateway, request.url is the container's own address: redirects
+// within Naru are made on its public one.
+const naru = (request: Request, path: string) =>
+  new URL(path, process.env.BASE_URL ?? request.url);
 const home = (request: Request, query: string) =>
-  NextResponse.redirect(new URL(`/deploys?github=${query}`, request.url));
+  NextResponse.redirect(naru(request, `/deploys?github=${query}`));
 
 async function start(request: Request, action: "install" | "connect") {
   const config = githubAppConfig();
   const { user } = await validateRequest();
-  if (!user) return NextResponse.redirect(new URL("/login", request.url));
+  if (!user) return NextResponse.redirect(naru(request, "/login"));
   if (!config || !(await userHasFeature(user.id, "github_deploys")))
     return home(request, "unavailable");
   const state = randomBytes(24).toString("base64url");
@@ -63,7 +67,7 @@ async function callback(request: Request) {
   const expected = jar.get(STATE_COOKIE)?.value;
   jar.delete({ name: STATE_COOKIE, path: "/api/github" });
   const { user } = await validateRequest();
-  if (!user) return NextResponse.redirect(new URL("/login", request.url));
+  if (!user) return NextResponse.redirect(naru(request, "/login"));
   const code = url.searchParams.get("code");
   if (!code || !expected || url.searchParams.get("state") !== expected)
     return home(request, "expired");
