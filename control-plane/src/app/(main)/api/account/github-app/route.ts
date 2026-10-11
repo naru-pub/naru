@@ -8,9 +8,9 @@ import {
   connectRepository,
   DeployError,
   linkedRepositories,
-  deployInBackground,
   redeploy,
 } from "@/lib/deploy/githubAppDeploy";
+import { deployInBackground } from "@/lib/deploy/deployInBackground";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

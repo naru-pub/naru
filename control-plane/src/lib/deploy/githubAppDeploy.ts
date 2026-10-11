@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { after } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { sql } from "kysely";
 import { db } from "@/lib/database";
@@ -410,21 +409,4 @@ export async function runPendingDeploys({ limit = 20 } = {}) {
       .execute();
   }
   return deployed;
-}
-
-/**
- * Starts the runner once the response is sent; outside a request (a test, a
- * script) it just starts. The minute job finishes whatever this does not.
- */
-export function deployInBackground() {
-  const run = () =>
-    runPendingDeploys().then(
-      () => undefined,
-      (error) => console.error("[github-app] deploys failed", error),
-    );
-  try {
-    after(run);
-  } catch {
-    void run();
-  }
 }

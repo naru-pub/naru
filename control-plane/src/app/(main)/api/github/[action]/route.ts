@@ -12,9 +12,9 @@ import {
 import {
   forgetInstallation,
   linkInstallations,
-  deployInBackground,
   queuePush,
 } from "@/lib/deploy/githubAppDeploy";
+import { deployInBackground } from "@/lib/deploy/deployInBackground";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
