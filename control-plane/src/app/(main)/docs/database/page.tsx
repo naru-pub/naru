@@ -287,6 +287,41 @@ export default function DatabaseDocs() {
                 올릴 수 있고, 쓰기와 업로드에는 회원마다 횟수 제한이 있습니다.
                 관리자는 회원의 문서도 고치고 지울 수 있습니다.
               </p>
+              <h3 className="font-bold">서버 함수</h3>
+              <p>
+                상점의 가격과 재고, 지갑의 잔액, 뽑기와 주사위처럼 회원의
+                브라우저가 정하면 안 되는 규칙은 나루에서 돌아가는 함수로
+                만듭니다. 사이트 파일의{" "}
+                <code>_naru/functions/&lt;모듈&gt;.js</code>에서 함수를
+                내보내고, 회원이 <code>member.call(&quot;모듈/함수&quot;, 인자)</code>로
+                부릅니다. 함수는 한 트랜잭션 안에서 사이트 소유자의 권한으로
+                모든 컬렉션을 읽고 쓰며, 오류가 나거나 한도를 넘으면 아무것도
+                바꾸지 않습니다. 함수가 지키는 컬렉션(지갑 같은)은 쓰기를
+                ‘관리자만’으로 두고 회원은 읽게만 하세요.
+              </p>
+              <Code language="javascript">{`// _naru/functions/shop.js
+export function buy(ctx, { item }) {
+  const listing = ctx.get("shop", item);
+  const wallet = ctx.get("wallets", ctx.member.id);
+  if (!listing || listing.data.stock < 1) return { ok: false, reason: "품절" };
+  if (wallet.data.balance < listing.data.price) return { ok: false, reason: "잔액 부족" };
+  ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - listing.data.price });
+  ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
+  ctx.add("inventory", { owner: ctx.member.id, item });
+  return { ok: true };
+}
+
+// 페이지에서
+const result = await member.call("shop/buy", { item: "sword" });`}</Code>
+              <p>
+                <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
+                <code>random()</code>과 <code>get</code>·<code>list</code>·
+                <code>add</code>·<code>set</code>·<code>delete</code>가
+                있습니다. 함수는 동기 자바스크립트이고 네트워크와 타이머는 쓸 수
+                없으며, 한 번 부를 때 데이터베이스 작업 100번(쓰기 25번), 수십
+                밀리초, 메모리 32MiB까지 씁니다. 함수 파일은 사이트의 다른
+                파일처럼 누구나 볼 수 있으니 비밀값을 넣지 마세요.
+              </p>
             </Section>
 
             <Section id="write" title="05 · 글 수정과 충돌 처리">

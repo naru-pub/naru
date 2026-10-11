@@ -22,7 +22,7 @@ import { GET as dataRoute } from "@/app/(main)/api/data/v1/[site]/[[...path]]/ro
 import { POST as authRoute } from "@/app/(main)/api/data-auth/v1/[action]/route";
 import { configureEdge } from "@/lib/edge/sync";
 import { executeData } from "../service";
-import { eraseSiteData } from "@/lib/edge/client";
+import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
 import { mediaStorage } from "../media";
 import {
   approveAuthorization,
@@ -721,6 +721,29 @@ integration("SDK and data API contract", () => {
           .where("object_key", "like", `%${file.url.split("/").pop()}`)
           .executeTakeFirstOrThrow(),
       ).toEqual({ member_id: member.id });
+      // A site function, called over HTTP (and through the edge Worker,
+      // which sends calls on to the control plane).
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "counter",
+        source: `export function bump(ctx, { by }) {
+          const now = ctx.get("crud", "count");
+          const n = (now ? now.data : 0) + by;
+          ctx.set("crud", "count", n);
+          return { n, version: "mine", member: ctx.member.id };
+        }`,
+      });
+      expect(await member.call("counter/bump", { by: 2 })).toEqual({
+        n: 2,
+        version: "mine",
+        member: member.id,
+      });
+      expect(await member.call("counter/bump", { by: 3 })).toMatchObject({
+        n: 5,
+      });
+      await expect(member.call("counter/missing")).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
       // Every page of the site shares the sign-in.
       expect(
         (await createNaru110({ site: "alice" }).members.session())?.id,

@@ -167,6 +167,36 @@ export async function executeBatch(command: DataCommand) {
   );
 }
 
+/**
+ * A member calls one of the site's functions: `path` is the module and the
+ * function, `_naru/functions/<module>.js` and its export.
+ */
+export async function executeCall(command: DataCommand) {
+  if (command.method !== "POST")
+    throw new DataError(405, "Method not allowed.");
+  if (command.path.length !== 2) throw new DataError(404, "Not found.");
+  const [file, fn] = command.path.map(name);
+  const { owner, memberId } = await resolveSiteAccess(command);
+  if (memberId === undefined)
+    throw new DataError(
+      command.bearer || command.adminUserId ? 403 : 401,
+      "Site functions are called by signed-in members.",
+    );
+  return callSiteObject<{ result: unknown }>(
+    command.site,
+    "call",
+    {
+      ownerId: String(owner.id),
+      site: command.site,
+      member: memberId,
+      file,
+      name: fn,
+      args: command.body?.args ?? null,
+    },
+    command.signal,
+  );
+}
+
 /** A site's collections by name, or all of them, ordered by name. */
 export async function listCollections(
   owner: SiteOwner,

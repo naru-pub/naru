@@ -56,7 +56,8 @@ export function protocolError(
 
 /**
  * A collection name. Names starting with an underscore are reserved for the
- * protocol's own paths (`_batch`, `_files`), which a collection would shadow.
+ * protocol's own paths (`_batch`, `_files`, `_call`), which a collection would
+ * shadow.
  */
 export function unreservedName(value: unknown): string {
   const result = name(value);

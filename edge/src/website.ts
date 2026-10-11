@@ -18,7 +18,8 @@ import type { Outcome, Served } from "./types";
 // A visitor's request is answered at the edge from the site's object instead
 // of crossing to the control plane and back. Whatever needs the control plane
 // is sent on to it unchanged: requests with an owner token (sign-in scope and
-// renewal live in PostgreSQL), media (`_files`), batches (owner only), and
+// renewal live in PostgreSQL), media (`_files`), batches (owner only),
+// function calls (`_call`, members only), and
 // any request the object will not answer, such as a site whose paid status it
 // has not had confirmed.
 //
@@ -65,6 +66,7 @@ export async function website(
     !path.length ||
     path[0] === "_files" ||
     path[0] === "_batch" ||
+    path[0] === "_call" ||
     !METHODS.includes(request.method)
   )
     return passThrough(request, env);

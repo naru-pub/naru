@@ -1,5 +1,5 @@
 import { validateRequest } from "@/lib/auth";
-import { executeBatch, executeData } from "./service";
+import { executeBatch, executeCall, executeData } from "./service";
 import {
   DataError,
   jsonBody,
@@ -99,8 +99,13 @@ export async function dataRequest(
         ? await executeMedia(command)
         : path[0] === "_batch"
           ? await executeBatch({ ...command, path: [] })
-          : await executeData(command);
-    return Response.json(admin ? result : publicResult(result), {
+          : path[0] === "_call" && !admin
+            ? await executeCall({ ...command, path: path.slice(1) })
+            : await executeData(command);
+    // A function's result is its own JSON, not documents to translate; the
+    // documents its ctx returned were translated as they were read.
+    const calling = path[0] === "_call" && !admin;
+    return Response.json(admin || calling ? result : publicResult(result), {
       headers: {
         ...headers,
         ...(bearer?.expiresAt
@@ -117,7 +122,7 @@ export async function dataRequest(
           ? { "Cache-Control": PUBLIC_READ_CACHE }
           : {}),
       },
-      status: request.method === "POST" ? 201 : 200,
+      status: request.method === "POST" && !calling ? 201 : 200,
     });
   } catch (error) {
     let status = 500;

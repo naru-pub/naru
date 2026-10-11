@@ -11,7 +11,7 @@ import {
 import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
-import { executeBatch, executeData } from "../service";
+import { executeBatch, executeCall, executeData } from "../service";
 import { digest } from "../owner-auth";
 import {
   approveMemberSignIn,
@@ -617,6 +617,174 @@ integration("site members", () => {
       await expect(
         media(bob.accessToken, "POST", [], file),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe("functions", () => {
+    const SHOP = `
+      // A shop, as an AvocadoEdition site would have it.
+      export function buy(ctx, { item }) {
+        const listing = ctx.get("shop", item);
+        if (!listing) return { ok: false, reason: "no_such_item" };
+        if (listing.data.stock < 1) return { ok: false, reason: "sold_out" };
+        const wallet = ctx.get("wallets", ctx.member.id);
+        const balance = wallet ? wallet.data.balance : 0;
+        if (balance < listing.data.price) return { ok: false, reason: "not_enough_money" };
+        ctx.set("wallets", ctx.member.id, { balance: balance - listing.data.price });
+        ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
+        const owned = ctx.add("inventory", { owner: ctx.member.id, item });
+        return { ok: true, balance: balance - listing.data.price, owned };
+      }
+      export function buyThenFail(ctx, args) {
+        buy(ctx, args);
+        throw new Error("changed my mind");
+      }
+      export function mine(ctx) {
+        return ctx.list("inventory", { filter: { owner: ctx.member.id } }).documents.map((d) => d.data.item);
+      }
+      export function gacha(ctx) {
+        return Math.floor(ctx.random() * 100);
+      }
+      export function versioned() {
+        return { version: "not a revision", list: [1, { version: 2 }] };
+      }
+      export function spin() { for (;;) {} }
+      export function flood(ctx) { for (let i = 0; ; i++) ctx.set("wallets", "x" + i, i); }
+      export function trespass(ctx) { ctx.get("nowhere", "x"); }
+    `;
+    const call = (token: string | undefined, name: string, args?: unknown) =>
+      executeCall({
+        site: "alice",
+        path: name.split("/"),
+        method: "POST",
+        body: { args },
+        ...(token ? { bearer: { token, origin } } : {}),
+      }) as Promise<{ result: any }>;
+    beforeAll(async () => {
+      for (const [name, read, write] of [
+        ["shop", "member", "admin"],
+        ["wallets", "member", "admin"],
+        ["inventory", "member", "admin"],
+      ])
+        await owned("POST", [], { name, read, write });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "shop",
+        source: SHOP,
+      });
+      await owned("PUT", ["shop", "sword"], {
+        data: { price: 100, stock: 1 },
+      });
+    });
+
+    test("a member buys: the rules hold, and what the function wrote is the owner's", async () => {
+      const bob = await signIn("bob");
+      await owned("PUT", ["wallets", bob.memberId], { data: { balance: 150 } });
+      const bought = await call(bob.accessToken, "shop/buy", { item: "sword" });
+      expect(bought.result).toMatchObject({
+        ok: true,
+        balance: 50,
+        owned: {
+          data: { owner: bob.memberId, item: "sword" },
+          createdBy: null,
+          revision: "r1.1",
+        },
+      });
+      expect(
+        (await call(bob.accessToken, "shop/buy", { item: "sword" })).result,
+      ).toEqual({ ok: false, reason: "sold_out" });
+      expect((await call(bob.accessToken, "shop/mine")).result).toEqual([
+        "sword",
+      ]);
+      // The member cannot change what the function wrote for them.
+      await expect(
+        as(bob.accessToken, "PUT", ["wallets", bob.memberId], {
+          data: { balance: 1e9 },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      const roll = (await call(bob.accessToken, "shop/gacha")).result;
+      expect(roll).toBeGreaterThanOrEqual(0);
+      expect(roll).toBeLessThan(100);
+      // A function's result is its own JSON, left as it is.
+      expect((await call(bob.accessToken, "shop/versioned")).result).toEqual({
+        version: "not a revision",
+        list: [1, { version: 2 }],
+      });
+    });
+
+    test("a function that fails changes nothing", async () => {
+      const carol = await signIn("carol");
+      await owned("PUT", ["shop", "shield"], { data: { price: 10, stock: 5 } });
+      await owned("PUT", ["wallets", carol.memberId], {
+        data: { balance: 100 },
+      });
+      for (const [name, message] of [
+        ["shop/buyThenFail", "Function failed: Error: changed my mind"],
+        ["shop/spin", "Function failed: it ran too long."],
+        ["shop/flood", "Function failed: more than 25 writes."],
+      ])
+        await expect(
+          call(carol.accessToken, name, { item: "shield" }),
+        ).rejects.toMatchObject({ status: 400, message });
+      await expect(
+        call(carol.accessToken, "shop/trespass"),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(await owned("GET", ["wallets", carol.memberId])).toMatchObject({
+        document: { data: { balance: 100 } },
+      });
+      expect(await owned("GET", ["shop", "shield"])).toMatchObject({
+        document: { data: { stock: 5 } },
+      });
+      expect(
+        await owned("GET", ["wallets", "x0"]).catch((e) => e),
+      ).toMatchObject({ status: 404 });
+    });
+
+    test("only members call, and only what the site has", async () => {
+      const bob = await signIn("bob");
+      await expect(call(undefined, "shop/buy")).rejects.toMatchObject({
+        status: 401,
+      });
+      await expect(
+        executeCall({
+          site: "alice",
+          path: ["shop", "buy"],
+          method: "POST",
+          adminUserId: owner,
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(call(bob.accessToken, "shop/missing")).rejects.toMatchObject(
+        {
+          status: 404,
+          message: "No function missing.",
+        },
+      );
+      await expect(call(bob.accessToken, "nothing/buy")).rejects.toMatchObject({
+        status: 404,
+        message: "This site has no _naru/functions/nothing.js.",
+      });
+      await expect(call(bob.accessToken, "shop/../buy")).rejects.toMatchObject({
+        status: 404,
+      });
+      await expect(call(bob.accessToken, "sh.op/buy")).rejects.toMatchObject({
+        status: 400,
+      });
+    });
+
+    test("a member's calls are limited per minute", async () => {
+      const dave = await signIn("dave");
+      const results = [];
+      for (let n = 0; n < 31; n += 1)
+        results.push(
+          await call(dave.accessToken, "shop/gacha").then(
+            () => 200,
+            (error) => error.status,
+          ),
+        );
+      if (results.at(-1) !== 200) {
+        expect(results.slice(0, 30)).toEqual(Array(30).fill(200));
+        expect(results.at(-1)).toBe(429);
+      }
     });
   });
 });

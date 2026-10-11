@@ -184,6 +184,18 @@ export interface Member {
    */
   readonly id: string;
   collection<T = Json>(name: string): MemberCollection<T>;
+  /**
+   * Calls one of the site's functions, `"<module>/<function>"`: an export of
+   * the site's `_naru/functions/<module>.js`. It runs on Naru, in one
+   * transaction, with the site owner's access to its collections, and
+   * resolves with what it returned. A function that throws, or exceeds its
+   * limits, changes nothing.
+   */
+  call<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
   media: {
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
@@ -423,6 +435,7 @@ function segment(value: unknown): string {
 
 // Once this module writes a collection, its subsequent reads bypass caches.
 // No cache lifetime is baked into deployed SDKs; the server may change it.
+// A function call may have written any collection, so it is recorded as "*".
 const written = new Set<string>();
 
 // Accept only JSON values, without silently dropping or converting input.
@@ -478,7 +491,10 @@ async function request<Result>(
   { method = "GET", body, token, signal, touches, renew }: Transport,
 ): Promise<Result> {
   const fresh =
-    token || method !== "GET" || touches.some((path) => written.has(path));
+    token ||
+    method !== "GET" ||
+    written.has("*") ||
+    touches.some((path) => written.has(path));
   // An explicit transport flag makes cache bypass enforceable by the server.
   if (fresh && method === "GET") {
     const target = new URL(url);
@@ -1060,6 +1076,22 @@ function member(
     id,
     collection: <T = Json>(name: string): MemberCollection<T> =>
       documents<T>(root, name, send),
+    async call<R = Json>(
+      name: string,
+      args: Json = null,
+      { signal }: { signal?: AbortSignal } = {},
+    ): Promise<R> {
+      const parts = typeof name === "string" ? name.split("/") : [];
+      if (parts.length !== 2)
+        throw new TypeError('call() names "<module>/<function>".');
+      parts.forEach(segment);
+      jsonValue(args, undefined, "args");
+      const { result } = await send<{ result: R }>(
+        `${root}/_call/${parts[0]}/${parts[1]}`,
+        { method: "POST", body: { args }, signal, touches: ["*"] },
+      );
+      return result;
+    },
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
   });

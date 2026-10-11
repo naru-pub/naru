@@ -44,10 +44,11 @@ const OPERATIONS = [
   "createCollections",
   "erase",
   "configure",
+  "call",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
-const TEST_OPERATIONS = ["export", "import"] as const;
+const TEST_OPERATIONS = ["export", "import", "putFunctions"] as const;
 type Operation = (typeof OPERATIONS)[number] | (typeof TEST_OPERATIONS)[number];
 
 // Site names.
@@ -76,6 +77,10 @@ function dispatch(
       return stub.erase();
     case "configure":
       return stub.configure(input);
+    case "call":
+      return stub.call(input);
+    case "putFunctions":
+      return stub.putFunctions(input);
   }
 }
 

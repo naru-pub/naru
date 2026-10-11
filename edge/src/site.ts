@@ -12,6 +12,9 @@ import {
   writePermission,
 } from "../../control-plane/src/lib/site-data/validation";
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
+import { publicResult } from "../../control-plane/src/lib/site-data/protocol";
+import { runFunction, type Host } from "./functions";
+import { quickjs } from "./quickjs";
 import {
   documentOf,
   listQuery,
@@ -73,6 +76,17 @@ const rateLimited = () =>
   new DataError(429, "Public write rate limit reached. Try again next minute.");
 /** Writes a member may make a minute, across the site's collections. */
 const MEMBER_WRITES_PER_MINUTE = 30;
+/** Function calls a member may make a minute. */
+const MEMBER_CALLS_PER_MINUTE = 30;
+/**
+ * Where a site's functions are, in its files: one module per app, so a site
+ * holding several keeps them apart. Only files here are run on the server;
+ * the site's other scripts stay browser code.
+ */
+const functionsPath = (file: string) => `_naru/functions/${file}.js`;
+const MAX_FUNCTIONS_BYTES = 256 * 1024;
+/** How long a loaded functions file is used before asking storage again. */
+const FUNCTIONS_FRESH_MS = 10_000;
 
 function deletable(expected: number | undefined) {
   if (expected === 0)
@@ -222,19 +236,25 @@ export class SiteData extends DurableObject<Env> {
     }
   }
 
-  /** A member's writes a minute, in fixed-minute buckets like visitors'. */
-  private limitMemberWrite(member: string) {
+  /**
+   * A member's writes, or function calls, a minute, in fixed-minute buckets
+   * like visitors'.
+   */
+  private limitMember(member: string, kind: "write" | "call" = "write") {
     const window = Math.floor(Date.now() / 60000) * 60000;
     this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
-    const key = `member:${member}`;
+    const key = kind === "write" ? `member:${member}` : `call:${member}`;
     const count = Number(
       this.rows("SELECT count FROM rate_limits WHERE key = ?", key)[0]?.count ??
         0,
     );
-    if (count >= MEMBER_WRITES_PER_MINUTE)
+    if (
+      count >=
+      (kind === "write" ? MEMBER_WRITES_PER_MINUTE : MEMBER_CALLS_PER_MINUTE)
+    )
       throw new DataError(
         429,
-        "Member write rate limit reached. Try again next minute.",
+        `Member ${kind} rate limit reached. Try again next minute.`,
       );
     this.sql.exec(
       "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
@@ -528,7 +548,7 @@ export class SiteData extends DurableObject<Env> {
       );
     // Every write past this point is reachable without an owner credential
     // when the collection allows it, so all of them are counted.
-    if (member && !admin) this.limitMemberWrite(member);
+    if (member && !admin) this.limitMember(member);
     else if (!admin) this.limitPublicWrite(input.clientIp);
     const expected = expectedVersion(input.ifVersion);
     const current = (id: string) =>
@@ -577,21 +597,211 @@ export class SiteData extends DurableObject<Env> {
           : `Members can create a document with a chosen ID only under their own member ID in collection ${collection.name}. Use add() for others.`,
       );
     const { encoded, size } = encode(body.data);
+    this.checkQuota(existing?.size_bytes, size);
+    // Never overwrite on create, even in the event of an ID collision.
+    if (creating && existing)
+      throw new DataError(409, "Document ID collision. Retry creation.");
+    this.upsert(collection.id, id, encoded, size, admin ? null : member);
+    return { result: { id, ...this.written(collection.id, id) }, publicRead };
+  }
+
+  /** Refuses a write of `size` bytes, over a document of `existing`, past the site's quota. */
+  private checkQuota(existing: number | undefined, size: number) {
     const usage = this.usage();
     if (
-      usage.bytes - Number(existing?.size_bytes ?? 0) + size > MAX_SITE_BYTES ||
-      (!existing && usage.documents >= MAX_DOCUMENTS)
+      usage.bytes - Number(existing ?? 0) + size > MAX_SITE_BYTES ||
+      (existing === undefined && usage.documents >= MAX_DOCUMENTS)
     )
       throw new DataError(
         409,
         "Site database quota exceeded.",
         "QUOTA_EXCEEDED",
       );
-    // Never overwrite on create, even in the event of an ID collision.
-    if (creating && existing)
-      throw new DataError(409, "Document ID collision. Retry creation.");
-    this.upsert(collection.id, id, encoded, size, admin ? null : member);
-    return { result: { id, ...this.written(collection.id, id) }, publicRead };
+  }
+
+  /** Each functions module of the site, kept a few seconds between checks. */
+  private functions = new Map<
+    string,
+    { source: string | null; etag: string | null; checkedAt: number }
+  >();
+  private async functionsSource(site: string, file: string) {
+    const now = Date.now();
+    const known = this.functions.get(file);
+    if (known && now - known.checkedAt < FUNCTIONS_FRESH_MS)
+      return known.source;
+    const key = `${site}/${functionsPath(file)}`;
+    const head = await this.env.SITE_FILES.head(key);
+    if (head && head.size > MAX_FUNCTIONS_BYTES)
+      throw new DataError(
+        400,
+        `${functionsPath(file)} is larger than 256 KiB.`,
+      );
+    if (!head || head.etag !== known?.etag) {
+      const object = head ? await this.env.SITE_FILES.get(key) : null;
+      this.functions.set(file, {
+        source: object ? await object.text() : null,
+        etag: object?.etag ?? null,
+        checkedAt: now,
+      });
+    } else known!.checkedAt = now;
+    return this.functions.get(file)!.source;
+  }
+
+  /**
+   * What a function's ctx may do: anything the owner may with the site's
+   * documents, in this call's transaction. What it writes has no member
+   * author, so a member cannot then change it directly.
+   */
+  private functionHost(): Host {
+    const collection = (value: unknown) => {
+      const found = this.rows(
+        "SELECT id, name, read_access, write_access FROM collections WHERE name = ?",
+        name(value),
+      )[0];
+      if (!found)
+        throw new DataError(404, `Collection ${String(value)} does not exist.`);
+      return found as unknown as Collection;
+    };
+    const document = (collectionId: string, id: string) =>
+      this.rows(
+        "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
+        collectionId,
+        id,
+      )[0];
+    const write = (target: Collection, id: string, data: unknown) => {
+      const existing = this.rows(
+        "SELECT size_bytes FROM documents WHERE collection_id = ? AND id = ?",
+        target.id,
+        id,
+      )[0] as { size_bytes: number } | undefined;
+      const { encoded, size } = encode(data);
+      this.checkQuota(existing?.size_bytes, size);
+      this.upsert(target.id, id, encoded, size, null);
+      return publicResult(documentOf(document(target.id, id)));
+    };
+    return (operation, args) => {
+      switch (operation) {
+        case "random":
+          return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+        case "get": {
+          const row = document(collection(args[0]).id, name(args[1]));
+          return row ? publicResult(documentOf(row)) : null;
+        }
+        case "list": {
+          const options = (args[1] ?? {}) as Record<string, unknown>;
+          const target = collection(args[0]);
+          return publicResult(
+            this.list(target, {
+              filter: options.filter,
+              sort:
+                options.sort === undefined
+                  ? undefined
+                  : JSON.stringify(options.sort),
+              size: options.size as number | undefined,
+              after: (options.after ?? undefined) as string | undefined,
+              includeTotal: false,
+            }),
+          );
+        }
+        case "add":
+          return write(collection(args[0]), randomUUID(), args[1]);
+        case "set":
+          if (args.length < 3)
+            throw new DataError(400, "set(collection, id, data) needs data.");
+          return write(collection(args[0]), name(args[1]), args[2]);
+        case "delete":
+          this.sql.exec(
+            "DELETE FROM documents WHERE collection_id = ? AND id = ?",
+            collection(args[0]).id,
+            name(args[1]),
+          );
+          return null;
+        default:
+          throw new DataError(400, `ctx has no ${operation}.`);
+      }
+    };
+  }
+
+  /**
+   * A member calls one of the site's functions. Counted against the month and
+   * the member's calls first, on their own: a call that then fails was still
+   * made. The function runs in one transaction; a failure rolls it back.
+   */
+  async call(input: {
+    ownerId: string;
+    site: string;
+    member: string;
+    /** The module, _naru/functions/<file>.js. */
+    file: string;
+    name: string;
+    args: unknown;
+  }): Promise<Outcome<{ result: unknown }>> {
+    const admitted = this.run(() => {
+      this.claim(input.ownerId);
+      name(input.file);
+      name(input.name);
+      this.spend();
+      this.limitMember(input.member, "call");
+    });
+    if (!admitted.ok) return admitted;
+    let source;
+    try {
+      source = await this.functionsSource(input.site, input.file);
+    } catch (error) {
+      if (error instanceof DataError)
+        return this.run(() => {
+          throw error;
+        });
+      throw error;
+    }
+    if (source === null)
+      return this.run(() => {
+        throw new DataError(
+          404,
+          `This site has no ${functionsPath(input.file)}.`,
+        );
+      });
+    const engine = await quickjs();
+    try {
+      return this.run(() => ({
+        result: runFunction(
+          engine,
+          {
+            source,
+            name: input.name,
+            args: input.args,
+            member: input.member,
+            now: Date.now(),
+          },
+          this.functionHost(),
+        ),
+      }));
+    } catch (error) {
+      // Not the function's doing: the engine itself failed. Its instance is
+      // dropped with this call.
+      console.error("A site function's engine failed", error);
+      return {
+        ok: false,
+        error: {
+          status: 503,
+          message: "Function failed.",
+          code: "UNAVAILABLE",
+        },
+      };
+    }
+  }
+
+  /** Tests only: replaces a functions module, or removes it (null). */
+  async putFunctions(input: {
+    site: string;
+    file: string;
+    source: string | null;
+  }) {
+    const key = `${input.site}/${functionsPath(name(input.file))}`;
+    if (input.source === null) await this.env.SITE_FILES.delete(key);
+    else await this.env.SITE_FILES.put(key, input.source);
+    this.functions.delete(input.file);
+    return { ok: true, value: null };
   }
 
   private list(collection: Collection, input: ListInput) {

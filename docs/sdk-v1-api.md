@@ -196,6 +196,53 @@ a member whose plan has ended gets `ACCESS_DENIED`.
 An owner's and a member's sign-in can share a page: each only finishes the
 sign-in this tab started for it.
 
+## Site functions (1.1.0)
+
+Rules a member's browser must not decide, such as prices, balances, stock or
+dice, run on Naru as site functions. Put a module in the site's files at
+`_naru/functions/<module>.js` and export plain functions from it:
+
+```js
+// _naru/functions/shop.js
+export function buy(ctx, { item }) {
+  const listing = ctx.get("shop", item);
+  if (!listing || listing.data.stock < 1) return { ok: false };
+  const wallet = ctx.get("wallets", ctx.member.id);
+  if (wallet.data.balance < listing.data.price) return { ok: false };
+  ctx.set("wallets", ctx.member.id, {
+    balance: wallet.data.balance - listing.data.price,
+  });
+  ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
+  ctx.add("inventory", { owner: ctx.member.id, item });
+  return { ok: true };
+}
+```
+
+```js
+const result = await member.call("shop/buy", { item: "sword" });
+```
+
+A member calls `"<module>/<function>"` with JSON arguments, and receives the
+JSON the function returned. Only signed-in members can call. A function runs
+on the server in one transaction, with the site owner's access to every
+collection, so keep the collections it guards (`wallets` above) admin-written
+and let members read them. If it throws or exceeds a limit, none of its writes
+happen, and the call fails with `INVALID_REQUEST` (`NOT_FOUND` for a missing
+module or function). Return the outcomes a page should show, such as
+`{ ok: false }`, rather than throwing them.
+
+`ctx` has `member.id`, `now` (milliseconds), `random()` (also behind
+`Math.random`), and `get(collection, id)`, `list(collection, { filter, sort,
+size, after })`, `add(collection, data)`, `set(collection, id, data)` and
+`delete(collection, id)`, which return what the SDK would. Documents a
+function writes have no member author, so members cannot change them
+directly. Functions are synchronous JavaScript with no network, timers or
+modules of their own. A call may make 100 database operations, 25 of them
+writes, run for tens of milliseconds and use 32 MiB of memory; its result is at
+most 64 KiB. A member may make 30 calls a minute, and calls count against the
+site's monthly budget. The module is served like any other file of the site,
+so do not put secrets in it.
+
 ## Documents, pages, and queries
 
 `get`, `add`, and `set` return a document envelope; `list` returns a page of

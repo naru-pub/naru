@@ -66,6 +66,7 @@ function segment(value) {
 
 // Once this module writes a collection, its subsequent reads bypass caches.
 // No cache lifetime is baked into deployed SDKs; the server may change it.
+// A function call may have written any collection, so it is recorded as "*".
 const written = new Set();
 
 // Accept only JSON values, without silently dropping or converting input.
@@ -114,7 +115,10 @@ async function request(
   { method = "GET", body, token, signal, touches, renew },
 ) {
   const fresh =
-    token || method !== "GET" || touches.some((path) => written.has(path));
+    token ||
+    method !== "GET" ||
+    written.has("*") ||
+    touches.some((path) => written.has(path));
   // An explicit transport flag makes cache bypass enforceable by the server.
   if (fresh && method === "GET") {
     const target = new URL(url);
@@ -600,6 +604,20 @@ function member(context, token, expiresAt, id) {
   return Object.freeze({
     id,
     collection: (name) => documents(root, name, send),
+    async call(name, args = null, { signal } = {}) {
+      const parts = typeof name === "string" ? name.split("/") : [];
+      if (parts.length !== 2)
+        throw new TypeError('call() names "<module>/<function>".');
+      parts.forEach(segment);
+      jsonValue(args, undefined, "args");
+      const { result } = await send(`${root}/_call/${parts[0]}/${parts[1]}`, {
+        method: "POST",
+        body: { args },
+        signal,
+        touches: ["*"],
+      });
+      return result;
+    },
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
   });

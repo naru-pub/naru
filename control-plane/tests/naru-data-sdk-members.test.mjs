@@ -335,3 +335,70 @@ test("blocked storage signs a member in on this page only", async () => {
     await member.signOut();
   });
 });
+
+test("call posts its arguments to the function, and resolves with its result", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const naru = createNaru();
+    const member = await naru.members.session();
+    respond(() => Response.json({ result: { ok: true, version: 3 } }));
+    assert.deepEqual(await member.call("shop/buy", { item: "sword", qty: 1 }), {
+      ok: true,
+      version: 3,
+    });
+    assert.equal(calls[0].method, "POST");
+    assert.equal(
+      calls[0].url.href,
+      "https://naru.pub/api/data/v1/alice/_call/shop/buy",
+    );
+    assert.deepEqual(JSON.parse(calls[0].body), {
+      args: { item: "sword", qty: 1 },
+    });
+    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
+    respond(() => Response.json({ result: null }));
+    assert.equal(await member.call("shop/restock"), null);
+    assert.deepEqual(JSON.parse(calls[1].body), { args: null });
+    // A function may have written anything: this page's reads skip caches.
+    respond(emptyPage);
+    await naru.collection("anything").list();
+    assert.equal(calls[2].url.searchParams.get("fresh"), "1");
+    assert.equal(calls[2].cache, "no-store");
+  });
+});
+
+test("call refuses a malformed name or non-JSON arguments before sending", async () => {
+  await browser(async ({ calls, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    for (const name of ["buy", "a/b/c", "../buy", "shop/", "/buy", 7])
+      await assert.rejects(member.call(name), TypeError);
+    await assert.rejects(
+      member.call("shop/buy", { at: new Date() }),
+      TypeError,
+    );
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("a function's failure is a NaruError with the server's code", async () => {
+  await browser(async ({ respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() =>
+      Response.json(
+        {
+          error: {
+            code: "INVALID_REQUEST",
+            message: "Function failed: Error: sold out",
+          },
+        },
+        { status: 400 },
+      ),
+    );
+    await assert.rejects(member.call("shop/buy"), {
+      name: "NaruError",
+      code: "INVALID_REQUEST",
+      message: "Function failed: Error: sold out",
+    });
+  });
+});

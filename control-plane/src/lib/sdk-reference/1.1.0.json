@@ -349,6 +349,39 @@
           "throws": []
         },
         {
+          "name": "call",
+          "optional": false,
+          "signature": "call<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Calls one of the site's functions, "
+                },
+                {
+                  "type": "code",
+                  "value": "\"<module>/<function>\""
+                },
+                {
+                  "type": "text",
+                  "value": ": an export of the site's "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/functions/<module>.js"
+                },
+                {
+                  "type": "text",
+                  "value": ". It runs on Naru, in one transaction, with the site owner's access to its collections, and resolves with what it returned. A function that throws, or exceeds its limits, changes nothing."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
           "name": "collection",
           "optional": false,
           "signature": "collection<T = Json>(name: string): MemberCollection<T>",

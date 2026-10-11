@@ -150,6 +150,12 @@ Member requests always go through the control plane, which resolves the token an
 
 Members upload into the site's media through the owner's routes (`POST /_files`, then `PUT /_files/:id`). `site_data_files.member_id` records who uploaded what; a member finalizes only their own uploads and may authorize 30 files an hour. The site's quota applies as it does to the owner.
 
+### Site functions
+
+`member.call("<module>/<function>", args)` (SDK 1.1.0) is `POST /api/data/v1/:site/_call/:module/:function` with `{ args }`, answered with `{ result }` (200, the function's own JSON, not translated like documents). It needs a member token; the edge sends it on to the control plane, which resolves the member and calls the site's object (`call`). The object counts the call against the month and the member's 30 calls a minute, loads `<site>/_naru/functions/<module>.js` from the site bucket (checking its ETag at most every ten seconds, 256 KiB at most), and runs the export in QuickJS-ng compiled to WebAssembly (`edge/src/functions.ts`), synchronously inside one SQLite transaction. A throw, a limit, or a failed `ctx` operation (even one the function caught) rolls the whole call back.
+
+Each call gets a fresh QuickJS instance whose WebAssembly memory is capped at 32 MiB, a 128 KiB interpreter stack, a CPU budget of 2,000 interrupt checks (about 70 ms on Cloudflare; Workers stop the clock while code runs, so time cannot be measured), at most 100 `ctx` operations and 25 writes, and a 64 KiB result. These are the measurements of `spikes/quickjs-functions/`. `ctx` acts as the owner: it reads and writes any collection, checks the site's quota, and records no author. Failures are 400 `INVALID_REQUEST` ("Function failed: …"), 404 for a missing module or export, and the operation's own code for a failed `ctx` operation (`QUOTA_EXCEEDED`, for instance).
+
 Objects created before members had no author column: each adds `documents.created_by` as it starts, and documents written before then have no author.
 
 ## SDK releases
@@ -166,7 +172,7 @@ The wire protocol is versioned separately, in the path: `/api/data/v1/:site` and
 
 The 1.0.0 SDK is deliberately small. Its runtime exports are only `createNaru` and `NaruError`. A client has `collection()` and `auth`; a collection has `get()`, `list()`, `count()`, `pages()` and `add()` (plus `set()` and `delete()` for an admin); an admin client has `collection()`, `batch()`, `media.upload()` and `signOut()`. Media listing and deletion remain in the control panel. Features are added when a site needs them, not in advance.
 
-1.1.0 adds what a community site needed: `naru.members` with `session()` and `signIn()`; a member client with `id`, `collection()` (whose collections add `set()` and `delete()`), `media.upload()` and `signOut()`; and `createdBy` on every document. It also finishes only the sign-in whose `state` this tab sent, leaving any other `?code=` on the page alone, and returns to the address a sign-in left from.
+1.1.0 adds what a community site needed: `naru.members` with `session()` and `signIn()`; a member client with `id`, `collection()` (whose collections add `set()` and `delete()`), `call()` for site functions, `media.upload()` and `signOut()`; and `createdBy` on every document. It also finishes only the sign-in whose `state` this tab sent, leaving any other `?code=` on the page alone, and returns to the address a sign-in left from.
 
 During 1.0.0 development the SDK dropped `createDatabase`, per-collection `parse`/`map`, `schemas`, `update` merge patches and `unset`, `count()`, `all()`, string `orderBy` with `direction`, `fresh`, `timeoutMs`, `createRequestChannel`, session events, application schema parsing and response validation, upload progress, image tuning options, and the file `get`, `update` and `usage` methods. The server removed the obsolete public endpoints and options. The SDK still validates JSON values and uses private transport parameters for cache bypass.
 
@@ -178,7 +184,7 @@ compatibility surface: change it only compatibly. Query parameters and response
 fields use the SDK's own names, so the SDK passes them through; the server turns
 private numeric versions into opaque revisions.
 
-Website root: `/api/data/v1/:site`. Control-plane root: `/api/account/database` (site derived from the session; ships with the server and is not versioned). Collection management is restricted to the control-plane root. Collection names starting with `_` are reserved for the protocol's own paths (`_batch`, `_files`) and cannot be created.
+Website root: `/api/data/v1/:site`. Control-plane root: `/api/account/database` (site derived from the session; ships with the server and is not versioned). Collection management is restricted to the control-plane root. Collection names starting with `_` are reserved for the protocol's own paths (`_batch`, `_files`, `_call`) and cannot be created.
 
 | Method | Path relative to root                    | Body / result                                                     |
 | ------ | ---------------------------------------- | ----------------------------------------------------------------- |
@@ -192,6 +198,7 @@ Website root: `/api/data/v1/:site`. Control-plane root: `/api/account/database` 
 | PUT    | `/:collection/:id?ifRevision=&ifAbsent=` | `{ data }` replaces document; returns the write result            |
 | DELETE | `/:collection/:id?ifRevision=`           | `{ success: true }`                                               |
 | POST   | `/_batch`                                | Admin-only atomic set/delete `{ operations }`                     |
+| POST   | `/_call/:module/:function`               | Member-only site function call `{ args }`; returns `{ result }`   |
 | GET    | `/_files?size=50&after=`                 | Control panel only: `{ files, nextCursor }`, newest first         |
 | GET    | `/_files?usage=1`                        | Control panel only: `{ usage }`                                   |
 | POST   | `/_files`                                | Admin-only upload authorization                                   |
