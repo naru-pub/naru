@@ -138,7 +138,7 @@ const COLORS = [
 
 const TYPE_SCALE = [
   {
-    sample: "당신의 공간이 되는",
+    sample: "당신의 공간을",
     spec: "Display · 44–68 / 700 / -0.035em",
     className: "text-5xl font-bold tracking-[-0.035em]",
   },

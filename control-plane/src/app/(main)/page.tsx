@@ -188,12 +188,12 @@ export default async function Home() {
             무료 개인 홈페이지 호스팅
           </p>
           <h1 className="text-[clamp(2.5rem,5.2vw,4.25rem)] font-bold leading-[1.12] tracking-[-0.035em]">
-            당신의 공간이 되는,
+            당신의 공간을,
             <br />
             <span className="highlight">
               나루
             </span>
-            .
+            에 띄워 보세요
           </h1>
           <p className="max-w-xl text-lg leading-relaxed text-muted-foreground">
             HTML 파일 몇 개면 충분해요. 브라우저에서 바로 고치고, 다른 사람이
