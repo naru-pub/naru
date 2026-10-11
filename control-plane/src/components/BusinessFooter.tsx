@@ -36,7 +36,7 @@ export function BusinessFooter() {
             <span className="text-xl font-bold">나루</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            당신의 공간을, 나루에 띄워 보세요.
+            당신의 공간을 나루에 띄워 보세요.
           </p>
           <nav
             aria-label="바닥글"

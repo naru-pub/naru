@@ -42,7 +42,7 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "나루",
-  description: "당신의 공간을, 나루에 띄워 보세요.",
+  description: "당신의 공간을 나루에 띄워 보세요.",
 };
 
 export default async function RootLayout({

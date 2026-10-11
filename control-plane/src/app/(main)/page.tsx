@@ -188,7 +188,7 @@ export default async function Home() {
             무료 개인 홈페이지 호스팅
           </p>
           <h1 className="text-[clamp(2.5rem,5.2vw,4.25rem)] font-bold leading-[1.12] tracking-[-0.035em]">
-            당신의 공간을,
+            당신의 공간을
             <br />
             <span className="highlight">
               나루
