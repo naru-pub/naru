@@ -225,6 +225,16 @@ function documents(root, name, send) {
       const result = await send(`${path}/${segment(id)}`, { signal, touches });
       return result.document;
     },
+    async getMany(ids, { signal } = {}) {
+      if (!Array.isArray(ids) || ids.length > 100)
+        throw new TypeError("getMany needs at most 100 IDs.");
+      for (const id of ids) segment(id);
+      const result = await send(
+        `${path}?ids=${encodeURIComponent(JSON.stringify(ids))}`,
+        { signal, touches },
+      );
+      return result.documents;
+    },
     list,
     // A total rides along with a one-document page; the list request is all
     // the server needs to support.
@@ -278,6 +288,7 @@ function publicDocuments(root, name) {
   const collection = documents(root, name, request);
   return Object.freeze({
     get: collection.get,
+    getMany: collection.getMany,
     list: collection.list,
     count: collection.count,
     pages: collection.pages,

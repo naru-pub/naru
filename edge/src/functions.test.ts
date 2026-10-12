@@ -97,6 +97,100 @@ describe("calling", () => {
     expect(documents.get("wallets/m-1")).toEqual({ balance: 50 });
   });
 
+  test("ctx.fail preserves the protocol code and message without invoking storage", () => {
+    expect(() =>
+      run(
+        `export function reject(ctx) { ctx.fail("CONFLICT", "다른 곳에서 수정되었습니다."); }`,
+        "reject",
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        status: 409,
+        code: "CONFLICT",
+        message: "다른 곳에서 수정되었습니다.",
+      }),
+    );
+    expect(operations).toEqual([]);
+  });
+
+  test("a caught failure is terminal, including in read-only functions", () => {
+    expect(() =>
+      runFunction(
+        module,
+        {
+          source: `export function reject(ctx) {
+        try { ctx.fail("ACCESS_DENIED", "No access."); } catch {}
+        try { ctx.set("wallets", "x", 1); } catch {}
+        return { ok: true };
+      }`,
+          name: "reject",
+          args: null,
+          member: "m-1",
+          now: 0,
+          readonly: true,
+        },
+        host,
+      ),
+    ).toThrow(expect.objectContaining({ status: 403, code: "ACCESS_DENIED" }));
+    expect(operations).toEqual([]);
+  });
+
+  test.each([
+    ["custom_reason", "No."],
+    ["CONFLICT", ""],
+    ["CONFLICT", "   "],
+    ["CONFLICT", 1],
+    ["CONFLICT", "x".repeat(1001)],
+  ])(
+    "invalid ctx.fail arguments abort even when caught (%s)",
+    (code, message) => {
+      expect(() =>
+        run(
+          `export function reject(ctx, args) {
+      try { ctx.fail(...args); } catch {}
+      return true;
+    }`,
+          "reject",
+          [code, message],
+        ),
+      ).toThrow(expect.objectContaining({ status: 400 }));
+    },
+  );
+
+  test("bulk read size and cumulative operations remain bounded", () => {
+    const invoke = (source: string) =>
+      runFunction(
+        module,
+        {
+          source,
+          name: "read",
+          args: null,
+          member: "m",
+          now: 0,
+          readonly: true,
+        },
+        () => [],
+      );
+    expect(
+      invoke(
+        `export function read(ctx) { return ctx.getMany("profiles", []); }`,
+      ),
+    ).toEqual([]);
+    expect(() =>
+      invoke(
+        `export function read(ctx) { ctx.getMany("profiles", Array(100).fill("a")); ctx.count("profiles"); }`,
+      ),
+    ).toThrow(/more than 100 database operations/);
+    expect(() =>
+      invoke(
+        `export function read(ctx) { ctx.getMany("profiles", Array(101).fill("a")); }`,
+      ),
+    ).toThrow(/at most 100 IDs/);
+    expect(() =>
+      invoke(`export function read(ctx) { ctx.getMany("profiles", "a"); }`),
+    ).toThrow(/at most 100 IDs/);
+  });
+
   test("undefined is null, and only own exports are functions", () => {
     expect(run("export function nothing() {}", "nothing")).toBeNull();
     for (const name of ["missing", "toString", "constructor", "__proto__"])

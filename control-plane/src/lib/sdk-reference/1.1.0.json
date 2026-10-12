@@ -657,6 +657,23 @@
           "throws": []
         },
         {
+          "name": "getMany",
+          "optional": false,
+          "signature": "getMany(\n  ids: readonly string[],\n  options?: { signal?: AbortSignal },\n): Promise<(Document<T> | null)[]>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "One bounded read, in input order; missing or unreadable rows are null."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
           "name": "list",
           "optional": false,
           "signature": "list(options?: ListOptions): Promise<Page<T>>",

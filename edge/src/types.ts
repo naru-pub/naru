@@ -32,6 +32,7 @@ export type ExecuteInput = {
   sort?: string;
   after?: string;
   includeTotal?: boolean;
+  ids?: string;
   ifVersion?: unknown;
   clientIp?: string;
 };
@@ -88,8 +89,7 @@ export type Outcome<T> =
 export type ServeInput = Omit<ExecuteInput, "ownerId" | "access">;
 /** Answered, or to be sent on to the control plane. */
 export type Served =
-  | { pass: true }
-  | { pass?: undefined; result: unknown; publicRead: boolean };
+  { pass: true } | { pass?: undefined; result: unknown; publicRead: boolean };
 
 /**
  * What the control plane keeps current in the object of each site with the

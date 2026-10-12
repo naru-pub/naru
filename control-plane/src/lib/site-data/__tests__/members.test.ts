@@ -752,6 +752,20 @@ integration("site members", () => {
       size: 2,
       includeTotal: true,
     });
+    const bulk = await as(bob.accessToken, "GET", ["rule_posts"], undefined, {
+      ids: JSON.stringify(["c", "a", "missing", "c"]),
+    });
+    expect(bulk.documents.map((row: any) => row?.id ?? null)).toEqual([
+      "c",
+      null,
+      null,
+      "c",
+    ]);
+    await expect(
+      as(bob.accessToken, "GET", ["rule_posts"], undefined, {
+        ids: JSON.stringify(Array(101).fill("c")),
+      }),
+    ).rejects.toMatchObject({ status: 400 });
     expect(page.totalCount).toBe(3);
     expect(page.documents.map((d: any) => d.id)).toEqual(["b", "c"]);
     expect(
@@ -1041,6 +1055,14 @@ integration("site members", () => {
         buy(ctx, args);
         throw new Error("changed my mind");
       }
+      export function buyThenReject(ctx, args) {
+        buy(ctx, args);
+        try { ctx.fail("CONFLICT", "Purchase cancelled."); } catch {}
+        return { ok: true };
+      }
+      export function lookup(ctx) {
+        return { rows: ctx.getMany("shop", ["shield", "missing", "shield"]), empty: ctx.getMany("shop", []), count: ctx.count("shop", { filter: { price: 10 } }), zero: ctx.count("shop", { filter: { price: 999 } }) };
+      }
       export function mine(ctx) {
         return ctx.list("inventory", { filter: { owner: ctx.member.id } }).documents.map((d) => d.data.item);
       }
@@ -1137,6 +1159,14 @@ integration("site members", () => {
           call(carol.accessToken, name, { item: "shield" }),
         ).rejects.toMatchObject({ status: 400, message });
       await expect(
+        call(carol.accessToken, "shop/buyThenReject", { item: "shield" }),
+      ).rejects.toMatchObject({
+        status: 409,
+        code: "CONFLICT",
+        message: "Purchase cancelled.",
+      });
+      expect((await call(carol.accessToken, "shop/mine")).result).toEqual([]);
+      await expect(
         call(carol.accessToken, "shop/trespass"),
       ).rejects.toMatchObject({ status: 404 });
       expect(await owned("GET", ["wallets", carol.memberId])).toMatchObject({
@@ -1148,6 +1178,20 @@ integration("site members", () => {
       expect(
         await owned("GET", ["wallets", "x0"]).catch((e) => e),
       ).toMatchObject({ status: 404 });
+    });
+
+    test("bulk reads preserve order and missing positions; counts use filters in read-only functions", async () => {
+      const bob = await signIn("bob");
+      await owned("PUT", ["shop", "shield"], { data: { price: 10, stock: 5 } });
+      const { result } = await call(bob.accessToken, "shop/lookup", null, true);
+      expect(result).toMatchObject({
+        rows: [{ id: "shield", data: { price: 10 } }, null, { id: "shield" }],
+        empty: [],
+        count: 1,
+        zero: 0,
+      });
+      expect(result.rows[0]).toEqual(result.rows[2]);
+      expect(result.rows[0].revision).toMatch(/^r1\./);
     });
 
     test("only members call, and only what the site has", async () => {

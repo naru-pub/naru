@@ -228,8 +228,29 @@ on the server in one transaction, with the site owner's access to every
 collection, so keep the collections it guards (`wallets` above) admin-written
 and let members read them. If it throws or exceeds a limit, none of its writes
 happen, and the call fails with `INVALID_REQUEST` (`NOT_FOUND` for a missing
-module or function). Return the outcomes a page should show, such as
-`{ ok: false }`, rather than throwing them.
+module or function). Use `ctx.fail(code, message)` for expected failures that
+must abort the transaction. The browser receives a `NaruError` with that code
+and message from either `member.call()` or `member.read()`:
+
+```js
+// Inside a site function, before or after writes:
+if (listing.data.stock < 1) ctx.fail("CONFLICT", "품절입니다.");
+// In the browser:
+try {
+  await member.call("shop/buy", { item: "sword" });
+} catch (error) {
+  if (error instanceof NaruError && error.code === "CONFLICT") {
+    status.textContent = error.message;
+  } else throw error;
+}
+```
+
+`ctx.fail` accepts the existing v1 error codes and a nonblank message of at most
+1,000 characters. It always aborts the call, even if the function catches the
+exception and returns success. Writes made before the failure roll back.
+Returning `{ ok: false }` remains valid, but is an ordinary successful return
+and does **not** roll back writes. Messages reach the browser, so do not include
+secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 
 `ctx` has `member.id`, `now` (milliseconds), `random()` (also behind
 `Math.random`), and `get(collection, id)`, `list(collection, { filter, sort,
@@ -242,6 +263,22 @@ writes, run for tens of milliseconds and use 32 MiB of memory; its result is at
 most 64 KiB. A member may make 30 calls a minute, and calls count against the
 site's monthly budget. The module is served like any other file of the site,
 so do not put secrets in it.
+
+Functions also have two bounded read helpers:
+
+```js
+const authors = ctx.getMany("profiles", ["alice", "bob", "missing"]);
+// Results match input order, including duplicates; missing documents are null.
+const comments = ctx.count("comments", { filter: { post: "post-id" } });
+```
+
+`getMany` accepts at most 100 document IDs and executes one document query.
+Each input ID counts toward the function's 100-operation budget (an empty array
+costs one operation). `count` costs one operation and executes only a SQL count,
+without loading document bodies. Both work in read-only functions and see writes
+made earlier in the same transaction. Like other function reads, they use owner
+access; the function must enforce the caller's permissions before returning data.
+These helpers add no browser routes or protocol error codes.
 
 ## Documents, pages, and queries
 
@@ -427,3 +464,19 @@ maintenance in [database.md](database.md#internal-http-protocol); applications
 should use the SDK. Revision and cursor encoding, admin-token storage, upload
 choreography, database technology, cache implementation, and HTTP status values
 are private and may change.
+
+### Batch document reads (1.1.0)
+
+`collection.getMany(ids, { signal })` is available on public, member and owner
+handles. It accepts up to 100 IDs, returns documents in input order (including
+duplicates), and uses one HTTP request and one document query. Missing documents
+and documents hidden by collection rules return `null`. Collection-level denial
+still rejects the request. Ordinary membership, scope, budget and cache rules
+apply. Store the results by ID to replace repeated nickname or item lookups.
+
+```js
+const profiles = await member.collection("profiles").getMany(authorIds);
+```
+
+The optional `ids` query on the existing collection GET is additive; requests
+without it and the frozen SDK 1.0.0 remain unchanged.

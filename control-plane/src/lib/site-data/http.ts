@@ -47,8 +47,7 @@ export async function dataRequest(
     const authorization = request.headers.get("authorization");
     // The service fills in expiresAt only when it renews the token behind it.
     let bearer:
-      | { token: string; origin: string | null; expiresAt?: number }
-      | undefined;
+      { token: string; origin: string | null; expiresAt?: number } | undefined;
     if (!admin && authorization !== null) {
       // An owner token, or a member's, which starts with "m.".
       const match = /^Bearer ((?:m\.)?[A-Za-z0-9_-]{43})$/i.exec(authorization);
@@ -78,6 +77,7 @@ export async function dataRequest(
       clientIp: forwardedIp && isIP(forwardedIp) ? forwardedIp : undefined,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
+      ids: url.searchParams.get("ids") ?? undefined,
       includeTotal: url.searchParams.get("includeTotal") === "1",
       cacheability,
       // The control panel's quota readout; the media service ignores it for

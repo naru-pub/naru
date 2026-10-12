@@ -177,6 +177,7 @@ test("a member writes with their token, and an ended sign-in is forgotten", asyn
       "count",
       "delete",
       "get",
+      "getMany",
       "list",
       "pages",
       "set",
@@ -404,6 +405,29 @@ test("a function's failure is a NaruError with the server's code", async () => {
   });
 });
 
+test("typed function failures preserve messages on call and read without retrying", async () => {
+  await browser(async ({ respond, local, calls }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() =>
+      Response.json(
+        { error: { code: "CONFLICT", message: "품절입니다." } },
+        { status: 409 },
+      ),
+    );
+    for (const method of ["call", "read"]) {
+      const before = calls.length;
+      await assert.rejects(member[method]("shop/buy"), (error) => {
+        assert.ok(error instanceof NaruError);
+        assert.equal(error.code, "CONFLICT");
+        assert.equal(error.message, "품절입니다.");
+        return true;
+      });
+      assert.equal(calls.length, before + 1);
+    }
+  });
+});
+
 test("membership checks live state without forgetting a pending member's session", async () => {
   const local = new Map();
   saveMember(local);
@@ -519,5 +543,30 @@ test("media deletion can require the platform uploader to match an app cleanup r
       uploadedBy: null,
     });
     assert.equal(calls[1].url.searchParams.get("uploadedBy"), "owner");
+  });
+});
+
+test("getMany sends one bounded read and preserves missing slots", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() =>
+      Response.json({ documents: [{ id: "a" }, null, { id: "a" }] }),
+    );
+    assert.deepEqual(
+      await member.collection("profiles").getMany(["a", "missing", "a"]),
+      [{ id: "a" }, null, { id: "a" }],
+    );
+    assert.deepEqual(JSON.parse(calls[0].url.searchParams.get("ids")), [
+      "a",
+      "missing",
+      "a",
+    ]);
+    assert.equal(calls.length, 1);
+    await assert.rejects(
+      member.collection("profiles").getMany(Array(101).fill("a")),
+      TypeError,
+    );
+    assert.equal(calls.length, 1);
   });
 });

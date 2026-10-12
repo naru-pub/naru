@@ -3,7 +3,11 @@ import type {
   QuickJSHandle,
   QuickJSWASMModule,
 } from "quickjs-emscripten-core";
-import { DataError } from "../../control-plane/src/lib/site-data/validation";
+import {
+  DataError,
+  ERROR_CODES,
+  type ErrorCode,
+} from "../../control-plane/src/lib/site-data/validation";
 
 // Site functions: the owner's modules in _naru/functions/, run by QuickJS (compiled to
 // WebAssembly) inside the site's object, synchronously, so a call's reads and
@@ -61,7 +65,10 @@ globalThis.__run = (name, member, now, args) => {
     member: member === null ? null : Object.freeze({ id: member }),
     now,
     random: () => __call("random"),
+    fail: (code, message) => __call("fail", code, message),
     get: (collection, id) => __call("get", collection, id),
+    getMany: (collection, ids) => __call("getMany", collection, ids),
+    count: (collection, options) => __call("count", collection, options ?? {}),
     list: (collection, options) => __call("list", collection, options ?? {}),
     add: (collection, data) => __call("add", collection, data),
     set: (collection, id, data) => __call("set", collection, id, data),
@@ -101,13 +108,45 @@ export function runFunction(
     const name = context.getString(operation);
     try {
       if (hostError) throw hostError;
-      if (++operations > MAX_OPERATIONS)
+      if (name === "fail") {
+        const [code, message] = JSON.parse(context.getString(args));
+        if (
+          !ERROR_CODES.includes(code) ||
+          typeof message !== "string" ||
+          !message.trim() ||
+          message.length > 1000
+        )
+          throw failed(
+            "ctx.fail requires a v1 error code and a message of 1–1000 characters.",
+          );
+        const status: Record<ErrorCode, number> = {
+          CONFLICT: 409,
+          QUOTA_EXCEEDED: 409,
+          AUTH_REQUIRED: 401,
+          ACCESS_DENIED: 403,
+          NOT_FOUND: 404,
+          RATE_LIMITED: 429,
+          INVALID_REQUEST: 400,
+          UNAVAILABLE: 503,
+        };
+        throw new DataError(status[code as ErrorCode], message, code);
+      }
+      const values = JSON.parse(context.getString(args));
+      if (
+        name === "getMany" &&
+        (!Array.isArray(values[1]) || values[1].length > MAX_OPERATIONS)
+      )
+        throw failed(
+          `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
+        );
+      operations += name === "getMany" ? Math.max(1, values[1].length) : 1;
+      if (operations > MAX_OPERATIONS)
         throw failed(`more than ${MAX_OPERATIONS} database operations.`);
       if (invocation.readonly && WRITES.has(name))
         throw failed("read-only functions cannot write.");
       if (WRITES.has(name) && ++writes > MAX_WRITES)
         throw failed(`more than ${MAX_WRITES} writes.`);
-      const out = host(name, JSON.parse(context.getString(args)));
+      const out = host(name, values);
       return out === undefined
         ? context.undefined
         : context.newString(JSON.stringify(out));

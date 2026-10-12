@@ -34,6 +34,7 @@ export type DataCommand = {
   sort?: string;
   filter?: unknown;
   includeTotal?: boolean;
+  ids?: string;
   ifVersion?: number;
   /**
    * Filled in by the service when the response it produced is one any stranger
@@ -135,6 +136,7 @@ export async function executeData(command: DataCommand) {
       sort: command.sort,
       after: command.after,
       includeTotal: command.includeTotal,
+      ids: command.ids,
       ifVersion: command.ifVersion,
       clientIp: command.clientIp,
     },

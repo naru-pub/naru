@@ -107,6 +107,11 @@ export type WriteCondition = { revision: Revision } | { absent: true };
 
 export interface PublicCollection<T = Json> {
   get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>;
+  /** One bounded read, in input order; missing or unreadable rows are null. */
+  getMany(
+    ids: readonly string[],
+    options?: { signal?: AbortSignal },
+  ): Promise<(Document<T> | null)[]>;
   list(options?: ListOptions): Promise<Page<T>>;
   /** How many documents match `filter`, or the whole collection. */
   count(options?: { filter?: Filter; signal?: AbortSignal }): Promise<number>;

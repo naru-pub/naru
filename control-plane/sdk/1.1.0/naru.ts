@@ -12,12 +12,7 @@
 // spelled out where they are used.
 
 export type Json =
-  | null
-  | boolean
-  | number
-  | string
-  | Json[]
-  | { [key: string]: Json };
+  null | boolean | number | string | Json[] | { [key: string]: Json };
 
 /** @internal */
 declare const revisionBrand: unique symbol;
@@ -129,6 +124,11 @@ export type WriteCondition = { revision: Revision } | { absent: true };
 
 export interface PublicCollection<T = Json> {
   get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>;
+  /** One bounded read, in input order; missing or unreadable rows are null. */
+  getMany(
+    ids: readonly string[],
+    options?: { signal?: AbortSignal },
+  ): Promise<(Document<T> | null)[]>;
   list(options?: ListOptions): Promise<Page<T>>;
   /** How many documents match `filter`, or the whole collection. */
   count(options?: { filter?: Filter; signal?: AbortSignal }): Promise<number>;
@@ -657,6 +657,19 @@ function documents<T>(
       );
       return result.document;
     },
+    async getMany(
+      ids: readonly string[],
+      { signal }: { signal?: AbortSignal } = {},
+    ) {
+      if (!Array.isArray(ids) || ids.length > 100)
+        throw new TypeError("getMany needs at most 100 IDs.");
+      for (const id of ids) segment(id);
+      const result = await send<{ documents: (Document<T> | null)[] }>(
+        `${path}?ids=${encodeURIComponent(JSON.stringify(ids))}`,
+        { signal, touches },
+      );
+      return result.documents;
+    },
     list,
     // A total rides along with a one-document page; the list request is all
     // the server needs to support.
@@ -726,6 +739,7 @@ function publicDocuments<T>(root: string, name: string): PublicCollection<T> {
   const collection = documents<T>(root, name, request);
   return Object.freeze({
     get: collection.get,
+    getMany: collection.getMany,
     list: collection.list,
     count: collection.count,
     pages: collection.pages,
@@ -771,9 +785,7 @@ async function shrink(file: Source): Promise<Source> {
       // Spelled out: which overload a union of canvases resolves to depends on
       // what else a program compiles, and the application's does differ.
       const context = canvas.getContext("2d") as
-        | OffscreenCanvasRenderingContext2D
-        | CanvasRenderingContext2D
-        | null;
+        OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
       if (!context) return file;
       // JPEG has no transparency; paint white rather than let it go black.
       if (type === "image/jpeg") {

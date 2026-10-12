@@ -601,6 +601,33 @@ export class SiteData extends DurableObject<Env> {
         );
       // Identical rows for any stranger, so a shared cache may hold them.
       publicRead = level === "world" && access.anonymous && !ruleFile;
+      if (input.ids !== undefined) {
+        if (path.length !== 1)
+          throw new DataError(400, "Batch reads target a collection.");
+        let values: unknown;
+        try {
+          values = JSON.parse(input.ids);
+        } catch {
+          throw new DataError(400, "Invalid IDs.");
+        }
+        if (!Array.isArray(values) || values.length > 100)
+          throw new DataError(400, "Batch reads need at most 100 IDs.");
+        const ids = values.map(name);
+        const unique = [...new Set(ids)];
+        const rows = unique.length
+          ? this.rows(
+              `SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id IN (${unique.map(() => "?").join(",")})${authorization ? ` AND (${authorization.sql})` : ""}`,
+              collection.id,
+              ...unique,
+              ...(authorization?.bindings ?? []),
+            )
+          : [];
+        const found = new Map(rows.map((row) => [row.id, documentOf(row)]));
+        return {
+          result: { documents: ids.map((id) => found.get(id) ?? null) },
+          publicRead,
+        };
+      }
       if (path.length === 2) {
         const row = this.rows(
           "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
@@ -630,14 +657,12 @@ export class SiteData extends DurableObject<Env> {
     // Replacing and deleting there is the owner's, and in `member` also the
     // author's, checked against the document below.
     const authorOnly = !admin && !ruleFile && level === "member" && !creating;
-    if (
-      !(
-        admin ||
-        level === "world" ||
-        (level === "create" && creating) ||
-        (level === "member" && member)
-      )
-    )
+    if (!(
+      admin ||
+      level === "world" ||
+      (level === "create" && creating) ||
+      (level === "member" && member)
+    ))
       throw new DataError(
         403,
         level === "member"
@@ -811,14 +836,20 @@ export class SiteData extends DurableObject<Env> {
    * author, so a member cannot then change it directly.
    */
   private functionHost(): Host {
+    const cachedCollections = new Map<string, Collection>();
     const collection = (value: unknown) => {
+      const key = name(value);
+      const cached = cachedCollections.get(key);
+      if (cached) return cached;
       const found = this.rows(
         "SELECT id, name, read_access, write_access FROM collections WHERE name = ?",
         name(value),
       )[0];
       if (!found)
         throw new DataError(404, `Collection ${String(value)} does not exist.`);
-      return found as unknown as Collection;
+      const target = found as unknown as Collection;
+      cachedCollections.set(key, target);
+      return target;
     };
     const document = (collectionId: string, id: string) =>
       this.rows(
@@ -844,6 +875,33 @@ export class SiteData extends DurableObject<Env> {
         case "get": {
           const row = document(collection(args[0]).id, name(args[1]));
           return row ? publicResult(documentOf(row)) : null;
+        }
+        case "getMany": {
+          const target = collection(args[0]);
+          if (!Array.isArray(args[1]) || args[1].length > 100)
+            throw new DataError(400, "getMany needs at most 100 IDs.");
+          const ids = args[1].map(name);
+          if (!ids.length) return [];
+          const unique = [...new Set(ids)];
+          const rows = this.rows(
+            `SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id IN (${unique.map(() => "?").join(",")})`,
+            target.id,
+            ...unique,
+          );
+          const found = new Map(
+            rows.map((row) => [row.id, publicResult(documentOf(row))]),
+          );
+          return ids.map((id) => found.get(id) ?? null);
+        }
+        case "count": {
+          const options = (args[1] ?? {}) as Record<string, unknown>;
+          const query = listQuery(collection(args[0]).id, {
+            filter: options.filter,
+            includeTotal: true,
+          });
+          return Number(
+            this.rows(query.count!.sql, ...query.count!.bindings)[0].matched,
+          );
         }
         case "list": {
           const options = (args[1] ?? {}) as Record<string, unknown>;
