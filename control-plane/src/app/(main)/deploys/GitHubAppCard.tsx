@@ -73,6 +73,7 @@ export default function GitHubAppCard({
   const [sourceDir, setSourceDir] = useState("/");
   const [targetPrefix, setTargetPrefix] = useState("/");
   const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     const shown = notice && NOTICES[notice];
@@ -154,8 +155,15 @@ export default function GitHubAppCard({
     if (done) {
       toast.success(`${chosen.fullName}을(를) 연결했습니다. 곧 배포됩니다.`);
       setChoice("");
+      setAdding(false);
     }
   }
+
+  // Once a repository is connected, connecting another is tucked away; with
+  // one deploying to the site root there is no folder left that wouldn't
+  // overlap it, so there is nothing to offer.
+  const rootTaken = targets.some((target) => target.targetPrefix === "");
+  const showConnect = targets.length === 0 || (adding && !rootTaken);
 
   if (!configured) return null;
 
@@ -173,92 +181,6 @@ export default function GitHubAppCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Route handlers that send the browser on to GitHub: a full page
-              navigation, which a client-side Link would not make. */}
-          <Button asChild>
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a href="/api/github/install">GitHub 연결하기</a>
-          </Button>
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-          <a className="text-sm underline" href="/api/github/connect">
-            이미 설치했다면 GitHub 계정 다시 확인
-          </a>
-        </div>
-
-        {installations === null ? (
-          <p className="text-muted-foreground text-sm">
-            연결한 저장소를 읽는 중…
-          </p>
-        ) : repositories.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            연결할 수 있는 저장소가 없습니다. ‘GitHub 연결하기’에서 나루가 읽을
-            저장소를 고르세요.
-          </p>
-        ) : (
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={connect}>
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="github-app-repository">저장소</Label>
-              <Select
-                id="github-app-repository"
-                className="w-full"
-                value={choice}
-                onChange={(event) => {
-                  setChoice(event.target.value);
-                  setBranch("");
-                }}
-                required
-              >
-                <option value="">고르세요</option>
-                {repositories.map((repository) => (
-                  <option
-                    key={`${repository.installationId}:${repository.id}`}
-                    value={`${repository.installationId}:${repository.id}`}
-                  >
-                    {repository.fullName}
-                    {repository.private ? " (비공개)" : ""}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="github-app-branch">브랜치</Label>
-              <Input
-                id="github-app-branch"
-                value={branch}
-                placeholder={chosen?.defaultBranch ?? "main"}
-                onChange={(event) => setBranch(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="github-app-source">저장소에서 배포할 폴더</Label>
-              <Input
-                id="github-app-source"
-                value={sourceDir}
-                onChange={(event) => setSourceDir(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="github-app-prefix">사이트에 놓을 폴더</Label>
-              <Input
-                id="github-app-prefix"
-                value={targetPrefix}
-                onChange={(event) => setTargetPrefix(event.target.value)}
-              />
-              <p className="text-muted-foreground text-xs">
-                이 폴더에 있던 파일 가운데 저장소에 없는 것은 배포할 때
-                지워집니다. 점(.)으로 시작하는 파일과 폴더, node_modules, 나루가
-                올릴 수 없는 형식의 파일은 배포하지 않습니다.
-              </p>
-            </div>
-            <div className="sm:col-span-2">
-              <Button type="submit" disabled={!chosen || busy === "new"}>
-                연결하고 배포하기
-              </Button>
-            </div>
-          </form>
-        )}
-
         {targets.length > 0 && (
           <ul className="divide-y rounded-md border">
             {targets.map((target) => (
@@ -333,6 +255,104 @@ export default function GitHubAppCard({
               </li>
             ))}
           </ul>
+        )}
+
+        {showConnect ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Route handlers that send the browser on to GitHub: a full page
+                navigation, which a client-side Link would not make. */}
+              <Button asChild>
+                {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+                <a href="/api/github/install">GitHub 연결하기</a>
+              </Button>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a className="text-sm underline" href="/api/github/connect">
+                이미 설치했다면 GitHub 계정 다시 확인
+              </a>
+            </div>
+
+            {installations === null ? (
+              <p className="text-muted-foreground text-sm">
+                연결한 저장소를 읽는 중…
+              </p>
+            ) : repositories.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                연결할 수 있는 저장소가 없습니다. ‘GitHub 연결하기’에서 나루가
+                읽을 저장소를 고르세요.
+              </p>
+            ) : (
+              <form className="grid gap-3 sm:grid-cols-2" onSubmit={connect}>
+                <div className="space-y-1 sm:col-span-2">
+                  <Label htmlFor="github-app-repository">저장소</Label>
+                  <Select
+                    id="github-app-repository"
+                    className="w-full"
+                    value={choice}
+                    onChange={(event) => {
+                      setChoice(event.target.value);
+                      setBranch("");
+                    }}
+                    required
+                  >
+                    <option value="">고르세요</option>
+                    {repositories.map((repository) => (
+                      <option
+                        key={`${repository.installationId}:${repository.id}`}
+                        value={`${repository.installationId}:${repository.id}`}
+                      >
+                        {repository.fullName}
+                        {repository.private ? " (비공개)" : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="github-app-branch">브랜치</Label>
+                  <Input
+                    id="github-app-branch"
+                    value={branch}
+                    placeholder={chosen?.defaultBranch ?? "main"}
+                    onChange={(event) => setBranch(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="github-app-source">
+                    저장소에서 배포할 폴더
+                  </Label>
+                  <Input
+                    id="github-app-source"
+                    value={sourceDir}
+                    onChange={(event) => setSourceDir(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <Label htmlFor="github-app-prefix">사이트에 놓을 폴더</Label>
+                  <Input
+                    id="github-app-prefix"
+                    value={targetPrefix}
+                    onChange={(event) => setTargetPrefix(event.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    이 폴더에 있던 파일 가운데 저장소에 없는 것은 배포할 때
+                    지워집니다. 점(.)으로 시작하는 파일과 폴더, node_modules,
+                    나루가 올릴 수 없는 형식의 파일은 배포하지 않습니다.
+                  </p>
+                </div>
+                <div className="sm:col-span-2">
+                  <Button type="submit" disabled={!chosen || busy === "new"}>
+                    연결하고 배포하기
+                  </Button>
+                </div>
+              </form>
+            )}
+          </>
+        ) : (
+          !rootTaken && (
+            <Button variant="outline" onClick={() => setAdding(true)}>
+              다른 저장소 연결하기
+            </Button>
+          )
         )}
       </CardContent>
     </Card>
