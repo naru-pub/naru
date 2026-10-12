@@ -3,6 +3,13 @@ import {
   edgeFileCacheUrl,
   edgeSiteCacheTag,
 } from "../../control-plane/src/lib/edge/file-cache";
+import {
+  VERSIONED_CACHE_CONTROL,
+  fingerprint,
+  versionAssets,
+  versionsAssets,
+  type AssetEnv,
+} from "./assets";
 import type { PageviewEvent } from "./pageview-log";
 
 // Hosted sites, <login>.naru.pub or a custom domain (domains.ts), answered at
@@ -21,9 +28,10 @@ import type { PageviewEvent } from "./pageview-log";
 // its absence, in each data center's cache for SITE_FILE_CACHE_SECONDS, so a
 // busy page is not one bucket read per request. The control plane purges a
 // file's entry whenever it changes the file (control-plane/src/lib/
-// cache-purge.ts), so edits still appear at once.
+// cache-purge.ts), so edits still appear at once. For the files it redirects
+// it keeps only their ETag, which versioned asset URLs (assets.ts) are made of.
 
-export interface PagesEnv {
+export interface PagesEnv extends AssetEnv {
   /** The site bucket: each site's files under `<login>/`. */
   SITE_FILES: R2Bucket;
   PLATFORM_DOMAIN: string;
@@ -42,7 +50,12 @@ export type RecordPageview = (event: PageviewEvent) => void;
 // every pageview is counted, and may be served stale for a day if the edge
 // errs.
 const SITE_CACHE_CONTROL = "public, max-age=0, stale-if-error=86400";
-// Redirects are deterministic for a path, so browsers may keep them an hour.
+// A file's redirect to the bucket's public domain depends on nothing but its
+// path, and leads to the file as it is now, so browsers may keep it a week.
+const FILE_REDIRECT_CACHE_CONTROL =
+  "public, max-age=604800, stale-if-error=86400";
+// A directory's redirect to its trailing slash lasts while the directory does,
+// so browsers keep it an hour.
 const REDIRECT_CACHE_CONTROL = "public, max-age=3600, stale-if-error=86400";
 const SERVED = ["html", "htm", "js", "json"];
 const MAX_METADATA_BYTES = 2048;
@@ -167,12 +180,19 @@ function unavailable() {
 }
 
 /** A file read from the bucket or the cache. */
-type SiteFile = { body: ReadableStream | null; contentType: string };
+type SiteFile = {
+  body: ReadableStream | null;
+  contentType: string;
+  etag: string;
+};
+
+const extensionOf = (path: string) => path.split(".").at(-1) ?? "";
 
 /**
  * The bucket object `key`, or null when there is none: from this data
  * center's cache when it holds the lookup, else from the bucket, keeping what
- * it finds for the next request.
+ * it finds for the next request. A file the edge does not serve is looked up
+ * without its body, which it is never asked for.
  */
 async function readFile(
   env: PagesEnv,
@@ -185,18 +205,26 @@ async function readFile(
     seconds > 0
       ? (globalThis as { caches?: { default: Cache } }).caches?.default
       : undefined;
+  const metadataOnly = !SERVED.includes(extensionOf(key));
+  const read = () =>
+    metadataOnly ? env.SITE_FILES.head(key) : env.SITE_FILES.get(key);
   if (!cache) {
-    const object = await env.SITE_FILES.get(key);
-    return object && fileOf(object.body, object);
+    const object = await read();
+    return object && fileOf(object);
   }
   const url = edgeFileCacheUrl(env.PLATFORM_DOMAIN, key);
   const hit = await cache.match(url);
-  if (hit)
-    return hit.status === 404
-      ? null
-      : { body: hit.body, contentType: hit.headers.get("Content-Type") ?? "" };
+  if (hit?.status === 404) return null;
+  // Entries kept before ETags were are read again.
+  if (hit?.headers.has("ETag"))
+    return {
+      body: hit.body,
+      contentType: hit.headers.get("Content-Type") ?? "",
+      etag: hit.headers.get("ETag")!,
+    };
+  await hit?.body?.cancel();
 
-  const object = await env.SITE_FILES.get(key);
+  const object = await read();
   const headers = {
     "Cache-Control": `public, max-age=${seconds}`,
     "Cache-Tag": edgeSiteCacheTag(login),
@@ -212,19 +240,41 @@ async function readFile(
     store(new Response(null, { status: 404, headers }));
     return null;
   }
-  if (object.size > MAX_CACHED_BYTES) return fileOf(object.body, object);
-  const [served, stored] = object.body.tee();
-  const file = fileOf(served, object);
-  store(
-    new Response(stored, {
-      headers: { ...headers, "Content-Type": file.contentType },
-    }),
-  );
-  return file;
+  const file = fileOf(object);
+  const fileHeaders = {
+    ...headers,
+    "Content-Type": file.contentType,
+    ETag: file.etag,
+  };
+  if (!file.body) {
+    store(new Response(null, { headers: fileHeaders }));
+    return file;
+  }
+  if (object.size > MAX_CACHED_BYTES) return file;
+  const [served, stored] = file.body.tee();
+  store(new Response(stored, { headers: fileHeaders }));
+  return { ...file, body: served };
 }
 
-function fileOf(body: ReadableStream, object: R2Object): SiteFile {
-  return { body, contentType: object.httpMetadata?.contentType ?? "" };
+function fileOf(object: R2Object | R2ObjectBody): SiteFile {
+  return {
+    body: "body" in object ? object.body : null,
+    contentType: object.httpMetadata?.contentType ?? "",
+    etag: object.httpEtag,
+  };
+}
+
+/** Looks up ETags through the same cache as the files themselves. */
+function etagLookup(
+  env: PagesEnv,
+  ctx: Pick<ExecutionContext, "waitUntil">,
+  login: string,
+) {
+  return async (key: string) => {
+    const file = await readFile(env, ctx, login, key);
+    await file?.body?.cancel();
+    return file?.etag ?? null;
+  };
 }
 
 /** Answers a request for one of the sites `siteOf` names. */
@@ -240,13 +290,13 @@ export async function servePage(
   const url = new URL(request.url);
   const decoded = decodePath(url.pathname.replace(/^\/+/, ""));
   const path = resolvePath(decoded);
-  const extension = path.split(".").at(-1) ?? "";
+  const extension = extensionOf(path);
   if (!SERVED.includes(extension))
     return new Response(text("Redirecting..."), {
       status: 302,
       headers: {
         Location: `https://${env.R2_PUBLIC_DOMAIN}/${login}/${path}`,
-        "Cache-Control": REDIRECT_CACHE_CONTROL,
+        "Cache-Control": FILE_REDIRECT_CACHE_CONTROL,
       },
     });
 
@@ -277,10 +327,29 @@ export async function servePage(
       referrer: truncate(request.headers.get("referer")),
       userAgent: truncate(request.headers.get("user-agent")),
     });
-  return new Response(file.body, {
+  const html = extension === "html" || extension === "htm";
+  // Only a request for the file's current version may be kept: one for an
+  // older version, from a page loaded before an edit, gets today's file.
+  const current = url.searchParams.get("v") === fingerprint(file.etag);
+  const response = new Response(file.body, {
     headers: {
       "Content-Type": file.contentType,
-      "Cache-Control": SITE_CACHE_CONTROL,
+      "Cache-Control":
+        current && !html ? VERSIONED_CACHE_CONTROL : SITE_CACHE_CONTROL,
     },
   });
+  if (
+    !html ||
+    !versionsAssets(env, login) ||
+    typeof HTMLRewriter === "undefined"
+  )
+    return response;
+  return versionAssets(
+    response,
+    url,
+    login,
+    env,
+    SERVED,
+    etagLookup(env, ctx, login),
+  );
 }

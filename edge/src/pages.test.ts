@@ -10,6 +10,7 @@ import {
   truncate,
   type PagesEnv,
 } from "./pages";
+import { VERSIONED_CACHE_CONTROL, fingerprint } from "./assets";
 import type { PageviewEvent } from "./pageview-log";
 
 // The retired proxy's own cases, ported from its Rust tests, so sites keep
@@ -22,19 +23,33 @@ const env = (
   PLATFORM_DOMAIN: "naru.pub",
   R2_PUBLIC_DOMAIN: "r2.naru.pub",
   SITE_FILES: {
+    async head(key: string) {
+      reads.push(key);
+      return key in files ? metadata(key, files[key]) : null;
+    },
     async get(key: string) {
       reads.push(key);
       if (!(key in files)) return null;
       return {
+        ...metadata(key, files[key]),
         body: new Response(files[key]).body,
-        size: new TextEncoder().encode(files[key]).byteLength,
-        httpMetadata: {
-          contentType: key.endsWith(".json") ? "application/json" : "text/html",
-        },
       };
     },
   } as unknown as R2Bucket,
 });
+
+/** An object's metadata, its ETag made from its contents. */
+function metadata(key: string, body: string) {
+  let hash = 0;
+  for (const char of body) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return {
+    size: new TextEncoder().encode(body).byteLength,
+    httpEtag: `"${hash.toString(16).padStart(8, "0")}0000aaaa"`,
+    httpMetadata: {
+      contentType: key.endsWith(".json") ? "application/json" : "text/html",
+    },
+  };
+}
 
 /** An ExecutionContext whose deferred work a test can wait for. */
 const context = () => {
@@ -236,7 +251,7 @@ describe("serving", () => {
       "https://r2.naru.pub/alice/images/cat.png",
     );
     expect(response.headers.get("cache-control")).toBe(
-      "public, max-age=3600, stale-if-error=86400",
+      "public, max-age=604800, stale-if-error=86400",
     );
   });
 
@@ -246,6 +261,20 @@ describe("serving", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     // As the proxy: no type on its plain answers.
     expect(response.headers.get("content-type")).toBeNull();
+  });
+
+  test("lets browsers keep a file requested at its current version", async () => {
+    const version = fingerprint(metadata("alice/data.json", "{}").httpEtag);
+    expect(
+      (await visit(`/data.json?v=${version}`)).response.headers.get(
+        "cache-control",
+      ),
+    ).toBe(VERSIONED_CACHE_CONTROL);
+    // An older version, from a page loaded before an edit, is today's file.
+    for (const path of ["/data.json?v=0123456789ab", "/data.json"])
+      expect((await visit(path)).response.headers.get("cache-control")).toBe(
+        "public, max-age=0, stale-if-error=86400",
+      );
   });
 
   test("answers a bucket failure 502, never 404", async () => {
@@ -324,6 +353,7 @@ describe("caching", () => {
     expect(reads).toEqual(["alice/index.html"]);
     const entry = entries.get("https://alice.naru.pub/index.html")!;
     expect(entry.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(entry.headers.get("etag")).toMatch(/^"[0-9a-f]{16}"$/);
     expect(entry.headers.get("cache-tag")).toBe("naru-site-alice");
   });
 

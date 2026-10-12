@@ -103,10 +103,28 @@ under `__deploy_uploads/<user id>/<deployment id>/`. Account deletion removes a
 user's exports with their site, and the export job deletes any zip no export
 row points at.
 
-Pages carry `Cache-Control: public, max-age=0, stale-if-error=86400` and
-redirects `public, max-age=3600, stale-if-error=86400`, for browsers: Worker
-responses are not stored in Cloudflare's cache, so every pageview reaches the
-Worker.
+Pages carry `Cache-Control: public, max-age=0, stale-if-error=86400`, a
+file's redirect to `r2.naru.pub` `public, max-age=604800, stale-if-error=86400`
+(it depends only on the path, and leads to the file as it is now), and a
+directory's redirect to its trailing slash `public, max-age=3600,
+stale-if-error=86400`, for browsers: Worker responses are not stored in
+Cloudflare's cache, so every pageview reaches the Worker. Cloudflare does
+cache `r2.naru.pub`, which every edit purges.
+
+For the sites in `VERSIONED_ASSET_SITES` (`wrangler.jsonc`, comma-separated
+logins or `*`), the Worker names a page's files by version as the page
+streams out (`edge/src/assets.ts`): its classic `<script src>`, stylesheets,
+stylesheet preloads and icons, `<img>`, `srcset`, `<video>`, `<audio>` and
+`<source>`, each to an existing file of the site with no query of its own,
+gain `?v=<fingerprint>`, the start of the file's ETag. Scripts and JSON stay
+on the site's host; everything else goes straight to
+`https://r2.naru.pub/<login>/<path>`, sparing the redirect. A request at a
+file's current version may be kept a year: the Worker says so for what it
+serves, and the zone's cache rule (`cloudflare/rules.tf` in the infra
+repository) for `r2.naru.pub`, where each version is its own cache entry.
+An edit changes the fingerprint, so a visitor's next page names the new
+file. Module scripts, CSS `url()`s, and what scripts fetch keep their plain
+URLs: a module imported under two URLs would run twice.
 
 What the Worker reads from the bucket, a file or its absence, it keeps in the
 data center's cache for `SITE_FILE_CACHE_SECONDS` (`wrangler.jsonc`), so a
