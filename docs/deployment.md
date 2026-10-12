@@ -119,6 +119,15 @@ by URL, with its `r2.naru.pub` copy (`control-plane/src/lib/cache-purge.ts`,
 purges the site's tag. A failed purge leaves a file stale until its entry
 expires, so the lifetime bounds how long an edit can take to appear.
 
+The site bucket has one CORS rule, set by hand (`wrangler r2 bucket cors set
+naru-pub`): `GET` and `HEAD` from any origin, preflights cached a day. The
+edge's redirects send pages' other files to `r2.naru.pub`, another origin,
+and a page reads them across it: web fonts, `fetch`, and a service worker's
+`cache.addAll`, which fails whole, and retries on every page load, when one
+redirected file is refused. Everything there is public already. After
+changing the rule, purge the `r2.naru.pub` hostname, whose cached responses
+keep the old headers.
+
 Custom domains are served the same way. The control plane
 (`control-plane/src/lib/edge/domains.ts`) sends the Worker the whole table of
 domains it serves, through `/v1/domains/replace`: every domain active in
@@ -161,8 +170,30 @@ job fails, and alerts like any failed job, once the oldest waiting pageview is
 more than 30 minutes old.
 
 After a file edit the control plane purges the file's
-`https://r2.naru.pub/<login>/<path>` URL (`control-plane/src/lib/cache-purge.ts`);
-hosted HTML, JS and JSON are not cached, so nothing else needs purging.
+`https://r2.naru.pub/<login>/<path>` URL and its edge cache entry
+(`control-plane/src/lib/cache-purge.ts`), as above.
+
+### Site request limits
+
+Cloudflare bills every request that reaches the edge Worker, whatever it
+answers. The `site-request-limits` job (hourly,
+`control-plane/src/lib/edge/site-requests.ts`) counts each site's requests,
+its subdomain and custom domains, from the zone's analytics into
+`site_request_days`, and keeps a WAF custom rule, ref
+`naru-site-request-limit`, blocking every site past its monthly allowance
+(`SITE_MONTHLY_PAGE_REQUESTS`, 10,000,000 by default) until the month (UTC)
+is over. Cloudflare applies custom rules before the Worker, so a blocked
+request is not billed. Supporters' sites are never blocked. The operators'
+Discord channel hears when a site passes half its allowance, all of it, and
+when a host is blocked or unblocked.
+
+`/admin/firewall` shows this month's busy sites and can block a site
+outright or exempt it (`site_request_overrides`), and lists, adds, changes,
+turns on and off, and deletes the zone's other custom rules (the free plan
+allows five). Each change is told in Discord. The job and the page need
+`CLOUDFLARE_USER_API_TOKEN` to have, besides Cache Purge, Zone > Analytics:
+Read and Zone > Zone WAF: Edit on naru.pub; without them the job fails and
+alerts after three hours.
 
 ## Former cache rule for hosted sites
 

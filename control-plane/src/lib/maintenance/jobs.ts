@@ -107,6 +107,17 @@ export const MAINTENANCE_JOBS = [
     alertAfterMinutes: 30,
   },
   {
+    // Counts hosted sites' requests and blocks those past their monthly
+    // allowance (lib/edge/site-requests.ts).
+    name: "site-request-limits",
+    script: "limit-site-requests.ts",
+    minutes: 60,
+    timeout: 300,
+    // Cloudflare's analytics can be unavailable for a run, and a late count
+    // only delays a block: report only failures that last three hours.
+    alertAfterMinutes: 180,
+  },
+  {
     name: "site-data-grant-cleanup",
     script: "cleanup-site-data-grants.ts",
     minutes: 30,

@@ -636,6 +636,30 @@ export interface SiteMemberTokens {
   session_id: string;
 }
 
+export interface SiteRequestDays {
+  date: Timestamp;
+  id: Generated<string>;
+  requests: Int8;
+  user_id: string;
+}
+
+export interface SiteRequestMonths {
+  exceeded_at: Timestamp | null;
+  id: Generated<string>;
+  month: Timestamp;
+  user_id: string;
+  warned_at: Timestamp | null;
+}
+
+export interface SiteRequestOverrides {
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
+  id: Generated<string>;
+  mode: "block" | "exempt";
+  reason: string;
+  user_id: string;
+}
+
 export interface Subscriptions {
   amount: number;
   billing_anchor_day: number | null;
@@ -785,6 +809,9 @@ export interface DB {
   site_member_codes: SiteMemberCodes;
   site_member_tokens: SiteMemberTokens;
   site_members: SiteMembers;
+  site_request_days: SiteRequestDays;
+  site_request_months: SiteRequestMonths;
+  site_request_overrides: SiteRequestOverrides;
   subscriptions: Subscriptions;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;
