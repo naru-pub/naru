@@ -34,6 +34,7 @@ export default async function AdminLayout({
     // The lab charges and refunds for real, so it exists only with test keys.
     ...(isTossTestMode() ? [{ href: "/admin/lab", label: "결제 실험실" }] : []),
     { href: "/admin/board", label: "게시판" },
+    { href: "/admin/templates", label: "템플릿 적용" },
   ];
 
   return (
