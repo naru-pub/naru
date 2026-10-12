@@ -113,9 +113,10 @@ cache `r2.naru.pub`, which every edit purges.
 
 For the sites in `VERSIONED_ASSET_SITES` (`wrangler.jsonc`, comma-separated
 logins or `*`), the Worker names a page's files by version as the page
-streams out (`edge/src/assets.ts`): its classic `<script src>`, stylesheets,
-stylesheet preloads and icons, `<img>`, `srcset`, `<video>`, `<audio>` and
-`<source>`, each to an existing file of the site with no query of its own,
+streams out (`edge/src/assets.ts`): its classic `<script src>`, stylesheets
+and icons, `<img>`, `srcset`, `<video>`, `<audio>` and `<source>`, and the
+preloads of files the page uses in those (another preload would no longer
+meet its use), each to an existing file of the site with no query of its own,
 gain `?v=<fingerprint>`, the start of the file's ETag. Scripts and JSON stay
 on the site's host; everything else goes straight to
 `https://r2.naru.pub/<login>/<path>`, sparing the redirect. A request at a

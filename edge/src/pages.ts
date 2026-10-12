@@ -344,7 +344,7 @@ export async function servePage(
     typeof HTMLRewriter === "undefined"
   )
     return response;
-  return versionAssets(
+  return await versionAssets(
     response,
     url,
     login,

@@ -13,8 +13,8 @@ import { decodePath, resolvePath } from "./pages";
 // domain directly, sparing the redirect. Only references a page makes in its
 // own markup are versioned, and only those to a file that exists, with no
 // query of their own: classic scripts (a module's imports would load a second
-// copy under the other URL), stylesheets, their preloads and icons, images,
-// and media.
+// copy under the other URL), stylesheets and icons, images, and media, and
+// the preloads of files the page uses in those.
 // Everything else keeps the unversioned URL and its usual caching.
 
 export interface AssetEnv {
@@ -99,40 +99,38 @@ const CLASSIC_SCRIPT_TYPES = [
 ];
 const LINK_RELS = ["stylesheet", "icon", "apple-touch-icon"];
 
-/** The page's response with its references to the site's files versioned. */
-export function versionAssets(
-  response: Response,
+type ReferenceHandler = (ref: string, base: URL) => Promise<string | null>;
+
+/**
+ * A rewriter calling `onReference` for each reference that may be versioned,
+ * replacing it with what that returns, and versioning a preload when
+ * `preloads` says the page uses its file where it is versioned.
+ */
+function referenceRewriter(
   pageUrl: URL,
-  login: string,
-  env: AssetEnv,
-  served: string[],
-  etagOf: EtagLookup,
+  onReference: ReferenceHandler,
+  preloads: (href: string) => boolean,
 ) {
   let base = pageUrl;
-  // Each file is looked up once per page, however often the page names it.
-  const lookups = new Map<string, Promise<string | null>>();
-  const cachedEtag: EtagLookup = (key) => {
-    if (!lookups.has(key))
-      lookups.set(
-        key,
-        etagOf(key).catch(() => null),
-      );
-    return lookups.get(key)!;
-  };
-  const version = (ref: string) =>
-    versionedUrl(ref, base, login, env, served, cachedEtag);
   const attribute = (name: string) => ({
     async element(element: Element) {
       const value = element.getAttribute(name);
       if (value === null) return;
       const versioned =
         name === "srcset"
-          ? await versionedSrcset(value, version)
-          : await version(value);
+          ? await versionedSrcset(value, (ref) => onReference(ref, base))
+          : await onReference(value, base);
       if (versioned && versioned !== value)
         element.setAttribute(name, versioned);
     },
   });
+  const resolved = (ref: string) => {
+    try {
+      return new URL(ref.trim(), base).href;
+    } catch {
+      return null;
+    }
+  };
 
   return new HTMLRewriter()
     .on("base[href]", {
@@ -154,17 +152,63 @@ export function versionAssets(
     .on("link[href][rel]", {
       async element(element) {
         const rels = element.getAttribute("rel")!.toLowerCase().split(/\s+/);
-        // A stylesheet's preload is versioned like the stylesheet, so the two
-        // still meet; a script's may be for a module, whose URL stays.
-        const preloadsStyle =
-          rels.includes("preload") &&
-          element.getAttribute("as")?.toLowerCase() === "style";
-        if (preloadsStyle || rels.some((rel) => LINK_RELS.includes(rel)))
+        if (rels.some((rel) => LINK_RELS.includes(rel)))
           await attribute("href").element(element);
+        else if (rels.includes("preload")) {
+          const href = resolved(element.getAttribute("href")!);
+          if (href && preloads(href)) await attribute("href").element(element);
+        }
       },
     })
     .on("img[src], source[src], video[src], audio[src]", attribute("src"))
     .on("img[srcset], source[srcset]", attribute("srcset"))
-    .on("video[poster]", attribute("poster"))
-    .transform(response);
+    .on("video[poster]", attribute("poster"));
+}
+
+/**
+ * The page's response with its references to the site's files versioned. A
+ * preload is versioned only when the page uses its file where it is
+ * versioned too, or the two would download it twice; so the page is read
+ * whole first, to find those uses, then rewritten.
+ */
+export async function versionAssets(
+  response: Response,
+  pageUrl: URL,
+  login: string,
+  env: AssetEnv,
+  served: string[],
+  etagOf: EtagLookup,
+) {
+  const html = await response.text();
+  const used = new Set<string>();
+  await referenceRewriter(
+    pageUrl,
+    async (ref, base) => {
+      try {
+        used.add(new URL(ref.trim(), base).href);
+      } catch {
+        // Not a URL: nothing to version.
+      }
+      return null;
+    },
+    () => false,
+  )
+    .transform(new Response(html))
+    .arrayBuffer();
+
+  // Each file is looked up once per page, however often the page names it.
+  const lookups = new Map<string, Promise<string | null>>();
+  const cachedEtag: EtagLookup = (key) => {
+    if (!lookups.has(key))
+      lookups.set(
+        key,
+        etagOf(key).catch(() => null),
+      );
+    return lookups.get(key)!;
+  };
+  return referenceRewriter(
+    pageUrl,
+    (ref, base) => versionedUrl(ref, base, login, env, served, cachedEtag),
+    (href) => used.has(href),
+  ).transform(new Response(html, response));
 }
