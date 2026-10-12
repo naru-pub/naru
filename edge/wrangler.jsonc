@@ -71,7 +71,7 @@
     "R2_PUBLIC_DOMAIN": "r2.naru.pub",
     // How long each data center keeps a site file it read from the bucket
     // (src/pages.ts). The control plane purges a file's entry when it changes.
-    "SITE_FILE_CACHE_SECONDS": "60",
+    "SITE_FILE_CACHE_SECONDS": "86400",
   },
   "observability": { "enabled": true },
 }
