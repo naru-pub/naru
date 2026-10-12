@@ -83,7 +83,7 @@ export function memberSignInInput(body: Record<string, unknown>) {
 async function siteFor(tx: Kysely<DB>, input: MemberSignInInput) {
   const site = await tx
     .selectFrom("users")
-    .select(["id", "login_name"])
+    .select(["id", "login_name", "site_member_admission"])
     .where("login_name", "=", input.site)
     .where("deleted_at", "is", null)
     .executeTakeFirst();
@@ -109,6 +109,19 @@ export async function previewMemberSignIn(
   input: MemberSignInInput,
 ) {
   const site = await siteFor(db, input);
+  const member = await db
+    .selectFrom("site_members")
+    .select("status")
+    .where("site_user_id", "=", site.id)
+    .where("user_id", "=", userId)
+    .executeTakeFirst();
+  if (member?.status === "banned") throw membershipDenied("banned");
+  if (!member && site.site_member_admission === "closed")
+    throw new DataError(
+      403,
+      "이 사이트는 신규 회원 가입을 받지 않습니다.",
+      "ACCESS_DENIED",
+    );
   return { site: site.login_name, mayJoin: await mayJoin(db, userId) };
 }
 
@@ -120,6 +133,25 @@ export async function approveMemberSignIn(
 ) {
   return db.transaction().execute(async (tx) => {
     const site = await siteFor(tx, input);
+    const { site_member_admission: admission } = await tx
+      .selectFrom("users")
+      .select("site_member_admission")
+      .where("id", "=", site.id)
+      .forUpdate()
+      .executeTakeFirstOrThrow();
+    const existing = await tx
+      .selectFrom("site_members")
+      .select(["id", "status"])
+      .where("site_user_id", "=", site.id)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
+    if (existing?.status === "banned") throw membershipDenied("banned");
+    if (!existing && admission === "closed")
+      throw new DataError(
+        403,
+        "This site is closed to new members.",
+        "ACCESS_DENIED",
+      );
     if (!(await mayJoin(tx, userId))) throw supporterRequired();
     const session = await tx
       .selectFrom("sessions")
@@ -131,7 +163,11 @@ export async function approveMemberSignIn(
     if (!session) throw denied();
     await tx
       .insertInto("site_members")
-      .values({ site_user_id: site.id, user_id: userId })
+      .values({
+        site_user_id: site.id,
+        user_id: userId,
+        status: admission === "approval" ? "pending" : "approved",
+      })
       .onConflict((conflict) =>
         conflict.columns(["site_user_id", "user_id"]).doNothing(),
       )
@@ -207,12 +243,19 @@ export async function exchangeMemberCode(
     const member = await tx
       .selectFrom("site_members as m")
       .innerJoin("sessions as s", "s.user_id", "m.user_id")
-      .select(["m.id", "m.site_user_id", "m.user_id", "s.expires_at"])
+      .select([
+        "m.id",
+        "m.site_user_id",
+        "m.user_id",
+        "m.status",
+        "s.expires_at",
+      ])
       .where("m.id", "=", grant.member_id)
       .where("s.id", "=", grant.session_id)
       .where("s.expires_at", ">", new Date())
       .executeTakeFirst();
     if (!member) throw denied();
+    if (member.status === "banned") throw membershipDenied("banned");
     await assertSiteOrigin(tx, member.site_user_id, grant.redirect_uri);
     if (!(await mayJoin(tx, member.user_id))) throw supporterRequired();
     await tx
@@ -256,7 +299,7 @@ export async function exchangeMemberCode(
  * mark, never past the cap or the Naru session, reporting the new expiry in
  * `bearer.expiresAt`.
  */
-export async function memberScope(
+export async function memberIdentity(
   tx: Kysely<DB>,
   siteUserId: string,
   bearer: { token: string; origin: string | null; expiresAt?: number },
@@ -270,6 +313,7 @@ export async function memberScope(
     .select([
       "m.id",
       "m.user_id",
+      "m.status",
       "t.origin",
       "t.issued_at",
       "t.expires_at",
@@ -303,7 +347,7 @@ export async function memberScope(
       bearer.expiresAt = renewed;
     }
   }
-  return grant.id;
+  return { id: grant.id, status: grant.status };
 }
 
 /** Signing out: idempotent, and only from the page's own origin. */
@@ -320,4 +364,28 @@ export async function revokeMemberToken(token: string, origin: string | null) {
     .deleteFrom("site_member_tokens")
     .where("hash", "=", digest(token))
     .execute();
+}
+
+export type MembershipStatus = "pending" | "approved" | "banned";
+export type AdmissionMode = "open" | "approval" | "closed";
+
+function membershipDenied(status: MembershipStatus) {
+  return new DataError(
+    403,
+    status === "banned"
+      ? "Membership is banned."
+      : "Membership is awaiting approval.",
+    "ACCESS_DENIED",
+  );
+}
+
+/** All authenticated data, function and media requests require approval. */
+export async function memberScope(
+  tx: Kysely<DB>,
+  siteUserId: string,
+  bearer: { token: string; origin: string | null; expiresAt?: number },
+) {
+  const member = await memberIdentity(tx, siteUserId, bearer);
+  if (member.status !== "approved") throw membershipDenied(member.status);
+  return member.id;
 }

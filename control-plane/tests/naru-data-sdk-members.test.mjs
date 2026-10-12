@@ -402,3 +402,32 @@ test("a function's failure is a NaruError with the server's code", async () => {
     });
   });
 });
+
+test("membership checks live state without forgetting a pending member's session", async () => {
+  const local = new Map();
+  saveMember(local);
+  await browser(
+    async ({ calls, respond }) => {
+      const member = await createNaru().members.session();
+      for (const status of ["pending", "approved", "banned"]) {
+        respond(() => Response.json({ id: "m-1", status }));
+        assert.deepEqual(await member.membership(), { id: "m-1", status });
+        const call = calls.at(-1);
+        assert.equal(
+          call.url.origin + call.url.pathname,
+          "https://naru.pub/api/membership/v1/alice",
+        );
+        assert.equal(call.method, "GET");
+        assert.equal(call.headers.Authorization, `Bearer ${TOKEN}`);
+        assert.equal(call.credentials, "omit");
+      }
+      assert.ok(local.has(MEMBER));
+      await member.signOut();
+      await assert.rejects(
+        member.membership(),
+        (e) => e.code === "AUTH_REQUIRED",
+      );
+    },
+    { local },
+  );
+});

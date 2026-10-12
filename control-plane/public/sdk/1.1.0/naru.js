@@ -603,6 +603,12 @@ function member(context, token, expiresAt, id) {
   const { send, signOut } = credential(memberPlace(context), token, expiresAt);
   return Object.freeze({
     id,
+    membership: ({ signal } = {}) =>
+      send(`${origin}/api/membership/v1/${context.site}`, {
+        method: "GET",
+        signal,
+        touches: [],
+      }),
     collection: (name) => documents(root, name, send),
     async call(name, args = null, { signal } = {}) {
       const parts = typeof name === "string" ? name.split("/") : [];

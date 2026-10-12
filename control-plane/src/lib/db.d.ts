@@ -618,6 +618,7 @@ export interface SiteMembers {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   site_user_id: string;
+  status: ColumnType<"pending" | "approved" | "banned", "pending" | "approved" | "banned" | undefined>;
   user_id: string;
 }
 
@@ -715,6 +716,7 @@ export interface Users {
   password_hash: string;
   site_data_bytes_used: ColumnType<string, never, number>;
   site_data_document_count: ColumnType<string, never, number>;
+  site_member_admission: ColumnType<"open" | "approval" | "closed", "open" | "approval" | "closed" | undefined>;
   site_rendered_at: Timestamp | null;
   site_title: string | null;
   site_updated_at: Timestamp | null;

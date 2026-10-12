@@ -178,6 +178,10 @@ export interface MemberCollection<T = Json> extends PublicCollection<T> {
 
 /** A visitor signed in to this site with their Naru account. */
 export interface Member {
+  /** Current platform membership, including pending approval or a ban. */
+  membership(options?: {
+    signal?: AbortSignal;
+  }): Promise<{ id: string; status: "pending" | "approved" | "banned" }>;
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.
@@ -1074,6 +1078,11 @@ function member(
   const { send, signOut } = credential(memberPlace(context), token, expiresAt);
   return Object.freeze({
     id,
+    membership: ({ signal }: { signal?: AbortSignal } = {}) =>
+      send<{ id: string; status: "pending" | "approved" | "banned" }>(
+        `${origin}/api/membership/v1/${context.site}`,
+        { method: "GET", signal, touches: [] },
+      ),
     collection: <T = Json>(name: string): MemberCollection<T> =>
       documents<T>(root, name, send),
     async call<R = Json>(

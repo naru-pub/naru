@@ -12,6 +12,8 @@ import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
 import { executeBatch, executeCall, executeData } from "../service";
+import { manageMembership } from "../membership";
+import { membershipStatusRequest } from "../membership-http";
 import { digest } from "../owner-auth";
 import {
   approveMemberSignIn,
@@ -336,6 +338,162 @@ integration("site members", () => {
     await expect(
       as(supporter.accessToken, "GET", ["board"]),
     ).resolves.toBeDefined();
+  });
+
+  test("approval and bans govern existing tokens across data, functions and uploads", async () => {
+    const member = await signIn("erin");
+    const bearer = { token: member.accessToken, origin };
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      file: "membership",
+      source: "export function ping() { return true; }",
+    });
+    const statusRequest = () =>
+      membershipStatusRequest(
+        new Request("https://naru.pub/api/membership/v1/alice", {
+          headers: {
+            Authorization: `Bearer ${member.accessToken}`,
+            Origin: origin,
+          },
+        }),
+        "alice",
+      );
+    try {
+      for (const status of ["pending", "banned"] as const) {
+        await manageMembership(owner, "PATCH", { id: member.memberId, status });
+        const response = await statusRequest();
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.json()).toEqual({ id: member.memberId, status });
+        for (const [method, path, body] of [
+          ["GET", ["board"], undefined],
+          ["GET", ["board", "anything"], undefined],
+          ["POST", ["board"], { data: "denied" }],
+          ["PUT", ["board", member.memberId], { data: "denied" }],
+          ["DELETE", ["board", member.memberId], undefined],
+          ["GET", ["wall"], undefined],
+        ] as const) {
+          await expect(
+            as(member.accessToken, method, [...path], body),
+          ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+        }
+        await expect(
+          executeCall({
+            site: "alice",
+            method: "POST",
+            path: ["membership", "ping"],
+            bearer,
+          }),
+        ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+        for (const [method, path] of [
+          ["POST", []],
+          ["PUT", [crypto.randomUUID()]],
+        ] as const)
+          await expect(
+            executeMedia({
+              site: "alice",
+              method,
+              path: [...path],
+              bearer,
+              body: { name: "x.png", contentType: "image/png", size: 3 },
+            }),
+          ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+        await expect(as(undefined, "GET", ["wall"])).resolves.toBeDefined();
+        await expect(owned("GET", ["board"])).resolves.toBeDefined();
+      }
+      await expect(code("erin")).rejects.toMatchObject({ status: 403 });
+      await manageMembership(owner, "PATCH", {
+        id: member.memberId,
+        status: "approved",
+      });
+      await expect(
+        as(member.accessToken, "GET", ["board"]),
+      ).resolves.toBeDefined();
+      await expect(
+        executeCall({
+          site: "alice",
+          method: "POST",
+          path: ["membership", "ping"],
+          bearer,
+        }),
+      ).resolves.toEqual({ result: true });
+      const issued = await code("erin");
+      await manageMembership(owner, "PATCH", {
+        id: member.memberId,
+        status: "banned",
+      });
+      await expect(exchange(issued)).rejects.toMatchObject({ status: 403 });
+      await expect(
+        previewMemberSignIn(users.erin, input()),
+      ).rejects.toMatchObject({ status: 403 });
+      // Another site cannot manage this member; malformed controls cannot write.
+      await expect(
+        manageMembership(users.bob, "PATCH", {
+          id: member.memberId,
+          status: "approved",
+        }),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(
+        manageMembership(owner, "PATCH", {
+          id: member.memberId,
+          status: "invented",
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      await expect(
+        manageMembership(owner, "PATCH", { admission: "invented" }),
+      ).rejects.toMatchObject({ status: 400 });
+    } finally {
+      await manageMembership(owner, "PATCH", {
+        id: member.memberId,
+        status: "approved",
+      });
+    }
+  });
+
+  test("admission determines new members only and closed sites allow existing members", async () => {
+    users.frank = await insertUser("frank");
+    users.grace = await insertUser("grace");
+    for (const login of ["frank", "grace"])
+      await sql`insert into sessions values (${`${login}-session`}, ${users[login]}, now() + interval '60 days')`.execute(
+        db,
+      );
+    try {
+      await manageMembership(owner, "PATCH", { admission: "closed" });
+      await expect(code("frank")).rejects.toMatchObject({ status: 403 });
+      await expect(
+        previewMemberSignIn(users.frank, input()),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(signIn("bob")).resolves.toBeDefined();
+      await manageMembership(owner, "PATCH", { admission: "approval" });
+      const frank = await signIn("frank");
+      await expect(
+        as(frank.accessToken, "GET", ["board"]),
+      ).rejects.toMatchObject({ status: 403 });
+      await manageMembership(owner, "PATCH", { admission: "open" });
+      expect((await manageMembership(owner, "GET")).members).toContainEqual(
+        expect.objectContaining({ id: frank.memberId, status: "pending" }),
+      );
+      const grace = await signIn("grace");
+      await expect(
+        as(grace.accessToken, "GET", ["board"]),
+      ).resolves.toBeDefined();
+      await manageMembership(owner, "PATCH", {
+        id: frank.memberId,
+        status: "approved",
+      });
+      await expect(
+        as(frank.accessToken, "GET", ["board"]),
+      ).resolves.toBeDefined();
+      const list = await manageMembership(owner, "GET");
+      expect(list.admission).toBe("open");
+      expect(
+        list.members!.every(
+          (m) => Object.keys(m).sort().join(",") === "createdAt,id,status",
+        ),
+      ).toBe(true);
+    } finally {
+      await manageMembership(owner, "PATCH", { admission: "open" });
+    }
   });
 
   test("member collections: members add, and replace and delete their own", async () => {

@@ -156,6 +156,10 @@ export interface MemberCollection<T = Json> extends PublicCollection<T> {
 
 /** A visitor signed in to this site with their Naru account. */
 export interface Member {
+  /** Current platform membership, including pending approval or a ban. */
+  membership(options?: {
+    signal?: AbortSignal;
+  }): Promise<{ id: string; status: "pending" | "approved" | "banned" }>;
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.

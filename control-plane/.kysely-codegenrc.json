@@ -2,7 +2,10 @@
   "dialect": "postgres",
   "outFile": "src/lib/db.d.ts",
   "excludePattern": "{kysely_*,fedify_*}",
-  "typeMapping": { "jsonb": "unknown", "interval": "unknown" },
+  "typeMapping": {
+    "jsonb": "unknown",
+    "interval": "unknown"
+  },
   "overrides": {
     "columns": {
       "board_posts.kind": "\"site\" | \"template\" | \"question\" | \"chat\"",
@@ -21,7 +24,9 @@
       "subscriptions.billing_key_required_status": "ColumnType<\"active\", never, never>",
       "entitlement_repairs.status": "ColumnType<\"pending\" | \"completed\" | \"skipped\", \"pending\" | \"completed\" | \"skipped\" | undefined>",
       "users.site_data_bytes_used": "ColumnType<string, never, number>",
-      "users.site_data_document_count": "ColumnType<string, never, number>"
+      "users.site_data_document_count": "ColumnType<string, never, number>",
+      "users.site_member_admission": "ColumnType<\"open\" | \"approval\" | \"closed\", \"open\" | \"approval\" | \"closed\" | undefined>",
+      "site_members.status": "ColumnType<\"pending\" | \"approved\" | \"banned\", \"pending\" | \"approved\" | \"banned\" | undefined>"
     }
   }
 }

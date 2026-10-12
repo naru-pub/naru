@@ -389,6 +389,23 @@
           "throws": []
         },
         {
+          "name": "membership",
+          "optional": false,
+          "signature": "membership(options?: {\n  signal?: AbortSignal;\n}): Promise<{ id: string; status: \"pending\" | \"approved\" | \"banned\" }>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Current platform membership, including pending approval or a ban."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
           "name": "signOut",
           "optional": false,
           "signature": "signOut(): Promise<void>",
