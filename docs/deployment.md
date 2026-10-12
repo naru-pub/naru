@@ -176,7 +176,7 @@ After a file edit the control plane purges the file's
 ### Site request limits
 
 Cloudflare bills every request that reaches the edge Worker, whatever it
-answers. The `site-request-limits` job (hourly,
+answers. The `site-request-limits` job (every half hour,
 `control-plane/src/lib/edge/site-requests.ts`) counts each site's requests,
 its subdomain and custom domains, from the zone's analytics into
 `site_request_days`, and keeps a WAF custom rule, ref

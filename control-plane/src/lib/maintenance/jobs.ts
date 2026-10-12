@@ -111,7 +111,7 @@ export const MAINTENANCE_JOBS = [
     // allowance (lib/edge/site-requests.ts).
     name: "site-request-limits",
     script: "limit-site-requests.ts",
-    minutes: 60,
+    minutes: 30,
     timeout: 300,
     // Cloudflare's analytics can be unavailable for a run, and a late count
     // only delays a block: report only failures that last three hours.
