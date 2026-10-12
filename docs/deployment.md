@@ -105,8 +105,19 @@ row points at.
 
 Pages carry `Cache-Control: public, max-age=0, stale-if-error=86400` and
 redirects `public, max-age=3600, stale-if-error=86400`, for browsers: Worker
-responses are not stored in Cloudflare's cache, so edits appear at once and
-every pageview reaches the Worker.
+responses are not stored in Cloudflare's cache, so every pageview reaches the
+Worker.
+
+What the Worker reads from the bucket, a file or its absence, it keeps in the
+data center's cache for `SITE_FILE_CACHE_SECONDS` (`wrangler.jsonc`), so a
+busy page is not one bucket read (an R2 Class B operation) per request. The
+entry is named by the file's bucket key
+(`control-plane/src/lib/edge/file-cache.ts`) and tagged `naru-site-<login>`.
+Every control-plane path that changes a site file purges that file's entry
+by URL, with its `r2.naru.pub` copy (`control-plane/src/lib/cache-purge.ts`,
+`CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_USER_API_TOKEN`); account deletion
+purges the site's tag. A failed purge leaves a file stale until its entry
+expires, so the lifetime bounds how long an edit can take to appear.
 
 Custom domains are served the same way. The control plane
 (`control-plane/src/lib/edge/domains.ts`) sends the Worker the whole table of

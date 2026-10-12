@@ -6,7 +6,7 @@ import { assertJsonContentType } from "@/lib/utils";
 import { getUserObjectKey } from "@/lib/site-urls";
 import { assertNoPathTraversal } from "@/lib/file-paths";
 import * as Sentry from "@sentry/nextjs";
-import { purgeSiteFiles } from "@/lib/cache-purge";
+import { purgeSiteObjects } from "@/lib/cache-purge";
 import { recordSiteEdit } from "@/lib/database";
 import { revalidatePath } from "next/cache";
 
@@ -76,14 +76,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      for (const obj of objects.Contents ?? []) {
-        if (obj.Key) {
-          // Extract filename from S3 key safely
-          const keyParts = obj.Key.split("/");
-          const filename = keyParts[keyParts.length - 1];
-          await purgeSiteFiles(user.loginName, [filename]);
-        }
-      }
+      await purgeSiteObjects(
+        (objects.Contents ?? []).flatMap((obj) => (obj.Key ? [obj.Key] : [])),
+      );
     } catch (e) {
       Sentry.captureException(e);
       console.error("S3 delete error:", e);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { purgeSite } from "@/lib/cache-purge";
 import { assertSameOriginRequest } from "@/lib/utils";
 import {
   deleteSessionCookie,
@@ -132,6 +133,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // The edge keeps no deleted page.
+    await purgeSite(user.loginName);
     await deleteUserMedia(user.id);
     // The site's database is a Durable Object, outside this database.
     await eraseSiteData(user.loginName);

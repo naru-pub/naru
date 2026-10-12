@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { purgeSiteObjects } from "@/lib/cache-purge";
 import {
   PutObjectCommand,
   HeadObjectCommand,
@@ -81,6 +82,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // The edge may have kept the index's absence.
+    await purgeSiteObjects([key]);
     revalidatePath("/files", "layout");
     await recordSiteEdit(user.id);
 

@@ -117,7 +117,7 @@ async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
     ? siteOf(host, env)
     : await domainSite(host, env);
   if (!login) return notFound();
-  return servePage(request, env, login, (event) =>
+  return servePage(request, env, login, ctx, (event) =>
     ctx.waitUntil(
       pageviews(env)
         .record(event)

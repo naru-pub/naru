@@ -1,4 +1,8 @@
 import { LOGIN_NAME_REGEX } from "../../control-plane/src/lib/const";
+import {
+  edgeFileCacheUrl,
+  edgeSiteCacheTag,
+} from "../../control-plane/src/lib/edge/file-cache";
 import type { PageviewEvent } from "./pageview-log";
 
 // Hosted sites, <login>.naru.pub or a custom domain (domains.ts), answered at
@@ -12,12 +16,20 @@ import type { PageviewEvent } from "./pageview-log";
 // - an existing directory requested without its trailing slash redirects to
 //   it, keeping the query;
 // - a top-level navigation to an HTML page records a pageview.
+//
+// Unlike the proxy, the edge keeps what it reads from the bucket, a file or
+// its absence, in each data center's cache for SITE_FILE_CACHE_SECONDS, so a
+// busy page is not one bucket read per request. The control plane purges a
+// file's entry whenever it changes the file (control-plane/src/lib/
+// cache-purge.ts), so edits still appear at once.
 
 export interface PagesEnv {
   /** The site bucket: each site's files under `<login>/`. */
   SITE_FILES: R2Bucket;
   PLATFORM_DOMAIN: string;
   R2_PUBLIC_DOMAIN: string;
+  /** How long a data center keeps a lookup; unset or 0 keeps none. */
+  SITE_FILE_CACHE_SECONDS?: string;
 }
 
 /**
@@ -26,13 +38,18 @@ export interface PagesEnv {
  */
 export type RecordPageview = (event: PageviewEvent) => void;
 
-// Pages are revalidated on every request, so edits appear at once and every
-// pageview is counted, and may be served stale for a day if the edge errs.
+// Browsers revalidate pages on every request, so edits appear at once and
+// every pageview is counted, and may be served stale for a day if the edge
+// errs.
 const SITE_CACHE_CONTROL = "public, max-age=0, stale-if-error=86400";
 // Redirects are deterministic for a path, so browsers may keep them an hour.
 const REDIRECT_CACHE_CONTROL = "public, max-age=3600, stale-if-error=86400";
 const SERVED = ["html", "htm", "js", "json"];
 const MAX_METADATA_BYTES = 2048;
+// Larger files are read from the bucket each time: the cached copy is written
+// while the response streams, and both halves of the body are held until the
+// slower has read them.
+const MAX_CACHED_BYTES = 5 * 1024 * 1024;
 
 /**
  * The site a subdomain names, or null when it cannot name one. Reserved login
@@ -149,11 +166,73 @@ function unavailable() {
   });
 }
 
+/** A file read from the bucket or the cache. */
+type SiteFile = { body: ReadableStream | null; contentType: string };
+
+/**
+ * The bucket object `key`, or null when there is none: from this data
+ * center's cache when it holds the lookup, else from the bucket, keeping what
+ * it finds for the next request.
+ */
+async function readFile(
+  env: PagesEnv,
+  ctx: Pick<ExecutionContext, "waitUntil">,
+  login: string,
+  key: string,
+): Promise<SiteFile | null> {
+  const seconds = Number(env.SITE_FILE_CACHE_SECONDS) || 0;
+  const cache =
+    seconds > 0
+      ? (globalThis as { caches?: { default: Cache } }).caches?.default
+      : undefined;
+  if (!cache) {
+    const object = await env.SITE_FILES.get(key);
+    return object && fileOf(object.body, object);
+  }
+  const url = edgeFileCacheUrl(env.PLATFORM_DOMAIN, key);
+  const hit = await cache.match(url);
+  if (hit)
+    return hit.status === 404
+      ? null
+      : { body: hit.body, contentType: hit.headers.get("Content-Type") ?? "" };
+
+  const object = await env.SITE_FILES.get(key);
+  const headers = {
+    "Cache-Control": `public, max-age=${seconds}`,
+    "Cache-Tag": edgeSiteCacheTag(login),
+  };
+  // Caching is best effort: a page is never refused over it.
+  const store = (response: Response) =>
+    ctx.waitUntil(
+      cache
+        .put(url, response)
+        .catch((error) => console.error(`Caching ${key} failed`, error)),
+    );
+  if (!object) {
+    store(new Response(null, { status: 404, headers }));
+    return null;
+  }
+  if (object.size > MAX_CACHED_BYTES) return fileOf(object.body, object);
+  const [served, stored] = object.body.tee();
+  const file = fileOf(served, object);
+  store(
+    new Response(stored, {
+      headers: { ...headers, "Content-Type": file.contentType },
+    }),
+  );
+  return file;
+}
+
+function fileOf(body: ReadableStream, object: R2Object): SiteFile {
+  return { body, contentType: object.httpMetadata?.contentType ?? "" };
+}
+
 /** Answers a request for one of the sites `siteOf` names. */
 export async function servePage(
   request: Request,
   env: PagesEnv,
   login: string,
+  ctx: Pick<ExecutionContext, "waitUntil">,
   record: RecordPageview,
 ): Promise<Response> {
   const kind = classify(request);
@@ -171,19 +250,19 @@ export async function servePage(
       },
     });
 
-  let object: R2ObjectBody | null;
+  let file: SiteFile | null;
   try {
-    object = await env.SITE_FILES.get(`${login}/${path}`);
+    file = await readFile(env, ctx, login, `${login}/${path}`);
   } catch (error) {
     console.error(`Reading ${login}/${path} failed`, error);
     return unavailable();
   }
-  if (!object) return notFound();
+  if (!file) return notFound();
   // Only an existing directory is canonicalized. The redirect is not a
   // pageview; the request it leads to records one.
   const location = directoryRedirect(url, decoded);
   if (location) {
-    await object.body.cancel();
+    await file.body?.cancel();
     return new Response(null, {
       status: 308,
       headers: { Location: location, "Cache-Control": REDIRECT_CACHE_CONTROL },
@@ -198,9 +277,9 @@ export async function servePage(
       referrer: truncate(request.headers.get("referer")),
       userAgent: truncate(request.headers.get("user-agent")),
     });
-  return new Response(object.body, {
+  return new Response(file.body, {
     headers: {
-      "Content-Type": object.httpMetadata?.contentType ?? "",
+      "Content-Type": file.contentType,
       "Cache-Control": SITE_CACHE_CONTROL,
     },
   });

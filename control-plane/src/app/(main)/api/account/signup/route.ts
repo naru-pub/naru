@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { purgeSiteObjects } from "@/lib/cache-purge";
 import { createSession, setSessionCookie } from "@/lib/auth";
 import { db } from "@/lib/database";
 import { hash } from "@node-rs/argon2";
@@ -40,6 +41,8 @@ async function prepareUserHomeDirectory(userName: string) {
           ContentType: "text/html",
         }),
       );
+      // A visit before the name was taken left the edge keeping its absence.
+      await purgeSiteObjects([`${getUserHomeDirectory(userName)}/index.html`]);
     } else {
       throw error;
     }

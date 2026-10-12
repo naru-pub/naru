@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { purgeSiteObjects } from "@/lib/cache-purge";
 import {
   PutObjectCommand,
   HeadObjectCommand,
@@ -96,6 +97,8 @@ export async function POST(request: NextRequest) {
             }),
           );
 
+          // The edge may have kept the file's absence.
+          await purgeSiteObjects([normalizedKey]);
           revalidatePath("/files", "layout");
           await recordSiteEdit(user.id);
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   classify,
   decodePath,
@@ -15,14 +15,19 @@ import type { PageviewEvent } from "./pageview-log";
 // The retired proxy's own cases, ported from its Rust tests, so sites keep
 // answering as they did, and the handler against a bucket held in memory.
 
-const env = (files: Record<string, string> = {}): PagesEnv => ({
+const env = (
+  files: Record<string, string> = {},
+  reads: string[] = [],
+): PagesEnv => ({
   PLATFORM_DOMAIN: "naru.pub",
   R2_PUBLIC_DOMAIN: "r2.naru.pub",
   SITE_FILES: {
     async get(key: string) {
+      reads.push(key);
       if (!(key in files)) return null;
       return {
         body: new Response(files[key]).body,
+        size: new TextEncoder().encode(files[key]).byteLength,
         httpMetadata: {
           contentType: key.endsWith(".json") ? "application/json" : "text/html",
         },
@@ -30,6 +35,15 @@ const env = (files: Record<string, string> = {}): PagesEnv => ({
     },
   } as unknown as R2Bucket,
 });
+
+/** An ExecutionContext whose deferred work a test can wait for. */
+const context = () => {
+  const pending: Promise<unknown>[] = [];
+  return {
+    waitUntil: (promise: Promise<unknown>) => void pending.push(promise),
+    settled: () => Promise.all(pending),
+  };
+};
 
 describe("hosts", () => {
   test("names a site by its login, reserved logins too", () => {
@@ -173,6 +187,7 @@ describe("serving", () => {
       new Request(`https://alice.naru.pub${path}`, { headers }),
       env(files),
       "alice",
+      context(),
       (event) => events.push(event),
     );
     return { response, events };
@@ -242,8 +257,100 @@ describe("serving", () => {
       new Request("https://alice.naru.pub/"),
       failing,
       "alice",
+      context(),
       () => {},
     );
     expect(response.status).toBe(502);
+  });
+});
+
+describe("caching", () => {
+  // Cloudflare's cache, as the Worker sees it in one data center.
+  const entries = new Map<
+    string,
+    { status: number; headers: Headers; body: string }
+  >();
+  const cache = {
+    async match(url: string) {
+      const entry = entries.get(url);
+      return entry && new Response(entry.body || null, entry);
+    },
+    async put(url: string, response: Response) {
+      entries.set(url, {
+        status: response.status,
+        headers: response.headers,
+        body: await response.text(),
+      });
+    },
+  };
+  afterEach(() => {
+    entries.clear();
+    delete (globalThis as { caches?: unknown }).caches;
+  });
+
+  const files: Record<string, string> = {
+    "alice/index.html": "<h1>home</h1>",
+    "alice/blog/index.html": "<h1>blog</h1>",
+  };
+  const reads: string[] = [];
+  const cached = { ...env(files, reads), SITE_FILE_CACHE_SECONDS: "60" };
+  const visit = async (path: string, siteEnv: PagesEnv = cached) => {
+    (globalThis as { caches?: unknown }).caches = { default: cache };
+    const ctx = context();
+    const response = await servePage(
+      new Request(`https://alice.naru.pub${path}`),
+      siteEnv,
+      "alice",
+      ctx,
+      () => {},
+    );
+    const body = await response.text();
+    await ctx.settled();
+    return { response, body };
+  };
+
+  test("reads a file from the bucket once, then from the cache", async () => {
+    reads.length = 0;
+    for (const path of ["/", "/index.html", "/"]) {
+      const { response, body } = await visit(path);
+      expect(response.status).toBe(200);
+      expect(body).toBe("<h1>home</h1>");
+      expect(response.headers.get("content-type")).toBe("text/html");
+      // Browsers still revalidate: only the edge keeps it.
+      expect(response.headers.get("cache-control")).toBe(
+        "public, max-age=0, stale-if-error=86400",
+      );
+    }
+    expect(reads).toEqual(["alice/index.html"]);
+    const entry = entries.get("https://alice.naru.pub/index.html")!;
+    expect(entry.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(entry.headers.get("cache-tag")).toBe("naru-site-alice");
+  });
+
+  test("keeps a file's absence too", async () => {
+    reads.length = 0;
+    expect((await visit("/nowhere.html")).response.status).toBe(404);
+    expect((await visit("/nowhere.html")).response.status).toBe(404);
+    expect(reads).toEqual(["alice/nowhere.html"]);
+  });
+
+  test("redirects a cached directory to its trailing slash", async () => {
+    await visit("/blog/");
+    // Named by the bucket key, its path encoded whole.
+    expect([...entries.keys()]).toEqual([
+      "https://alice.naru.pub/blog%2Findex.html",
+    ]);
+    const { response } = await visit("/blog");
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("/blog/");
+  });
+
+  test("reads the bucket every time when no lifetime is set", async () => {
+    reads.length = 0;
+    const uncached = env(files, reads);
+    await visit("/", uncached);
+    await visit("/", uncached);
+    expect(reads).toEqual(["alice/index.html", "alice/index.html"]);
+    expect(entries.size).toBe(0);
   });
 });
