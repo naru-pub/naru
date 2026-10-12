@@ -119,8 +119,9 @@ by URL, with its `r2.naru.pub` copy (`control-plane/src/lib/cache-purge.ts`,
 purges the site's tag. A failed purge leaves a file stale until its entry
 expires, so the lifetime bounds how long an edit can take to appear.
 
-The site bucket has one CORS rule, set by hand (`wrangler r2 bucket cors set
-naru-pub`): `GET` and `HEAD` from any origin, preflights cached a day. The
+The site bucket has one CORS rule, declared with the rest of Cloudflare in
+the infra repository (`cloudflare/r2.tf`): `GET` and `HEAD` from any origin,
+preflights cached a day. The
 edge's redirects send pages' other files to `r2.naru.pub`, another origin,
 and a page reads them across it: web fonts, `fetch`, and a service worker's
 `cache.addAll`, which fails whole, and retries on every page load, when one
