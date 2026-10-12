@@ -395,7 +395,12 @@ export default async function PaymentOperatorPage({
             {payments.map((payment) => (
               <TableRow key={payment.id}>
                 <TableCell className="font-medium">
-                  {payment.login_name}
+                  <Link
+                    href={`/admin/users/${encodeURIComponent(payment.login_name)}`}
+                    className="underline"
+                  >
+                    {payment.login_name}
+                  </Link>
                 </TableCell>
                 <TableCell className="whitespace-nowrap tabular-nums">
                   {formatDate(payment.created_at)}

@@ -133,7 +133,7 @@ export default async function SubscriptionsPage({
               <TableRow key={sub.id}>
                 <TableCell className="font-medium">
                   <Link
-                    href={`/admin/events?user=${encodeURIComponent(sub.login_name)}`}
+                    href={`/admin/users/${encodeURIComponent(sub.login_name)}`}
                     className="underline"
                   >
                     {sub.login_name}

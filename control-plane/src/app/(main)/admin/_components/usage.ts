@@ -48,12 +48,31 @@ export type MetricKey = (typeof METRICS)[number]["key"];
 export const NEAR_LIMIT = 0.8;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
+}
+
+export function formatValue(value: number, unit: "bytes" | "count"): string {
+  return unit === "bytes"
+    ? formatBytes(value)
+    : new Intl.NumberFormat("ko-KR").format(value);
+}
+
 export function isMetricKey(value: unknown): value is MetricKey {
   return METRICS.some((metric) => metric.key === value);
 }
 
-// One row per live account: every metric, zero where there is none.
-function usageRows(now: Date) {
+// One row per live account, or for `userId` alone (deleted or not): every
+// metric, zero where there is none.
+function usageRows(now: Date, userId?: string) {
   const viewsSince = new Date(now.getTime() - 30 * DAY_MS);
   return db
     .selectFrom("users")
@@ -61,6 +80,7 @@ function usageRows(now: Date) {
       (eb) =>
         eb
           .selectFrom("site_data_files")
+          .$if(userId !== undefined, (qb) => qb.where("user_id", "=", userId!))
           .select([
             "user_id",
             sql<number>`sum(size_bytes)::float8`.as("bytes"),
@@ -74,6 +94,7 @@ function usageRows(now: Date) {
       (eb) =>
         eb
           .selectFrom("pageview_daily_stats")
+          .$if(userId !== undefined, (qb) => qb.where("user_id", "=", userId!))
           .select(["user_id", sql<number>`sum(views)::float8`.as("views")])
           .where(
             sql<boolean>`date >= (${viewsSince}::timestamptz at time zone 'UTC')::date`,
@@ -86,6 +107,7 @@ function usageRows(now: Date) {
       (eb) =>
         eb
           .selectFrom("custom_domains")
+          .$if(userId !== undefined, (qb) => qb.where("user_id", "=", userId!))
           .select(["user_id", sql<number>`count(*)::float8`.as("domains")])
           .groupBy("user_id")
           .as("domains"),
@@ -106,7 +128,13 @@ function usageRows(now: Date) {
       sql<number>`coalesce(views.views, 0)`.as("views_30d"),
       sql<number>`coalesce(domains.domains, 0)`.as("custom_domains"),
     ])
-    .where("users.deleted_at", "is", null);
+    .$if(userId === undefined, (qb) => qb.where("users.deleted_at", "is", null))
+    .$if(userId !== undefined, (qb) => qb.where("users.id", "=", userId!));
+}
+
+// One account's row of the usage table, for /admin/users/[loginName].
+export async function readAccountUsage(now: Date, userId: string) {
+  return usageRows(now, userId).executeTakeFirst();
 }
 
 // The /admin/usage page's numbers: distributions over every live account, free

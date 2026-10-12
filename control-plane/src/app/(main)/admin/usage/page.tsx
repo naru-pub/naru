@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  formatValue,
   isMetricKey,
   METRICS,
   NEAR_LIMIT,
@@ -21,24 +22,6 @@ import {
 import { requireOperator } from "../_components/requireOperator";
 
 export const metadata: Metadata = { title: "사용량 · 운영 · 나루" };
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
-}
-
-function formatValue(value: number, unit: "bytes" | "count"): string {
-  return unit === "bytes"
-    ? formatBytes(value)
-    : new Intl.NumberFormat("ko-KR").format(value);
-}
 
 export default async function UsagePage({
   searchParams,
@@ -163,7 +146,7 @@ export default async function UsagePage({
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">
                     <Link
-                      href={`/admin/events?user=${encodeURIComponent(row.login_name)}`}
+                      href={`/admin/users/${encodeURIComponent(row.login_name)}`}
                       className="underline"
                     >
                       {row.login_name}

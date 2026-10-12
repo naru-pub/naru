@@ -79,7 +79,7 @@ export default async function SupportersPage() {
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">
                     <Link
-                      href={`/admin/events?user=${encodeURIComponent(user.login_name)}`}
+                      href={`/admin/users/${encodeURIComponent(user.login_name)}`}
                       className="underline"
                     >
                       {user.login_name}
