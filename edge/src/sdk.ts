@@ -3,8 +3,8 @@ import aliases from "../../control-plane/sdk/aliases.json";
 // The Data SDK, naru.pub/sdk/<version>/naru.js and naru.d.ts, answered at the
 // edge so sites that import it keep working while the control plane is down.
 // The files are the committed control-plane/public/sdk/, deployed with the
-// Worker as its static assets; an alias such as /sdk/1/ names the newest
-// release of its line (control-plane/sdk/aliases.json), as the control
+// Worker as its static assets; /sdk/1/ stays on stable 1.0.0 as configured
+// in control-plane/sdk/aliases.json, matching the control
 // plane's own rewrite does.
 
 export interface SdkEnv {

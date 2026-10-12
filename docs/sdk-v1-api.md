@@ -12,10 +12,9 @@ const naru = createNaru({ site: "alice" });
 `site` may be omitted (or empty) on a `*.naru.pub` site. The module's matching
 TypeScript declarations are at `https://naru.pub/sdk/1/naru.d.ts`.
 
-`/sdk/1/` is the newest 1.x release, so a site importing it gets compatible
-fixes automatically. It is the URL to import. `/sdk/1.0.0/` is frozen and
-never changes. `/sdk/1.1.0/`, which adds members, is still being changed, so
-pin 1.0.0 if you need fixed bytes and do not need members.
+`/sdk/1/` stays on stable 1.0.0, whose bytes are frozen. The public `/docs`
+guides also describe 1.0.0. SDK 1.1.0 remains in development; its members,
+functions and newer APIs require importing `/sdk/1.1.0/naru.js` explicitly.
 
 ## Start with reading
 

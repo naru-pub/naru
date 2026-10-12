@@ -1,13 +1,40 @@
-const links = [
-  ["/docs", "길잡이 홈", "home"],
-  ["/docs/database", "데이터베이스", "database"],
-  ["/docs/media", "미디어", "media"],
-  ["/docs/sdk/1.1.0", "SDK 1.1.0", "sdk"],
-] as const;
+import { DOC_VERSIONS, guidePath, type DocsVersion } from "./versions";
 
-export default function DocsNav({ current }: { current: string }) {
+export default function DocsNav({
+  current,
+  version = "1.0.0",
+}: {
+  current: string;
+  version?: DocsVersion;
+}) {
+  const links = [
+    [guidePath(version, "home"), "길잡이 홈", "home"],
+    [guidePath(version, "database"), "데이터베이스", "database"],
+    [guidePath(version, "media"), "미디어", "media"],
+    [guidePath(version, "sdk"), `SDK ${version}`, "sdk"],
+  ] as const;
   return (
     <nav aria-label="문서" className="mb-10">
+      <div
+        className="mb-4 flex flex-wrap items-center gap-3 text-sm"
+        aria-label="SDK 버전"
+      >
+        <span>SDK 버전</span>
+        {DOC_VERSIONS.map((value) => (
+          <a
+            key={value}
+            href={guidePath(value, current)}
+            aria-current={version === value ? "true" : undefined}
+            className={
+              version === value
+                ? "font-bold underline underline-offset-4"
+                : "text-muted-foreground"
+            }
+          >
+            {value} · {value === "1.0.0" ? "안정" : "개발 중"}
+          </a>
+        ))}
+      </div>
       <ul className="flex flex-wrap gap-2 text-sm">
         {links.map(([href, label, key]) => (
           <li key={href}>

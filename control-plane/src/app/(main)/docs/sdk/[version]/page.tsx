@@ -183,7 +183,7 @@ export default async function SdkReference(props: {
   return (
     <div className="min-h-screen">
       <div className="mx-auto max-w-6xl px-5 py-12 md:px-8">
-        <DocsNav current="sdk" />
+        <DocsNav current="sdk" version={version} />
         <header className="mb-12 max-w-3xl space-y-5">
           <p className="text-sm text-muted-foreground">
             NARU / DOCS / SDK {version} / REFERENCE
@@ -195,7 +195,7 @@ export default async function SdkReference(props: {
             <code>naru.js</code>가 내보내는 모든 함수와 타입입니다.
           </p>
           <div className="flex flex-wrap gap-5 text-sm underline underline-offset-4">
-            <a href="/docs/database">데이터베이스 사용 안내 →</a>
+            <a href={`/docs/${version}/database`}>데이터베이스 사용 안내 →</a>
             <a href={`/sdk/${version}/naru.js`}>naru.js 보기 ↗</a>
             <a href={`/sdk/${version}/naru.d.ts`}>naru.d.ts 보기 ↗</a>
           </div>

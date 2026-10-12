@@ -4,8 +4,8 @@ import sdkAliases from "./sdk/aliases.json" with { type: "json" };
 const nextConfig = {
   // The Dockerfile's web image runs .next/standalone/server.js.
   output: "standalone",
-  // /sdk/1/ follows the newest 1.x release, so a site that imports it gets
-  // compatible fixes; /sdk/<exact version>/ never changes once released. In
+  // /sdk/1/ remains on the stable 1.0.0 release. Newer releases require an
+  // explicit version; /sdk/<exact version>/ never changes once released. In
   // production the edge Worker answers naru.pub/sdk/* (edge/src/sdk.ts) with
   // the same files and aliases; these serve local development and the smoke
   // test.
