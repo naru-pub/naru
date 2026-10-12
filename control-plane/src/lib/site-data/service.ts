@@ -117,6 +117,7 @@ export async function executeData(command: DataCommand) {
     "execute",
     {
       ownerId: String(owner.id),
+      site: command.site,
       access: {
         admin,
         allowedIds: allowedIds?.map(String) ?? null,

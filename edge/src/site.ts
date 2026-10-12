@@ -14,6 +14,8 @@ import {
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
 import { publicResult } from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
+import { RULE_WRAPPER, rulePredicate } from "./rules";
+import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { quickjs } from "./quickjs";
 import {
   documentOf,
@@ -203,7 +205,13 @@ export class SiteData extends DurableObject<Env> {
   }
 
   private collection(id: string, row: Row) {
-    return { id, user_id: this.meta("owner_id"), ...row };
+    const rules = this.meta(`rules:${id}`);
+    return {
+      id,
+      user_id: this.meta("owner_id"),
+      ...row,
+      ...(rules ? { rules } : {}),
+    };
   }
 
   private usage() {
@@ -364,7 +372,14 @@ export class SiteData extends DurableObject<Env> {
       const spent = this.run(() => this.spend());
       if (!spent.ok) return spent;
     }
-    return this.run(() => this.executeSync(input));
+    try {
+      const rules = await this.prepareRules(input);
+      return this.run(() => this.executeSync(input, rules));
+    } catch (error) {
+      return this.run(() => {
+        throw error;
+      });
+    }
   }
 
   /**
@@ -389,15 +404,23 @@ export class SiteData extends DurableObject<Env> {
       return { ok: true, value: { pass: true } };
     const spent = this.run(() => this.spend());
     if (!spent.ok) return spent;
-    return this.run(() => {
-      if (input.path.length > 2) throw new DataError(404, "Not found.");
-      input.path.forEach(name);
-      return this.executeSync({
-        ...input,
-        ownerId,
-        access: { admin: false, allowedIds: null, anonymous: true },
+    const command: ExecuteInput = {
+      ...input,
+      ownerId,
+      access: { admin: false, allowedIds: null, anonymous: true },
+    };
+    try {
+      const rules = await this.prepareRules(command);
+      return this.run(() => {
+        if (input.path.length > 2) throw new DataError(404, "Not found.");
+        input.path.forEach(name);
+        return this.executeSync(command, rules);
       });
-    });
+    } catch (error) {
+      return this.run(() => {
+        throw error;
+      });
+    }
   }
 
   /** Sets what `serve` relies on (see EdgeConfiguration); reports usage. */
@@ -418,7 +441,10 @@ export class SiteData extends DurableObject<Env> {
     });
   }
 
-  private executeSync(input: ExecuteInput) {
+  private executeSync(
+    input: ExecuteInput,
+    rules?: { file: string; source: string; module: QuickJSWASMModule },
+  ) {
     const { path, method, access } = input;
     const body = input.body ?? {};
     const reading = method === "GET";
@@ -491,7 +517,14 @@ export class SiteData extends DurableObject<Env> {
           collection.id,
         );
         this.sql.exec("DELETE FROM collections WHERE id = ?", collection.id);
+        this.setMeta(`rules:${collection.id}`, null);
         return { result: { success: true }, publicRead };
+      }
+      if (Object.hasOwn(body, "rules")) {
+        this.setMeta(
+          `rules:${collection.id}`,
+          body.rules === null ? null : name(body.rules),
+        );
       }
       const updated = {
         name: collection.name,
@@ -509,6 +542,53 @@ export class SiteData extends DurableObject<Env> {
         publicRead,
       };
     }
+    const ruleFile = this.meta(`rules:${collection.id}`);
+    if (!admin && ruleFile && rules?.file !== ruleFile)
+      throw new DataError(503, "Collection rules changed; retry the request.");
+    const ruleHost = this.functionHost();
+    const invokeRule = (hook: string, args: unknown) => {
+      if (!rules) throw new DataError(503, "Collection rules are unavailable.");
+      return runFunction(
+        rules.module,
+        {
+          source: rules.source + RULE_WRAPPER,
+          name: hook,
+          args,
+          member: access.member ?? null,
+          now: Date.now(),
+          readonly: true,
+        },
+        ruleHost,
+      );
+    };
+    const authorization =
+      reading && !admin && ruleFile
+        ? rulePredicate(
+            invokeRule("__naruScope", {
+              collection: collection.name,
+              operation: path.length === 2 ? "get" : "list",
+              id: path[1] ?? null,
+              filter: input.filter ?? {},
+            }),
+          )
+        : undefined;
+    const checkWrite = (before: unknown, after: unknown, operation: string) => {
+      if (
+        !admin &&
+        ruleFile &&
+        invokeRule("__naruWrite", {
+          collection: collection.name,
+          before,
+          after,
+          operation,
+        }) !== true
+      )
+        throw new DataError(
+          403,
+          "Collection rule denied this write.",
+          "ACCESS_DENIED",
+        );
+    };
     const member = access.member ?? null;
     if (method === "GET") {
       const level = collection.read_access;
@@ -520,7 +600,7 @@ export class SiteData extends DurableObject<Env> {
             : `Collection ${collection.name} is not publicly readable. Change its read access in the control panel, or sign in.`,
         );
       // Identical rows for any stranger, so a shared cache may hold them.
-      publicRead = level === "world" && access.anonymous;
+      publicRead = level === "world" && access.anonymous && !ruleFile;
       if (path.length === 2) {
         const row = this.rows(
           "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
@@ -528,16 +608,28 @@ export class SiteData extends DurableObject<Env> {
           path[1],
         )[0];
         if (!row) throw new DataError(404, "Document not found.");
+        if (authorization) {
+          const visible = this.rows(
+            `SELECT id FROM documents WHERE collection_id = ? AND id = ? AND (${authorization.sql})`,
+            collection.id,
+            path[1],
+            ...authorization.bindings,
+          );
+          if (!visible.length) throw new DataError(404, "Document not found.");
+        }
         return { result: { document: documentOf(row) }, publicRead };
       }
-      return { result: this.list(collection, input), publicRead };
+      return {
+        result: this.list(collection, input, authorization),
+        publicRead,
+      };
     }
     const creating = method === "POST" && path.length === 1;
     const level = collection.write_access;
     // Adding is open to anyone in `create` and to members in `member`.
     // Replacing and deleting there is the owner's, and in `member` also the
     // author's, checked against the document below.
-    const authorOnly = !admin && level === "member" && !creating;
+    const authorOnly = !admin && !ruleFile && level === "member" && !creating;
     if (
       !(
         admin ||
@@ -577,6 +669,8 @@ export class SiteData extends DurableObject<Env> {
           403,
           `Members can delete only the documents they created in collection ${collection.name}.`,
         );
+      if (existing)
+        checkWrite(this.ruleDocument(collection.id, path[1]), null, "delete");
       this.sql.exec(
         "DELETE FROM documents WHERE collection_id = ? AND id = ?",
         collection.id,
@@ -609,6 +703,17 @@ export class SiteData extends DurableObject<Env> {
     // Never overwrite on create, even in the event of an ID collision.
     if (creating && existing)
       throw new DataError(409, "Document ID collision. Retry creation.");
+    const before = this.ruleDocument(collection.id, id);
+    checkWrite(
+      before,
+      {
+        ...(before ?? {}),
+        id,
+        data: body.data,
+        createdBy: before ? before.createdBy : admin ? null : member,
+      },
+      existing ? "update" : "create",
+    );
     this.upsert(collection.id, id, encoded, size, admin ? null : member);
     return { result: { id, ...this.written(collection.id, id) }, publicRead };
   }
@@ -627,17 +732,62 @@ export class SiteData extends DurableObject<Env> {
       );
   }
 
+  private ruleDocument(collection: string, id: string) {
+    const row = this.rows(
+      "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
+      collection,
+      id,
+    )[0];
+    return row
+      ? (publicResult(documentOf(row)) as {
+          id: string;
+          data: unknown;
+          createdBy: string | null;
+        })
+      : null;
+  }
+
+  private async prepareRules(input: ExecuteInput) {
+    if (
+      input.access.admin ||
+      !input.path.length ||
+      (input.path.length === 1 && ["PATCH", "DELETE"].includes(input.method))
+    )
+      return;
+    const row = this.rows(
+      "SELECT id FROM collections WHERE name = ?",
+      name(input.path[0]),
+    )[0];
+    const file = row ? this.meta(`rules:${row.id}`) : null;
+    if (!file) return;
+    if (!input.site)
+      throw new DataError(503, "Collection rules need a site name.");
+    const source = await this.functionsSource(input.site, file, "rules");
+    if (!source)
+      throw new DataError(
+        403,
+        "Configured collection rules are missing.",
+        "ACCESS_DENIED",
+      );
+    return { file, source, module: await quickjs() };
+  }
+
   /** Each functions module of the site, kept a few seconds between checks. */
   private functions = new Map<
     string,
     { source: string | null; etag: string | null; checkedAt: number }
   >();
-  private async functionsSource(site: string, file: string) {
+  private async functionsSource(
+    site: string,
+    file: string,
+    folder = "functions",
+  ) {
+    const cacheKey = `${folder}:${file}`;
     const now = Date.now();
-    const known = this.functions.get(file);
+    const known = this.functions.get(cacheKey);
     if (known && now - known.checkedAt < FUNCTIONS_FRESH_MS)
       return known.source;
-    const key = `${site}/${functionsPath(file)}`;
+    const key = `${site}/_naru/${folder}/${file}.js`;
     const head = await this.env.SITE_FILES.head(key);
     if (head && head.size > MAX_FUNCTIONS_BYTES)
       throw new DataError(
@@ -646,13 +796,13 @@ export class SiteData extends DurableObject<Env> {
       );
     if (!head || head.etag !== known?.etag) {
       const object = head ? await this.env.SITE_FILES.get(key) : null;
-      this.functions.set(file, {
+      this.functions.set(cacheKey, {
         source: object ? await object.text() : null,
         etag: object?.etag ?? null,
         checkedAt: now,
       });
     } else known!.checkedAt = now;
-    return this.functions.get(file)!.source;
+    return this.functions.get(cacheKey)!.source;
   }
 
   /**
@@ -810,16 +960,22 @@ export class SiteData extends DurableObject<Env> {
     site: string;
     file: string;
     source: string | null;
+    folder?: "functions" | "rules";
   }) {
-    const key = `${input.site}/${functionsPath(name(input.file))}`;
+    const folder = input.folder === "rules" ? "rules" : "functions";
+    const key = `${input.site}/_naru/${folder}/${name(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
-    this.functions.delete(input.file);
+    this.functions.delete(`${folder}:${input.file}`);
     return { ok: true, value: null };
   }
 
-  private list(collection: Collection, input: ListInput) {
-    const query = listQuery(collection.id, input);
+  private list(
+    collection: Collection,
+    input: ListInput,
+    authorization?: ReturnType<typeof rulePredicate>,
+  ) {
+    const query = listQuery(collection.id, input, authorization);
     const rows = this.rows(query.select.sql, ...query.select.bindings);
     const totalCount = query.count
       ? Number(this.rows(query.count.sql, ...query.count.bindings)[0].matched)
@@ -950,6 +1106,11 @@ export class SiteData extends DurableObject<Env> {
   async export(): Promise<Outcome<Snapshot>> {
     return this.run(() => ({
       ownerId: this.meta("owner_id"),
+      rules: Object.fromEntries(
+        this.rows("SELECT key, value FROM meta WHERE key LIKE 'rules:%'").map(
+          (row) => [String(row.key).slice(6), String(row.value)],
+        ),
+      ),
       collections: this.rows(
         "SELECT id, name, read_access, write_access FROM collections ORDER BY id",
       ) as unknown as Collection[],
@@ -981,6 +1142,8 @@ export class SiteData extends DurableObject<Env> {
       this.sql.exec("DELETE FROM meta");
       this.budget = undefined;
       if (snapshot.ownerId !== null) this.setMeta("owner_id", snapshot.ownerId);
+      for (const [id, file] of Object.entries(snapshot.rules ?? {}))
+        this.setMeta(`rules:${id}`, name(file));
       for (const collection of snapshot.collections)
         this.sql.exec(
           "INSERT INTO collections (id, name, read_access, write_access) VALUES (?, ?, ?, ?)",

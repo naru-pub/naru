@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
+import { RULE_WRAPPER, rulePredicate } from "./rules";
 import { beforeEach, describe, expect, test } from "vitest";
 import {
   newQuickJSWASMModuleFromVariant,
@@ -260,4 +263,136 @@ test("read-only execution permits reads", () => {
       host,
     ),
   ).toEqual({ id: "one", data: { value: 1 } });
+});
+
+describe("community board rule example", () => {
+  const source =
+    readFileSync(
+      new URL("../../docs/examples/community-board-rules.js", import.meta.url),
+      "utf8",
+    ) + RULE_WRAPPER;
+  const invoke = (name: string, args: unknown, member: string | null = "m-1") =>
+    runFunction(
+      module,
+      { source, name, args, member, now: 1, readonly: true },
+      host,
+    );
+  const log = {
+    id: "log",
+    createdBy: "m-1",
+    data: {
+      owner: "m-1",
+      board: "default",
+      secret: true,
+      title: "Secret",
+      category: "",
+      text: "body",
+      image: "https://example.com/a.png",
+    },
+  };
+  test("board read/list levels produce restrictive SQL and anonymous access is denied", () => {
+    documents.set("neo_avocado_boards/default", { listLevel: 3, readLevel: 2 });
+    expect(
+      invoke("__naruScope", {
+        collection: "neo_avocado_logs",
+        operation: "list",
+        filter: { board: "default" },
+      }),
+    ).toBe(false);
+    expect(
+      invoke(
+        "__naruScope",
+        { collection: "neo_avocado_logs", operation: "list", filter: {} },
+        null,
+      ),
+    ).toBe(false);
+    documents.set("neo_avocado_boards/default", { listLevel: 2, readLevel: 2 });
+    const predicate = invoke("__naruScope", {
+      collection: "neo_avocado_logs",
+      operation: "list",
+      filter: { board: "default" },
+    });
+    expect(rulePredicate(predicate).bindings).toContain("m-1");
+  });
+  test("write ownership, required secrets, board changes and direct cascade deletion are checked", () => {
+    documents.set("neo_avocado_boards/default", {
+      writeLevel: 2,
+      secret: "required",
+      kind: "image",
+    });
+    const write = (before: unknown, after: unknown, operation = "update") =>
+      invoke("__naruWrite", {
+        collection: "neo_avocado_logs",
+        before,
+        after,
+        operation,
+      });
+    expect(write(null, log, "create")).toBe(true);
+    expect(write(log, { ...log, data: { ...log.data, owner: "other" } })).toBe(
+      false,
+    );
+    expect(write(log, { ...log, data: { ...log.data, board: "other" } })).toBe(
+      false,
+    );
+    expect(write(log, { ...log, data: { ...log.data, secret: false } })).toBe(
+      false,
+    );
+    expect(write(log, null, "delete")).toBe(false);
+    expect(write({ ...log, createdBy: "other" }, log)).toBe(false);
+    documents.set("neo_avocado_members/m-1", { role: "moderator", level: 10 });
+    const other = {
+      ...log,
+      createdBy: "other",
+      data: { ...log.data, owner: "other" },
+    };
+    expect(write(other, other)).toBe(true);
+  });
+  test("comments require readable parents, enforce comment levels and reject parent forgery", () => {
+    documents.set("neo_avocado_logs/log", { ...log.data, owner: "other" });
+    const args = {
+      collection: "neo_avocado_comments",
+      operation: "list",
+      filter: { logId: "log" },
+    };
+    expect(invoke("__naruScope", args)).toBe(false);
+    documents.set("neo_avocado_logs/log", log.data);
+    expect(invoke("__naruScope", args)).toEqual({ eq: ["logId", "log"] });
+    const comment = {
+      id: "comment",
+      createdBy: "m-1",
+      data: { owner: "m-1", logId: "log", text: "hi", dice: false },
+    };
+    documents.set("neo_avocado_boards/default", {
+      readLevel: 2,
+      commentLevel: 3,
+    });
+    expect(
+      invoke("__naruWrite", {
+        collection: "neo_avocado_comments",
+        operation: "create",
+        before: null,
+        after: comment,
+      }),
+    ).toBe(false);
+    documents.set("neo_avocado_boards/default", {
+      readLevel: 2,
+      commentLevel: 2,
+    });
+    expect(
+      invoke("__naruWrite", {
+        collection: "neo_avocado_comments",
+        operation: "create",
+        before: null,
+        after: comment,
+      }),
+    ).toBe(true);
+    expect(
+      invoke("__naruWrite", {
+        collection: "neo_avocado_comments",
+        operation: "update",
+        before: comment,
+        after: { ...comment, data: { ...comment.data, logId: "other" } },
+      }),
+    ).toBe(false);
+  });
 });

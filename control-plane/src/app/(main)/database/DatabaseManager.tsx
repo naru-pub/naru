@@ -9,7 +9,12 @@ import { useConfirm } from "@/components/ui/confirm";
 import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
 
-type Collection = { name: string; read_access: string; write_access: string };
+type Collection = {
+  name: string;
+  read_access: string;
+  write_access: string;
+  rules?: string;
+};
 type Document = { id: string; data: unknown };
 async function api(path = "", method = "GET", body?: unknown) {
   const response = await fetch(`/api/account/database${path}`, {
@@ -44,6 +49,7 @@ export default function DatabaseManager({
   const [newName, setNewName] = useState("");
   const [read, setRead] = useState("admin");
   const [write, setWrite] = useState("admin");
+  const [rules, setRules] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -190,6 +196,7 @@ export default function DatabaseManager({
                         setSelected(c.name);
                         setRead(c.read_access);
                         setWrite(c.write_access);
+                        setRules(c.rules ?? "");
                         setId("");
                         setDocuments([]);
                         setTotal(null);
@@ -270,6 +277,18 @@ export default function DatabaseManager({
                           </option>
                         </Select>
                       </label>
+                      <label className="space-y-1">
+                        <span className="text-sm">추가 접근 규칙</span>
+                        <Input
+                          value={rules}
+                          onChange={(event) => setRules(event.target.value)}
+                          placeholder="규칙 파일 이름 (비워 두면 사용 안 함)"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          사이트의 _naru/rules/파일이름.js를 사용합니다. 규칙
+                          파일이 없으면 회원과 방문자의 접근을 거부합니다.
+                        </p>
+                      </label>
                       <Button
                         onClick={async () => {
                           if (
@@ -283,7 +302,11 @@ export default function DatabaseManager({
                           )
                             return;
                           void run(async () => {
-                            await api(`/${selected}`, "PATCH", { read, write });
+                            await api(`/${selected}`, "PATCH", {
+                              read,
+                              write,
+                              rules: rules.trim() || null,
+                            });
                             await refresh();
                           });
                         }}

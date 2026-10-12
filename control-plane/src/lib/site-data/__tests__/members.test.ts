@@ -699,6 +699,149 @@ integration("site members", () => {
       await owned("POST", [], { name, read, write });
   });
 
+  test("native collection rules enforce board levels, secrets, moderation and fail closed", async () => {
+    const bob = await signIn("bob");
+    const carol = await signIn("carol");
+    await owned("POST", [], {
+      name: "rule_posts",
+      read: "member",
+      write: "member",
+    });
+    await owned("POST", [], {
+      name: "rule_roles",
+      read: "admin",
+      write: "admin",
+    });
+    await owned("PUT", ["rule_roles", bob.memberId], { data: { level: 2 } });
+    await owned("PUT", ["rule_roles", carol.memberId], {
+      data: { level: 10, moderator: true },
+    });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      file: "board",
+      folder: "rules",
+      source: `
+      export function scope(ctx) {
+        if (!ctx.member) return false;
+        const role = ctx.get("rule_roles", ctx.member.id)?.data;
+        if (!role || role.level < 2) return false;
+        return role.moderator ? true : { any: [{ ne: ["secret", true] }, { eq: ["owner", ctx.member.id] }] };
+      }
+      export function canWrite(ctx, {before, after, operation}) {
+        const role = ctx.get("rule_roles", ctx.member.id)?.data;
+        if (!role || role.level < 2) return false;
+        if (operation === "create") return after.data.owner === ctx.member.id;
+        return (role.moderator || before.data.owner === ctx.member.id) && (!after || after.data.owner === before.data.owner);
+      }
+    `,
+    });
+    await owned("PATCH", ["rule_posts"], {
+      read: "member",
+      write: "member",
+      rules: "board",
+    });
+    await owned("PUT", ["rule_posts", "a"], {
+      data: { owner: carol.memberId, secret: true, text: "private" },
+    });
+    for (const id of ["b", "c", "d"])
+      await owned("PUT", ["rule_posts", id], {
+        data: { owner: carol.memberId, text: id },
+      });
+    const page = await as(bob.accessToken, "GET", ["rule_posts"], undefined, {
+      size: 2,
+      includeTotal: true,
+    });
+    expect(page.totalCount).toBe(3);
+    expect(page.documents.map((d: any) => d.id)).toEqual(["b", "c"]);
+    expect(
+      (
+        await as(bob.accessToken, "GET", ["rule_posts"], undefined, {
+          size: 2,
+          after: page.nextCursor,
+        })
+      ).documents.map((d: any) => d.id),
+    ).toEqual(["d"]);
+    await expect(
+      as(bob.accessToken, "GET", ["rule_posts", "a"]),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      as(bob.accessToken, "PUT", ["rule_posts", "b"], {
+        data: { owner: carol.memberId },
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      as(bob.accessToken, "POST", ["rule_posts"], {
+        data: { owner: carol.memberId },
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      as(bob.accessToken, "POST", ["rule_posts"], {
+        data: { owner: bob.memberId, secret: true },
+      }),
+    ).resolves.toMatchObject({ createdBy: bob.memberId });
+    await expect(
+      as(carol.accessToken, "GET", ["rule_posts", "a"]),
+    ).resolves.toBeDefined();
+    await as(carol.accessToken, "PUT", ["rule_posts", "b"], {
+      data: { owner: carol.memberId, text: "moderated" },
+    });
+    await owned("PATCH", ["rule_posts"], {
+      read: "world",
+      write: "member",
+      rules: "board",
+    });
+    await callSiteObject("alice", "configure", {
+      ownerId: String(owner),
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    const anonymous = await fetch(
+      `${process.env.EDGE_WORKER_URL}/api/data/v1/alice/rule_posts?includeTotal=1`,
+    );
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.headers.get("cache-control")).toBe("no-store");
+    expect(await anonymous.json()).toMatchObject({
+      documents: [],
+      totalCount: 0,
+    });
+    const snapshot = await callSiteObject<any>("alice", "export", {});
+    expect(Object.values(snapshot.rules)).toContain("board");
+    await callSiteObject("alice", "import", snapshot);
+    await expect(
+      as(bob.accessToken, "GET", ["rule_posts", "a"]),
+    ).rejects.toMatchObject({ status: 404 });
+    // Missing files and mutating hooks deny access, never falling back to collection permissions.
+    await owned("PATCH", ["rule_posts"], {
+      read: "member",
+      write: "member",
+      rules: "missing",
+    });
+    await expect(
+      as(bob.accessToken, "GET", ["rule_posts"]),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(owned("GET", ["rule_posts"])).resolves.toBeDefined();
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      file: "mutating",
+      folder: "rules",
+      source:
+        'export function scope(ctx) { ctx.set("rule_roles", "bad", {}); return true; }',
+    });
+    await owned("PATCH", ["rule_posts"], {
+      read: "member",
+      write: "member",
+      rules: "mutating",
+    });
+    await expect(
+      as(bob.accessToken, "GET", ["rule_posts"]),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(owned("GET", ["rule_roles", "bad"])).rejects.toMatchObject({
+      status: 404,
+    });
+    await owned("DELETE", ["rule_posts"]);
+    await owned("DELETE", ["rule_roles"]);
+  });
+
   describe("uploads", () => {
     const media = (token: string, method: string, path: string[], body = {}) =>
       executeMedia({

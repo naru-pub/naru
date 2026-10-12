@@ -22,6 +22,7 @@ export type Access = {
 
 export type ExecuteInput = {
   ownerId: string;
+  site?: string;
   access: Access;
   path: string[];
   method: string;
@@ -46,6 +47,7 @@ export type Collection = {
   name: string;
   read_access: string;
   write_access: string;
+  rules?: string;
 };
 
 /** A document as test-only `export` and `import` carry it; times in ms. */
@@ -65,6 +67,7 @@ export type Snapshot = {
   ownerId: string | null;
   collections: Collection[];
   documents: StoredDocument[];
+  rules?: Record<string, string>;
 };
 
 /** Errors cross the RPC boundary as values: a thrown error loses its fields. */

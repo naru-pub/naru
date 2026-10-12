@@ -97,6 +97,7 @@ export async function website(
     const outcome = (await stub.serve({
       path,
       method: request.method,
+      site,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
       includeTotal: url.searchParams.get("includeTotal") === "1",

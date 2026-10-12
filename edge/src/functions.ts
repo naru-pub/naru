@@ -39,7 +39,7 @@ export type Invocation = {
   source: string;
   name: string;
   args: unknown;
-  member: string;
+  member: string | null;
   now: number;
   readonly?: boolean;
 };
@@ -58,7 +58,7 @@ const __call = (operation, ...args) => {
 Math.random = () => __call("random");
 globalThis.__run = (name, member, now, args) => {
   const ctx = Object.freeze({
-    member: Object.freeze({ id: member }),
+    member: member === null ? null : Object.freeze({ id: member }),
     now,
     random: () => __call("random"),
     get: (collection, id) => __call("get", collection, id),
