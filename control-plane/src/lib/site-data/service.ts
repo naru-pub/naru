@@ -171,7 +171,7 @@ export async function executeBatch(command: DataCommand) {
  * A member calls one of the site's functions: `path` is the module and the
  * function, `_naru/functions/<module>.js` and its export.
  */
-export async function executeCall(command: DataCommand) {
+export async function executeCall(command: DataCommand, readonly = false) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
   if (command.path.length !== 2) throw new DataError(404, "Not found.");
@@ -184,7 +184,7 @@ export async function executeCall(command: DataCommand) {
     );
   return callSiteObject<{ result: unknown }>(
     command.site,
-    "call",
+    readonly ? "read" : "call",
     {
       ownerId: String(owner.id),
       site: command.site,

@@ -741,6 +741,16 @@ integration("SDK and data API contract", () => {
       expect(await member.call("counter/bump", { by: 3 })).toMatchObject({
         n: 5,
       });
+      await expect(
+        member.read("counter/bump", { by: 100 }),
+      ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "counter",
+        source:
+          'export function peek(ctx) { return ctx.get("crud", "count").data; }',
+      });
+      expect(await member.read("counter/peek")).toBe(5);
       await expect(member.call("counter/missing")).rejects.toMatchObject({
         code: "NOT_FOUND",
       });

@@ -99,12 +99,15 @@ export async function dataRequest(
         ? await executeMedia(command)
         : path[0] === "_batch"
           ? await executeBatch({ ...command, path: [] })
-          : path[0] === "_call" && !admin
-            ? await executeCall({ ...command, path: path.slice(1) })
+          : ["_call", "_read"].includes(path[0]) && !admin
+            ? await executeCall(
+                { ...command, path: path.slice(1) },
+                path[0] === "_read",
+              )
             : await executeData(command);
     // A function's result is its own JSON, not documents to translate; the
     // documents its ctx returned were translated as they were read.
-    const calling = path[0] === "_call" && !admin;
+    const calling = ["_call", "_read"].includes(path[0]) && !admin;
     return Response.json(admin || calling ? result : publicResult(result), {
       headers: {
         ...headers,

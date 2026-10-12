@@ -223,3 +223,41 @@ describe("the host", () => {
     expect(run(counter, "f")).toEqual([1, 1]);
   });
 });
+
+test("read-only execution rejects every write even when caught", () => {
+  for (const operation of ["add", "set", "delete"]) {
+    expect(() =>
+      runFunction(
+        module,
+        {
+          source: `export function read(ctx) { try { ctx.${operation}("items", "one", {}); } catch {} return true; }`,
+          name: "read",
+          args: null,
+          member: "m-1",
+          now: 0,
+          readonly: true,
+        },
+        host,
+      ),
+    ).toThrow("read-only functions cannot write");
+  }
+  expect(operations).toEqual([]);
+  expect(documents.size).toBe(0);
+});
+test("read-only execution permits reads", () => {
+  documents.set("items/one", { value: 1 });
+  expect(
+    runFunction(
+      module,
+      {
+        source: 'export function read(ctx) { return ctx.get("items", "one"); }',
+        name: "read",
+        args: null,
+        member: "m-1",
+        now: 0,
+        readonly: true,
+      },
+      host,
+    ),
+  ).toEqual({ id: "one", data: { value: 1 } });
+});

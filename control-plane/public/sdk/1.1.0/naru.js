@@ -624,6 +624,20 @@ function member(context, token, expiresAt, id) {
       });
       return result;
     },
+    async read(name, args = null, { signal } = {}) {
+      const parts = typeof name === "string" ? name.split("/") : [];
+      if (parts.length !== 2)
+        throw new TypeError('read() names "<module>/<function>".');
+      parts.forEach(segment);
+      jsonValue(args, undefined, "args");
+      const { result } = await send(`${root}/_read/${parts[0]}/${parts[1]}`, {
+        method: "POST",
+        body: { args },
+        signal,
+        touches: [],
+      });
+      return result;
+    },
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
   });

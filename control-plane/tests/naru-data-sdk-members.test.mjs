@@ -431,3 +431,27 @@ test("membership checks live state without forgetting a pending member's session
     { local },
   );
 });
+
+test("read posts to the read-only endpoint with member credentials", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() => Response.json({ result: { value: 1 } }));
+    assert.deepEqual(await member.read("shop/catalog", { page: 1 }), {
+      value: 1,
+    });
+    assert.equal(
+      calls[0].url.href,
+      "https://naru.pub/api/data/v1/alice/_read/shop/catalog",
+    );
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
+    assert.deepEqual(JSON.parse(calls[0].body), { args: { page: 1 } });
+    await assert.rejects(member.read("bad"), TypeError);
+    await assert.rejects(
+      member.read("shop/catalog", { date: new Date() }),
+      TypeError,
+    );
+    assert.equal(calls.length, 1);
+  });
+});

@@ -78,6 +78,7 @@ const rateLimited = () =>
 const MEMBER_WRITES_PER_MINUTE = 30;
 /** Function calls a member may make a minute. */
 const MEMBER_CALLS_PER_MINUTE = 30;
+const MEMBER_READS_PER_MINUTE = 120;
 /**
  * Where a site's functions are, in its files: one module per app, so a site
  * holding several keeps them apart. Only files here are run on the server;
@@ -240,17 +241,24 @@ export class SiteData extends DurableObject<Env> {
    * A member's writes, or function calls, a minute, in fixed-minute buckets
    * like visitors'.
    */
-  private limitMember(member: string, kind: "write" | "call" = "write") {
+  private limitMember(
+    member: string,
+    kind: "write" | "call" | "read" = "write",
+  ) {
     const window = Math.floor(Date.now() / 60000) * 60000;
     this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
-    const key = kind === "write" ? `member:${member}` : `call:${member}`;
+    const key = kind === "write" ? `member:${member}` : `${kind}:${member}`;
     const count = Number(
       this.rows("SELECT count FROM rate_limits WHERE key = ?", key)[0]?.count ??
         0,
     );
     if (
       count >=
-      (kind === "write" ? MEMBER_WRITES_PER_MINUTE : MEMBER_CALLS_PER_MINUTE)
+      (kind === "write"
+        ? MEMBER_WRITES_PER_MINUTE
+        : kind === "read"
+          ? MEMBER_READS_PER_MINUTE
+          : MEMBER_CALLS_PER_MINUTE)
     )
       throw new DataError(
         429,
@@ -727,6 +735,10 @@ export class SiteData extends DurableObject<Env> {
    * the member's calls first, on their own: a call that then fails was still
    * made. The function runs in one transaction; a failure rolls it back.
    */
+  async read(input: Parameters<SiteData["call"]>[0]) {
+    return this.call({ ...input, readonly: true });
+  }
+
   async call(input: {
     ownerId: string;
     site: string;
@@ -735,13 +747,14 @@ export class SiteData extends DurableObject<Env> {
     file: string;
     name: string;
     args: unknown;
+    readonly?: boolean;
   }): Promise<Outcome<{ result: unknown }>> {
     const admitted = this.run(() => {
       this.claim(input.ownerId);
       name(input.file);
       name(input.name);
       this.spend();
-      this.limitMember(input.member, "call");
+      this.limitMember(input.member, input.readonly ? "read" : "call");
     });
     if (!admitted.ok) return admitted;
     let source;
@@ -772,6 +785,7 @@ export class SiteData extends DurableObject<Env> {
             args: input.args,
             member: input.member,
             now: Date.now(),
+            readonly: input.readonly,
           },
           this.functionHost(),
         ),

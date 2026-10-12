@@ -41,6 +41,7 @@ export type Invocation = {
   args: unknown;
   member: string;
   now: number;
+  readonly?: boolean;
 };
 
 const failed = (message: string) =>
@@ -102,6 +103,8 @@ export function runFunction(
       if (hostError) throw hostError;
       if (++operations > MAX_OPERATIONS)
         throw failed(`more than ${MAX_OPERATIONS} database operations.`);
+      if (invocation.readonly && WRITES.has(name))
+        throw failed("read-only functions cannot write.");
       if (WRITES.has(name) && ++writes > MAX_WRITES)
         throw failed(`more than ${MAX_WRITES} writes.`);
       const out = host(name, JSON.parse(context.getString(args)));

@@ -67,6 +67,7 @@ export async function website(
     path[0] === "_files" ||
     path[0] === "_batch" ||
     path[0] === "_call" ||
+    path[0] === "_read" ||
     !METHODS.includes(request.method)
   )
     return passThrough(request, env);

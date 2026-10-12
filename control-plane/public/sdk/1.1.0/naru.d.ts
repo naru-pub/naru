@@ -178,6 +178,12 @@ export interface Member {
     args?: Json,
     options?: { signal?: AbortSignal },
   ): Promise<R>;
+  /** Runs a site function with writes forbidden and a separate read budget. */
+  read<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
   media: {
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk

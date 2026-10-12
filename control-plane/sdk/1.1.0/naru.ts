@@ -200,6 +200,12 @@ export interface Member {
     args?: Json,
     options?: { signal?: AbortSignal },
   ): Promise<R>;
+  /** Runs a site function with writes forbidden and a separate read budget. */
+  read<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
   media: {
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
@@ -1098,6 +1104,22 @@ function member(
       const { result } = await send<{ result: R }>(
         `${root}/_call/${parts[0]}/${parts[1]}`,
         { method: "POST", body: { args }, signal, touches: ["*"] },
+      );
+      return result;
+    },
+    async read<R = Json>(
+      name: string,
+      args: Json = null,
+      { signal }: { signal?: AbortSignal } = {},
+    ): Promise<R> {
+      const parts = typeof name === "string" ? name.split("/") : [];
+      if (parts.length !== 2)
+        throw new TypeError('read() names "<module>/<function>".');
+      parts.forEach(segment);
+      jsonValue(args, undefined, "args");
+      const { result } = await send<{ result: R }>(
+        `${root}/_read/${parts[0]}/${parts[1]}`,
+        { method: "POST", body: { args }, signal, touches: [] },
       );
       return result;
     },

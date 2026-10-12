@@ -106,7 +106,7 @@ integration("site members", () => {
     ready = true;
     await eraseSiteData("alice");
     owner = await insertUser("alice");
-    for (const login of ["bob", "carol", "dave"])
+    for (const login of ["bob", "carol", "dave", "read-budget"])
       users[login] = await insertUser(login);
     users.erin = await insertUser("erin", false);
     users.alice = owner;
@@ -810,14 +810,22 @@ integration("site members", () => {
       export function flood(ctx) { for (let i = 0; ; i++) ctx.set("wallets", "x" + i, i); }
       export function trespass(ctx) { ctx.get("nowhere", "x"); }
     `;
-    const call = (token: string | undefined, name: string, args?: unknown) =>
-      executeCall({
-        site: "alice",
-        path: name.split("/"),
-        method: "POST",
-        body: { args },
-        ...(token ? { bearer: { token, origin } } : {}),
-      }) as Promise<{ result: any }>;
+    const call = (
+      token: string | undefined,
+      name: string,
+      args?: unknown,
+      readonly = false,
+    ) =>
+      executeCall(
+        {
+          site: "alice",
+          path: name.split("/"),
+          method: "POST",
+          body: { args },
+          ...(token ? { bearer: { token, origin } } : {}),
+        },
+        readonly,
+      ) as Promise<{ result: any }>;
     beforeAll(async () => {
       for (const [name, read, write] of [
         ["shop", "member", "admin"],
@@ -927,6 +935,25 @@ integration("site members", () => {
       await expect(call(bob.accessToken, "sh.op/buy")).rejects.toMatchObject({
         status: 400,
       });
+    });
+
+    test("reads authenticate and have a separate bounded budget", async () => {
+      const reader = await signIn("read-budget");
+      await expect(
+        call(undefined, "shop/versioned", null, true),
+      ).rejects.toMatchObject({ status: 401 });
+      for (let n = 0; n < 30; n++)
+        await call(reader.accessToken, "shop/versioned");
+      await expect(
+        call(reader.accessToken, "shop/versioned"),
+      ).rejects.toMatchObject({ status: 429 });
+      for (let n = 0; n < 120; n++)
+        expect(
+          await call(reader.accessToken, "shop/versioned", null, true),
+        ).toMatchObject({ result: { version: "not a revision" } });
+      await expect(
+        call(reader.accessToken, "shop/versioned", null, true),
+      ).rejects.toMatchObject({ status: 429 });
     });
 
     test("a member's calls are limited per minute", async () => {
