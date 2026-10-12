@@ -316,6 +316,11 @@ export async function revokeClientTokens(userId: string, id: string) {
     await clearClientGrants(tx, id);
   });
 }
+function mediaDeletionGrant(value: unknown) {
+  if (typeof value !== "boolean")
+    throw new DataError(400, "mediaDelete must be a boolean.");
+  return value;
+}
 export type AuthorizationInput = ReturnType<typeof authorizationInput>;
 export function authorizationInput(body: Record<string, unknown>) {
   const challenge = text(body.challenge, 43);
@@ -333,6 +338,9 @@ export function authorizationInput(body: Record<string, unknown>) {
     challenge,
     state,
     collections: collectionNames(body.collections),
+    ...(body.mediaDelete === undefined
+      ? {}
+      : { mediaDelete: mediaDeletionGrant(body.mediaDelete) }),
     ...(body.tokenLifetimeSeconds === undefined
       ? {}
       : { tokenLifetimeSeconds: tokenLifetime(body.tokenLifetimeSeconds) }),
@@ -554,6 +562,7 @@ export async function approveAuthorization(
         client_id: client.id,
         session_id: sessionId,
         collection_ids: collections.map((c) => c.id),
+        media_delete: input.mediaDelete === true,
         challenge: input.challenge,
         token_lifetime_seconds: Math.min(
           client.token_lifetime_seconds,
@@ -611,6 +620,7 @@ export async function exchangeCode(
         "g.challenge",
         "g.session_id",
         "g.collection_ids",
+        "g.media_delete",
         "g.token_lifetime_seconds",
       ])
       .where("g.hash", "=", digest(code))
@@ -668,6 +678,7 @@ export async function exchangeCode(
         client_id: client.id,
         session_id: grant.session_id,
         collection_ids: grant.collection_ids,
+        media_delete: grant.media_delete,
         lifetime_seconds: lifetime,
         expires_at: new Date(expiresAt),
       })
@@ -711,6 +722,7 @@ export async function tokenScope(
   tx: Kysely<DB>,
   userId: string,
   bearer: { token: string; origin: string | null; expiresAt?: number },
+  options: { mediaDelete?: boolean } = {},
 ) {
   const { token, origin } = bearer;
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw denied();
@@ -720,6 +732,7 @@ export async function tokenScope(
     .innerJoin("sessions as s", "s.id", "t.session_id")
     .select([
       "t.collection_ids",
+      "t.media_delete",
       "t.issued_at",
       "t.expires_at",
       "t.lifetime_seconds",
@@ -737,6 +750,12 @@ export async function tokenScope(
   if (!grant || !origin || origin !== new URL(grant.redirect_uri).origin)
     throw denied();
   await assertSiteOrigin(tx, userId, grant.redirect_uri);
+  if (options.mediaDelete && !grant.media_delete)
+    throw new DataError(
+      403,
+      "This owner sign-in does not allow media deletion.",
+      "ACCESS_DENIED",
+    );
   const expiresAt = renewal(grant);
   // Reported only when it moved: the SDK already holds the expiry otherwise.
   if (expiresAt !== new Date(grant.expires_at).getTime()) {

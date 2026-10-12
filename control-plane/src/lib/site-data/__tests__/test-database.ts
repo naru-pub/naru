@@ -24,6 +24,7 @@ import { up as dropSiteClientsUp } from "@/migrations/1790078516190_drop_site_da
 import { up as slideTokensUp } from "@/migrations/1790110700000_slide_site_data_access_tokens";
 
 import { up as orderingUp } from "@/migrations/1790200121054_explicit_document_ordering";
+import { up as mediaDeletionUp } from "@/migrations/1791803004027_media_deletion_grants";
 import { up as membershipUp } from "@/migrations/1791800344085_site_membership_admission";
 import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
 
@@ -86,6 +87,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   );
   await membersUp(db);
   await membershipUp(db);
+  await mediaDeletionUp(db);
 }
 export async function teardownTestDatabase() {
   // The last migrations cannot be reversed, so the schema goes as a whole.

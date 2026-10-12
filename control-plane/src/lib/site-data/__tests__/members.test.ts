@@ -25,6 +25,7 @@ import {
   revokeMemberToken,
 } from "../member-auth";
 import { executeMedia, MEMBER_UPLOADS_PER_HOUR, mediaStorage } from "../media";
+import { mediaDeletionStorage, cleanupDeletedMedia } from "../media-deletion";
 import { setupTestDatabase, teardownTestDatabase } from "./test-database";
 
 // Members, end to end: sign-in and tokens in PostgreSQL, what a member may
@@ -853,6 +854,9 @@ integration("site members", () => {
       }) as Promise<Record<string, any>>;
     beforeAll(() => {
       jest
+        .spyOn(mediaDeletionStorage, "deleteObject")
+        .mockImplementation(async () => ({ $metadata: {} }));
+      jest
         .spyOn(mediaStorage, "authorizeUpload")
         .mockImplementation(async (key) => `https://upload.invalid/${key}`);
       jest
@@ -886,13 +890,110 @@ integration("site members", () => {
       expect(
         await media(bob.accessToken, "PUT", [authorized.id]),
       ).toMatchObject({ file: { name: "log.png", size: 3 } });
-      // Listing and deleting stay the control panel's.
+      // Members cannot list files or delete another member's upload.
       await expect(media(bob.accessToken, "GET", [])).rejects.toMatchObject({
         status: 403,
       });
       await expect(
-        media(bob.accessToken, "DELETE", [authorized.id]),
+        media(carol.accessToken, "DELETE", [authorized.id]),
       ).rejects.toMatchObject({ status: 403 });
+      await media(bob.accessToken, "DELETE", [authorized.id]);
+      await media(bob.accessToken, "DELETE", [authorized.id]);
+      await expect(
+        media(bob.accessToken, "PUT", [authorized.id]),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    test("failed deletions remain durable; retries free bytes and stale upload URLs cannot revive finalized media", async () => {
+      const bob = await signIn("bob");
+      const authorized = await media(bob.accessToken, "POST", [], file);
+      const row = await db
+        .selectFrom("site_data_files")
+        .selectAll()
+        .where("id", "=", authorized.id)
+        .executeTakeFirstOrThrow();
+      const bytes = async () =>
+        (
+          (await executeMedia({
+            site: "alice",
+            path: [],
+            method: "GET",
+            adminUserId: owner,
+            usage: true,
+          })) as any
+        ).usage.bytes;
+      const beforeBytes = await bytes();
+
+      jest
+        .mocked(mediaDeletionStorage.deleteObject)
+        .mockRejectedValueOnce(new Error("storage offline"));
+      await expect(
+        media(bob.accessToken, "DELETE", [row.id]),
+      ).rejects.toMatchObject({ status: 503, code: "UNAVAILABLE" });
+      const queued = await db
+        .selectFrom("site_data_files")
+        .selectAll()
+        .where("id", "=", row.id)
+        .executeTakeFirstOrThrow();
+      expect(queued.deleted_at).not.toBeNull();
+      expect(queued.delete_completed_at).toBeNull();
+      expect(await bytes()).toBe(beforeBytes);
+      await expect(
+        media(bob.accessToken, "PUT", [row.id]),
+      ).rejects.toMatchObject({ status: 404 });
+      await media(bob.accessToken, "DELETE", [row.id]);
+      const completed = await db
+        .selectFrom("site_data_files")
+        .selectAll()
+        .where("id", "=", row.id)
+        .executeTakeFirstOrThrow();
+      expect(completed.delete_completed_at).not.toBeNull();
+      expect(await bytes()).toBe(beforeBytes);
+      await sql`update site_data_files set upload_expires_at = delete_completed_at + interval '1 millisecond' where id = ${row.id}`.execute(
+        db,
+      );
+      expect(await bytes()).toBe(beforeBytes);
+      await cleanupDeletedMedia();
+      expect(await bytes()).toBe(beforeBytes - row.size_bytes);
+      // Tombstones keep recent upload counts and survive until the upload URL is expired.
+      await cleanupDeletedMedia();
+      expect(
+        await db
+          .selectFrom("site_data_files")
+          .select("id")
+          .where("id", "=", row.id)
+          .executeTakeFirst(),
+      ).toBeDefined();
+      await sql`update site_data_files set deleted_at = now() - interval '61 minutes' where id = ${row.id}`.execute(
+        db,
+      );
+      await cleanupDeletedMedia();
+      expect(mediaDeletionStorage.deleteObject).toHaveBeenCalledWith(
+        row.object_key,
+      );
+      expect(
+        await db
+          .selectFrom("site_data_files")
+          .select("id")
+          .where("id", "=", row.id)
+          .executeTakeFirst(),
+      ).toBeUndefined();
+      await media(bob.accessToken, "DELETE", [row.id]);
+      await expect(
+        media(bob.accessToken, "DELETE", ["https://media.invalid/x.png"]),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    test("a delete racing finalization prevents the finalized response from reviving the file", async () => {
+      const bob = await signIn("bob");
+      const upload = await media(bob.accessToken, "POST", [], file);
+      jest.mocked(mediaStorage.headObject).mockImplementationOnce(async () => {
+        await media(bob.accessToken, "DELETE", [upload.id]);
+        return { ContentLength: 3, ContentType: "image/png", $metadata: {} };
+      });
+      await expect(
+        media(bob.accessToken, "PUT", [upload.id]),
+      ).rejects.toMatchObject({ status: 404 });
     });
 
     test("a member's uploads are limited per hour", async () => {

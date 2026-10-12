@@ -207,6 +207,8 @@ export interface Member {
     options?: { signal?: AbortSignal },
   ): Promise<R>;
   media: {
+    /** Deletes a stored upload by ID; members may delete only their own uploads. */
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -225,6 +227,7 @@ export interface Member {
         ) => void;
       },
     ): Promise<{
+      id: string;
       url: string;
       name: string;
       contentType: string;
@@ -268,6 +271,8 @@ export interface Admin {
     } | null)[]
   >;
   media: {
+    /** Deletes a stored upload by ID; members may delete only their own uploads. */
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
@@ -291,6 +296,7 @@ export interface Admin {
         ) => void;
       },
     ): Promise<{
+      id: string;
       url: string;
       name: string;
       contentType: string;
@@ -311,7 +317,11 @@ export interface NaruClient {
      */
     session(): Promise<Admin | null>;
     /** Redirects to Naru for approval. */
-    signIn(options: { collections: readonly string[] }): Promise<void>;
+    signIn(options: {
+      collections: readonly string[];
+      /** Request explicit permission to delete all of this site's media. */
+      mediaDelete?: boolean;
+    }): Promise<void>;
   };
   members: {
     /**
@@ -355,7 +365,13 @@ interface Authorization {
   headers: Record<string, string>;
 }
 interface Stored {
-  file: { url: string; name: string; contentType: string; size: number };
+  file: {
+    id: string;
+    url: string;
+    name: string;
+    contentType: string;
+    size: number;
+  };
 }
 interface Token {
   accessToken: string;
@@ -844,6 +860,25 @@ function put(
 // handle sends them with.
 function media(root: string, send: Send): Admin["media"] {
   return Object.freeze({
+    async delete(id: string, { signal }: { signal?: AbortSignal } = {}) {
+      if (signal?.aborted)
+        throw (
+          signal.reason ??
+          new DOMException("The deletion was aborted.", "AbortError")
+        );
+      if (
+        typeof id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          id,
+        )
+      )
+        throw new TypeError("media.delete() needs an uploaded file ID.");
+      await send(`${root}/_files/${id}`, {
+        method: "DELETE",
+        signal,
+        touches: [],
+      });
+    },
     async upload(
       source: Source,
       {
@@ -931,7 +966,7 @@ function media(root: string, send: Send): Admin["media"] {
       );
       // What was stored, which shrinking may have renamed and re-encoded.
       const { url, name, contentType, size } = finished.file;
-      return { url, name, contentType, size };
+      return { id: authorization.id, url, name, contentType, size };
     },
   });
 }
@@ -1184,11 +1219,15 @@ async function leave(
 async function signIn(
   context: Context,
   collections: readonly string[],
+  mediaDelete = false,
 ): Promise<void> {
+  if (typeof mediaDelete !== "boolean")
+    throw new TypeError("mediaDelete must be a boolean.");
   // Checked here so a bad name fails on this page, not on Naru's consent page.
   collections.forEach(segment);
   await leave(context, ownerPlace(context), "/database/authorize", {
     collections: collections.join(","),
+    ...(mediaDelete ? { mediaDelete: "1" } : {}),
   });
 }
 
@@ -1345,8 +1384,13 @@ export function createNaru(options?: { site?: string }): NaruClient {
       publicDocuments<T>(context.root, name),
     auth: Object.freeze({
       session: () => adminSession(context),
-      signIn: ({ collections }: { collections: readonly string[] }) =>
-        signIn(context, collections),
+      signIn: ({
+        collections,
+        mediaDelete,
+      }: {
+        collections: readonly string[];
+        mediaDelete?: boolean;
+      }) => signIn(context, collections, mediaDelete),
     }),
     members: Object.freeze({
       session: () => memberSession(context),

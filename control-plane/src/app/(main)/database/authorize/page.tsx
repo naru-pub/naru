@@ -15,6 +15,16 @@ async function authorizationStep(userId: string, query: URLSearchParams) {
   const input = authorizationInput({
     ...Object.fromEntries(query),
     collections: query.get("collections")?.split(","),
+    ...(query.has("mediaDelete")
+      ? {
+          mediaDelete:
+            query.get("mediaDelete") === "1"
+              ? true
+              : query.get("mediaDelete") === "0"
+                ? false
+                : query.get("mediaDelete"),
+        }
+      : {}),
   });
   // Setup the owner can finish here comes before consent, in its own step.
   const setup = await authorizationSetup(userId, input);
@@ -36,6 +46,7 @@ export default async function AuthorizePage({
     "challenge",
     "state",
     "collections",
+    "mediaDelete",
   ]) {
     if (typeof params[key] === "string") query.set(key, params[key]);
   }
@@ -65,8 +76,7 @@ export default async function AuthorizePage({
       </div>
     );
   }
-  if (step.setup)
-    return <Setup input={step.input} setup={step.setup} />;
+  if (step.setup) return <Setup input={step.input} setup={step.setup} />;
   const { client, collections } = step.preview;
   return (
     <Consent

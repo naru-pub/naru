@@ -185,6 +185,8 @@ export interface Member {
     options?: { signal?: AbortSignal },
   ): Promise<R>;
   media: {
+    /** Deletes a stored upload by ID; members may delete only their own uploads. */
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -203,6 +205,7 @@ export interface Member {
         ) => void;
       },
     ): Promise<{
+      id: string;
       url: string;
       name: string;
       contentType: string;
@@ -244,6 +247,8 @@ export interface Admin {
     } | null)[]
   >;
   media: {
+    /** Deletes a stored upload by ID; members may delete only their own uploads. */
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
@@ -267,6 +272,7 @@ export interface Admin {
         ) => void;
       },
     ): Promise<{
+      id: string;
       url: string;
       name: string;
       contentType: string;
@@ -287,7 +293,11 @@ export interface NaruClient {
      */
     session(): Promise<Admin | null>;
     /** Redirects to Naru for approval. */
-    signIn(options: { collections: readonly string[] }): Promise<void>;
+    signIn(options: {
+      collections: readonly string[];
+      /** Request explicit permission to delete all of this site's media. */
+      mediaDelete?: boolean;
+    }): Promise<void>;
   };
   members: {
     /**

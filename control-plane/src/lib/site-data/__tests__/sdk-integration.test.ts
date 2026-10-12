@@ -535,7 +535,10 @@ integration("SDK and data API contract", () => {
       expect(await response.json()).toEqual({
         error: {
           code: "ACCESS_DENIED",
-          message: "Website tokens can only upload files.",
+          message:
+            method === "DELETE"
+              ? "This owner sign-in does not allow media deletion."
+              : "Website tokens can only upload files.",
         },
       });
     }

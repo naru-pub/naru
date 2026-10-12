@@ -407,6 +407,25 @@ function put(url, headers, file, signal, uploading) {
 // handle sends them with.
 function media(root, send) {
   return Object.freeze({
+    async delete(id, { signal } = {}) {
+      if (signal?.aborted)
+        throw (
+          signal.reason ??
+          new DOMException("The deletion was aborted.", "AbortError")
+        );
+      if (
+        typeof id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          id,
+        )
+      )
+        throw new TypeError("media.delete() needs an uploaded file ID.");
+      await send(`${root}/_files/${id}`, {
+        method: "DELETE",
+        signal,
+        touches: [],
+      });
+    },
     async upload(source, { signal, onProgress } = {}) {
       if (onProgress !== undefined && typeof onProgress !== "function")
         throw new TypeError("onProgress must be a function.");
@@ -474,7 +493,7 @@ function media(root, send) {
       );
       // What was stored, which shrinking may have renamed and re-encoded.
       const { url, name, contentType, size } = finished.file;
-      return { url, name, contentType, size };
+      return { id: authorization.id, url, name, contentType, size };
     },
   });
 }
@@ -691,11 +710,14 @@ async function leave(context, place, path, query) {
  * back to this page. Register this page's URL as an administrator callback in
  * the control panel first; Naru says so on its own page if it is not.
  */
-async function signIn(context, collections) {
+async function signIn(context, collections, mediaDelete = false) {
+  if (typeof mediaDelete !== "boolean")
+    throw new TypeError("mediaDelete must be a boolean.");
   // Checked here so a bad name fails on this page, not on Naru's consent page.
   collections.forEach(segment);
   await leave(context, ownerPlace(context), "/database/authorize", {
     collections: collections.join(","),
+    ...(mediaDelete ? { mediaDelete: "1" } : {}),
   });
 }
 
@@ -841,7 +863,8 @@ export function createNaru(options) {
     collection: (name) => publicDocuments(context.root, name),
     auth: Object.freeze({
       session: () => adminSession(context),
-      signIn: ({ collections }) => signIn(context, collections),
+      signIn: ({ collections, mediaDelete }) =>
+        signIn(context, collections, mediaDelete),
     }),
     members: Object.freeze({
       session: () => memberSession(context),

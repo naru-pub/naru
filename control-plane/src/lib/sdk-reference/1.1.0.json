@@ -37,7 +37,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -344,7 +344,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -548,7 +548,7 @@
         {
           "name": "auth",
           "optional": false,
-          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options: { collections: readonly string[] }): Promise<void>;\n}",
+          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options: {\n    collections: readonly string[];\n    mediaDelete?: boolean;\n  }): Promise<void>;\n}",
           "summary": [],
           "throws": []
         },

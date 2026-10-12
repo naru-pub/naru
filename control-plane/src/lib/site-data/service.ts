@@ -19,6 +19,7 @@ export type DataCommand = {
   path: string[];
   method: string;
   adminUserId?: string;
+  ownerMediaDelete?: boolean;
   // An owner's or a member's token. Mutable: tokenScope and memberScope
   // report the expiry the renewed token now has.
   bearer?: { token: string; origin: string | null; expiresAt?: number };
@@ -92,7 +93,9 @@ export async function resolveSiteAccess(command: DataCommand) {
       command.bearer !== undefined && MEMBER_TOKEN.test(command.bearer.token);
     const allowedIds =
       command.bearer && !memberToken
-        ? await tokenScope(tx, owner.id, command.bearer)
+        ? await tokenScope(tx, owner.id, command.bearer, {
+            mediaDelete: command.ownerMediaDelete,
+          })
         : undefined;
     const memberId = memberToken
       ? await memberScope(tx, owner.id, command.bearer!)

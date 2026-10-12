@@ -1,6 +1,6 @@
+import { deleteMedia } from "./media-deletion";
 import { uuidv7 } from "@/lib/uuid";
 import {
-  DeleteObjectCommand,
   DeleteObjectsCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -131,27 +131,38 @@ function uploadInput(body: Record<string, unknown>) {
 
 export async function executeMedia(command: MediaCommand) {
   if (command.path.length > 1) throw new DataError(404, "Not found.");
-  const { owner, allowedIds, memberId } = await resolveSiteAccess(command);
+  const { owner, allowedIds, memberId } = await resolveSiteAccess({
+    ...command,
+    ownerMediaDelete: command.method === "DELETE",
+  });
   const admin = command.adminUserId === owner.id || allowedIds !== undefined;
   if (!admin && memberId === undefined)
     throw new DataError(403, "Uploading needs an owner or member sign-in.");
   if (command.adminUserId !== undefined && command.adminUserId !== owner.id)
     throw new DataError(403, "Permission denied.");
-  // A website uploads; listing and deleting the library is the control
-  // panel's. A copied website token then cannot empty the library.
+  // Listing remains the control panel's. Deletion needs an explicit owner
+  // grant or the authenticated member's own upload.
   const uploading =
     (command.method === "POST" && command.path.length === 0) ||
     (command.method === "PUT" && command.path.length === 1);
-  if (command.bearer !== undefined && !uploading)
+  if (
+    command.bearer !== undefined &&
+    !uploading &&
+    !(command.method === "DELETE" && command.path.length === 1)
+  )
     throw new DataError(403, "Website tokens can only upload files.");
   const files = () =>
     db.selectFrom("site_data_files").where("user_id", "=", owner.id);
   const readUsage = async () => {
     const usage = await files()
       .select([
-        sql<number>`coalesce(sum(size_bytes), 0)`.as("bytes"),
+        sql<number>`coalesce(sum(size_bytes) filter (where delete_completed_at is null or delete_completed_at < coalesce(upload_expires_at, created_at + interval '1 hour')), 0)`.as(
+          "bytes",
+        ),
         sql<number>`count(*)`.as("count"),
-        sql<number>`count(*) filter (where status = 'pending')`.as("pending"),
+        sql<number>`count(*) filter (where status = 'pending' and deleted_at is null)`.as(
+          "pending",
+        ),
       ])
       .executeTakeFirstOrThrow();
     return {
@@ -184,6 +195,7 @@ export async function executeMedia(command: MediaCommand) {
     );
     let query = files()
       .where("status", "=", "ready")
+      .where("deleted_at", "is", null)
       .selectAll()
       .select(
         sql<string>`to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
@@ -241,7 +253,9 @@ export async function executeMedia(command: MediaCommand) {
         .selectFrom("site_data_files")
         .where("user_id", "=", owner.id)
         .select([
-          sql<number>`coalesce(sum(size_bytes), 0)`.as("bytes"),
+          sql<number>`coalesce(sum(size_bytes) filter (where delete_completed_at is null or delete_completed_at < coalesce(upload_expires_at, created_at + interval '1 hour')), 0)`.as(
+            "bytes",
+          ),
           sql<number>`count(*)`.as("count"),
         ])
         .executeTakeFirstOrThrow();
@@ -291,6 +305,16 @@ export async function executeMedia(command: MediaCommand) {
         objectKey,
         input.contentType,
       );
+      // Record after signing, with a clock-skew margin. Do not free the
+      // reservation while a signed URL could recreate deleted bytes.
+      const active = await db
+        .updateTable("site_data_files")
+        .where("id", "=", fileId)
+        .where("deleted_at", "is", null)
+        .set({ upload_expires_at: new Date(Date.now() + 11 * 60 * 1000) })
+        .returning("id")
+        .executeTakeFirst();
+      if (!active) throw new DataError(409, "Upload was canceled.");
       // PUT the bytes to uploadUrl with these headers, then finalize by id.
       return {
         id: file.id,
@@ -298,12 +322,17 @@ export async function executeMedia(command: MediaCommand) {
         headers: { "Content-Type": input.contentType },
       };
     } catch (error) {
-      await db.deleteFrom("site_data_files").where("id", "=", fileId).execute();
+      await db
+        .deleteFrom("site_data_files")
+        .where("id", "=", fileId)
+        .where("deleted_at", "is", null)
+        .execute();
       throw error;
     }
   }
   if (command.method === "PUT" && id) {
     const file = await files()
+      .where("deleted_at", "is", null)
       .where("id", "=", id)
       .selectAll()
       .executeTakeFirst();
@@ -320,15 +349,7 @@ export async function executeMedia(command: MediaCommand) {
       head.ContentLength !== file.size_bytes ||
       head.ContentType !== file.content_type
     ) {
-      await s3Client
-        .send(
-          new DeleteObjectCommand({
-            Bucket: mediaBucket(),
-            Key: file.object_key,
-          }),
-        )
-        .catch(() => {});
-      await db.deleteFrom("site_data_files").where("id", "=", id).execute();
+      await deleteMedia(owner.id, id);
       throw new DataError(
         409,
         "Uploaded file does not match its authorization.",
@@ -337,21 +358,15 @@ export async function executeMedia(command: MediaCommand) {
     const ready = await db
       .updateTable("site_data_files")
       .where("id", "=", id)
+      .where("deleted_at", "is", null)
       .set({ status: "ready", updated_at: new Date() })
       .returningAll()
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+    if (!ready) throw new DataError(404, "File not found.");
     return { file: output(ready) };
   }
   if (command.method === "DELETE" && id) {
-    const file = await files()
-      .where("id", "=", id)
-      .selectAll()
-      .executeTakeFirst();
-    if (!file) return { success: true };
-    await s3Client.send(
-      new DeleteObjectCommand({ Bucket: mediaBucket(), Key: file.object_key }),
-    );
-    await db.deleteFrom("site_data_files").where("id", "=", id).execute();
+    await deleteMedia(owner.id, id, memberId);
     return { success: true };
   }
   throw new DataError(405, "Method not allowed.");

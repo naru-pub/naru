@@ -2,6 +2,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
 import { sql } from "kysely";
 import { db } from "@/lib/database";
+import { executeMedia } from "../media";
+import { mediaDeletionStorage } from "../media-deletion";
+import { jest } from "@jest/globals";
 import { executeData, listCollections } from "../service";
 import { eraseSiteData } from "@/lib/edge/client";
 import {
@@ -39,11 +42,11 @@ integration("website owner authorization", () => {
       collections: ["posts"],
       ...extra,
     });
-  const issue = async () => {
+  const issue = async (extra = {}) => {
     const response = await approveAuthorization(
       owner,
       "alice-session",
-      authInput(),
+      authInput(extra),
     );
     return new URL(response.redirect).searchParams.get("code")!;
   };
@@ -108,6 +111,56 @@ integration("website owner authorization", () => {
     if (ready) await teardownTestDatabase();
     await db.destroy();
   });
+  test("media deletion requires an explicit owner consent grant and remains origin-bound", async () => {
+    const id = crypto.randomUUID();
+    await db
+      .insertInto("site_data_files")
+      .values({
+        id,
+        user_id: owner,
+        object_key: `${owner}/${id}.png`,
+        original_name: "x.png",
+        content_type: "image/png",
+        size_bytes: 3,
+        status: "ready",
+      })
+      .execute();
+    const deletion = jest
+      .spyOn(mediaDeletionStorage, "deleteObject")
+      .mockImplementation(async () => ({ $metadata: {} }));
+    const remove = (
+      accessToken: string,
+      requestOrigin: string | null = origin,
+    ) =>
+      executeMedia({
+        site: "alice",
+        path: [id],
+        method: "DELETE",
+        bearer: { token: accessToken, origin: requestOrigin },
+      });
+    try {
+      const old = (await exchange(await issue(), { mediaDelete: true }))
+        .accessToken;
+      await expect(remove(old)).rejects.toMatchObject({
+        status: 403,
+        code: "ACCESS_DENIED",
+      });
+      expect(deletion).not.toHaveBeenCalled();
+      const allowed = (await exchange(await issue({ mediaDelete: true })))
+        .accessToken;
+      await expect(
+        remove(allowed, "https://evil.example"),
+      ).rejects.toMatchObject({ status: 401 });
+      await expect(remove(allowed)).resolves.toEqual({ success: true });
+      expect(deletion).toHaveBeenCalledWith(`${owner}/${id}.png`);
+      await revokeToken(allowed, origin);
+      await expect(remove(allowed)).rejects.toMatchObject({ status: 401 });
+      expect(() => authInput({ mediaDelete: "true" })).toThrow();
+    } finally {
+      deletion.mockRestore();
+    }
+  });
+
   test("registration and approval reject wrong domains, owner, callbacks and scope", async () => {
     await expect(
       registerClient(owner, {

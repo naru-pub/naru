@@ -302,6 +302,7 @@ test("a member uploads with their token", async () => {
       new File(["hi"], "x.txt", { type: "text/plain" }),
     );
     assert.equal(file.url, "https://media.naru.pub/x.txt");
+    assert.equal(file.id, "0190f1a2-0000-7000-8000-000000000001");
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
     assert.equal(calls[1].headers.Authorization, undefined);
     assert.equal(calls[2].method, "PUT");
@@ -453,5 +454,51 @@ test("read posts to the read-only endpoint with member credentials", async () =>
       TypeError,
     );
     assert.equal(calls.length, 1);
+  });
+});
+
+test("media deletion sends a member credential once, validates IDs, and honors aborts", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    const id = "0190f1a2-0000-7000-8000-000000000001";
+    respond(() => Response.json({ success: true }));
+    assert.equal(await member.media.delete(id), undefined);
+    assert.equal(calls[0].method, "DELETE");
+    assert.equal(calls[0].url.pathname, `/api/data/v1/alice/_files/${id}`);
+    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
+    await assert.rejects(
+      member.media.delete("https://media.naru.pub/x"),
+      TypeError,
+    );
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      member.media.delete(id, { signal: controller.signal }),
+      (e) => e.name === "AbortError",
+    );
+    const before = calls.length;
+    respond(() =>
+      Response.json(
+        { error: { code: "UNAVAILABLE", message: "storage offline" } },
+        { status: 503 },
+      ),
+    );
+    await assert.rejects(
+      member.media.delete(id),
+      (e) => e.code === "UNAVAILABLE",
+    );
+    assert.equal(calls.length, before + 1);
+  });
+});
+
+test("owners explicitly request media deletion at sign-in", async () => {
+  await browser(async ({ location, calls }) => {
+    await createNaru().auth.signIn({
+      collections: ["posts"],
+      mediaDelete: true,
+    });
+    assert.equal(new URL(location.href).searchParams.get("mediaDelete"), "1");
+    assert.equal(calls.length, 0);
   });
 });

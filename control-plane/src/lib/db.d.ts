@@ -570,6 +570,7 @@ export interface SiteDataAccessTokens {
   hash: string;
   issued_at: Generated<Timestamp>;
   lifetime_seconds: Generated<number>;
+  media_delete: Generated<boolean>;
   session_id: string;
 }
 
@@ -579,6 +580,7 @@ export interface SiteDataAuthCodes {
   collection_ids: string[];
   expires_at: Timestamp;
   hash: string;
+  media_delete: Generated<boolean>;
   session_id: string;
   token_lifetime_seconds: Generated<number>;
 }
@@ -595,6 +597,8 @@ export interface SiteDataClients {
 export interface SiteDataFiles {
   content_type: string;
   created_at: Generated<Timestamp>;
+  delete_completed_at: Timestamp | null;
+  deleted_at: Timestamp | null;
   id: string;
   member_id: string | null;
   object_key: string;
@@ -602,6 +606,7 @@ export interface SiteDataFiles {
   size_bytes: number;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+  upload_expires_at: Timestamp | null;
   user_id: string;
 }
 

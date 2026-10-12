@@ -257,9 +257,11 @@ await admin.collection("posts").set("hello", {
 ```
 
 Naru does not record which documents use a file: a page that uses a file stores
-its URL, and deletion is a deliberate act in the control-plane media library.
-The site SDK deliberately exposes upload only. Uploads that are no longer
-referenced stay until someone deletes them in the media library.
+its URL. SDK 1.0.0 exposes upload only. SDK 1.1.0 also returns a media ID and
+supports `media.delete(id)`: members delete their own uploads, and owner website
+sessions need explicit deletion consent. See [media deletion](media-deletion.md)
+for cleanup, quota and retry behavior. Unreferenced files are not automatically
+inferred from documents; the app or owner must request deletion.
 
 사이트 소유자는 **미디어 라이브러리**(`/media`)에서 파일을 끌어
 놓아 업로드하고, 저장 공간을 확인하고, 이름·형식으로 검색하거나 정렬하고, 공개
@@ -271,7 +273,7 @@ Uploads use the same bearer token as document writes: an owner's, or from SDK
 MiB. JPEG, PNG, WebP, AVIF, GIF, supported audio, PDF, ZIP, and
 plain text are accepted. HTML and SVG are rejected. Public objects are served
 from the separately isolated `media.naru.pub` origin. Deleting a file removes
-both the R2 object and its database row; deleting an account removes its media
+the R2 object and queues durable metadata cleanup (see [SDK 1.1.0 deletion](media-deletion.md)); deleting an account removes its media
 prefix. Upload authorizations that are not finalized, including ones whose
 transfer failed, are removed by the background cleanup after one hour.
 

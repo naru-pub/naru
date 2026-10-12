@@ -787,6 +787,7 @@ test("upload authorizes, sends the bytes straight to storage, then finalizes", a
   const { calls, stored, declared } = await upload(file);
   // What was stored; managing it by id is the media library's.
   assert.deepEqual(stored, {
+    ...(VERSION === "1.1.0" ? { id: "f1" } : {}),
     url: "https://media",
     name: "photo.webp",
     contentType: "image/webp",
