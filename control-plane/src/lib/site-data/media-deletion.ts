@@ -20,6 +20,7 @@ export async function deleteMedia(
   siteUserId: string,
   id: string,
   memberId?: string,
+  uploadedBy?: string | null,
 ) {
   const file = await db.transaction().execute(async (tx) => {
     await requestDeadline(tx);
@@ -35,6 +36,12 @@ export async function deleteMedia(
       throw new DataError(
         403,
         "Members can delete only their own uploads.",
+        "ACCESS_DENIED",
+      );
+    if (uploadedBy !== undefined && found.member_id !== uploadedBy)
+      throw new DataError(
+        403,
+        "The file uploader does not match the cleanup request.",
         "ACCESS_DENIED",
       );
     await tx

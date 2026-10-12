@@ -502,3 +502,22 @@ test("owners explicitly request media deletion at sign-in", async () => {
     assert.equal(calls.length, 0);
   });
 });
+
+test("media deletion can require the platform uploader to match an app cleanup record", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() => Response.json({ success: true }));
+    await member.media.delete("0190f1a2-0000-7000-8000-000000000001", {
+      uploadedBy: "0190f1a2-0000-7000-8000-000000000002",
+    });
+    assert.equal(
+      calls[0].url.searchParams.get("uploadedBy"),
+      "0190f1a2-0000-7000-8000-000000000002",
+    );
+    await member.media.delete("0190f1a2-0000-7000-8000-000000000001", {
+      uploadedBy: null,
+    });
+    assert.equal(calls[1].url.searchParams.get("uploadedBy"), "owner");
+  });
+});

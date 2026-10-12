@@ -186,7 +186,10 @@ export interface Member {
   ): Promise<R>;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
+    delete(
+      id: string,
+      options?: { signal?: AbortSignal; uploadedBy?: string | null },
+    ): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -248,7 +251,10 @@ export interface Admin {
   >;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
+    delete(
+      id: string,
+      options?: { signal?: AbortSignal; uploadedBy?: string | null },
+    ): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.

@@ -151,6 +151,16 @@ integration("website owner authorization", () => {
       await expect(
         remove(allowed, "https://evil.example"),
       ).rejects.toMatchObject({ status: 401 });
+      await expect(
+        executeMedia({
+          site: "alice",
+          path: [id],
+          method: "DELETE",
+          bearer: { token: allowed, origin },
+          uploadedBy: crypto.randomUUID(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(deletion).not.toHaveBeenCalled();
       await expect(remove(allowed)).resolves.toEqual({ success: true });
       expect(deletion).toHaveBeenCalledWith(`${owner}/${id}.png`);
       await revokeToken(allowed, origin);

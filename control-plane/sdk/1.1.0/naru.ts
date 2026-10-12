@@ -208,7 +208,10 @@ export interface Member {
   ): Promise<R>;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
+    delete(
+      id: string,
+      options?: { signal?: AbortSignal; uploadedBy?: string | null },
+    ): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -272,7 +275,10 @@ export interface Admin {
   >;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
+    delete(
+      id: string,
+      options?: { signal?: AbortSignal; uploadedBy?: string | null },
+    ): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
@@ -860,7 +866,13 @@ function put(
 // handle sends them with.
 function media(root: string, send: Send): Admin["media"] {
   return Object.freeze({
-    async delete(id: string, { signal }: { signal?: AbortSignal } = {}) {
+    async delete(
+      id: string,
+      {
+        signal,
+        uploadedBy,
+      }: { signal?: AbortSignal; uploadedBy?: string | null } = {},
+    ) {
       if (signal?.aborted)
         throw (
           signal.reason ??
@@ -873,7 +885,11 @@ function media(root: string, send: Send): Admin["media"] {
         )
       )
         throw new TypeError("media.delete() needs an uploaded file ID.");
-      await send(`${root}/_files/${id}`, {
+      const guard =
+        uploadedBy === undefined
+          ? ""
+          : `?uploadedBy=${uploadedBy === null ? "owner" : segment(uploadedBy)}`;
+      await send(`${root}/_files/${id}${guard}`, {
         method: "DELETE",
         signal,
         touches: [],

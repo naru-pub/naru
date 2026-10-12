@@ -407,7 +407,7 @@ function put(url, headers, file, signal, uploading) {
 // handle sends them with.
 function media(root, send) {
   return Object.freeze({
-    async delete(id, { signal } = {}) {
+    async delete(id, { signal, uploadedBy } = {}) {
       if (signal?.aborted)
         throw (
           signal.reason ??
@@ -420,7 +420,11 @@ function media(root, send) {
         )
       )
         throw new TypeError("media.delete() needs an uploaded file ID.");
-      await send(`${root}/_files/${id}`, {
+      const guard =
+        uploadedBy === undefined
+          ? ""
+          : `?uploadedBy=${uploadedBy === null ? "owner" : segment(uploadedBy)}`;
+      await send(`${root}/_files/${id}${guard}`, {
         method: "DELETE",
         signal,
         touches: [],
