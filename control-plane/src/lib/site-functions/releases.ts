@@ -1,0 +1,108 @@
+import { sql } from "kysely";
+import { db } from "@/lib/database";
+import { callSiteObject } from "@/lib/edge/client";
+import { MAINTENANCE_QUEUE } from "@/lib/maintenance/jobs";
+import { uuidv7 } from "@/lib/uuid";
+import { FunctionRevisions } from "./revisions";
+import { revisionStorage, deleteRevision } from "./storage";
+import type { TaskContext } from "absurd-sdk";
+
+export const FUNCTION_RELEASE_TASK = "function-release-v1";
+export const FUNCTION_RELEASE_GRACE_SECONDS = 300;
+export type FunctionRelease = {
+  site: string;
+  revision: string;
+  generation: string;
+  retired: { id: string; revision: string } | null;
+};
+
+/** Publishing owns the snapshot and atomically records its eventual retirement work. */
+export async function publishSiteFunctions(
+  site: string,
+): Promise<{ revision: string }> {
+  const release = await db.transaction().execute(async (tx) => {
+    // Serialize publications for this owner, including snapshot reads and the task outbox.
+    const user = await tx
+      .selectFrom("users")
+      .select("id")
+      .where("login_name", "=", site)
+      .forUpdate()
+      .executeTakeFirstOrThrow();
+    const previous = await tx
+      .selectFrom("site_function_releases")
+      .select(["id", "revision"])
+      .where("user_id", "=", user.id)
+      .orderBy("id", "desc")
+      .executeTakeFirst();
+    const revision = await new FunctionRevisions(
+      revisionStorage,
+      site,
+    ).publish();
+    const generation = uuidv7(
+      previous
+        ? Math.max(
+            Date.now(),
+            parseInt(previous.id.replaceAll("-", "").slice(0, 12), 16) + 1,
+          )
+        : Date.now(),
+    );
+    const release: FunctionRelease = {
+      site,
+      revision,
+      generation,
+      retired: previous ?? null,
+    };
+    await tx
+      .insertInto("site_function_releases")
+      .values({ id: generation, user_id: user.id, revision })
+      .execute();
+    // Unlimited retries: temporary edge/R2 outages must not abandon release activation or cleanup.
+    await sql`select absurd.spawn_task(${MAINTENANCE_QUEUE}, ${FUNCTION_RELEASE_TASK}, ${JSON.stringify(release)}::jsonb,
+      ${JSON.stringify({ idempotency_key: `function-release:${generation}`, retry_strategy: { kind: "exponential", base_seconds: 60, factor: 2, max_seconds: 600 } })}::jsonb)`.execute(
+      tx,
+    );
+    return release;
+  });
+  // The durable task repeats this after a crash or a failed response.
+  await activateRelease(release);
+  return { revision: release.revision };
+}
+
+export async function activateRelease(release: FunctionRelease) {
+  const owner = await db
+    .selectFrom("site_function_releases as release")
+    .innerJoin("users", "users.id", "release.user_id")
+    .select("release.id")
+    .where("release.id", "=", release.generation)
+    .where("release.revision", "=", release.revision)
+    .where("users.login_name", "=", release.site)
+    .where("users.deleted_at", "is", null)
+    .executeTakeFirst();
+  // A cleaned release or deleted account must not be reactivated by a late task.
+  if (!owner) return null;
+  return callSiteObject(release.site, "activateFunctions", {
+    revision: release.revision,
+    generation: release.generation,
+  });
+}
+
+/** Absurd owns waiting, R2 deletion, and retries; no edge cleanup calls are made. */
+export async function runFunctionRelease(
+  release: FunctionRelease,
+  ctx: Pick<TaskContext, "step" | "sleepFor" | "heartbeat">,
+) {
+  await ctx.step("activate", () => activateRelease(release));
+  if (!release.retired) return;
+  await ctx.sleepFor("retirement-grace", FUNCTION_RELEASE_GRACE_SECONDS);
+  await ctx.step("delete-retired-revision", async () => {
+    await deleteRevision(release.site, release.retired!.revision, () =>
+      ctx.heartbeat(),
+    );
+    await db
+      .deleteFrom("site_function_releases")
+      .where("id", "=", release.retired!.id)
+      .where("revision", "=", release.retired!.revision)
+      .execute();
+    return null;
+  });
+}

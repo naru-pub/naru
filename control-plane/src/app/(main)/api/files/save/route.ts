@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message:
-            "File saved, but function publication failed. The previous revision remains active. Retry after fixing the function files.",
+            "File saved, but the function update did not finish. Check the function files and retry. Queued updates retry automatically.",
         },
         { status: 503 },
       );

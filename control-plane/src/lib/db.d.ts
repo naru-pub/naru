@@ -610,6 +610,13 @@ export interface SiteDataFiles {
   user_id: string;
 }
 
+export interface SiteFunctionReleases {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  revision: string;
+  user_id: string;
+}
+
 export interface SiteMemberCodes {
   challenge: string;
   expires_at: Timestamp;
@@ -806,6 +813,7 @@ export interface DB {
   site_data_auth_codes: SiteDataAuthCodes;
   site_data_clients: SiteDataClients;
   site_data_files: SiteDataFiles;
+  site_function_releases: SiteFunctionReleases;
   site_member_codes: SiteMemberCodes;
   site_member_tokens: SiteMemberTokens;
   site_members: SiteMembers;

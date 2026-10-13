@@ -46,7 +46,7 @@ const OPERATIONS = [
   "configure",
   "call",
   "read",
-  "publishFunctions",
+  "activateFunctions",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
@@ -83,8 +83,8 @@ function dispatch(
       return stub.read(input);
     case "call":
       return stub.call(input);
-    case "publishFunctions":
-      return stub.publishFunctions(input);
+    case "activateFunctions":
+      return stub.activateFunctions(input);
     case "putFunctions":
       return stub.putFunctions(input);
   }
@@ -229,7 +229,7 @@ export default {
     const outcome = (await dispatch(
       stub,
       operation!,
-      (operation === "publishFunctions" ? { site } : input) as never,
+      input as never,
     )) as Outcome<unknown>;
     return outcome.ok
       ? // JSON drops `undefined`; the caller tells success by `value`.

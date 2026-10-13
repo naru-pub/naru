@@ -809,8 +809,28 @@ export class SiteData extends DurableObject<Env> {
     ));
   }
 
-  /** Internal publish RPC: all files are ready before the active pointer changes. */
-  async publishFunctions(input: { site: string }) {
+  /** Activation only: snapshots and retirement tasks belong to the control plane. */
+  async activateFunctions(input: { revision: string; generation: string }) {
+    return this.run(() => {
+      if (
+        !/^[a-f0-9]{64}$/.test(input.revision) ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
+          input.generation,
+        )
+      )
+        throw new DataError(400, "Invalid function release.");
+      const current = this.meta("functions_generation");
+      // An older durable task must never reactivate code retired by a newer release.
+      if (!current || input.generation > current) {
+        this.setMeta("functions_revision", input.revision);
+        this.setMeta("functions_generation", input.generation);
+      }
+      return { revision: this.meta("functions_revision") };
+    });
+  }
+
+  /** Test fixture only: production snapshots are created in the control plane. */
+  private async publishFunctions(input: { site: string }) {
     const previous = this.meta("functions_revision");
     let revision: string;
     try {
@@ -1004,11 +1024,12 @@ export class SiteData extends DurableObject<Env> {
     let sources;
     try {
       let revision = this.meta("functions_revision");
-      if (!revision) {
-        const published = await this.publishFunctions({ site: input.site });
-        if (!published.ok) return published;
-        revision = published.value.revision;
-      }
+      if (!revision)
+        throw new DataError(
+          503,
+          "Site functions have not been published.",
+          "UNAVAILABLE",
+        );
       sources = await this.revisions(input.site).graph(revision, filename);
     } catch (error) {
       if (error instanceof DataError)

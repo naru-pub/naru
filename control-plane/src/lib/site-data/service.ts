@@ -1,3 +1,4 @@
+import { publishSiteFunctions } from "@/lib/site-functions/releases";
 import { db, requestDeadline } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
 import { callSiteObject } from "@/lib/edge/client";
@@ -187,19 +188,32 @@ export async function executeCall(command: DataCommand, readonly = false) {
       command.bearer || command.adminUserId ? 403 : 401,
       "Site functions are called by signed-in members.",
     );
-  return callSiteObject<{ result: unknown }>(
-    command.site,
-    readonly ? "read" : "call",
-    {
-      ownerId: String(owner.id),
-      site: command.site,
-      member: memberId,
-      file,
-      name: fn,
-      args: command.body?.args ?? null,
-    },
-    command.signal,
-  );
+  const invoke = () =>
+    callSiteObject<{ result: unknown }>(
+      command.site,
+      readonly ? "read" : "call",
+      {
+        ownerId: String(owner.id),
+        site: command.site,
+        member: memberId,
+        file,
+        name: fn,
+        args: command.body?.args ?? null,
+      },
+      command.signal,
+    );
+  try {
+    return await invoke();
+  } catch (error) {
+    if (
+      !(error instanceof DataError) ||
+      error.status !== 503 ||
+      error.message !== "Site functions have not been published."
+    )
+      throw error;
+    await publishSiteFunctions(command.site);
+    return invoke();
+  }
 }
 
 /** A site's collections by name, or all of them, ordered by name. */

@@ -1,15 +1,18 @@
 /** @jest-environment node */
 import { jest, test, expect, beforeEach } from "@jest/globals";
-jest.mock("@/lib/edge/client", () => ({ callSiteObject: jest.fn() }));
+jest.mock("@/lib/site-functions/releases", () => ({
+  publishSiteFunctions: jest.fn(),
+}));
 jest.mock("@sentry/nextjs", () => ({
   captureException: jest.fn(),
   captureMessage: jest.fn(),
 }));
-const { callSiteObject } =
-  jest.requireMock<typeof import("@/lib/edge/client")>("@/lib/edge/client");
+const { publishSiteFunctions } = jest.requireMock<
+  typeof import("@/lib/site-functions/releases")
+>("@/lib/site-functions/releases");
 const { purgeSiteFiles, purgeSiteObjects } =
   jest.requireActual<typeof import("@/lib/cache-purge")>("@/lib/cache-purge");
-const publish = jest.mocked(callSiteObject);
+const publish = jest.mocked(publishSiteFunctions);
 beforeEach(() => {
   publish.mockReset();
   publish.mockResolvedValue({ revision: "one" });
@@ -22,16 +25,11 @@ test("bulk edits publish once per affected site, including deleted nested keys",
     "bob/_naru/functions/a.js",
     "carol/app.js",
   ]);
-  expect(publish.mock.calls).toEqual([
-    ["alice", "publishFunctions", { site: "alice" }],
-    ["bob", "publishFunctions", { site: "bob" }],
-  ]);
+  expect(publish.mock.calls).toEqual([["alice"], ["bob"]]);
 });
 test("file editor preserves the directory when activating its site", async () => {
   await purgeSiteFiles("alice", ["_naru/modules/shared.js"]);
-  expect(publish).toHaveBeenCalledWith("alice", "publishFunctions", {
-    site: "alice",
-  });
+  expect(publish).toHaveBeenCalledWith("alice");
 });
 test("ordinary frontend and rule changes need no function publication", async () => {
   await purgeSiteFiles("alice", ["index.html", "_naru/rules/auth.js"]);

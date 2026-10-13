@@ -1,3 +1,8 @@
+import {
+  FUNCTION_RELEASE_TASK,
+  runFunctionRelease,
+  type FunctionRelease,
+} from "@/lib/site-functions/releases";
 import { spawn } from "node:child_process";
 import { Client } from "pg";
 import { Absurd } from "absurd-sdk";
@@ -179,6 +184,10 @@ export async function runMaintenanceWorker(signal: AbortSignal): Promise<void> {
         await ctx.sleepFor("job-busy", 30);
       }
     },
+  );
+  workflows.registerTask<FunctionRelease>(
+    { name: FUNCTION_RELEASE_TASK },
+    runFunctionRelease,
   );
   const worker = await workflows.startWorker({
     workerId: `maintenance:${process.pid}`,

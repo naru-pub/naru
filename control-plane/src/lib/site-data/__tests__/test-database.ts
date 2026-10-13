@@ -1,3 +1,4 @@
+import { absurdSchema } from "@/migrations/vendor/absurd-0.5.0";
 import { up as usageUp } from "@/migrations/1791377967407_site_data_usage_counters";
 import { up as backendUp } from "@/migrations/1791514826830_site_data_backend";
 import { up as removePostgresUp } from "@/migrations/1791519830591_remove_postgres_site_data";
@@ -88,9 +89,22 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await membersUp(db);
   await membershipUp(db);
   await mediaDeletionUp(db);
+  await sql.raw(absurdSchema).execute(db);
+  await sql`select absurd.create_queue('maintenance')`.execute(db);
+  // This isolated fixture keeps legacy integer user ids; production's migrated
+  // schema uses UUIDs and is separately validated by migration/codegen checks.
+  await sql`create table site_function_releases (
+    id uuid primary key default uuid_v7(), user_id integer not null references users(id) on delete cascade,
+    revision text not null, created_at timestamptz not null default now())`.execute(
+    db,
+  );
+  await sql`create index site_function_releases_user_generation on site_function_releases(user_id, id)`.execute(
+    db,
+  );
 }
 export async function teardownTestDatabase() {
   // The last migrations cannot be reversed, so the schema goes as a whole.
+  await sql`drop schema if exists absurd cascade`.execute(db);
   await sql`drop schema public cascade`.execute(db);
   await sql`create schema public`.execute(db);
 }
