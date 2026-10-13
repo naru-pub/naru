@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
 import { ruleEntry, rulePredicate } from "./rules";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   newQuickJSWASMModuleFromVariant,
   newVariant,
@@ -12,6 +12,7 @@ import { DataError } from "../../control-plane/src/lib/site-data/validation";
 import {
   MAX_OPERATIONS,
   MAX_WRITES,
+  retired,
   runFunction,
   type Host,
   type Invocation,
@@ -72,6 +73,35 @@ beforeEach(async () => {
   module = await engine();
   documents = new Map();
   operations = [];
+});
+// Calls share an instance, so an ordinary call, failed or not, must leave it
+// usable: only exhausting CPU or memory retires it (tested where it does).
+afterEach(() => {
+  expect(retired.has(module)).toBe(false);
+});
+
+test("one instance serves many calls, each freed before the next", () => {
+  documents.set("wallets/m-1", { balance: 0 });
+  // About a megabyte a call: far past the instance's 32 MiB unless freed.
+  for (let n = 0; n < 2000; n++)
+    expect(
+      run(
+        `let calls = 0;
+        export async function f(ctx) {
+          const filler = "x".repeat(1 << 20);
+          const wallet = await ctx.get("wallets", ctx.member.id);
+          globalThis.leaked = filler;
+          return [++calls, wallet.data.balance, filler.length];
+        }`,
+        "f",
+      ),
+    ).toEqual([1, 0, 1 << 20]);
+  try {
+    run(`export function f(ctx) { ctx.fail("CONFLICT", "No."); }`, "f");
+  } catch {}
+  try {
+    run(`export async function f(ctx) { await ctx.set("full", "x", 1); }`, "f");
+  } catch {}
 });
 
 describe("calling", () => {
@@ -239,52 +269,65 @@ describe("calling", () => {
     );
   });
 
-  test("the function's own failures are a 400 that says why", () => {
-    const failure = (source: string) => {
+  test("the function's own failures are a 400 that says why, and which retire the instance", async () => {
+    // Each case says whether it leaves the instance in doubt, so retires it.
+    const cases: [string, RegExp, boolean][] = [
+      [
+        "export function f() { throw new Error('sold out'); }",
+        /^Function failed: Error: sold out$/,
+        false,
+      ],
+      [
+        "export function f() { for (;;) {} }",
+        /^Function failed: it ran too long\.$/,
+        true,
+      ],
+      [
+        "export function f() { const a = []; for (;;) a.push('x'.repeat(1e5) + a.length); }",
+        /^Function failed: it used too much memory\.$/,
+        true,
+      ],
+      [
+        "export function f() { const g = () => g(); g(); }",
+        /RangeError/,
+        false,
+      ],
+      [
+        "export async function f() { throw new Error('sold out'); }",
+        /^Function failed: Error: sold out$/,
+        false,
+      ],
+      [
+        "export async function f() { await new Promise(() => {}); }",
+        /never settles/,
+        false,
+      ],
+      [
+        "export async function f() { for (;;) await null; }",
+        /^Function failed: it ran too long\.$/,
+        true,
+      ],
+      // Small async steps each escape the interrupt check; they are counted too.
+      [
+        "export async function f() { for (;;) { for (let i = 0; i < 1000; i++); await null; } }",
+        /^Function failed: it ran too long\.$/,
+        true,
+      ],
+      ["export function f( {", /does not load/, false],
+      ["export function f() { return 'x'.repeat(70000); }", /64 KiB/, false],
+    ];
+    for (const [source, message, retires] of cases) {
+      if (retired.has(module)) module = await engine();
+      let error: DataError | undefined;
       try {
         run(source, "f");
-      } catch (error) {
-        return error as DataError;
+      } catch (caught) {
+        error = caught as DataError;
       }
-      throw new Error("did not fail");
-    };
-    expect(
-      failure("export function f() { throw new Error('sold out'); }"),
-    ).toMatchObject({
-      status: 400,
-      message: "Function failed: Error: sold out",
-    });
-    expect(failure("export function f() { for (;;) {} }").message).toBe(
-      "Function failed: it ran too long.",
-    );
-    expect(
-      failure(
-        "export function f() { const a = []; for (;;) a.push('x'.repeat(1e5) + a.length); }",
-      ).message,
-    ).toBe("Function failed: it used too much memory.");
-    expect(
-      failure("export function f() { const g = () => g(); g(); }").message,
-    ).toMatch(/RangeError/);
-    expect(
-      failure("export async function f() { throw new Error('sold out'); }"),
-    ).toMatchObject({ message: "Function failed: Error: sold out" });
-    expect(
-      failure("export async function f() { await new Promise(() => {}); }")
-        .message,
-    ).toMatch(/never settles/);
-    expect(
-      failure("export async function f() { for (;;) await null; }").message,
-    ).toBe("Function failed: it ran too long.");
-    // Small async steps each escape the interrupt check; they are counted too.
-    expect(
-      failure(
-        "export async function f() { for (;;) { for (let i = 0; i < 1000; i++); await null; } }",
-      ).message,
-    ).toBe("Function failed: it ran too long.");
-    expect(failure("export function f( {").message).toMatch(/does not load/);
-    expect(
-      failure("export function f() { return 'x'.repeat(70000); }").message,
-    ).toMatch(/64 KiB/);
+      expect(error).toMatchObject({ status: 400 });
+      expect(error!.message).toMatch(message);
+      expect([source, retired.has(module)]).toEqual([source, retires]);
+    }
   });
 
   test("a function can catch its own stack overflow and carry on", () => {

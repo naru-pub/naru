@@ -1312,8 +1312,8 @@ export class SiteData extends DurableObject<Env> {
       if (outcome.ok) this.deliver(messages);
       return outcome;
     } catch (error) {
-      // Not the function's doing: the engine itself failed. Its instance is
-      // dropped with this call.
+      // Not the function's doing: the engine itself failed. The call retired
+      // its instance (functions.ts), and the next starts a new one.
       console.error("A site function's engine failed", error);
       return {
         ok: false,

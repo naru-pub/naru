@@ -31,8 +31,13 @@ import {
 //   would corrupt the interpreter;
 // - calls into the host are counted, since time spent there is invisible to
 //   the interrupt checks.
-// Each call gets its own instance, which is then dropped, never freed: a
-// failed call cannot leave anything behind for the next.
+// Calls share one WebAssembly instance (quickjs.ts), each in its own runtime
+// and context, which the call frees, with every handle it held, before it
+// returns: nothing of one call reaches the next. A call that leaves the
+// instance in doubt retires it instead (`retired`): one interrupted, out of
+// memory, failed inside the engine, or whose runtime would not free cleanly.
+// The spike found such instances can be corrupt; a retired one is dropped,
+// never freed, and the next call starts a new one.
 
 /** About 70 ms of interpreting on Cloudflare's hardware (the spike's). */
 export const INTERRUPT_BUDGET = 2000;
@@ -86,6 +91,9 @@ export type Invocation = {
 
 const failed = (message: string) =>
   new DataError(400, `Function failed: ${message}`);
+
+/** Instances a call left in doubt, which no further call may use. */
+export const retired = new WeakSet<QuickJSWASMModule>();
 
 // Guest side: one host entry point, JSON across the boundary. A failing ctx
 // operation fails the whole call (the host keeps the error and rethrows it
@@ -269,200 +277,254 @@ export function runFunction(
   invocation: Invocation,
   host: Host,
 ): unknown {
+  if (retired.has(module))
+    throw new Error("A retired QuickJS instance was asked to run a call.");
   const runtime = module.newRuntime();
-  runtime.setMaxStackSize(STACK_BYTES);
-  let checks = 0;
-  // Once spent, the budget stays spent: every later check interrupts too, so
-  // even reading the error object could fail, and this says why instead.
-  let interrupted = false;
-  runtime.setInterruptHandler(
-    () => (interrupted ||= ++checks > INTERRUPT_BUDGET),
+  let context: QuickJSContext | undefined;
+  const owned: QuickJSHandle[] = [];
+  const own = <T extends QuickJSHandle>(handle: T) => (
+    owned.push(handle),
+    handle
   );
-  if (invocation.modules)
-    runtime.setModuleLoader((filename) => {
-      const source = invocation.modules![filename];
-      if (source === undefined)
-        throw failed(`module ${filename} was not preloaded.`);
-      return source;
-    }, resolveModule);
-  const context = runtime.newContext();
-  let operations = 0;
-  let writes = 0;
-  let parses = 0;
-  let messages = 0;
-  let hostError: DataError | undefined;
-  const entry = context.newFunction("__host", (operation, args) => {
-    const name = context.getString(operation);
-    try {
-      if (hostError) throw hostError;
-      if (name === "url") {
-        if (++parses > MAX_URL_PARSES)
-          throw failed(`more than ${MAX_URL_PARSES} URL operations.`);
-        const [input, base, key, value] = JSON.parse(context.getString(args));
-        let url: URL;
-        try {
-          url = new URL(input, base ?? undefined);
-          if (key !== null) {
-            if (!URL_SETTERS.has(key)) return context.newString("null");
-            (url as unknown as Record<string, string>)[key] = value;
-          }
-        } catch {
-          return context.newString("null");
-        }
-        return context.newString(
-          JSON.stringify(
-            Object.fromEntries(URL_PARTS.map((part) => [part, url[part]])),
-          ),
-        );
+  // Set when the call ran out of CPU or memory: its instance is retired.
+  const spent = { cpu: false, memory: false };
+  let clean = false;
+  try {
+    const result = execute();
+    clean = true;
+    return result;
+  } catch (error) {
+    clean = error instanceof DataError;
+    throw error;
+  } finally {
+    if (clean && !spent.cpu && !spent.memory)
+      try {
+        for (const handle of owned) if (handle.alive) handle.dispose();
+        context?.dispose();
+        runtime.dispose();
+      } catch {
+        clean = false;
       }
-      if (name === "fail") {
-        const json = context.getString(args);
-        const [code, message, details = null] = JSON.parse(json);
+    else clean = false;
+    if (!clean) retired.add(module);
+  }
+
+  function execute(): unknown {
+    runtime.setMaxStackSize(STACK_BYTES);
+    let checks = 0;
+    // Once spent, the budget stays spent: every later check interrupts too, so
+    // even reading the error object could fail, and this says why instead.
+    let interrupted = false;
+    runtime.setInterruptHandler(() => {
+      if (++checks > INTERRUPT_BUDGET) interrupted = spent.cpu = true;
+      return interrupted;
+    });
+    if (invocation.modules)
+      runtime.setModuleLoader((filename) => {
+        const source = invocation.modules![filename];
+        if (source === undefined)
+          throw failed(`module ${filename} was not preloaded.`);
+        return source;
+      }, resolveModule);
+    const context = runtime.newContext();
+    setContext(context);
+    let operations = 0;
+    let writes = 0;
+    let parses = 0;
+    let messages = 0;
+    let hostError: DataError | undefined;
+    const entry = context.newFunction("__host", (operation, args) => {
+      const name = context.getString(operation);
+      try {
+        if (hostError) throw hostError;
+        if (name === "url") {
+          if (++parses > MAX_URL_PARSES)
+            throw failed(`more than ${MAX_URL_PARSES} URL operations.`);
+          const [input, base, key, value] = JSON.parse(context.getString(args));
+          let url: URL;
+          try {
+            url = new URL(input, base ?? undefined);
+            if (key !== null) {
+              if (!URL_SETTERS.has(key)) return context.newString("null");
+              (url as unknown as Record<string, string>)[key] = value;
+            }
+          } catch {
+            return context.newString("null");
+          }
+          return context.newString(
+            JSON.stringify(
+              Object.fromEntries(URL_PARTS.map((part) => [part, url[part]])),
+            ),
+          );
+        }
+        if (name === "fail") {
+          const json = context.getString(args);
+          const [code, message, details = null] = JSON.parse(json);
+          if (
+            !ERROR_CODES.includes(code) ||
+            typeof message !== "string" ||
+            !message.trim() ||
+            message.length > 1000
+          )
+            throw failed(
+              "ctx.fail requires a v1 error code and a message of 1–1000 characters.",
+            );
+          // The caller's own JSON: a reason the page can branch on, say.
+          if (
+            details !== null &&
+            new TextEncoder().encode(JSON.stringify(details)).byteLength >
+              MAX_FAILURE_DETAILS_BYTES
+          )
+            throw failed("ctx.fail details must be at most 4 KiB of JSON.");
+          const status: Record<ErrorCode, number> = {
+            CONFLICT: 409,
+            QUOTA_EXCEEDED: 409,
+            AUTH_REQUIRED: 401,
+            ACCESS_DENIED: 403,
+            NOT_FOUND: 404,
+            RATE_LIMITED: 429,
+            INVALID_REQUEST: 400,
+            UNAVAILABLE: 503,
+          };
+          throw new DataError(
+            status[code as ErrorCode],
+            message,
+            code,
+            details ?? undefined,
+          );
+        }
+        const values = JSON.parse(context.getString(args));
+        if (MESSAGES.has(name)) {
+          if (invocation.readonly)
+            throw failed("read-only functions cannot send messages.");
+          if (++messages > MAX_MESSAGES)
+            throw failed(`more than ${MAX_MESSAGES} live messages.`);
+          const out = host(name, values);
+          return out === undefined
+            ? context.undefined
+            : context.newString(JSON.stringify(out));
+        }
         if (
-          !ERROR_CODES.includes(code) ||
-          typeof message !== "string" ||
-          !message.trim() ||
-          message.length > 1000
+          name === "getMany" &&
+          (!Array.isArray(values[1]) || values[1].length > MAX_OPERATIONS)
         )
           throw failed(
-            "ctx.fail requires a v1 error code and a message of 1–1000 characters.",
+            `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
           );
-        // The caller's own JSON: a reason the page can branch on, say.
-        if (
-          details !== null &&
-          new TextEncoder().encode(JSON.stringify(details)).byteLength >
-            MAX_FAILURE_DETAILS_BYTES
-        )
-          throw failed("ctx.fail details must be at most 4 KiB of JSON.");
-        const status: Record<ErrorCode, number> = {
-          CONFLICT: 409,
-          QUOTA_EXCEEDED: 409,
-          AUTH_REQUIRED: 401,
-          ACCESS_DENIED: 403,
-          NOT_FOUND: 404,
-          RATE_LIMITED: 429,
-          INVALID_REQUEST: 400,
-          UNAVAILABLE: 503,
-        };
-        throw new DataError(
-          status[code as ErrorCode],
-          message,
-          code,
-          details ?? undefined,
-        );
-      }
-      const values = JSON.parse(context.getString(args));
-      if (MESSAGES.has(name)) {
-        if (invocation.readonly)
-          throw failed("read-only functions cannot send messages.");
-        if (++messages > MAX_MESSAGES)
-          throw failed(`more than ${MAX_MESSAGES} live messages.`);
+        operations += name === "getMany" ? Math.max(1, values[1].length) : 1;
+        if (operations > MAX_OPERATIONS)
+          throw failed(`more than ${MAX_OPERATIONS} database operations.`);
+        if (invocation.readonly && WRITES.has(name))
+          throw failed("read-only functions cannot write.");
+        if (WRITES.has(name) && ++writes > MAX_WRITES)
+          throw failed(`more than ${MAX_WRITES} writes.`);
         const out = host(name, values);
         return out === undefined
           ? context.undefined
           : context.newString(JSON.stringify(out));
+      } catch (error) {
+        hostError ??=
+          error instanceof DataError
+            ? error
+            : new DataError(500, "Function storage failed.");
+        return { error: context.newError(hostError.message) };
       }
-      if (
-        name === "getMany" &&
-        (!Array.isArray(values[1]) || values[1].length > MAX_OPERATIONS)
-      )
-        throw failed(
-          `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
-        );
-      operations += name === "getMany" ? Math.max(1, values[1].length) : 1;
-      if (operations > MAX_OPERATIONS)
-        throw failed(`more than ${MAX_OPERATIONS} database operations.`);
-      if (invocation.readonly && WRITES.has(name))
-        throw failed("read-only functions cannot write.");
-      if (WRITES.has(name) && ++writes > MAX_WRITES)
-        throw failed(`more than ${MAX_WRITES} writes.`);
-      const out = host(name, values);
-      return out === undefined
-        ? context.undefined
-        : context.newString(JSON.stringify(out));
+    });
+    context.setProp(context.global, "__host", entry);
+    entry.dispose();
+    evaluate(context, PRELUDE, "prelude.js", "global", own);
+    let exports: QuickJSHandle;
+    try {
+      exports = evaluate(
+        context,
+        invocation.source,
+        invocation.filename ?? "functions.js",
+        "module",
+        own,
+      );
     } catch (error) {
-      hostError ??=
-        error instanceof DataError
-          ? error
-          : new DataError(500, "Function storage failed.");
-      return { error: context.newError(hostError.message) };
+      const reason = describe(error);
+      if (reason === "it used too much memory.") spent.memory = true;
+      if (interrupted) spent.cpu = true;
+      throw failed(`its module does not load: ${reason}`);
     }
-  });
-  context.setProp(context.global, "__host", entry);
-  entry.dispose();
-  evaluate(context, PRELUDE, "prelude.js", "global").dispose();
-  let exports: QuickJSHandle;
-  try {
-    exports = evaluate(
-      context,
-      invocation.source,
-      invocation.filename ?? "functions.js",
-      "module",
+    context.setProp(context.global, "__exports", exports);
+    /** What a call's exception means: the host's error first, then the function's. */
+    const outcome = (exception: QuickJSHandle) => {
+      own(exception);
+      if (interrupted) spent.cpu = true;
+      if (hostError) return hostError;
+      if (interrupted) return failed("it ran too long.");
+      const error = context.dump(exception) as { name?: string };
+      if (error?.name === "__Missing")
+        return new DataError(404, `No function ${invocation.name}.`);
+      const reason = describe(error);
+      if (reason === "it used too much memory.") spent.memory = true;
+      return failed(reason);
+    };
+    const call = context.evalCode(
+      `__run(${[
+        invocation.name,
+        invocation.member,
+        invocation.owner === true,
+        invocation.now,
+        JSON.stringify(invocation.args ?? null),
+      ]
+        .map((value) => JSON.stringify(value))
+        .join(", ")})`,
+      "call.js",
+      { type: "global" },
     );
-  } catch (error) {
-    throw failed(`its module does not load: ${describe(error)}`);
+    if (call.error) throw outcome(call.error);
+    own(call.value);
+    // Every ctx operation has already been answered, so draining the queue
+    // settles the call unless it awaits something no one will ever resolve.
+    for (let ran = 0; ; ) {
+      const jobs = runtime.executePendingJobs(1000);
+      if (jobs.error) throw outcome(jobs.error);
+      if (jobs.value === 0) break;
+      ran += jobs.value;
+      if (ran > MAX_JOBS) {
+        spent.cpu = true;
+        throw failed("it ran too long.");
+      }
+    }
+    const state = context.getPromiseState(call.value);
+    if (state.type === "rejected") throw outcome(state.error);
+    if (state.type === "fulfilled") own(state.value);
+    if (hostError) throw hostError;
+    if (state.type === "pending")
+      throw failed("it awaited something other than ctx, which never settles.");
+    const unawaited = context.dump(
+      evaluate(context, "__unawaited()", "check.js", "global", own),
+    );
+    if (unawaited !== undefined)
+      throw failed(`it did not await ctx.${unawaited}.`);
+    const json = context.getString(state.value);
+    if (new TextEncoder().encode(json).byteLength > MAX_RESULT_BYTES)
+      throw failed("its result is larger than 64 KiB.");
+    return JSON.parse(json);
   }
-  context.setProp(context.global, "__exports", exports);
-  /** What a call's exception means: the host's error first, then the function's. */
-  const outcome = (exception: QuickJSHandle) => {
-    if (hostError) return hostError;
-    if (interrupted) return failed("it ran too long.");
-    const error = context.dump(exception) as { name?: string };
-    if (error?.name === "__Missing")
-      return new DataError(404, `No function ${invocation.name}.`);
-    return failed(describe(error));
-  };
-  const call = context.evalCode(
-    `__run(${[
-      invocation.name,
-      invocation.member,
-      invocation.owner === true,
-      invocation.now,
-      JSON.stringify(invocation.args ?? null),
-    ]
-      .map((value) => JSON.stringify(value))
-      .join(", ")})`,
-    "call.js",
-    { type: "global" },
-  );
-  if (call.error) throw outcome(call.error);
-  // Every ctx operation has already been answered, so draining the queue
-  // settles the call unless it awaits something no one will ever resolve.
-  for (let ran = 0; ; ) {
-    const jobs = runtime.executePendingJobs(1000);
-    if (jobs.error) throw outcome(jobs.error);
-    if (jobs.value === 0) break;
-    ran += jobs.value;
-    if (ran > MAX_JOBS) throw failed("it ran too long.");
+
+  function setContext(value: QuickJSContext) {
+    context = value;
   }
-  const state = context.getPromiseState(call.value);
-  if (state.type === "rejected") throw outcome(state.error);
-  if (hostError) throw hostError;
-  if (state.type === "pending")
-    throw failed("it awaited something other than ctx, which never settles.");
-  const unawaited = context.dump(
-    evaluate(context, "__unawaited()", "check.js", "global"),
-  );
-  if (unawaited !== undefined)
-    throw failed(`it did not await ctx.${unawaited}.`);
-  const json = context.getString(state.value);
-  if (new TextEncoder().encode(json).byteLength > MAX_RESULT_BYTES)
-    throw failed("its result is larger than 64 KiB.");
-  return JSON.parse(json);
 }
 
+/** Evaluates `code`, keeping its result and any error handle with `own`. */
 function evaluate(
   context: QuickJSContext,
   code: string,
   file: string,
   type: "global" | "module",
+  own: (handle: QuickJSHandle) => QuickJSHandle,
 ) {
   const result = context.evalCode(code, file, { type });
   if (result.error) {
-    const error = context.dump(result.error);
+    const error = context.dump(own(result.error));
     throw new Error(describe(error));
   }
-  return result.value;
+  return own(result.value);
 }
 
 function describe(error: unknown): string {
