@@ -267,8 +267,10 @@ size, after })`, `add(collection, data)`, `set(collection, id, data)` and
 Documents a function writes have no member author, so members cannot change
 them directly. A function may be `async` or return a promise; the call ends when
 it settles, and the whole call is still one transaction. Every database
-operation runs as soon as it is called, so one that is never awaited still
-counts, and its failure still aborts the call. Functions have no network or
+operation's promise must be used: awaited, returned, chained with `then` or
+`catch`, or passed to `Promise.all`. Otherwise the call fails with
+`INVALID_REQUEST` and rolls back, since a mistake like
+`if (!ctx.get(...))` would otherwise go unnoticed. Functions have no network or
 timers, and awaiting anything other than `ctx` (a promise that never resolves)
 fails the call. A call may make 100 database operations, 25 of them
 writes, run for tens of milliseconds and use 32 MiB of memory; its result is at

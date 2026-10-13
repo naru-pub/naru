@@ -289,20 +289,41 @@ describe("the host", () => {
     ).toThrow(expect.objectContaining({ code: "QUOTA_EXCEEDED", status: 409 }));
   });
 
-  test("an operation runs when called, and fails the call even if never awaited", () => {
+  test("every ctx result must be used, or the call fails", () => {
+    const failure = (body: string) => {
+      try {
+        run(`export async function f(ctx) { ${body} }`, "f");
+      } catch (error) {
+        return (error as DataError).message;
+      }
+      return null;
+    };
+    expect(failure(`ctx.set("c", "x", 1); return 1;`)).toBe(
+      "Function failed: it did not await ctx.set.",
+    );
+    expect(failure(`if (!ctx.get("c", "x")) return 1;`)).toBe(
+      "Function failed: it did not await ctx.get.",
+    );
+    // The host's own failure explains more than the missing await.
+    expect(() =>
+      run(`export function f(ctx) { ctx.set("full", "x", 1); }`, "f"),
+    ).toThrow(expect.objectContaining({ code: "QUOTA_EXCEEDED" }));
+    // Awaiting, returning, chaining and Promise.all all count as use.
+    for (const body of [
+      `await ctx.get("c", "x");`,
+      `return ctx.get("c", "x");`,
+      `return ctx.get("c", "x").then((doc) => doc);`,
+      `await ctx.get("c", "x").catch(() => null);`,
+      `await Promise.all([ctx.get("c", "x"), ctx.list("c")]);`,
+      `const [a] = await Promise.allSettled([ctx.get("c", "x")]); return a.status;`,
+    ])
+      expect(failure(body)).toBeNull();
     expect(
       run(
-        `export function f(ctx) { ctx.set("c", "x", 1); return "returned"; }`,
+        `export function f(ctx) { const p = ctx.get("c", "x"); return [p instanceof Promise, p.then(() => 1) instanceof Promise]; }`,
         "f",
       ),
-    ).toBe("returned");
-    expect(documents.get("c/x")).toBe(1);
-    expect(() =>
-      run(
-        `export function f(ctx) { ctx.set("full", "x", 1); return "returned"; }`,
-        "f",
-      ),
-    ).toThrow(expect.objectContaining({ code: "QUOTA_EXCEEDED" }));
+    ).toEqual([true, true]);
   });
 
   test("operations and writes are counted, since the interrupt checks cannot see them", () => {

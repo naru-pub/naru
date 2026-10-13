@@ -64,27 +64,54 @@ const failed = (message: string) =>
 // afterwards), so a function cannot carry on past one. The database methods
 // are async: the operation runs when called, and its promise is how the
 // function gets the answer.
+//
+// Each of those promises must be used (awaited, chained or passed to
+// Promise.all), or the call fails: `if (!ctx.get(...))` is always false, a
+// mistake no error would otherwise reveal. A native promise cannot tell when
+// it is awaited, so these are a subclass whose then() is observable; what
+// then() returns is a plain promise.
 const PRELUDE = `
 const __call = (operation, ...args) => {
   const out = __host(operation, JSON.stringify(args));
   return out === undefined ? undefined : JSON.parse(out);
 };
 Math.random = () => __call("random");
+const __unused = new Map();
+class CtxPromise extends Promise {
+  static get [Symbol.species]() { return Promise; }
+  then(onFulfilled, onRejected) {
+    __unused.delete(this);
+    return super.then(onFulfilled, onRejected);
+  }
+}
+const __operation = (operation) => (...args) => {
+  let settle;
+  try {
+    const value = __call(operation, ...args);
+    settle = (resolve) => resolve(value);
+  } catch (error) {
+    settle = (resolve, reject) => reject(error);
+  }
+  const promise = new CtxPromise(settle);
+  __unused.set(promise, operation);
+  return promise;
+};
+globalThis.__unawaited = () => __unused.values().next().value;
 globalThis.__run = async (name, member, now, args) => {
   const ctx = Object.freeze({
     member: member === null ? null : Object.freeze({ id: member }),
     now,
     random: () => __call("random"),
     fail: (code, message) => __call("fail", code, message),
-    get: async (collection, id) => __call("get", collection, id),
-    getMany: async (collection, ids) => __call("getMany", collection, ids),
-    count: async (collection, options) =>
-      __call("count", collection, options ?? {}),
-    list: async (collection, options) =>
-      __call("list", collection, options ?? {}),
-    add: async (collection, data) => __call("add", collection, data),
-    set: async (collection, id, data) => __call("set", collection, id, data),
-    delete: async (collection, id) => __call("delete", collection, id),
+    get: __operation("get"),
+    getMany: __operation("getMany"),
+    count: (collection, options) =>
+      __operation("count")(collection, options ?? {}),
+    list: (collection, options) =>
+      __operation("list")(collection, options ?? {}),
+    add: __operation("add"),
+    set: __operation("set"),
+    delete: __operation("delete"),
   });
   const fn = Object.hasOwn(globalThis.__exports, name)
     ? globalThis.__exports[name]
@@ -219,6 +246,11 @@ export function runFunction(
   if (hostError) throw hostError;
   if (state.type === "pending")
     throw failed("it awaited something other than ctx, which never settles.");
+  const unawaited = context.dump(
+    evaluate(context, "__unawaited()", "check.js", "global"),
+  );
+  if (unawaited !== undefined)
+    throw failed(`it did not await ctx.${unawaited}.`);
   const json = context.getString(state.value);
   if (new TextEncoder().encode(json).byteLength > MAX_RESULT_BYTES)
     throw failed("its result is larger than 64 KiB.");
