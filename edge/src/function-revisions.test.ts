@@ -85,9 +85,64 @@ test("cold loads verify source integrity", async () => {
     "export function buy() { return 1; }",
   );
   const first = await new FunctionRevisions(db.bucket, "alice").publish();
-  const blob = [...db.objects.keys()].find((key) => key.includes("/blobs/"))!;
+  const blob = [...db.objects.keys()].find(
+    (key) =>
+      key.endsWith("/functions/shop.js") && key.startsWith("_naru-runtime/"),
+  )!;
   db.objects.set(blob, "export function buy() { return 2; }");
   await expect(
     new FunctionRevisions(db.bucket, "alice").graph(first, "functions/shop.js"),
   ).rejects.toThrow("integrity");
+});
+
+test("each publication owns all sources, so deleting an old revision preserves reused code", async () => {
+  const db = storage();
+  const entry =
+    'import { price } from "../modules/prices.js"; export function buy() { return price; }';
+  db.objects.set("alice/_naru/functions/shop.js", entry);
+  db.objects.set("alice/_naru/modules/prices.js", "export const price = 1;");
+  const revisions = new FunctionRevisions(db.bucket, "alice");
+  const first = await revisions.publish();
+  // An unchanged publish is still a separate, self-contained release.
+  const second = await revisions.publish();
+  expect(second).not.toBe(first);
+  for (const revision of [first, second]) {
+    const prefix = `_naru-runtime/alice/revisions/${revision}/`;
+    expect(db.objects.get(`${prefix}functions/shop.js`)).toBe(entry);
+    expect(db.objects.get(`${prefix}modules/prices.js`)).toBe(
+      "export const price = 1;",
+    );
+    expect(db.objects.has(`${prefix}manifest.json`)).toBe(true);
+  }
+  for (const key of db.objects.keys())
+    if (key.startsWith(`_naru-runtime/alice/revisions/${first}/`))
+      db.objects.delete(key);
+  // A fresh loader proves success is independent of any warm source cache.
+  const cold = new FunctionRevisions(db.bucket, "alice");
+  expect(
+    (await cold.graph(second, "functions/shop.js"))["modules/prices.js"],
+  ).toContain("1");
+  await expect(cold.graph(first, "functions/shop.js")).rejects.toThrow(
+    "unavailable",
+  );
+  expect([...db.objects.keys()].some((key) => key.includes("/blobs/"))).toBe(
+    false,
+  );
+});
+
+test("a failed source upload never writes a completed revision manifest", async () => {
+  const db = storage();
+  db.objects.set(
+    "alice/_naru/functions/shop.js",
+    "export function buy() { return 1; }",
+  );
+  db.bucket.put = (async () => {
+    throw new Error("Storage unavailable");
+  }) as R2Bucket["put"];
+  await expect(
+    new FunctionRevisions(db.bucket, "alice").publish(),
+  ).rejects.toThrow("Storage unavailable");
+  expect(
+    [...db.objects.keys()].some((key) => key.endsWith("/manifest.json")),
+  ).toBe(false);
 });

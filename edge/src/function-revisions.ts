@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
 import {
   loadModuleGraph,
@@ -10,7 +10,11 @@ import {
 const MAX_FILES = 256,
   MAX_REVISION_BYTES = 4 * 1024 * 1024,
   CACHE_BYTES = 8 * 1024 * 1024;
-type Manifest = { version: 1; files: Record<string, string> };
+type Manifest = {
+  version: 2;
+  publication: string;
+  files: Record<string, string>;
+};
 const hash = (source: string) =>
   createHash("sha256").update(source).digest("hex");
 const conflict = () =>
@@ -29,8 +33,8 @@ export class FunctionRevisions {
     private bucket: R2Bucket,
     private site: string,
   ) {}
-  private key(kind: string, id: string) {
-    return `_naru-runtime/${this.site}/${kind}/${id}`;
+  private key(revision: string, path: string) {
+    return `_naru-runtime/${this.site}/revisions/${revision}/${path}`;
   }
   private async files() {
     const files: Array<{ path: string; key: string; etag: string }> = [];
@@ -93,7 +97,11 @@ export class FunctionRevisions {
       }
     if (JSON.stringify(files) !== JSON.stringify(await this.files()))
       throw conflict();
-    const manifest: Manifest = { version: 1, files: digests };
+    const manifest: Manifest = {
+      version: 2,
+      publication: randomUUID(),
+      files: digests,
+    };
     const body = JSON.stringify(manifest),
       revision = hash(body);
     const entries = Object.entries(sources);
@@ -102,14 +110,12 @@ export class FunctionRevisions {
         entries
           .slice(offset, offset + 16)
           .map(([filename, source]) =>
-            this.bucket.put(
-              this.key("blobs", `${digests[filename]}.js`),
-              source,
-              { onlyIf: { etagDoesNotMatch: "*" } },
-            ),
+            this.bucket.put(this.key(revision, filename), source, {
+              onlyIf: { etagDoesNotMatch: "*" },
+            }),
           ),
       );
-    await this.bucket.put(this.key("revisions", `${revision}.json`), body, {
+    await this.bucket.put(this.key(revision, "manifest.json"), body, {
       onlyIf: { etagDoesNotMatch: "*" },
     });
     this.manifests.set(revision, manifest);
@@ -122,9 +128,7 @@ export class FunctionRevisions {
       throw new DataError(503, "Invalid function revision.");
     const cached = this.manifests.get(revision);
     if (cached) return cached;
-    const object = await this.bucket.get(
-      this.key("revisions", `${revision}.json`),
-    );
+    const object = await this.bucket.get(this.key(revision, "manifest.json"));
     if (!object) throw new DataError(503, "Function revision is unavailable.");
     if (object.size > 256 * 1024)
       throw new DataError(503, "Invalid function manifest.");
@@ -136,7 +140,8 @@ export class FunctionRevisions {
       );
     const manifest = JSON.parse(body) as Manifest;
     if (
-      manifest.version !== 1 ||
+      manifest.version !== 2 ||
+      typeof manifest.publication !== "string" ||
       !manifest.files ||
       Object.keys(manifest.files).length > MAX_FILES
     )
@@ -164,7 +169,7 @@ export class FunctionRevisions {
           this.sources.set(digest, cached);
           return cached;
         }
-        const object = await this.bucket.get(this.key("blobs", `${digest}.js`));
+        const object = await this.bucket.get(this.key(revision, filename));
         if (!object)
           throw new DataError(503, "Function module is unavailable.");
         if (object.size > MAX_MODULE_BYTES)
