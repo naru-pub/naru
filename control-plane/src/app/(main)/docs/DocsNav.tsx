@@ -20,7 +20,7 @@ export default function DocsNav({
         aria-label="SDK 버전"
       >
         <span>SDK 버전</span>
-        {DOC_VERSIONS.map((value) => (
+        {DOC_VERSIONS.filter((value) => value !== "1.1.0").map((value) => (
           <a
             key={value}
             href={guidePath(value, current)}
