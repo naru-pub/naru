@@ -275,6 +275,12 @@ describe("calling", () => {
     expect(
       failure("export async function f() { for (;;) await null; }").message,
     ).toBe("Function failed: it ran too long.");
+    // Small async steps each escape the interrupt check; they are counted too.
+    expect(
+      failure(
+        "export async function f() { for (;;) { for (let i = 0; i < 1000; i++); await null; } }",
+      ).message,
+    ).toBe("Function failed: it ran too long.");
     expect(failure("export function f( {").message).toMatch(/does not load/);
     expect(
       failure("export function f() { return 'x'.repeat(70000); }").message,

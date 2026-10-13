@@ -43,6 +43,12 @@ export const MAX_RESULT_BYTES = 64 * 1024;
 export const MAX_FAILURE_DETAILS_BYTES = 4 * 1024;
 /** URL parses a call may make: each is host time the interrupt checks miss. */
 export const MAX_URL_PARSES = 1000;
+/**
+ * Promise jobs (each step of an async function) a call may run. A job too
+ * small to reach QuickJS's next interrupt check escapes the CPU budget, so
+ * `for (;;) await null` would otherwise run some thirty times past it.
+ */
+export const MAX_JOBS = 10_000;
 /** Live messages a call may send (ctx.notify, ctx.broadcast). */
 export const MAX_MESSAGES = 50;
 const MESSAGES = new Set(["notify", "broadcast"]);
@@ -422,8 +428,13 @@ export function runFunction(
   if (call.error) throw outcome(call.error);
   // Every ctx operation has already been answered, so draining the queue
   // settles the call unless it awaits something no one will ever resolve.
-  const jobs = runtime.executePendingJobs();
-  if (jobs.error) throw outcome(jobs.error);
+  for (let ran = 0; ; ) {
+    const jobs = runtime.executePendingJobs(1000);
+    if (jobs.error) throw outcome(jobs.error);
+    if (jobs.value === 0) break;
+    ran += jobs.value;
+    if (ran > MAX_JOBS) throw failed("it ran too long.");
+  }
   const state = context.getPromiseState(call.value);
   if (state.type === "rejected") throw outcome(state.error);
   if (hostError) throw hostError;
