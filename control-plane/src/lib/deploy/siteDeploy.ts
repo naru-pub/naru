@@ -642,6 +642,13 @@ async function publishDeployment(deployment: LoadedDeployment) {
     );
     await deleteObjects(publicDeleteKeys);
 
+    await purgeSiteFiles(deployment.login_name, [
+      ...manifest.files.map((file) =>
+        publicPath(deployment.target_prefix, file.path),
+      ),
+      ...deletedPaths.map((path) => publicPath(deployment.target_prefix, path)),
+    ]);
+
     await deleteObjects(
       manifest.files.map((file) => `${deployment.upload_prefix}/${file.path}`),
     );
@@ -680,13 +687,6 @@ async function publishDeployment(deployment: LoadedDeployment) {
       })
       .where("id", "=", deployment.id)
       .execute();
-
-    await purgeSiteFiles(deployment.login_name, [
-      ...manifest.files.map((file) =>
-        publicPath(deployment.target_prefix, file.path),
-      ),
-      ...deletedPaths.map((path) => publicPath(deployment.target_prefix, path)),
-    ]);
 
     return {
       directorySize,

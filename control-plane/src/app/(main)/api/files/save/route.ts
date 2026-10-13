@@ -108,6 +108,14 @@ export async function POST(request: NextRequest) {
       await purgeSiteFiles(user.loginName, [filename]);
     } catch (e) {
       Sentry.captureException(e);
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "File saved, but function publication failed. The previous revision remains active. Retry after fixing the function files.",
+        },
+        { status: 503 },
+      );
     }
 
     return NextResponse.json({

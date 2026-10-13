@@ -198,7 +198,10 @@ export interface Member {
    * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
    * transaction, with the site owner's access to its collections, and
    * resolves with what it returned. A function that throws, or exceeds its
-   * limits, changes nothing.
+   * limits, changes nothing. Static relative JavaScript imports and re-exports
+   * may share code in `_naru/modules/`; imports stay within `_naru/functions/`
+   * and `_naru/modules/`. Include `.js`; dynamic imports and top-level await
+   * are unsupported. File updates activate an immutable source revision.
    */
   call<R = Json>(
     name: string,

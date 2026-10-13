@@ -374,7 +374,39 @@
                 },
                 {
                   "type": "text",
-                  "value": ". It runs on Naru, in one transaction, with the site owner's access to its collections, and resolves with what it returned. A function that throws, or exceeds its limits, changes nothing."
+                  "value": ". It runs on Naru, in one transaction, with the site owner's access to its collections, and resolves with what it returned. A function that throws, or exceeds its limits, changes nothing. Static relative JavaScript imports and re-exports may share code in "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/modules/"
+                },
+                {
+                  "type": "text",
+                  "value": "; imports stay within "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/functions/"
+                },
+                {
+                  "type": "text",
+                  "value": " and "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/modules/"
+                },
+                {
+                  "type": "text",
+                  "value": ". Include "
+                },
+                {
+                  "type": "code",
+                  "value": ".js"
+                },
+                {
+                  "type": "text",
+                  "value": "; dynamic imports and top-level await are unsupported. File updates activate an immutable source revision."
                 }
               ]
             }

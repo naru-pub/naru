@@ -1,3 +1,4 @@
+import { callSiteObject } from "@/lib/edge/client";
 import * as Sentry from "@sentry/nextjs";
 import { edgeFileCacheUrl, edgeSiteCacheTag } from "@/lib/edge/file-cache";
 import { getSiteBucketUrl, getUserObjectKey } from "@/lib/site-urls";
@@ -17,7 +18,15 @@ export function purgeSiteFiles(loginName: string, paths: string[]) {
 }
 
 /** Purges these keys of the site bucket, each `<login>/<path>`. */
-export function purgeSiteObjects(keys: string[]) {
+export async function purgeSiteObjects(keys: string[]) {
+  const sites = new Set(
+    keys.flatMap((key) => {
+      const match = /^([^/]+)\/_naru\/(?:functions|modules)\//.exec(key);
+      return match ? [match[1]] : [];
+    }),
+  );
+  for (const site of sites)
+    await callSiteObject(site, "publishFunctions", { site });
   const domain = process.env.NEXT_PUBLIC_DOMAIN!;
   return purgeUrls(
     keys.flatMap((key) => [

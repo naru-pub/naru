@@ -766,6 +766,42 @@ integration("SDK and data API contract", () => {
       expect(await member.call("community/boards:list")).toEqual({
         member: member.id,
       });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "modules",
+        file: "values",
+        source: "export const value = 7;",
+      });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "imports/nested",
+        source:
+          'import { value } from "../../modules/values.js"; export function read() { return value; }',
+      });
+      expect(await member.read("imports/nested:read")).toBe(7);
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "modules",
+        file: "values",
+        source: "export const value = 8;",
+      });
+      expect(await member.read("imports/nested:read")).toBe(8);
+      await expect(
+        callSiteObject("alice", "putFunctions", {
+          site: "alice",
+          folder: "modules",
+          file: "values",
+          source: 'import "./missing.js";',
+        }),
+      ).rejects.toThrow("Missing import");
+      expect(await member.read("imports/nested:read")).toBe(8);
+      // Restore the working copy after the refused revision.
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "modules",
+        file: "values",
+        source: "export const value = 8;",
+      });
       await expect(member.call("counter:missing")).rejects.toMatchObject({
         code: "NOT_FOUND",
       });

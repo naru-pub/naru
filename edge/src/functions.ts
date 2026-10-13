@@ -1,3 +1,4 @@
+import { resolveModule, type ModuleSources } from "./modules";
 import type {
   QuickJSContext,
   QuickJSHandle,
@@ -41,6 +42,8 @@ export type Host = (operation: string, args: unknown[]) => unknown;
 
 export type Invocation = {
   source: string;
+  filename?: string;
+  modules?: ModuleSources;
   name: string;
   args: unknown;
   member: string | null;
@@ -100,6 +103,13 @@ export function runFunction(
   runtime.setMaxStackSize(STACK_BYTES);
   let checks = 0;
   runtime.setInterruptHandler(() => ++checks > INTERRUPT_BUDGET);
+  if (invocation.modules)
+    runtime.setModuleLoader((filename) => {
+      const source = invocation.modules![filename];
+      if (source === undefined)
+        throw failed(`module ${filename} was not preloaded.`);
+      return source;
+    }, resolveModule);
   const context = runtime.newContext();
   let operations = 0;
   let writes = 0;
@@ -163,7 +173,12 @@ export function runFunction(
   evaluate(context, PRELUDE, "prelude.js", "global").dispose();
   let exports: QuickJSHandle;
   try {
-    exports = evaluate(context, invocation.source, "functions.js", "module");
+    exports = evaluate(
+      context,
+      invocation.source,
+      invocation.filename ?? "functions.js",
+      "module",
+    );
   } catch (error) {
     throw failed(`its module does not load: ${describe(error)}`);
   }

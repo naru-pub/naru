@@ -293,7 +293,7 @@ export default function DatabaseDocs() {
                 만듭니다. 사이트 파일의{" "}
                 <code>_naru/functions/&lt;모듈&gt;.js</code>에서 함수를
                 내보내고, 회원이{" "}
-                <code>member.call(&quot;모듈/함수&quot;, 인자)</code>로
+                <code>member.call(&quot;모듈/경로:함수&quot;, 인자)</code>로
                 부릅니다. 함수는 한 트랜잭션 안에서 사이트 소유자의 권한으로
                 모든 컬렉션을 읽고 쓰며, 오류가 나거나 한도를 넘으면 아무것도
                 바꾸지 않습니다. 함수가 지키는 컬렉션(지갑 같은)은 쓰기를
@@ -314,6 +314,29 @@ export function buy(ctx, { item }) {
 // 페이지에서
 const result = await member.call("shop:buy", { item: "sword" });
 const boards = await member.read("community/boards:list");`}</Code>
+              <p>
+                공통 코드는 <code>_naru/modules/</code>에 두고 상대 경로로
+                import하거나 다시 내보낼 수 있습니다. 경로에 <code>.js</code>를
+                포함하세요. 번들 생성은 필요하지 않습니다. 패키지 이름과 URL,
+                동적 import, 최상위 await는 지원하지 않습니다. 공통 모듈은
+                회원이 직접 호출할 수 없습니다.
+              </p>
+              <Code language="javascript">{`// _naru/modules/prices.js
+export const price = 10;
+
+// _naru/functions/shop/buy.js
+import { price } from "../../modules/prices.js";
+export function quote() { return price; }
+
+// 페이지에서
+const price = await member.read("shop/buy:quote");`}</Code>
+              <p>
+                파일을 저장하거나 사이트를 설치하면 나루가 함수 파일의 리비전을
+                만들고 적용합니다. import가 잘못되면 이전 리비전이 계속
+                실행됩니다. 파일을 하나씩 올릴 때는 공통 모듈부터 올리세요. 한
+                호출은 같은 리비전의 파일만 사용하며, 읽기 전용 호출에서는
+                가져온 코드도 데이터를 쓸 수 없습니다.
+              </p>
               <p>
                 <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
                 <code>random()</code>과 <code>get</code>·<code>list</code>·

@@ -1,3 +1,4 @@
+import { FunctionRevisions } from "./function-revisions";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -800,6 +801,37 @@ export class SiteData extends DurableObject<Env> {
     return { file, source, module: await quickjs() };
   }
 
+  private functionRevisions: FunctionRevisions | undefined;
+  private revisions(site: string) {
+    return (this.functionRevisions ??= new FunctionRevisions(
+      this.env.SITE_FILES,
+      site,
+    ));
+  }
+
+  /** Internal publish RPC: all files are ready before the active pointer changes. */
+  async publishFunctions(input: { site: string }) {
+    const previous = this.meta("functions_revision");
+    let revision: string;
+    try {
+      revision = await this.revisions(input.site).publish();
+    } catch (error) {
+      return this.run(() => {
+        throw error;
+      });
+    }
+    return this.run(() => {
+      if (this.meta("functions_revision") !== previous)
+        throw new DataError(
+          409,
+          "Another function revision was published. Retry.",
+          "CONFLICT",
+        );
+      this.setMeta("functions_revision", revision);
+      return { revision };
+    });
+  }
+
   /** Each functions module of the site, kept a few seconds between checks. */
   private functions = new Map<
     string,
@@ -968,9 +1000,16 @@ export class SiteData extends DurableObject<Env> {
       this.limitMember(input.member, input.readonly ? "read" : "call");
     });
     if (!admitted.ok) return admitted;
-    let source;
+    const filename = `functions/${input.file}.js`;
+    let sources;
     try {
-      source = await this.functionsSource(input.site, input.file);
+      let revision = this.meta("functions_revision");
+      if (!revision) {
+        const published = await this.publishFunctions({ site: input.site });
+        if (!published.ok) return published;
+        revision = published.value.revision;
+      }
+      sources = await this.revisions(input.site).graph(revision, filename);
     } catch (error) {
       if (error instanceof DataError)
         return this.run(() => {
@@ -978,20 +1017,15 @@ export class SiteData extends DurableObject<Env> {
         });
       throw error;
     }
-    if (source === null)
-      return this.run(() => {
-        throw new DataError(
-          404,
-          `This site has no ${functionsPath(input.file)}.`,
-        );
-      });
     const engine = await quickjs();
     try {
       return this.run(() => ({
         result: runFunction(
           engine,
           {
-            source,
+            source: sources[filename],
+            filename,
+            modules: sources,
             name: input.name,
             args: input.args,
             member: input.member,
@@ -1021,13 +1055,22 @@ export class SiteData extends DurableObject<Env> {
     site: string;
     file: string;
     source: string | null;
-    folder?: "functions" | "rules";
+    folder?: "functions" | "rules" | "modules";
   }) {
-    const folder = input.folder === "rules" ? "rules" : "functions";
-    const key = `${input.site}/_naru/${folder}/${folder === "functions" ? functionModule(input.file) : name(input.file)}.js`;
+    const folder =
+      input.folder === "rules"
+        ? "rules"
+        : input.folder === "modules"
+          ? "modules"
+          : "functions";
+    const key = `${input.site}/_naru/${folder}/${folder !== "rules" ? functionModule(input.file) : name(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
     this.functions.delete(`${folder}:${input.file}`);
+    if (folder !== "rules") {
+      const published = await this.publishFunctions({ site: input.site });
+      if (!published.ok) return published;
+    }
     return { ok: true, value: null };
   }
 

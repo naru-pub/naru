@@ -490,3 +490,75 @@ describe("community board rule example", () => {
     ).toBe(false);
   });
 });
+
+test("preloaded imports execute through the same ctx and read-only guard", () => {
+  const filename = "functions/shop.js";
+  const source =
+    'import { act } from "../modules/wallet.js"; export function buy(ctx) { return act(ctx); }';
+  const modules = {
+    [filename]: source,
+    "modules/wallet.js":
+      'export function act(ctx) { try { ctx.set("wallets", "one", 10); } catch {} return 1; }',
+  };
+  expect(() =>
+    runFunction(
+      module,
+      {
+        source,
+        filename,
+        modules,
+        name: "buy",
+        args: null,
+        member: "m-1",
+        now: 0,
+        readonly: true,
+      },
+      host,
+    ),
+  ).toThrow("read-only functions cannot write");
+  expect(documents.size).toBe(0);
+  expect(
+    runFunction(
+      module,
+      {
+        source,
+        filename,
+        modules,
+        name: "buy",
+        args: null,
+        member: "m-1",
+        now: 0,
+      },
+      host,
+    ),
+  ).toBe(1);
+  expect(documents.get("wallets/one")).toBe(10);
+});
+
+test("native cycles and re-exports retain live bindings, fresh for each call", () => {
+  const filename = "functions/cycle.js";
+  const source = 'export { read } from "../modules/a.js";';
+  const modules = {
+    [filename]: source,
+    "modules/a.js":
+      'import { increment } from "./b.js"; export let value = 1; export function read() { increment(); return value; } export function update() { value++; }',
+    "modules/b.js":
+      'import { update } from "./a.js"; export function increment() { update(); }',
+  };
+  const invoke = () =>
+    runFunction(
+      module,
+      {
+        source,
+        filename,
+        modules,
+        name: "read",
+        args: null,
+        member: null,
+        now: 0,
+      },
+      host,
+    );
+  expect(invoke()).toBe(2);
+  expect(invoke()).toBe(2);
+});

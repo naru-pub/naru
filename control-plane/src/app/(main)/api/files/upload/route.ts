@@ -113,9 +113,7 @@ async function uploadSingleFile(user: User, directory: string, file: File) {
     );
 
     // Extract filename from S3 key safely for cache invalidation
-    const keyParts = key.split("/");
-    const filename = keyParts[keyParts.length - 1];
-    await purgeSiteFiles(user.loginName, [filename]);
+    await purgeSiteFiles(user.loginName, [`${directory}${file.name}`]);
   } catch (e) {
     Sentry.captureException(e);
     console.error("S3 upload error:", e);
