@@ -362,7 +362,7 @@
                 },
                 {
                   "type": "code",
-                  "value": "\"<module>/<function>\""
+                  "value": "\"<module/path>:<function>\""
                 },
                 {
                   "type": "text",
@@ -370,7 +370,7 @@
                 },
                 {
                   "type": "code",
-                  "value": "_naru/functions/<module>.js"
+                  "value": "_naru/functions/<module/path>.js"
                 },
                 {
                   "type": "text",

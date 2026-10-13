@@ -344,21 +344,21 @@ test("call posts its arguments to the function, and resolves with its result", a
     const naru = createNaru();
     const member = await naru.members.session();
     respond(() => Response.json({ result: { ok: true, version: 3 } }));
-    assert.deepEqual(await member.call("shop/buy", { item: "sword", qty: 1 }), {
+    assert.deepEqual(await member.call("shop:buy", { item: "sword", qty: 1 }), {
       ok: true,
       version: 3,
     });
     assert.equal(calls[0].method, "POST");
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/_call/shop/buy",
+      "https://naru.pub/api/data/v1/alice/_call/shop:buy",
     );
     assert.deepEqual(JSON.parse(calls[0].body), {
       args: { item: "sword", qty: 1 },
     });
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
     respond(() => Response.json({ result: null }));
-    assert.equal(await member.call("shop/restock"), null);
+    assert.equal(await member.call("shop:restock"), null);
     assert.deepEqual(JSON.parse(calls[1].body), { args: null });
     // A function may have written anything: this page's reads skip caches.
     respond(emptyPage);
@@ -375,7 +375,7 @@ test("call refuses a malformed name or non-JSON arguments before sending", async
     for (const name of ["buy", "a/b/c", "../buy", "shop/", "/buy", 7])
       await assert.rejects(member.call(name), TypeError);
     await assert.rejects(
-      member.call("shop/buy", { at: new Date() }),
+      member.call("shop:buy", { at: new Date() }),
       TypeError,
     );
     assert.equal(calls.length, 0);
@@ -397,7 +397,7 @@ test("a function's failure is a NaruError with the server's code", async () => {
         { status: 400 },
       ),
     );
-    await assert.rejects(member.call("shop/buy"), {
+    await assert.rejects(member.call("shop:buy"), {
       name: "NaruError",
       code: "INVALID_REQUEST",
       message: "Function failed: Error: sold out",
@@ -417,7 +417,7 @@ test("typed function failures preserve messages on call and read without retryin
     );
     for (const method of ["call", "read"]) {
       const before = calls.length;
-      await assert.rejects(member[method]("shop/buy"), (error) => {
+      await assert.rejects(member[method]("shop:buy"), (error) => {
         assert.ok(error instanceof NaruError);
         assert.equal(error.code, "CONFLICT");
         assert.equal(error.message, "품절입니다.");
@@ -462,19 +462,19 @@ test("read posts to the read-only endpoint with member credentials", async () =>
     saveMember(local);
     const member = await createNaru().members.session();
     respond(() => Response.json({ result: { value: 1 } }));
-    assert.deepEqual(await member.read("shop/catalog", { page: 1 }), {
+    assert.deepEqual(await member.read("shop:catalog", { page: 1 }), {
       value: 1,
     });
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/_read/shop/catalog",
+      "https://naru.pub/api/data/v1/alice/_read/shop:catalog",
     );
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
     assert.deepEqual(JSON.parse(calls[0].body), { args: { page: 1 } });
     await assert.rejects(member.read("bad"), TypeError);
     await assert.rejects(
-      member.read("shop/catalog", { date: new Date() }),
+      member.read("shop:catalog", { date: new Date() }),
       TypeError,
     );
     assert.equal(calls.length, 1);
@@ -568,5 +568,34 @@ test("getMany sends one bounded read and preserves missing slots", async () => {
       TypeError,
     );
     assert.equal(calls.length, 1);
+  });
+});
+
+test("nested module references use colon endpoints and reject ambiguous paths", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() => Response.json({ result: true }));
+    for (const method of ["call", "read"]) {
+      assert.equal(await member[method]("community/boards:list"), true);
+      assert.equal(
+        calls.at(-1).url.pathname,
+        `/api/data/v1/alice/_${method}/community/boards:list`,
+      );
+      for (const value of [
+        "shop/buy",
+        "shop:",
+        ":buy",
+        "shop:buy:again",
+        "/shop:buy",
+        "shop//items:buy",
+        "shop/../items:buy",
+        "shop/./items:buy",
+        "shop\\items:buy",
+        "shop/%2f:buy",
+      ])
+        await assert.rejects(member[method](value), TypeError);
+    }
+    assert.equal(calls.length, 2);
   });
 });

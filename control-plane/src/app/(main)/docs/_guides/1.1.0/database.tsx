@@ -312,7 +312,8 @@ export function buy(ctx, { item }) {
 }
 
 // 페이지에서
-const result = await member.call("shop/buy", { item: "sword" });`}</Code>
+const result = await member.call("shop:buy", { item: "sword" });
+const boards = await member.read("community/boards:list");`}</Code>
               <p>
                 <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
                 <code>random()</code>과 <code>get</code>·<code>list</code>·

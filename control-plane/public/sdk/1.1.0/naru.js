@@ -645,12 +645,13 @@ function member(context, token, expiresAt, id) {
       }),
     collection: (name) => documents(root, name, send),
     async call(name, args = null, { signal } = {}) {
-      const parts = typeof name === "string" ? name.split("/") : [];
+      const parts = typeof name === "string" ? name.split(":") : [];
       if (parts.length !== 2)
-        throw new TypeError('call() names "<module>/<function>".');
-      parts.forEach(segment);
+        throw new TypeError('call() names "<module/path>:<function>".');
+      parts[0].split("/").forEach(segment);
+      segment(parts[1]);
       jsonValue(args, undefined, "args");
-      const { result } = await send(`${root}/_call/${parts[0]}/${parts[1]}`, {
+      const { result } = await send(`${root}/_call/${parts[0]}:${parts[1]}`, {
         method: "POST",
         body: { args },
         signal,
@@ -659,12 +660,13 @@ function member(context, token, expiresAt, id) {
       return result;
     },
     async read(name, args = null, { signal } = {}) {
-      const parts = typeof name === "string" ? name.split("/") : [];
+      const parts = typeof name === "string" ? name.split(":") : [];
       if (parts.length !== 2)
-        throw new TypeError('read() names "<module>/<function>".');
-      parts.forEach(segment);
+        throw new TypeError('read() names "<module/path>:<function>".');
+      parts[0].split("/").forEach(segment);
+      segment(parts[1]);
       jsonValue(args, undefined, "args");
-      const { result } = await send(`${root}/_read/${parts[0]}/${parts[1]}`, {
+      const { result } = await send(`${root}/_read/${parts[0]}:${parts[1]}`, {
         method: "POST",
         body: { args },
         signal,

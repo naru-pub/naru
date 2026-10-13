@@ -3,7 +3,7 @@ import { userHasFeature } from "@/lib/entitlements";
 import { callSiteObject } from "@/lib/edge/client";
 import { MEMBER_TOKEN, memberScope } from "./member-auth";
 import { tokenScope } from "./owner-auth";
-import { DataError, name } from "./validation";
+import { DataError, name, functionReference } from "./validation";
 
 // Site databases live in Durable Objects, one per site, in the site-data
 // Worker (edge/ at the repository root); the object applies every
@@ -180,8 +180,7 @@ export async function executeBatch(command: DataCommand) {
 export async function executeCall(command: DataCommand, readonly = false) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
-  if (command.path.length !== 2) throw new DataError(404, "Not found.");
-  const [file, fn] = command.path.map(name);
+  const { file, fn } = functionReference(command.path.join("/"));
   const { owner, memberId } = await resolveSiteAccess(command);
   if (memberId === undefined)
     throw new DataError(

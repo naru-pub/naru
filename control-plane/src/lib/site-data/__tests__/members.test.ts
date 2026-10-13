@@ -382,7 +382,7 @@ integration("site members", () => {
           executeCall({
             site: "alice",
             method: "POST",
-            path: ["membership", "ping"],
+            path: ["membership:ping"],
             bearer,
           }),
         ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
@@ -414,7 +414,7 @@ integration("site members", () => {
         executeCall({
           site: "alice",
           method: "POST",
-          path: ["membership", "ping"],
+          path: ["membership:ping"],
           bearer,
         }),
       ).resolves.toEqual({ result: true });
@@ -1112,7 +1112,7 @@ integration("site members", () => {
     test("a member buys: the rules hold, and what the function wrote is the owner's", async () => {
       const bob = await signIn("bob");
       await owned("PUT", ["wallets", bob.memberId], { data: { balance: 150 } });
-      const bought = await call(bob.accessToken, "shop/buy", { item: "sword" });
+      const bought = await call(bob.accessToken, "shop:buy", { item: "sword" });
       expect(bought.result).toMatchObject({
         ok: true,
         balance: 50,
@@ -1123,9 +1123,9 @@ integration("site members", () => {
         },
       });
       expect(
-        (await call(bob.accessToken, "shop/buy", { item: "sword" })).result,
+        (await call(bob.accessToken, "shop:buy", { item: "sword" })).result,
       ).toEqual({ ok: false, reason: "sold_out" });
-      expect((await call(bob.accessToken, "shop/mine")).result).toEqual([
+      expect((await call(bob.accessToken, "shop:mine")).result).toEqual([
         "sword",
       ]);
       // The member cannot change what the function wrote for them.
@@ -1134,11 +1134,11 @@ integration("site members", () => {
           data: { balance: 1e9 },
         }),
       ).rejects.toMatchObject({ status: 403 });
-      const roll = (await call(bob.accessToken, "shop/gacha")).result;
+      const roll = (await call(bob.accessToken, "shop:gacha")).result;
       expect(roll).toBeGreaterThanOrEqual(0);
       expect(roll).toBeLessThan(100);
       // A function's result is its own JSON, left as it is.
-      expect((await call(bob.accessToken, "shop/versioned")).result).toEqual({
+      expect((await call(bob.accessToken, "shop:versioned")).result).toEqual({
         version: "not a revision",
         list: [1, { version: 2 }],
       });
@@ -1151,23 +1151,23 @@ integration("site members", () => {
         data: { balance: 100 },
       });
       for (const [name, message] of [
-        ["shop/buyThenFail", "Function failed: Error: changed my mind"],
-        ["shop/spin", "Function failed: it ran too long."],
-        ["shop/flood", "Function failed: more than 25 writes."],
+        ["shop:buyThenFail", "Function failed: Error: changed my mind"],
+        ["shop:spin", "Function failed: it ran too long."],
+        ["shop:flood", "Function failed: more than 25 writes."],
       ])
         await expect(
           call(carol.accessToken, name, { item: "shield" }),
         ).rejects.toMatchObject({ status: 400, message });
       await expect(
-        call(carol.accessToken, "shop/buyThenReject", { item: "shield" }),
+        call(carol.accessToken, "shop:buyThenReject", { item: "shield" }),
       ).rejects.toMatchObject({
         status: 409,
         code: "CONFLICT",
         message: "Purchase cancelled.",
       });
-      expect((await call(carol.accessToken, "shop/mine")).result).toEqual([]);
+      expect((await call(carol.accessToken, "shop:mine")).result).toEqual([]);
       await expect(
-        call(carol.accessToken, "shop/trespass"),
+        call(carol.accessToken, "shop:trespass"),
       ).rejects.toMatchObject({ status: 404 });
       expect(await owned("GET", ["wallets", carol.memberId])).toMatchObject({
         document: { data: { balance: 100 } },
@@ -1183,7 +1183,7 @@ integration("site members", () => {
     test("bulk reads preserve order and missing positions; counts use filters in read-only functions", async () => {
       const bob = await signIn("bob");
       await owned("PUT", ["shop", "shield"], { data: { price: 10, stock: 5 } });
-      const { result } = await call(bob.accessToken, "shop/lookup", null, true);
+      const { result } = await call(bob.accessToken, "shop:lookup", null, true);
       expect(result).toMatchObject({
         rows: [{ id: "shield", data: { price: 10 } }, null, { id: "shield" }],
         empty: [],
@@ -1196,31 +1196,31 @@ integration("site members", () => {
 
     test("only members call, and only what the site has", async () => {
       const bob = await signIn("bob");
-      await expect(call(undefined, "shop/buy")).rejects.toMatchObject({
+      await expect(call(undefined, "shop:buy")).rejects.toMatchObject({
         status: 401,
       });
       await expect(
         executeCall({
           site: "alice",
-          path: ["shop", "buy"],
+          path: ["shop:buy"],
           method: "POST",
           adminUserId: owner,
         }),
       ).rejects.toMatchObject({ status: 403 });
-      await expect(call(bob.accessToken, "shop/missing")).rejects.toMatchObject(
+      await expect(call(bob.accessToken, "shop:missing")).rejects.toMatchObject(
         {
           status: 404,
           message: "No function missing.",
         },
       );
-      await expect(call(bob.accessToken, "nothing/buy")).rejects.toMatchObject({
+      await expect(call(bob.accessToken, "nothing:buy")).rejects.toMatchObject({
         status: 404,
         message: "This site has no _naru/functions/nothing.js.",
       });
       await expect(call(bob.accessToken, "shop/../buy")).rejects.toMatchObject({
         status: 404,
       });
-      await expect(call(bob.accessToken, "sh.op/buy")).rejects.toMatchObject({
+      await expect(call(bob.accessToken, "sh.op:buy")).rejects.toMatchObject({
         status: 400,
       });
     });
@@ -1228,19 +1228,19 @@ integration("site members", () => {
     test("reads authenticate and have a separate bounded budget", async () => {
       const reader = await signIn("read-budget");
       await expect(
-        call(undefined, "shop/versioned", null, true),
+        call(undefined, "shop:versioned", null, true),
       ).rejects.toMatchObject({ status: 401 });
       for (let n = 0; n < 30; n++)
-        await call(reader.accessToken, "shop/versioned");
+        await call(reader.accessToken, "shop:versioned");
       await expect(
-        call(reader.accessToken, "shop/versioned"),
+        call(reader.accessToken, "shop:versioned"),
       ).rejects.toMatchObject({ status: 429 });
       for (let n = 0; n < 120; n++)
         expect(
-          await call(reader.accessToken, "shop/versioned", null, true),
+          await call(reader.accessToken, "shop:versioned", null, true),
         ).toMatchObject({ result: { version: "not a revision" } });
       await expect(
-        call(reader.accessToken, "shop/versioned", null, true),
+        call(reader.accessToken, "shop:versioned", null, true),
       ).rejects.toMatchObject({ status: 429 });
     });
 
@@ -1249,7 +1249,7 @@ integration("site members", () => {
       const results = [];
       for (let n = 0; n < 31; n += 1)
         results.push(
-          await call(dave.accessToken, "shop/gacha").then(
+          await call(dave.accessToken, "shop:gacha").then(
             () => 200,
             (error) => error.status,
           ),

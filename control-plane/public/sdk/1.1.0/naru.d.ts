@@ -172,8 +172,8 @@ export interface Member {
   readonly id: string;
   collection<T = Json>(name: string): MemberCollection<T>;
   /**
-   * Calls one of the site's functions, `"<module>/<function>"`: an export of
-   * the site's `_naru/functions/<module>.js`. It runs on Naru, in one
+   * Calls one of the site's functions, `"<module/path>:<function>"`: an export of
+   * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
    * transaction, with the site owner's access to its collections, and
    * resolves with what it returned. A function that throws, or exceeds its
    * limits, changes nothing.

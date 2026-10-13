@@ -199,7 +199,7 @@ sign-in this tab started for it.
 
 Rules a member's browser must not decide, such as prices, balances, stock or
 dice, run on Naru as site functions. Put a module in the site's files at
-`_naru/functions/<module>.js` and export plain functions from it:
+`_naru/functions/<module/path>.js` and export plain functions from it:
 
 ```js
 // _naru/functions/shop.js
@@ -218,10 +218,15 @@ export function buy(ctx, { item }) {
 ```
 
 ```js
-const result = await member.call("shop/buy", { item: "sword" });
+const result = await member.call("shop:buy", { item: "sword" });
 ```
 
-A member calls `"<module>/<function>"` with JSON arguments, and receives the
+Module paths may use subdirectories: `member.read("community/boards:list")`
+loads `_naru/functions/community/boards.js` and calls its `list` export.
+Each path segment must be a plain name; empty segments, traversal and
+backslashes are rejected. The colon separates the export from the file path.
+
+A member calls `"<module/path>:<function>"` with JSON arguments, and receives the
 JSON the function returned. Only signed-in members can call. A function runs
 on the server in one transaction, with the site owner's access to every
 collection, so keep the collections it guards (`wallets` above) admin-written
@@ -236,7 +241,7 @@ and message from either `member.call()` or `member.read()`:
 if (listing.data.stock < 1) ctx.fail("CONFLICT", "품절입니다.");
 // In the browser:
 try {
-  await member.call("shop/buy", { item: "sword" });
+  await member.call("shop:buy", { item: "sword" });
 } catch (error) {
   if (error instanceof NaruError && error.code === "CONFLICT") {
     status.textContent = error.message;

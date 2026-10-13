@@ -12,7 +12,12 @@
 // spelled out where they are used.
 
 export type Json =
-  null | boolean | number | string | Json[] | { [key: string]: Json };
+  | null
+  | boolean
+  | number
+  | string
+  | Json[]
+  | { [key: string]: Json };
 
 /** @internal */
 declare const revisionBrand: unique symbol;
@@ -189,8 +194,8 @@ export interface Member {
   readonly id: string;
   collection<T = Json>(name: string): MemberCollection<T>;
   /**
-   * Calls one of the site's functions, `"<module>/<function>"`: an export of
-   * the site's `_naru/functions/<module>.js`. It runs on Naru, in one
+   * Calls one of the site's functions, `"<module/path>:<function>"`: an export of
+   * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
    * transaction, with the site owner's access to its collections, and
    * resolves with what it returned. A function that throws, or exceeds its
    * limits, changes nothing.
@@ -785,7 +790,9 @@ async function shrink(file: Source): Promise<Source> {
       // Spelled out: which overload a union of canvases resolves to depends on
       // what else a program compiles, and the application's does differ.
       const context = canvas.getContext("2d") as
-        OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+        | OffscreenCanvasRenderingContext2D
+        | CanvasRenderingContext2D
+        | null;
       if (!context) return file;
       // JPEG has no transparency; paint white rather than let it go black.
       if (type === "image/jpeg") {
@@ -1159,13 +1166,14 @@ function member(
       args: Json = null,
       { signal }: { signal?: AbortSignal } = {},
     ): Promise<R> {
-      const parts = typeof name === "string" ? name.split("/") : [];
+      const parts = typeof name === "string" ? name.split(":") : [];
       if (parts.length !== 2)
-        throw new TypeError('call() names "<module>/<function>".');
-      parts.forEach(segment);
+        throw new TypeError('call() names "<module/path>:<function>".');
+      parts[0].split("/").forEach(segment);
+      segment(parts[1]);
       jsonValue(args, undefined, "args");
       const { result } = await send<{ result: R }>(
-        `${root}/_call/${parts[0]}/${parts[1]}`,
+        `${root}/_call/${parts[0]}:${parts[1]}`,
         { method: "POST", body: { args }, signal, touches: ["*"] },
       );
       return result;
@@ -1175,13 +1183,14 @@ function member(
       args: Json = null,
       { signal }: { signal?: AbortSignal } = {},
     ): Promise<R> {
-      const parts = typeof name === "string" ? name.split("/") : [];
+      const parts = typeof name === "string" ? name.split(":") : [];
       if (parts.length !== 2)
-        throw new TypeError('read() names "<module>/<function>".');
-      parts.forEach(segment);
+        throw new TypeError('read() names "<module/path>:<function>".');
+      parts[0].split("/").forEach(segment);
+      segment(parts[1]);
       jsonValue(args, undefined, "args");
       const { result } = await send<{ result: R }>(
-        `${root}/_read/${parts[0]}/${parts[1]}`,
+        `${root}/_read/${parts[0]}:${parts[1]}`,
         { method: "POST", body: { args }, signal, touches: [] },
       );
       return result;

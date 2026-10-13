@@ -736,16 +736,16 @@ integration("SDK and data API contract", () => {
           return { n, version: "mine", member: ctx.member.id };
         }`,
       });
-      expect(await member.call("counter/bump", { by: 2 })).toEqual({
+      expect(await member.call("counter:bump", { by: 2 })).toEqual({
         n: 2,
         version: "mine",
         member: member.id,
       });
-      expect(await member.call("counter/bump", { by: 3 })).toMatchObject({
+      expect(await member.call("counter:bump", { by: 3 })).toMatchObject({
         n: 5,
       });
       await expect(
-        member.read("counter/bump", { by: 100 }),
+        member.read("counter:bump", { by: 100 }),
       ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
@@ -753,8 +753,20 @@ integration("SDK and data API contract", () => {
         source:
           'export function peek(ctx) { return ctx.get("crud", "count").data; }',
       });
-      expect(await member.read("counter/peek")).toBe(5);
-      await expect(member.call("counter/missing")).rejects.toMatchObject({
+      expect(await member.read("counter:peek")).toBe(5);
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "community/boards",
+        source:
+          "export function list(ctx) { return { member: ctx.member.id }; }",
+      });
+      expect(await member.read("community/boards:list")).toEqual({
+        member: member.id,
+      });
+      expect(await member.call("community/boards:list")).toEqual({
+        member: member.id,
+      });
+      await expect(member.call("counter:missing")).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
       // Every page of the site shares the sign-in.

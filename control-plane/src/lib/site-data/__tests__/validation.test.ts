@@ -1,6 +1,11 @@
 /** @jest-environment node */
 import { describe, expect, test } from "@jest/globals";
-import { jsonBody, MAX_DOCUMENT_BYTES } from "../validation";
+import {
+  jsonBody,
+  MAX_DOCUMENT_BYTES,
+  functionModule,
+  functionReference,
+} from "../validation";
 
 describe("request validation", () => {
   test("rejects oversized bodies without Content-Length", async () => {
@@ -25,4 +30,31 @@ describe("request validation", () => {
       ).rejects.toMatchObject({ status: 400 });
     },
   );
+});
+
+describe("nested function references", () => {
+  test("separates the module path from its export", () => {
+    expect(functionReference("community/boards:list")).toEqual({
+      file: "community/boards",
+      fn: "list",
+    });
+    expect(functionModule("shop/cart")).toBe("shop/cart");
+  });
+  test.each([
+    "../shop:buy",
+    "shop/../cart:buy",
+    "shop/./cart:buy",
+    "shop//cart:buy",
+    "/shop:buy",
+    "shop/:buy",
+    "shop:buy:more",
+    "shop\\cart:buy",
+    "shop/%2f:buy",
+    "shop:buy/other",
+    "shop/buy",
+    "shop:",
+    ":buy",
+  ])("rejects %s", (value) => {
+    expect(() => functionReference(value)).toThrow();
+  });
 });

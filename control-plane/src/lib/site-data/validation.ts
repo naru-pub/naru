@@ -164,3 +164,15 @@ export function uuidId(value: unknown): string {
   }
   return value.toLowerCase();
 }
+
+/** A nested module path and its export; every segment is a plain name. */
+export function functionModule(value: unknown): string {
+  if (typeof value !== "string")
+    throw new DataError(400, "Invalid function module.");
+  return value.split("/").map(name).join("/");
+}
+export function functionReference(value: string) {
+  const parts = value.split(":");
+  if (parts.length !== 2) throw new DataError(404, "Not found.");
+  return { file: functionModule(parts[0]), fn: name(parts[1]) };
+}

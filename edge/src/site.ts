@@ -7,6 +7,7 @@ import {
   MAX_DOCUMENT_BYTES,
   MAX_SITE_BYTES,
   name,
+  functionModule,
   permission,
   unreservedName,
   writePermission,
@@ -657,12 +658,14 @@ export class SiteData extends DurableObject<Env> {
     // Replacing and deleting there is the owner's, and in `member` also the
     // author's, checked against the document below.
     const authorOnly = !admin && !ruleFile && level === "member" && !creating;
-    if (!(
-      admin ||
-      level === "world" ||
-      (level === "create" && creating) ||
-      (level === "member" && member)
-    ))
+    if (
+      !(
+        admin ||
+        level === "world" ||
+        (level === "create" && creating) ||
+        (level === "member" && member)
+      )
+    )
       throw new DataError(
         403,
         level === "member"
@@ -959,7 +962,7 @@ export class SiteData extends DurableObject<Env> {
   }): Promise<Outcome<{ result: unknown }>> {
     const admitted = this.run(() => {
       this.claim(input.ownerId);
-      name(input.file);
+      functionModule(input.file);
       name(input.name);
       this.spend();
       this.limitMember(input.member, input.readonly ? "read" : "call");
@@ -1021,7 +1024,7 @@ export class SiteData extends DurableObject<Env> {
     folder?: "functions" | "rules";
   }) {
     const folder = input.folder === "rules" ? "rules" : "functions";
-    const key = `${input.site}/_naru/${folder}/${name(input.file)}.js`;
+    const key = `${input.site}/_naru/${folder}/${folder === "functions" ? functionModule(input.file) : name(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
     this.functions.delete(`${folder}:${input.file}`);

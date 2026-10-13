@@ -152,7 +152,9 @@ Members upload into the site's media through the owner's routes (`POST /_files`,
 
 ### Site functions
 
-`member.call("<module>/<function>", args)` (SDK 1.1.0) is `POST /api/data/v1/:site/_call/:module/:function` with `{ args }`, answered with `{ result }` (200, the function's own JSON, not translated like documents). It needs a member token; the edge sends it on to the control plane, which resolves the member and calls the site's object (`call`). The object counts the call against the month and the member's 30 calls a minute, loads `<site>/_naru/functions/<module>.js` from the site bucket (checking its ETag at most every ten seconds, 256 KiB at most), and runs the export in QuickJS-ng compiled to WebAssembly (`edge/src/functions.ts`), synchronously inside one SQLite transaction. A throw, a limit, or a failed `ctx` operation (even one the function caught) rolls the whole call back.
+`member.call("<module/path>:<function>", args)` (SDK 1.1.0) is `POST /api/data/v1/:site/_call/<module/path>:<function>` with `{ args }`, answered with `{ result }` (200, the function's own JSON, not translated like documents). It needs a member token; the edge sends it on to the control plane, which resolves the member and calls the site's object (`call`). The object counts the call against the month and the member's 30 calls a minute, loads `<site>/_naru/functions/<module/path>.js` from the site bucket (checking its ETag at most every ten seconds, 256 KiB at most), and runs the export in QuickJS-ng compiled to WebAssembly (`edge/src/functions.ts`), synchronously inside one SQLite transaction. A throw, a limit, or a failed `ctx` operation (even one the function caught) rolls the whole call back.
+
+`member.read("<module/path>:<function>", args)` uses `/_read/<module/path>:<function>` with the same module lookup and identity, a separate bounded read budget, and writes forbidden. Empty path segments, `.`/`..`, backslashes and extra colons are rejected.
 
 Each call gets a fresh QuickJS instance whose WebAssembly memory is capped at 32 MiB, a 128 KiB interpreter stack, a CPU budget of 2,000 interrupt checks (about 70 ms on Cloudflare; Workers stop the clock while code runs, so time cannot be measured), at most 100 `ctx` operations and 25 writes, and a 64 KiB result. These are the measurements of `spikes/quickjs-functions/`. `ctx` acts as the owner: it reads and writes any collection, checks the site's quota, and records no author. Failures are 400 `INVALID_REQUEST` ("Function failed: …"), 404 for a missing module or export, and the operation's own code for a failed `ctx` operation (`QUOTA_EXCEEDED`, for instance).
 
@@ -198,7 +200,7 @@ Website root: `/api/data/v1/:site`. Control-plane root: `/api/account/database` 
 | PUT    | `/:collection/:id?ifRevision=&ifAbsent=` | `{ data }` replaces document; returns the write result            |
 | DELETE | `/:collection/:id?ifRevision=`           | `{ success: true }`                                               |
 | POST   | `/_batch`                                | Admin-only atomic set/delete `{ operations }`                     |
-| POST   | `/_call/:module/:function`               | Member-only site function call `{ args }`; returns `{ result }`   |
+| POST   | `/_call/<module/path>:<function>`        | Member-only site function call `{ args }`; returns `{ result }`   |
 | GET    | `/_files?size=50&after=`                 | Control panel only: `{ files, nextCursor }`, newest first         |
 | GET    | `/_files?usage=1`                        | Control panel only: `{ usage }`                                   |
 | POST   | `/_files`                                | Admin-only upload authorization                                   |
