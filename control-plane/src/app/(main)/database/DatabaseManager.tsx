@@ -14,6 +14,7 @@ type Collection = {
   read_access: string;
   write_access: string;
   rules?: string;
+  unique?: string[];
 };
 type Document = { id: string; data: unknown };
 async function api(path = "", method = "GET", body?: unknown) {
@@ -50,6 +51,7 @@ export default function DatabaseManager({
   const [read, setRead] = useState("admin");
   const [write, setWrite] = useState("admin");
   const [rules, setRules] = useState("");
+  const [unique, setUnique] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -197,6 +199,7 @@ export default function DatabaseManager({
                         setRead(c.read_access);
                         setWrite(c.write_access);
                         setRules(c.rules ?? "");
+                        setUnique((c.unique ?? []).join(", "));
                         setId("");
                         setDocuments([]);
                         setTotal(null);
@@ -289,6 +292,18 @@ export default function DatabaseManager({
                           파일이 없으면 회원과 방문자의 접근을 거부합니다.
                         </p>
                       </label>
+                      <label className="space-y-1">
+                        <span className="text-sm">고유 필드</span>
+                        <Input
+                          value={unique}
+                          onChange={(event) => setUnique(event.target.value)}
+                          placeholder="예: nick (쉼표로 최대 3개)"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          두 문서가 이 필드에 같은 문자열이나 숫자를 가질 수
+                          없습니다. 이미 겹치는 문서가 있으면 저장되지 않습니다.
+                        </p>
+                      </label>
                       <Button
                         onClick={async () => {
                           if (
@@ -306,6 +321,10 @@ export default function DatabaseManager({
                               read,
                               write,
                               rules: rules.trim() || null,
+                              unique: unique
+                                .split(",")
+                                .map((field) => field.trim())
+                                .filter(Boolean),
                             });
                             await refresh();
                           });

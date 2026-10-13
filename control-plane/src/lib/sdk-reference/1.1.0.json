@@ -83,6 +83,47 @@
           "throws": []
         },
         {
+          "name": "call",
+          "optional": false,
+          "signature": "call<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Calls one of the site's functions as the owner, as "
+                },
+                {
+                  "type": "code",
+                  "value": "Member.call"
+                },
+                {
+                  "type": "text",
+                  "value": " does for a member: the function sees "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.member"
+                },
+                {
+                  "type": "text",
+                  "value": " null and "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.owner"
+                },
+                {
+                  "type": "text",
+                  "value": " true, whatever collections this sign-in approved. Owner calls are not counted against the site's budget."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
           "name": "collection",
           "optional": false,
           "signature": "collection<T = Json>(name: string): AdminCollection<T>",
@@ -295,6 +336,125 @@
           "signature": "sort?: Sort",
           "summary": [],
           "throws": []
+        },
+        {
+          "name": "where",
+          "optional": true,
+          "signature": "where?: Predicate",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Combined with "
+                },
+                {
+                  "type": "code",
+                  "value": "filter"
+                },
+                {
+                  "type": "text",
+                  "value": ": documents must match both."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Live",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A live connection, reconnecting by itself until closed."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface Live",
+      "extends": [],
+      "members": [
+        {
+          "name": "close",
+          "optional": false,
+          "signature": "close(): void",
+          "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "LiveOptions",
+      "kind": "interface",
+      "summary": [],
+      "throws": [],
+      "signature": "interface LiveOptions",
+      "extends": [],
+      "members": [
+        {
+          "name": "topics",
+          "optional": true,
+          "signature": "topics?: readonly string[]",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Up to eight topic names whose broadcasts to hear."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "onMessage",
+          "optional": false,
+          "signature": "onMessage(message: LiveMessage): void",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "onStatus",
+          "optional": true,
+          "signature": "onStatus(status: \"closed\" | \"connecting\" | \"open\" | \"reconnecting\"): void",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Called as the connection opens, drops and reconnects, and once it is closed for good: by "
+                },
+                {
+                  "type": "code",
+                  "value": "close()"
+                },
+                {
+                  "type": "text",
+                  "value": ", or because the member's access ended. Messages sent while it was down are not delivered later, so read again on "
+                },
+                {
+                  "type": "code",
+                  "value": "open"
+                },
+                {
+                  "type": "text",
+                  "value": " if they matter."
+                }
+              ]
+            }
+          ],
+          "throws": []
         }
       ]
     },
@@ -374,7 +534,15 @@
                 },
                 {
                   "type": "text",
-                  "value": ". It runs on Naru, in one transaction, with the site owner's access to its collections, and resolves with what it returned. A function that throws, or exceeds its limits, changes nothing. Static relative JavaScript imports and re-exports may share code in "
+                  "value": ". It runs on Naru, in one transaction, with the site owner's access to its collections, and resolves with what it returned. A function that throws, or exceeds its limits, changes nothing. Exports the module lists in "
+                },
+                {
+                  "type": "code",
+                  "value": "export const readOnly = [...]"
+                },
+                {
+                  "type": "text",
+                  "value": " cannot write, and count against the member's read budget instead of their calls. Static relative JavaScript imports and re-exports may share code in "
                 },
                 {
                   "type": "code",
@@ -421,6 +589,39 @@
           "throws": []
         },
         {
+          "name": "live",
+          "optional": false,
+          "signature": "live(options: LiveOptions): Live",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Hears what the site's functions send this member ("
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.notify"
+                },
+                {
+                  "type": "text",
+                  "value": "), and broadcasts to "
+                },
+                {
+                  "type": "code",
+                  "value": "topics"
+                },
+                {
+                  "type": "text",
+                  "value": ", until closed or until their access ends."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
           "name": "membership",
           "optional": false,
           "signature": "membership(options?: {\n  signal?: AbortSignal;\n}): Promise<{ id: string; status: \"pending\" | \"approved\" | \"banned\" }>",
@@ -431,23 +632,6 @@
                 {
                   "type": "text",
                   "value": "Current platform membership, including pending approval or a ban."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "read",
-          "optional": false,
-          "signature": "read<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Runs a site function with writes forbidden and a separate read budget."
                 }
               ]
             }
@@ -607,6 +791,31 @@
             }
           ],
           "throws": []
+        },
+        {
+          "name": "live",
+          "optional": false,
+          "signature": "live(options: LiveOptions): Live",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Hears what the site's functions broadcast to "
+                },
+                {
+                  "type": "code",
+                  "value": "topics"
+                },
+                {
+                  "type": "text",
+                  "value": ", as anyone may: broadcasts are public. Connecting counts against the site's budget."
+                }
+              ]
+            }
+          ],
+          "throws": []
         }
       ]
     },
@@ -659,7 +868,7 @@
         {
           "name": "count",
           "optional": false,
-          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n}): Promise<number>",
+          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n  where?: Predicate;\n}): Promise<number>",
           "summary": [
             {
               "type": "paragraph",
@@ -671,6 +880,14 @@
                 {
                   "type": "code",
                   "value": "filter"
+                },
+                {
+                  "type": "text",
+                  "value": " and "
+                },
+                {
+                  "type": "code",
+                  "value": "where"
                 },
                 {
                   "type": "text",
@@ -781,6 +998,39 @@
           "signature": "code: NaruErrorCode",
           "summary": [],
           "throws": []
+        },
+        {
+          "name": "details",
+          "optional": true,
+          "signature": "details?: Json",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "The JSON a site function passed as "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.fail(code, message, details)"
+                },
+                {
+                  "type": "text",
+                  "value": ", such as "
+                },
+                {
+                  "type": "code",
+                  "value": "{ reason: \"sold_out\" }"
+                },
+                {
+                  "type": "text",
+                  "value": ". Undefined for every other failure."
+                }
+              ]
+            }
+          ],
+          "throws": []
         }
       ]
     },
@@ -809,6 +1059,23 @@
       "signature": "type Json =\n  | null\n  | boolean\n  | number\n  | string\n  | Json[]\n  | { [key: string]: Json }"
     },
     {
+      "name": "LiveMessage",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "What a live connection hears from the site's functions."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type LiveMessage =\n  | { data: Json; type: \"notice\" }\n  | { data: Json; topic: string; type: \"topic\" }"
+    },
+    {
       "name": "NaruErrorCode",
       "kind": "type",
       "summary": [
@@ -824,6 +1091,88 @@
       ],
       "throws": [],
       "signature": "type NaruErrorCode =\n  | \"CONFLICT\"\n  | \"QUOTA_EXCEEDED\"\n  | \"AUTH_REQUIRED\"\n  | \"ACCESS_DENIED\"\n  | \"NOT_FOUND\"\n  | \"RATE_LIMITED\"\n  | \"INVALID_REQUEST\"\n  | \"UNAVAILABLE\""
+    },
+    {
+      "name": "Predicate",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A condition on documents, as a collection rule's "
+            },
+            {
+              "type": "code",
+              "value": "scope"
+            },
+            {
+              "type": "text",
+              "value": " returns: "
+            },
+            {
+              "type": "code",
+              "value": "true"
+            },
+            {
+              "type": "text",
+              "value": ", "
+            },
+            {
+              "type": "code",
+              "value": "false"
+            },
+            {
+              "type": "text",
+              "value": ", "
+            },
+            {
+              "type": "code",
+              "value": "all"
+            },
+            {
+              "type": "text",
+              "value": " or "
+            },
+            {
+              "type": "code",
+              "value": "any"
+            },
+            {
+              "type": "text",
+              "value": " of conditions, or one comparison. Values match only their own JSON type; a missing field matches no comparison except "
+            },
+            {
+              "type": "code",
+              "value": "ne"
+            },
+            {
+              "type": "text",
+              "value": ". At most 100 nodes, ten levels deep."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type Predicate =\n  | boolean\n  | { all: readonly Predicate[] }\n  | { any: readonly Predicate[] }\n  | { eq: readonly [PredicateField, string | number | boolean | null] }\n  | { ne: readonly [PredicateField, string | number | boolean | null] }\n  | { gt: readonly [PredicateField, string | number] }\n  | { gte: readonly [PredicateField, string | number] }\n  | { lt: readonly [PredicateField, string | number] }\n  | { lte: readonly [PredicateField, string | number] }\n  | {\n      in: readonly [\n        PredicateField,\n        readonly (string | number | boolean | null)[],\n      ];\n    }"
+    },
+    {
+      "name": "PredicateField",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A top-level user field by name, or document metadata."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type PredicateField = string | { metadata: \"id\" | \"createdBy\" }"
     },
     {
       "name": "Revision",

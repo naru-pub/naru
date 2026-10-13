@@ -1,5 +1,10 @@
 import { validateRequest } from "@/lib/auth";
-import { executeBatch, executeCall, executeData } from "./service";
+import {
+  executeBatch,
+  executeCall,
+  executeData,
+  executeLiveTicket,
+} from "./service";
 import {
   DataError,
   jsonBody,
@@ -7,7 +12,7 @@ import {
   sameOrigin,
   type ErrorCode,
 } from "./validation";
-import { parseFilterQuery } from "./filters";
+import { parseFilterQuery, parseWhereQuery } from "./filters";
 import { isIP } from "node:net";
 import { executeMedia } from "./media";
 import {
@@ -47,7 +52,8 @@ export async function dataRequest(
     const authorization = request.headers.get("authorization");
     // The service fills in expiresAt only when it renews the token behind it.
     let bearer:
-      { token: string; origin: string | null; expiresAt?: number } | undefined;
+      | { token: string; origin: string | null; expiresAt?: number }
+      | undefined;
     if (!admin && authorization !== null) {
       // An owner token, or a member's, which starts with "m.".
       const match = /^Bearer ((?:m\.)?[A-Za-z0-9_-]{43})$/i.exec(authorization);
@@ -77,6 +83,7 @@ export async function dataRequest(
       clientIp: forwardedIp && isIP(forwardedIp) ? forwardedIp : undefined,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
+      where: parseWhereQuery(url.searchParams.get("where")),
       ids: url.searchParams.get("ids") ?? undefined,
       includeTotal: url.searchParams.get("includeTotal") === "1",
       cacheability,
@@ -107,15 +114,14 @@ export async function dataRequest(
         ? await executeMedia(command)
         : path[0] === "_batch"
           ? await executeBatch({ ...command, path: [] })
-          : ["_call", "_read"].includes(path[0]) && !admin
-            ? await executeCall(
-                { ...command, path: path.slice(1) },
-                path[0] === "_read",
-              )
-            : await executeData(command);
+          : path[0] === "_call" && !admin
+            ? await executeCall({ ...command, path: path.slice(1) })
+            : path[0] === "_live" && !admin
+              ? await executeLiveTicket(command)
+              : await executeData(command);
     // A function's result is its own JSON, not documents to translate; the
     // documents its ctx returned were translated as they were read.
-    const calling = ["_call", "_read"].includes(path[0]) && !admin;
+    const calling = ["_call", "_live"].includes(path[0]) && !admin;
     return Response.json(admin || calling ? result : publicResult(result), {
       headers: {
         ...headers,
@@ -139,6 +145,7 @@ export async function dataRequest(
     let status = 500;
     let message = "Database request failed.";
     let code: ErrorCode | undefined;
+    let details: unknown;
     // Media metadata still uses PostgreSQL; documents arrive as Worker DataErrors.
     if (
       path[0] === "_files" &&
@@ -150,7 +157,7 @@ export async function dataRequest(
       status = 400;
       message = "Data contains unsupported characters or numbers.";
     } else if (error instanceof DataError) {
-      ({ status, message, code } = error);
+      ({ status, message, code, details } = error);
     } else if (request.signal.aborted) {
       status = 503;
       message = "Request canceled.";
@@ -160,6 +167,6 @@ export async function dataRequest(
     // websites get the versioned protocol's coded error.
     return admin
       ? Response.json({ error: message }, { status, headers })
-      : protocolError(status, message, code, headers);
+      : protocolError(status, message, code, headers, details);
   }
 }

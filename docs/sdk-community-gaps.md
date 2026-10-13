@@ -1,30 +1,38 @@
 # What Naru SDK 1.1.0 is missing for AvocadoEdition-class sites
 
-## Current status (2026-10-12)
+## Current status (2026-10-13)
 
 neo-avocado is an SDK test case, not a feature-parity target. The assessment below
 is historical; these gaps have since been addressed:
 
 - Native site membership gates collection, function and media operations.
 - Collection rules handle board permissions and secret posts; neo-avocado's
-  post/comment reads now use native collections.
-- `member.read()` runs read-only functions with a separate budget.
+  post/comment reads now use native collections. Rules run from the function
+  revision and may import `_naru/modules/`, so they share code with functions.
+- Modules declare read-only exports (`export const readOnly = [...]`), which
+  run without writes on a separate budget; there is one `call()`. The owner
+  calls functions too (`admin.call`, `ctx.owner`).
 - SDK 1.1.0 uploads return IDs and media deletion supports explicit owner grants
-  and an optional uploader guard. The app tracks references and durable retries;
-  unattended app cleanup remains a gap.
-- `ctx.fail(code, message)` aborts functions transactionally and reaches callers
-  as an existing v1 `NaruError`, including read-only functions. Custom domain
-  reasons can still be ordinary return values.
+  and an optional uploader guard. Functions delete uploads transactionally with
+  `ctx.media.delete(id)`, carried out once the call commits.
+- `ctx.fail(code, message, details)` aborts functions transactionally and reaches
+  callers as a `NaruError` whose `details` carries the app's own reason.
+- `ctx.getMany` batches up to 100 lookups; `ctx.count` counts without reading
+  bodies; `ctx.set`/`ctx.delete` take revision conditions. Browsers have
+  `getMany` too.
+- Richer filters (#6): `where` predicates (`any`, `ne`, `in`, ranges,
+  `createdBy`) on client and function lists and counts.
+- Unique constraints (#7): up to three unique fields per collection. Counters and
+  sequences remain function work.
+- Realtime (#8): live connections hear `ctx.notify`/`ctx.broadcast` from
+  functions, replacing polling. Plain writes do not notify.
+- Functions have `URL` and `URLSearchParams`, and modules may be `.mjs`.
 
-- `ctx.getMany(collection, ids)` batches up to 100 lookups into one SQL query;
-  `ctx.count(collection, { filter })` counts without reading document bodies.
-  Function collection lookups are cached within the call. Browser-side batch
-  lookups and richer filters remain open.
-
-Next priorities are browser query ergonomics, guest function access, and durable
-background work. Revisit quotas with actual usage
-before raising ceilings. Keep cascading deletes and economy operations in
-transactional functions. UI parity is outside this SDK refinement work.
+Still open: guest function calls (#3), background and scheduled jobs (#4, #9),
+export/import (#10), storage quotas (#2) and a local emulator. Revisit quotas
+with actual usage before raising ceilings. Keep cascading deletes and economy
+operations in transactional functions. UI parity is outside this SDK refinement
+work.
 
 See [media deletion](media-deletion.md), [collection rules](collection-rules.md)
 and [site functions](sdk-v1-api.md#site-functions-110).

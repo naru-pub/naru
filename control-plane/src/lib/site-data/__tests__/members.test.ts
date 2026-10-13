@@ -11,10 +11,16 @@ import {
 import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
-import { executeBatch, executeCall, executeData } from "../service";
+import {
+  executeBatch,
+  executeCall,
+  executeData,
+  executeLiveTicket,
+} from "../service";
 import { manageMembership } from "../membership";
 import { membershipStatusRequest } from "../membership-http";
 import { digest } from "../owner-auth";
+import { encodeRevision } from "../protocol";
 import {
   approveMemberSignIn,
   exchangeMemberCode,
@@ -25,6 +31,7 @@ import {
   revokeMemberToken,
 } from "../member-auth";
 import { executeMedia, MEMBER_UPLOADS_PER_HOUR, mediaStorage } from "../media";
+import { runMediaRelease } from "../media-releases";
 import { mediaDeletionStorage, cleanupDeletedMedia } from "../media-deletion";
 import { setupTestDatabase, teardownTestDatabase } from "./test-database";
 
@@ -107,7 +114,7 @@ integration("site members", () => {
     ready = true;
     await eraseSiteData("alice");
     owner = await insertUser("alice");
-    for (const login of ["bob", "carol", "dave", "read-budget"])
+    for (const login of ["bob", "carol", "dave", "read-budget", "fern"])
       users[login] = await insertUser(login);
     users.erin = await insertUser("erin", false);
     users.alice = owner;
@@ -417,7 +424,7 @@ integration("site members", () => {
           path: ["membership:ping"],
           bearer,
         }),
-      ).resolves.toEqual({ result: true });
+      ).resolves.toEqual({ result: true, written: [] });
       const issued = await code("erin");
       await manageMembership(owner, "PATCH", {
         id: member.memberId,
@@ -857,6 +864,207 @@ integration("site members", () => {
     await owned("DELETE", ["rule_roles"]);
   });
 
+  test("a collection rule imports shared modules from the same revision", async () => {
+    const bob = await signIn("dave");
+    await owned("POST", [], { name: "gated", read: "member", write: "member" });
+    await owned("PUT", ["gated", "open"], { data: { level: 1 } });
+    await owned("PUT", ["gated", "closed"], { data: { level: 9 } });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "modules",
+      file: "levels",
+      source: "export const visible = 5;",
+    });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "rules",
+      file: "gated",
+      source: `import { visible } from "../modules/levels.js";
+        export function scope() { return { lte: ["level", visible] }; }
+        export function canWrite() { return false; }`,
+    });
+    await owned("PATCH", ["gated"], {
+      read: "member",
+      write: "member",
+      rules: "gated",
+    });
+    const page = (await as(bob.accessToken, "GET", ["gated"])) as any;
+    expect(page.documents.map((d: any) => d.id)).toEqual(["open"]);
+    // Shared code changes reach the rule when the revision is published.
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "modules",
+      file: "levels",
+      source: "export const visible = 10;",
+    });
+    expect(
+      ((await as(bob.accessToken, "GET", ["gated"])) as any).documents.length,
+    ).toBe(2);
+    await owned("DELETE", ["gated"]);
+  });
+
+  test("unique fields refuse a second document with the same value, on every write path", async () => {
+    const bob = await signIn("dave");
+    const carol = await signIn("read-budget");
+    await owned("POST", [], { name: "nicks", read: "member", write: "member" });
+    await as(bob.accessToken, "PUT", ["nicks", bob.memberId], {
+      data: { nick: "lime" },
+    });
+    await as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
+      data: { nick: "lime" },
+    });
+    // Existing duplicates refuse the setting.
+    await expect(
+      owned("PATCH", ["nicks"], {
+        read: "member",
+        write: "member",
+        unique: ["nick"],
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
+      data: { nick: "lemon" },
+    });
+    await owned("PATCH", ["nicks"], {
+      read: "member",
+      write: "member",
+      unique: ["nick"],
+    });
+    expect(
+      ((await owned("GET", [])) as any).collections.find(
+        (c: any) => c.name === "nicks",
+      ),
+    ).toMatchObject({ unique: ["nick"] });
+    await expect(
+      as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
+        data: { nick: "lime" },
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "CONFLICT",
+      details: { unique: "nick" },
+    });
+    // Rewriting your own document keeps your own value.
+    await as(bob.accessToken, "PUT", ["nicks", bob.memberId], {
+      data: { nick: "lime", bio: "hi" },
+    });
+    // A number is not the same value as a string.
+    await as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
+      data: { nick: 7 },
+    });
+    await expect(
+      executeBatch({
+        site: "alice",
+        adminUserId: owner,
+        method: "POST",
+        path: [],
+        body: {
+          operations: [
+            {
+              type: "set",
+              collection: "nicks",
+              id: "x",
+              data: { nick: "lime" },
+            },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await owned("PATCH", ["nicks"], {
+      read: "member",
+      write: "member",
+      unique: null,
+    });
+    await owned("PUT", ["nicks", "x"], { data: { nick: "lime" } });
+    await owned("DELETE", ["nicks"]);
+  });
+
+  test("live connections hear what functions send, after they commit, until access ends", async () => {
+    const WebSocketClient = (globalThis as { WebSocket?: typeof WebSocket })
+      .WebSocket;
+    if (!WebSocketClient) return;
+    const bob = await signIn("fern");
+    await callSiteObject("alice", "configure", {
+      ownerId: String(owner),
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      file: "live",
+      source: `export function send(ctx, { to, fail }) {
+        ctx.notify(to, { unread: 1 });
+        ctx.broadcast("board", { post: "new" });
+        if (fail) throw new Error("rolled back");
+        return true;
+      }`,
+    });
+    const base = `${process.env.EDGE_WORKER_URL!.replace(/^http/, "ws")}/api/data/v1/alice/_live`;
+    const open = (query: string) =>
+      new Promise<{
+        socket: WebSocket;
+        heard: unknown[];
+        closed: Promise<number>;
+      }>((resolve, reject) => {
+        const socket = new WebSocketClient(`${base}?${query}`);
+        const heard: unknown[] = [];
+        const closed = new Promise<number>((done) =>
+          socket.addEventListener("close", (event) => done(event.code)),
+        );
+        socket.addEventListener("message", (event) =>
+          heard.push(JSON.parse(String(event.data))),
+        );
+        socket.addEventListener("open", () =>
+          resolve({ socket, heard, closed }),
+        );
+        socket.addEventListener("error", () => reject(new Error("refused")));
+      });
+    const { ticket } = (await executeLiveTicket({
+      site: "alice",
+      path: ["_live"],
+      method: "POST",
+      bearer: { token: bob.accessToken, origin },
+    })) as { ticket: string };
+    const member = await open(`ticket=${ticket}`);
+    const visitor = await open("topics=board");
+    await expect(
+      open("ticket=forged.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+    ).rejects.toThrow();
+    // Visitors get no ticket: they listen without one.
+    await expect(
+      executeLiveTicket({ site: "alice", path: ["_live"], method: "POST" }),
+    ).rejects.toMatchObject({ status: 401 });
+    const call = (args: unknown) =>
+      executeCall({
+        site: "alice",
+        path: ["live:send"],
+        method: "POST",
+        body: { args },
+        bearer: { token: bob.accessToken, origin },
+      });
+    await expect(call({ to: bob.memberId, fail: true })).rejects.toMatchObject({
+      status: 400,
+    });
+    await call({ to: bob.memberId });
+    const settle = () => new Promise((done) => setTimeout(done, 300));
+    await settle();
+    // Only the committed call's messages arrive.
+    expect(member.heard).toEqual([{ type: "notice", data: { unread: 1 } }]);
+    expect(visitor.heard).toEqual([
+      { type: "topic", topic: "board", data: { post: "new" } },
+    ]);
+    await manageMembership(owner, "PATCH", {
+      id: bob.memberId,
+      status: "banned",
+    });
+    expect(await member.closed).toBe(4003);
+    await manageMembership(owner, "PATCH", {
+      id: bob.memberId,
+      status: "approved",
+    });
+    visitor.socket.close();
+    await visitor.closed;
+  }, 20000);
+
   describe("uploads", () => {
     const media = (token: string, method: string, path: string[], body = {}) =>
       executeMedia({
@@ -916,6 +1124,69 @@ integration("site members", () => {
       await expect(
         media(bob.accessToken, "PUT", [authorized.id]),
       ).rejects.toMatchObject({ status: 404 });
+    });
+
+    test("a function's ctx.media.delete takes effect only if its call commits", async () => {
+      const bob = await signIn("bob");
+      const upload = async () => {
+        const { id } = await media(bob.accessToken, "POST", [], file);
+        await media(bob.accessToken, "PUT", [id]);
+        return id as string;
+      };
+      const kept = await upload();
+      const released = await upload();
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "media",
+        source: `export async function drop(ctx, { id, fail }) {
+          await ctx.media.delete(id);
+          if (fail) throw new Error("changed my mind");
+          return "queued";
+        }`,
+      });
+      const call = (args: unknown) =>
+        executeCall({
+          site: "alice",
+          path: ["media:drop"],
+          method: "POST",
+          body: { args },
+          bearer: { token: bob.accessToken, origin },
+        });
+      await expect(call({ id: kept, fail: true })).rejects.toMatchObject({
+        status: 400,
+      });
+      // The queue is the object's own and leaves no trace in the answer.
+      expect(await call({ id: released })).toEqual({
+        result: "queued",
+        written: [],
+      });
+      expect(await callSiteObject("alice", "mediaReleases", {})).toEqual([
+        released,
+      ]);
+      // Its deletion was handed to the durable queue.
+      expect(
+        (
+          await sql<{
+            n: number;
+          }>`select count(*)::int as n from absurd.t_maintenance where task_name = 'site-media-release-v1' and params->>'site' = 'alice'`.execute(
+            db,
+          )
+        ).rows[0].n,
+      ).toBe(1);
+      await runMediaRelease({ site: "alice" }, {
+        step: (_name: string, work: () => Promise<unknown>) => work(),
+      } as never);
+      expect(await callSiteObject("alice", "mediaReleases", {})).toEqual([]);
+      const rows = await db
+        .selectFrom("site_data_files")
+        .select(["id", "deleted_at"])
+        .where("id", "in", [kept, released])
+        .execute();
+      expect(
+        Object.fromEntries(
+          rows.map((row) => [row.id, Boolean(row.deleted_at)]),
+        ),
+      ).toEqual({ [kept]: false, [released]: true });
     });
 
     test("failed deletions remain durable; retries free bytes and stale upload URLs cannot revive finalized media", async () => {
@@ -1039,6 +1310,7 @@ integration("site members", () => {
   describe("functions", () => {
     const SHOP = `
       // A shop, as an AvocadoEdition site would have it.
+      export const readOnly = ["lookup", "versioned", "mine", "peek", "sneak"];
       export async function buy(ctx, { item }) {
         const listing = await ctx.get("shop", item);
         if (!listing) return { ok: false, reason: "no_such_item" };
@@ -1075,23 +1347,32 @@ integration("site members", () => {
       export function spin() { for (;;) {} }
       export async function flood(ctx) { for (let i = 0; ; i++) await ctx.set("wallets", "x" + i, i); }
       export async function trespass(ctx) { await ctx.get("nowhere", "x"); }
+      export async function sneak(ctx) { await ctx.set("wallets", "x", 1); }
+      export async function restock(ctx, { item, revision, stock }) {
+        const listing = await ctx.get("shop", item);
+        return ctx.set("shop", item, { ...listing.data, stock }, { condition: { revision } });
+      }
+      export async function create(ctx, { item }) {
+        return ctx.set("shop", item, { price: 1, stock: 1 }, { condition: { absent: true } });
+      }
+      export async function discontinue(ctx, { item, revision }) {
+        await ctx.delete("shop", item, { condition: { revision } });
+      }
+      export async function soldOut(ctx) {
+        ctx.fail("CONFLICT", "품절입니다.", { reason: "sold_out", item: "sword" });
+      }
+      export async function peek(ctx, { where }) {
+        return (await ctx.list("shop", { where })).documents.map((d) => d.id);
+      }
     `;
-    const call = (
-      token: string | undefined,
-      name: string,
-      args?: unknown,
-      readonly = false,
-    ) =>
-      executeCall(
-        {
-          site: "alice",
-          path: name.split("/"),
-          method: "POST",
-          body: { args },
-          ...(token ? { bearer: { token, origin } } : {}),
-        },
-        readonly,
-      ) as Promise<{ result: any }>;
+    const call = (token: string | undefined, name: string, args?: unknown) =>
+      executeCall({
+        site: "alice",
+        path: name.split("/"),
+        method: "POST",
+        body: { args },
+        ...(token ? { bearer: { token, origin } } : {}),
+      }) as Promise<{ result: any; written: string[] }>;
     beforeAll(async () => {
       for (const [name, read, write] of [
         ["shop", "member", "admin"],
@@ -1113,6 +1394,8 @@ integration("site members", () => {
       const bob = await signIn("bob");
       await owned("PUT", ["wallets", bob.memberId], { data: { balance: 150 } });
       const bought = await call(bob.accessToken, "shop:buy", { item: "sword" });
+      // The collections it changed, so the caller's SDK rereads only those.
+      expect(bought.written).toEqual(["inventory", "shop", "wallets"]);
       expect(bought.result).toMatchObject({
         ok: true,
         balance: 50,
@@ -1183,7 +1466,8 @@ integration("site members", () => {
     test("bulk reads preserve order and missing positions; counts use filters in read-only functions", async () => {
       const bob = await signIn("bob");
       await owned("PUT", ["shop", "shield"], { data: { price: 10, stock: 5 } });
-      const { result } = await call(bob.accessToken, "shop:lookup", null, true);
+      const { result, written } = await call(bob.accessToken, "shop:lookup");
+      expect(written).toEqual([]);
       expect(result).toMatchObject({
         rows: [{ id: "shield", data: { price: 10 } }, null, { id: "shield" }],
         empty: [],
@@ -1225,23 +1509,92 @@ integration("site members", () => {
       });
     });
 
-    test("reads authenticate and have a separate bounded budget", async () => {
+    test("declared read-only exports cannot write and have their own budget", async () => {
       const reader = await signIn("read-budget");
+      await expect(call(undefined, "shop:versioned")).rejects.toMatchObject({
+        status: 401,
+      });
       await expect(
-        call(undefined, "shop:versioned", null, true),
-      ).rejects.toMatchObject({ status: 401 });
-      for (let n = 0; n < 30; n++)
-        await call(reader.accessToken, "shop:versioned");
+        call(reader.accessToken, "shop:sneak"),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: "Function failed: read-only functions cannot write.",
+      });
+      for (let n = 1; n < 120; n++)
+        expect(await call(reader.accessToken, "shop:versioned")).toMatchObject({
+          result: { version: "not a revision" },
+        });
       await expect(
         call(reader.accessToken, "shop:versioned"),
       ).rejects.toMatchObject({ status: 429 });
-      for (let n = 0; n < 120; n++)
-        expect(
-          await call(reader.accessToken, "shop:versioned", null, true),
-        ).toMatchObject({ result: { version: "not a revision" } });
+      // Calls that may write still have their own 30.
+      expect(
+        (await call(reader.accessToken, "shop:gacha")).result,
+      ).toBeGreaterThanOrEqual(0);
+      // An invalid declaration refuses the whole revision.
       await expect(
-        call(reader.accessToken, "shop:versioned", null, true),
-      ).rejects.toMatchObject({ status: 429 });
+        callSiteObject("alice", "putFunctions", {
+          site: "alice",
+          file: "broken",
+          source: "export let readOnly = ['x']; export function x() {}",
+        }),
+      ).rejects.toThrow(/export const readOnly/);
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        file: "broken",
+        source: null,
+      });
+    });
+
+    test("conditional writes, failure details and where predicates in functions", async () => {
+      const erin = await signIn("fern");
+      await owned("PUT", ["shop", "lamp"], { data: { price: 5, stock: 1 } });
+      const { document } = (await owned("GET", ["shop", "lamp"])) as any;
+      // The control panel's answer carries the version; sites see revisions.
+      const stale = encodeRevision(document.version);
+      expect(
+        (
+          await call(erin.accessToken, "shop:restock", {
+            item: "lamp",
+            revision: stale,
+            stock: 3,
+          })
+        ).result,
+      ).toMatchObject({ data: { stock: 3 } });
+      await expect(
+        call(erin.accessToken, "shop:restock", {
+          item: "lamp",
+          revision: stale,
+          stock: 9,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: "CONFLICT" });
+      await expect(
+        call(erin.accessToken, "shop:create", { item: "lamp" }),
+      ).rejects.toMatchObject({ status: 409, code: "CONFLICT" });
+      await expect(
+        call(erin.accessToken, "shop:discontinue", {
+          item: "lamp",
+          revision: stale,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      await expect(
+        call(erin.accessToken, "shop:soldOut"),
+      ).rejects.toMatchObject({
+        status: 409,
+        code: "CONFLICT",
+        message: "품절입니다.",
+        details: { reason: "sold_out", item: "sword" },
+      });
+      expect(
+        (
+          await call(erin.accessToken, "shop:peek", {
+            where: { all: [{ lte: ["price", 10] }, { in: ["stock", [3, 5]] }] },
+          })
+        ).result.sort(),
+      ).toEqual(["lamp", "shield"]);
+      await expect(
+        call(erin.accessToken, "shop:peek", { where: { like: ["x", 1] } }),
+      ).rejects.toMatchObject({ status: 400 });
     });
 
     test("a member's calls are limited per minute", async () => {

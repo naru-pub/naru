@@ -27,6 +27,8 @@ export class DataError extends Error {
     message: string,
     /** Only where the status alone would name the wrong code. */
     public code?: ErrorCode,
+    /** A site function's own JSON for its caller, from ctx.fail. */
+    public details?: unknown,
   ) {
     super(message);
   }
@@ -47,9 +49,16 @@ export function protocolError(
   message: string,
   code?: ErrorCode,
   headers?: HeadersInit,
+  details?: unknown,
 ) {
   return Response.json(
-    { error: { code: code ?? statusCode(status), message } },
+    {
+      error: {
+        code: code ?? statusCode(status),
+        message,
+        ...(details === undefined ? {} : { details }),
+      },
+    },
     { status, headers },
   );
 }

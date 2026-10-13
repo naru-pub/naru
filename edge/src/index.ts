@@ -45,8 +45,10 @@ const OPERATIONS = [
   "erase",
   "configure",
   "call",
-  "read",
   "activateFunctions",
+  "mediaReleases",
+  "releasedMedia",
+  "disconnect",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
@@ -79,12 +81,16 @@ function dispatch(
       return stub.erase();
     case "configure":
       return stub.configure(input);
-    case "read":
-      return stub.read(input);
     case "call":
       return stub.call(input);
     case "activateFunctions":
       return stub.activateFunctions(input);
+    case "mediaReleases":
+      return stub.mediaReleases(input);
+    case "releasedMedia":
+      return stub.releasedMedia(input);
+    case "disconnect":
+      return stub.disconnect(input);
     case "putFunctions":
       return stub.putFunctions(input);
   }

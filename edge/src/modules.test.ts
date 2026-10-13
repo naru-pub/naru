@@ -26,6 +26,18 @@ describe("static site imports", () => {
   ])("rejects %s", (value) =>
     expect(() => resolveModule("functions/shop.js", value)).toThrow(),
   );
+  test("rules import shared modules and other rules, nothing imports a rule", () => {
+    expect(resolveModule("rules/board.js", "../modules/shared.js")).toBe(
+      "modules/shared.js",
+    );
+    expect(resolveModule("rules/:naru", "./board.js")).toBe("rules/board.js");
+    expect(resolveModule("functions/shop.js", "../modules/x.mjs")).toBe(
+      "modules/x.mjs",
+    );
+    expect(() =>
+      resolveModule("modules/shared.js", "../rules/board.js"),
+    ).toThrow(/only collection rules/);
+  });
   test("discovers imports and reexports without treating strings/comments as imports", () => {
     expect(
       moduleImports(

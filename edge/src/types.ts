@@ -28,6 +28,8 @@ export type ExecuteInput = {
   method: string;
   body?: Record<string, unknown>;
   filter?: unknown;
+  /** A predicate, as a rule's scope returns (rules.ts), ANDed with filter. */
+  where?: unknown;
   size?: number;
   sort?: string;
   after?: string;
@@ -40,7 +42,7 @@ export type ExecuteInput = {
 /** What a list read takes beyond the collection it reads. */
 export type ListInput = Pick<
   ExecuteInput,
-  "filter" | "size" | "sort" | "after" | "includeTotal"
+  "filter" | "where" | "size" | "sort" | "after" | "includeTotal"
 >;
 
 export type Collection = {
@@ -49,6 +51,7 @@ export type Collection = {
   read_access: string;
   write_access: string;
   rules?: string;
+  unique?: string[];
 };
 
 /** A document as test-only `export` and `import` carry it; times in ms. */
@@ -69,6 +72,10 @@ export type Snapshot = {
   collections: Collection[];
   documents: StoredDocument[];
   rules?: Record<string, string>;
+  /** Each collection's unique fields, by collection ID. */
+  unique?: Record<string, string[]>;
+  /** The active function revision and its generation, when published. */
+  functions?: { revision: string; generation: string | null };
 };
 
 /** Errors cross the RPC boundary as values: a thrown error loses its fields. */
@@ -80,6 +87,8 @@ export type Outcome<T> =
         status: number;
         message: string;
         code?: ErrorCode;
+        /** A site function's own JSON for its caller, from ctx.fail. */
+        details?: unknown;
         /** Set when the monthly budget is spent: when it resets, epoch ms. */
         resetsAt?: number;
       };
@@ -89,7 +98,8 @@ export type Outcome<T> =
 export type ServeInput = Omit<ExecuteInput, "ownerId" | "access">;
 /** Answered, or to be sent on to the control plane. */
 export type Served =
-  { pass: true } | { pass?: undefined; result: unknown; publicRead: boolean };
+  | { pass: true }
+  | { pass?: undefined; result: unknown; publicRead: boolean };
 
 /**
  * What the control plane keeps current in the object of each site with the

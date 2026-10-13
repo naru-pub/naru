@@ -4,15 +4,13 @@ import {
   loadModuleGraph,
   modulePath,
   moduleImports,
+  readOnlyExports,
   MAX_MODULE_BYTES,
   type ModuleSources,
 } from "./modules";
 /** Minimal object storage contract shared by the S3 publisher and R2 reader. */
 export interface RevisionBucket {
-  list(options: {
-    prefix: string;
-    cursor?: string;
-  }): Promise<{
+  list(options: { prefix: string; cursor?: string }): Promise<{
     objects: { key: string; etag: string; size: number }[];
     truncated: boolean;
     cursor?: string;
@@ -33,6 +31,8 @@ type Manifest = {
   version: 2;
   publication: string;
   files: Record<string, string>;
+  /** Each functions module's read-only exports, when it declares any. */
+  readOnly?: Record<string, string[]>;
 };
 const hash = (source: string) =>
   createHash("sha256").update(source).digest("hex");
@@ -57,13 +57,13 @@ export class FunctionRevisions {
   }
   private async files() {
     const files: Array<{ path: string; key: string; etag: string }> = [];
-    for (const folder of ["functions", "modules"]) {
+    for (const folder of ["functions", "modules", "rules"]) {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
       do {
         const page = await this.bucket.list({ prefix, cursor });
         for (const object of page.objects)
-          if (object.key.endsWith(".js")) {
+          if (/\.m?js$/.test(object.key)) {
             if (object.size > MAX_MODULE_BYTES)
               throw new DataError(400, "Function module exceeds 256 KiB.");
             files.push({
@@ -106,6 +106,15 @@ export class FunctionRevisions {
         digests[file.path] = hash(source);
       }
     }
+    for (const filename of Object.keys(sources))
+      if (
+        filename.endsWith(".mjs") &&
+        Object.hasOwn(sources, filename.slice(0, -4) + ".js")
+      )
+        throw new DataError(
+          400,
+          `Both _naru/${filename.slice(0, -4)}.js and .mjs exist; keep one.`,
+        );
     for (const [filename, source] of Object.entries(sources))
       for (const dependency of moduleImports(source, filename)) {
         if (!Object.hasOwn(sources, dependency))
@@ -114,12 +123,19 @@ export class FunctionRevisions {
             `Missing import ${dependency} in ${filename}.`,
           );
       }
+    const readOnly: Record<string, string[]> = Object.create(null);
+    for (const [filename, source] of Object.entries(sources))
+      if (filename.startsWith("functions/")) {
+        const names = readOnlyExports(source, filename);
+        if (names.length) readOnly[filename] = names;
+      }
     if (JSON.stringify(files) !== JSON.stringify(await this.files()))
       throw conflict();
     const manifest: Manifest = {
       version: 2,
       publication: randomUUID(),
       files: digests,
+      ...(Object.keys(readOnly).length ? { readOnly } : {}),
     };
     const body = JSON.stringify(manifest),
       revision = hash(body);
@@ -166,10 +182,32 @@ export class FunctionRevisions {
     for (const [filename, digest] of Object.entries(manifest.files))
       if (modulePath(filename) !== filename || !/^[a-f0-9]{64}$/.test(digest))
         throw new DataError(503, "Invalid function manifest.");
+    for (const [filename, names] of Object.entries(manifest.readOnly ?? {}))
+      if (
+        !Object.hasOwn(manifest.files, filename) ||
+        !Array.isArray(names) ||
+        names.some((name) => typeof name !== "string")
+      )
+        throw new DataError(503, "Invalid function manifest.");
     this.manifests.set(revision, manifest);
     if (this.manifests.size > 4)
       this.manifests.delete(this.manifests.keys().next().value!);
     return manifest;
+  }
+  /**
+   * The published file for `path` without its extension, such as
+   * `functions/shop`: `.js`, or `.mjs` when that is what the site has.
+   */
+  async entry(revision: string, path: string) {
+    const manifest = await this.manifest(revision);
+    return Object.hasOwn(manifest.files, `${path}.mjs`)
+      ? `${path}.mjs`
+      : `${path}.js`;
+  }
+  /** Whether `entry`'s export `name` is declared read-only. */
+  async isReadOnly(revision: string, entry: string, name: string) {
+    const manifest = await this.manifest(revision);
+    return manifest.readOnly?.[entry]?.includes(name) ?? false;
   }
   async graph(revision: string, entry: string): Promise<ModuleSources> {
     const manifest = await this.manifest(revision);

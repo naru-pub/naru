@@ -1,5 +1,6 @@
 import { db } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
+import { callSiteObject } from "@/lib/edge/client";
 import { DataError, uuidId } from "./validation";
 import type { AdmissionMode, MembershipStatus } from "./member-auth";
 
@@ -83,11 +84,11 @@ export async function manageMembership(
     throw new DataError(400, "Provide admission, or a member id and status.");
   const id = uuidId(body.id);
   const status = body.status as MembershipStatus;
-  return db.transaction().execute(async (tx) => {
+  const { member, site } = await db.transaction().execute(async (tx) => {
     // Same lock as admission at sign-in: a concurrent sign-in cannot undo a ban.
-    await tx
+    const { login_name: site } = await tx
       .selectFrom("users")
-      .select("id")
+      .select("login_name")
       .where("id", "=", ownerId)
       .forUpdate()
       .executeTakeFirstOrThrow();
@@ -99,6 +100,15 @@ export async function manageMembership(
       .returning(["id", "status"])
       .executeTakeFirst();
     if (!member) throw new DataError(404, "Member not found.");
-    return member;
+    return { member, site };
   });
+  // Live connections outlast the requests that opened them; requests are
+  // already refused, and this ends what is open. Best effort: the member can
+  // no longer obtain a ticket to reconnect either way.
+  if (member.status !== "approved")
+    await callSiteObject(site, "disconnect", { member: member.id }).catch(
+      (error) =>
+        console.error(`Closing ${site}'s live connections failed`, error),
+    );
+  return member;
 }

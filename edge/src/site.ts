@@ -14,9 +14,13 @@ import {
   writePermission,
 } from "../../control-plane/src/lib/site-data/validation";
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
-import { publicResult } from "../../control-plane/src/lib/site-data/protocol";
+import {
+  decodeRevision,
+  publicResult,
+} from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
-import { RULE_WRAPPER, rulePredicate } from "./rules";
+import { ruleEntry, rulePredicate } from "./rules";
+import type { ModuleSources } from "./modules";
 import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { quickjs } from "./quickjs";
 import {
@@ -83,15 +87,16 @@ const MEMBER_WRITES_PER_MINUTE = 30;
 /** Function calls a member may make a minute. */
 const MEMBER_CALLS_PER_MINUTE = 30;
 const MEMBER_READS_PER_MINUTE = 120;
-/**
- * Where a site's functions are, in its files: one module per app, so a site
- * holding several keeps them apart. Only files here are run on the server;
- * the site's other scripts stay browser code.
- */
-const functionsPath = (file: string) => `_naru/functions/${file}.js`;
-const MAX_FUNCTIONS_BYTES = 256 * 1024;
-/** How long a loaded functions file is used before asking storage again. */
-const FUNCTIONS_FRESH_MS = 10_000;
+/** Live connections one site's object holds at once. */
+const MAX_LIVE_CONNECTIONS = 1000;
+/** A message a function sends, as JSON. */
+const MAX_MESSAGE_BYTES = 4 * 1024;
+type Message =
+  | { to: "member"; member: string; data: unknown }
+  | { to: "topic"; topic: string; data: unknown };
+
+const unpublished = () =>
+  new DataError(503, "Site functions have not been published.", "UNAVAILABLE");
 
 function deletable(expected: number | undefined) {
   if (expected === 0)
@@ -145,6 +150,83 @@ export class SiteData extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.createTables();
+    // Keepalives are answered without waking the object.
+    ctx.setWebSocketAutoResponse(
+      new WebSocketRequestResponsePair("ping", "pong"),
+    );
+  }
+
+  /**
+   * A live connection the edge Worker admitted (website.ts): a visitor's, or
+   * a member's whose ticket it checked, listening to up to eight topics. It
+   * hibernates between messages, so an idle one costs nothing.
+   */
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
+      return new Response("Expected a WebSocket.", { status: 426 });
+    const until = this.meta("entitled_until");
+    const now = Date.now();
+    if (
+      this.meta("owner_id") === null ||
+      until === null ||
+      Number(this.meta("confirmed_until") ?? 0) <= now ||
+      (until !== "forever" && Number(until) <= now)
+    )
+      return new Response("Live connections are unavailable.", {
+        status: 503,
+      });
+    if (this.ctx.getWebSockets().length >= MAX_LIVE_CONNECTIONS)
+      return new Response("Too many live connections.", { status: 503 });
+    const spent = this.run(() => this.spend());
+    if (!spent.ok)
+      return new Response(spent.error.message, { status: spent.error.status });
+    const member = request.headers.get("X-Naru-Member") || null;
+    const topics = (request.headers.get("X-Naru-Topics") ?? "")
+      .split(",")
+      .filter(Boolean);
+    const pair = new WebSocketPair();
+    this.ctx.acceptWebSocket(pair[1], [
+      "live",
+      ...(member ? [`member:${member}`] : []),
+      ...topics.map((topic) => `topic:${topic}`),
+    ]);
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  async webSocketMessage() {
+    // Listeners only listen; "ping" is answered without reaching here.
+  }
+
+  async webSocketClose(socket: WebSocket, code: number) {
+    socket.close(code === 1005 ? 1000 : code);
+  }
+
+  /** Sends what a call's function sent, once the call has committed. */
+  private deliver(messages: Message[]) {
+    for (const message of messages) {
+      const tag =
+        message.to === "member"
+          ? `member:${message.member}`
+          : `topic:${message.topic}`;
+      const text = JSON.stringify(
+        message.to === "member"
+          ? { type: "notice", data: message.data }
+          : { type: "topic", topic: message.topic, data: message.data },
+      );
+      for (const socket of this.ctx.getWebSockets(tag))
+        try {
+          socket.send(text);
+        } catch {
+          /* closing already */
+        }
+    }
+  }
+
+  /** Closes a member's live connections, as their access ends. */
+  async disconnect(input: { member: string }) {
+    for (const socket of this.ctx.getWebSockets(`member:${name(input.member)}`))
+      socket.close(4003, "Access ended.");
+    return { ok: true as const, value: null };
   }
 
   private createTables() {
@@ -170,6 +252,7 @@ export class SiteData extends DurableObject<Env> {
             status: error.status,
             message: error.message,
             code: error.code,
+            ...(error.details === undefined ? {} : { details: error.details }),
             ...(error instanceof BudgetSpent
               ? { resetsAt: error.resetsAt }
               : {}),
@@ -208,12 +291,95 @@ export class SiteData extends DurableObject<Env> {
 
   private collection(id: string, row: Row) {
     const rules = this.meta(`rules:${id}`);
+    const unique = this.uniqueFields(id);
     return {
       id,
       user_id: this.meta("owner_id"),
       ...row,
       ...(rules ? { rules } : {}),
+      ...(unique.length ? { unique } : {}),
     };
+  }
+
+  /** The top-level fields no two documents of a collection may share. */
+  private uniqueFields(collectionId: string): string[] {
+    const value = this.meta(`unique:${collectionId}`);
+    return value ? (JSON.parse(value) as string[]) : [];
+  }
+  private uniqueIndex(collectionId: string, field: string) {
+    if (!/^[0-9a-f-]{36}$/.test(collectionId))
+      throw new Error("Unexpected collection ID.");
+    const index = `documents_unique_${createHash("sha256").update(`${collectionId}\u0000${field}`).digest("hex").slice(0, 24)}`;
+    return {
+      index,
+      // Collection IDs are UUIDs and fields passed NAME, so both are inlined
+      // safely; the query below repeats the indexed expression exactly.
+      create: `CREATE INDEX IF NOT EXISTS ${index} ON documents (json_extract(data, '$."${field}"')) WHERE collection_id = '${collectionId}'`,
+    };
+  }
+  /**
+   * Sets a collection's unique fields: at most three top-level fields whose
+   * string or number values no two documents may share. Refused while
+   * documents already share one.
+   */
+  private setUnique(collection: Collection, value: unknown) {
+    const fields =
+      value === null
+        ? []
+        : Array.isArray(value) && value.length <= 3
+          ? [...new Set(value.map(name))]
+          : (() => {
+              throw new DataError(400, "unique takes at most 3 field names.");
+            })();
+    for (const field of this.uniqueFields(collection.id))
+      this.sql.exec(
+        `DROP INDEX IF EXISTS ${this.uniqueIndex(collection.id, field).index}`,
+      );
+    for (const field of fields) {
+      const path = `'$."${field}"'`;
+      const shared = this.rows(
+        `SELECT json_extract(data, ${path}) AS value FROM documents
+         WHERE collection_id = ? AND json_type(data, ${path}) IN ('text', 'integer', 'real')
+         GROUP BY json_type(data, ${path}) IN ('text'), json_extract(data, ${path}) HAVING count(*) > 1 LIMIT 1`,
+        collection.id,
+      );
+      if (shared.length)
+        throw new DataError(
+          409,
+          `Documents in ${collection.name} already share ${field} ${JSON.stringify(shared[0].value)}. Change them first.`,
+          "CONFLICT",
+        );
+      this.sql.exec(this.uniqueIndex(collection.id, field).create);
+    }
+    this.setMeta(
+      `unique:${collection.id}`,
+      fields.length ? JSON.stringify(fields) : null,
+    );
+  }
+  /** Refuses writing `data` as document `id` when another holds a unique value. */
+  private checkUnique(collection: Collection, id: string, data: unknown) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
+    for (const field of this.uniqueFields(collection.id)) {
+      const value = (data as Record<string, unknown>)[field];
+      if (typeof value !== "string" && typeof value !== "number") continue;
+      const path = `'$."${field}"'`;
+      // The partial index applies only to its own literal collection ID.
+      if (!/^[0-9a-f-]{36}$/.test(collection.id))
+        throw new Error("Unexpected collection ID.");
+      const taken = this.rows(
+        `SELECT id FROM documents WHERE collection_id = '${collection.id}' AND json_extract(data, ${path}) = ?
+         AND json_type(data, ${path}) ${typeof value === "string" ? "= 'text'" : "IN ('integer', 'real')"} AND id != ? LIMIT 1`,
+        value,
+        id,
+      );
+      if (taken.length)
+        throw new DataError(
+          409,
+          `Another document in ${collection.name} already has this ${field}.`,
+          "CONFLICT",
+          { unique: field },
+        );
+    }
   }
 
   private usage() {
@@ -419,6 +585,9 @@ export class SiteData extends DurableObject<Env> {
         return this.executeSync(command, rules);
       });
     } catch (error) {
+      // Rules with no revision yet: the control plane publishes one.
+      if (error instanceof DataError && error.message === unpublished().message)
+        return { ok: true, value: { pass: true } };
       return this.run(() => {
         throw error;
       });
@@ -445,7 +614,12 @@ export class SiteData extends DurableObject<Env> {
 
   private executeSync(
     input: ExecuteInput,
-    rules?: { file: string; source: string; module: QuickJSWASMModule },
+    rules?: {
+      file: string;
+      entry: string;
+      sources: ModuleSources;
+      module: QuickJSWASMModule;
+    },
   ) {
     const { path, method, access } = input;
     const body = input.body ?? {};
@@ -514,6 +688,7 @@ export class SiteData extends DurableObject<Env> {
         throw new DataError(403, "Website tokens cannot manage collections.");
       if (!admin) throw new DataError(403, "Admin access required.");
       if (method === "DELETE") {
+        this.setUnique(collection, null);
         this.sql.exec(
           "DELETE FROM documents WHERE collection_id = ?",
           collection.id,
@@ -522,6 +697,8 @@ export class SiteData extends DurableObject<Env> {
         this.setMeta(`rules:${collection.id}`, null);
         return { result: { success: true }, publicRead };
       }
+      if (Object.hasOwn(body, "unique"))
+        this.setUnique(collection, body.unique);
       if (Object.hasOwn(body, "rules")) {
         this.setMeta(
           `rules:${collection.id}`,
@@ -550,10 +727,12 @@ export class SiteData extends DurableObject<Env> {
     const ruleHost = this.functionHost();
     const invokeRule = (hook: string, args: unknown) => {
       if (!rules) throw new DataError(503, "Collection rules are unavailable.");
+      const entry = ruleEntry(rules.entry);
       return runFunction(
         rules.module,
         {
-          source: rules.source + RULE_WRAPPER,
+          ...entry,
+          modules: rules.sources,
           name: hook,
           args,
           member: access.member ?? null,
@@ -571,6 +750,7 @@ export class SiteData extends DurableObject<Env> {
               operation: path.length === 2 ? "get" : "list",
               id: path[1] ?? null,
               filter: input.filter ?? {},
+              where: input.where ?? null,
             }),
           )
         : undefined;
@@ -732,6 +912,7 @@ export class SiteData extends DurableObject<Env> {
     // Never overwrite on create, even in the event of an ID collision.
     if (creating && existing)
       throw new DataError(409, "Document ID collision. Retry creation.");
+    this.checkUnique(collection, id, body.data);
     const before = this.ruleDocument(collection.id, id);
     checkWrite(
       before,
@@ -791,14 +972,25 @@ export class SiteData extends DurableObject<Env> {
     if (!file) return;
     if (!input.site)
       throw new DataError(503, "Collection rules need a site name.");
-    const source = await this.functionsSource(input.site, file, "rules");
-    if (!source)
-      throw new DataError(
-        403,
-        "Configured collection rules are missing.",
-        "ACCESS_DENIED",
-      );
-    return { file, source, module: await quickjs() };
+    // From the active function revision, like functions: a rule changes when
+    // the site's _naru files are next published, all at once.
+    const revision = this.meta("functions_revision");
+    if (!revision) throw unpublished();
+    let sources: ModuleSources, entry: string;
+    try {
+      const revisions = this.revisions(input.site);
+      entry = await revisions.entry(revision, `rules/${file}`);
+      sources = await revisions.graph(revision, entry);
+    } catch (error) {
+      if (error instanceof DataError && error.status === 404)
+        throw new DataError(
+          403,
+          "Configured collection rules are missing.",
+          "ACCESS_DENIED",
+        );
+      throw error;
+    }
+    return { file, entry, sources, module: await quickjs() };
   }
 
   private functionRevisions: FunctionRevisions | undefined;
@@ -852,45 +1044,15 @@ export class SiteData extends DurableObject<Env> {
     });
   }
 
-  /** Each functions module of the site, kept a few seconds between checks. */
-  private functions = new Map<
-    string,
-    { source: string | null; etag: string | null; checkedAt: number }
-  >();
-  private async functionsSource(
-    site: string,
-    file: string,
-    folder = "functions",
-  ) {
-    const cacheKey = `${folder}:${file}`;
-    const now = Date.now();
-    const known = this.functions.get(cacheKey);
-    if (known && now - known.checkedAt < FUNCTIONS_FRESH_MS)
-      return known.source;
-    const key = `${site}/_naru/${folder}/${file}.js`;
-    const head = await this.env.SITE_FILES.head(key);
-    if (head && head.size > MAX_FUNCTIONS_BYTES)
-      throw new DataError(
-        400,
-        `${functionsPath(file)} is larger than 256 KiB.`,
-      );
-    if (!head || head.etag !== known?.etag) {
-      const object = head ? await this.env.SITE_FILES.get(key) : null;
-      this.functions.set(cacheKey, {
-        source: object ? await object.text() : null,
-        etag: object?.etag ?? null,
-        checkedAt: now,
-      });
-    } else known!.checkedAt = now;
-    return this.functions.get(cacheKey)!.source;
-  }
-
   /**
    * What a function's ctx may do: anything the owner may with the site's
    * documents, in this call's transaction. What it writes has no member
    * author, so a member cannot then change it directly.
    */
-  private functionHost(): Host {
+  private functionHost(
+    written = new Set<string>(),
+    messages: Message[] = [],
+  ): Host {
     const cachedCollections = new Map<string, Collection>();
     const collection = (value: unknown) => {
       const key = name(value);
@@ -912,15 +1074,48 @@ export class SiteData extends DurableObject<Env> {
         collectionId,
         id,
       )[0];
-    const write = (target: Collection, id: string, data: unknown) => {
+    // A write's condition, as the SDK's: { revision } or { absent: true }.
+    const condition = (value: unknown, deleting = false) => {
+      if (value === undefined || value === null) return undefined;
+      const options = value as { condition?: unknown };
+      if (typeof value !== "object" || Array.isArray(value))
+        throw new DataError(400, "Write options must be an object.");
+      if (options.condition === undefined) return undefined;
+      const given = options.condition as Record<string, unknown>;
+      if (
+        !given ||
+        typeof given !== "object" ||
+        Array.isArray(given) ||
+        Object.keys(given).length !== 1
+      )
+        throw new DataError(400, "condition must contain revision or absent.");
+      if (typeof given.revision === "string")
+        return decodeRevision(given.revision);
+      if (given.absent === true && !deleting) return 0;
+      throw new DataError(
+        400,
+        deleting
+          ? "A delete can only be conditional on a revision."
+          : "condition must contain revision or absent.",
+      );
+    };
+    const write = (
+      target: Collection,
+      id: string,
+      data: unknown,
+      expected?: number,
+    ) => {
       const existing = this.rows(
-        "SELECT size_bytes FROM documents WHERE collection_id = ? AND id = ?",
+        "SELECT size_bytes, version FROM documents WHERE collection_id = ? AND id = ?",
         target.id,
         id,
-      )[0] as { size_bytes: number } | undefined;
+      )[0] as { size_bytes: number; version: number } | undefined;
+      if (expected !== undefined) matchVersion(expected, existing?.version);
       const { encoded, size } = encode(data);
       this.checkQuota(existing?.size_bytes, size);
+      this.checkUnique(target, id, data);
       this.upsert(target.id, id, encoded, size, null);
+      written.add(target.name);
       return publicResult(documentOf(document(target.id, id)));
     };
     return (operation, args) => {
@@ -952,6 +1147,7 @@ export class SiteData extends DurableObject<Env> {
           const options = (args[1] ?? {}) as Record<string, unknown>;
           const query = listQuery(collection(args[0]).id, {
             filter: options.filter,
+            where: options.where,
             includeTotal: true,
           });
           return Number(
@@ -964,6 +1160,7 @@ export class SiteData extends DurableObject<Env> {
           return publicResult(
             this.list(target, {
               filter: options.filter,
+              where: options.where,
               sort:
                 options.sort === undefined
                   ? undefined
@@ -979,14 +1176,65 @@ export class SiteData extends DurableObject<Env> {
         case "set":
           if (args.length < 3)
             throw new DataError(400, "set(collection, id, data) needs data.");
-          return write(collection(args[0]), name(args[1]), args[2]);
-        case "delete":
-          this.sql.exec(
-            "DELETE FROM documents WHERE collection_id = ? AND id = ?",
-            collection(args[0]).id,
+          return write(
+            collection(args[0]),
             name(args[1]),
+            args[2],
+            condition(args[3]),
+          );
+        case "notify":
+        case "broadcast": {
+          const target = name(args[0]);
+          const data = args[1] ?? null;
+          if (Buffer.byteLength(JSON.stringify(data)) > MAX_MESSAGE_BYTES)
+            throw new DataError(400, "A message is at most 4 KiB of JSON.");
+          messages.push(
+            operation === "notify"
+              ? { to: "member", member: target, data }
+              : { to: "topic", topic: target, data },
           );
           return null;
+        }
+        case "mediaDelete": {
+          // Queued with the call's writes; the control plane deletes the
+          // file once they commit (releasedMedia).
+          if (
+            typeof args[0] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              args[0],
+            )
+          )
+            throw new DataError(400, "ctx.media.delete() needs an upload ID.");
+          this.sql.exec(
+            "INSERT INTO media_releases (id, queued_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+            args[0].toLowerCase(),
+            Date.now(),
+          );
+          return null;
+        }
+        case "delete": {
+          const target = collection(args[0]);
+          const id = name(args[1]);
+          const expected = condition(args[2], true);
+          if (expected !== undefined)
+            matchVersion(
+              expected,
+              (
+                this.rows(
+                  "SELECT version FROM documents WHERE collection_id = ? AND id = ?",
+                  target.id,
+                  id,
+                )[0] as { version: number } | undefined
+              )?.version,
+            );
+          this.sql.exec(
+            "DELETE FROM documents WHERE collection_id = ? AND id = ?",
+            target.id,
+            id,
+          );
+          written.add(target.name);
+          return null;
+        }
         default:
           throw new DataError(400, `ctx has no ${operation}.`);
       }
@@ -994,43 +1242,36 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * A member calls one of the site's functions. Counted against the month and
-   * the member's calls first, on their own: a call that then fails was still
-   * made. The function runs in one transaction; a failure rolls it back.
+   * A member, or the site's owner (`member` null), calls one of the site's
+   * functions. An export its module declares read-only (`export const
+   * readOnly = [...]`, read when the revision was published) runs with writes
+   * forbidden and counts against the member's reads; any other against their
+   * calls. A member's call is counted against the month and their budget
+   * first, on its own: a call that then fails was still made. The owner's are
+   * never counted. The function runs in one transaction; a failure rolls it
+   * back. `written` names the collections it changed, for the caller's cache.
    */
-  async read(input: Parameters<SiteData["call"]>[0]) {
-    return this.call({ ...input, readonly: true });
-  }
-
   async call(input: {
     ownerId: string;
     site: string;
-    member: string;
+    member: string | null;
     /** The module, _naru/functions/<file>.js. */
     file: string;
     name: string;
     args: unknown;
-    readonly?: boolean;
-  }): Promise<Outcome<{ result: unknown }>> {
-    const admitted = this.run(() => {
-      this.claim(input.ownerId);
+  }): Promise<
+    Outcome<{ result: unknown; written: string[]; mediaReleases?: number }>
+  > {
+    let filename: string, sources, readonly;
+    try {
       functionModule(input.file);
       name(input.name);
-      this.spend();
-      this.limitMember(input.member, input.readonly ? "read" : "call");
-    });
-    if (!admitted.ok) return admitted;
-    const filename = `functions/${input.file}.js`;
-    let sources;
-    try {
-      let revision = this.meta("functions_revision");
-      if (!revision)
-        throw new DataError(
-          503,
-          "Site functions have not been published.",
-          "UNAVAILABLE",
-        );
-      sources = await this.revisions(input.site).graph(revision, filename);
+      const revision = this.meta("functions_revision");
+      if (!revision) throw unpublished();
+      const revisions = this.revisions(input.site);
+      filename = await revisions.entry(revision, `functions/${input.file}`);
+      sources = await revisions.graph(revision, filename);
+      readonly = await revisions.isReadOnly(revision, filename, input.name);
     } catch (error) {
       if (error instanceof DataError)
         return this.run(() => {
@@ -1038,9 +1279,18 @@ export class SiteData extends DurableObject<Env> {
         });
       throw error;
     }
+    const admitted = this.run(() => {
+      this.claim(input.ownerId);
+      if (input.member === null) return;
+      this.spend();
+      this.limitMember(input.member, readonly ? "read" : "call");
+    });
+    if (!admitted.ok) return admitted;
     const engine = await quickjs();
+    const written = new Set<string>();
+    const messages: Message[] = [];
     try {
-      return this.run(() => ({
+      const outcome = this.run(() => ({
         result: runFunction(
           engine,
           {
@@ -1050,12 +1300,17 @@ export class SiteData extends DurableObject<Env> {
             name: input.name,
             args: input.args,
             member: input.member,
+            owner: input.member === null,
             now: Date.now(),
-            readonly: input.readonly,
+            readonly,
           },
-          this.functionHost(),
+          this.functionHost(written, messages),
         ),
+        written: [...written].sort(),
+        ...this.pendingMedia(),
       }));
+      if (outcome.ok) this.deliver(messages);
+      return outcome;
     } catch (error) {
       // Not the function's doing: the engine itself failed. Its instance is
       // dropped with this call.
@@ -1069,6 +1324,35 @@ export class SiteData extends DurableObject<Env> {
         },
       };
     }
+  }
+
+  /** How many uploads functions queued for deletion, when any wait. */
+  private pendingMedia() {
+    const pending = Number(
+      this.rows("SELECT count(*) AS n FROM media_releases")[0].n,
+    );
+    return pending ? { mediaReleases: pending } : {};
+  }
+
+  /** The uploads functions queued for deletion, oldest first. */
+  async mediaReleases(input: { limit?: number }) {
+    return this.run(() =>
+      this.rows(
+        "SELECT id FROM media_releases ORDER BY queued_at, id LIMIT ?",
+        Math.min(Math.max(Number(input.limit) || 100, 1), 100),
+      ).map((row) => row.id as string),
+    );
+  }
+
+  /** Forgets queued uploads the control plane has deleted. */
+  async releasedMedia(input: { ids: string[] }) {
+    return this.run(() => {
+      if (!Array.isArray(input.ids) || input.ids.length > 100)
+        throw new DataError(400, "Release at most 100 uploads.");
+      for (const id of input.ids)
+        this.sql.exec("DELETE FROM media_releases WHERE id = ?", String(id));
+      return this.pendingMedia().mediaReleases ?? 0;
+    });
   }
 
   /** Tests only: replaces a functions module, or removes it (null). */
@@ -1087,11 +1371,8 @@ export class SiteData extends DurableObject<Env> {
     const key = `${input.site}/_naru/${folder}/${folder !== "rules" ? functionModule(input.file) : name(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
-    this.functions.delete(`${folder}:${input.file}`);
-    if (folder !== "rules") {
-      const published = await this.publishFunctions({ site: input.site });
-      if (!published.ok) return published;
-    }
+    const published = await this.publishFunctions({ site: input.site });
+    if (!published.ok) return published;
     return { ok: true, value: null };
   }
 
@@ -1164,6 +1445,7 @@ export class SiteData extends DurableObject<Env> {
         if (operation.type !== "set" || !Object.hasOwn(operation, "data"))
           throw new DataError(400, "Batch operations must be set or delete.");
         const { encoded, size } = encode(operation.data);
+        this.checkUnique(collection, id, operation.data);
         this.upsert(collection.id, id, encoded, size, null);
         const { version, createdAt, updatedAt } = this.written(
           collection.id,
@@ -1236,6 +1518,19 @@ export class SiteData extends DurableObject<Env> {
           (row) => [String(row.key).slice(6), String(row.value)],
         ),
       ),
+      unique: Object.fromEntries(
+        this.rows("SELECT key, value FROM meta WHERE key LIKE 'unique:%'").map(
+          (row) => [String(row.key).slice(7), JSON.parse(String(row.value))],
+        ),
+      ),
+      ...(this.meta("functions_revision")
+        ? {
+            functions: {
+              revision: this.meta("functions_revision")!,
+              generation: this.meta("functions_generation"),
+            },
+          }
+        : {}),
       collections: this.rows(
         "SELECT id, name, read_access, write_access FROM collections ORDER BY id",
       ) as unknown as Collection[],
@@ -1269,6 +1564,15 @@ export class SiteData extends DurableObject<Env> {
       if (snapshot.ownerId !== null) this.setMeta("owner_id", snapshot.ownerId);
       for (const [id, file] of Object.entries(snapshot.rules ?? {}))
         this.setMeta(`rules:${id}`, name(file));
+      for (const [id, fields] of Object.entries(snapshot.unique ?? {})) {
+        this.setMeta(`unique:${id}`, JSON.stringify(fields));
+        for (const field of fields)
+          this.sql.exec(this.uniqueIndex(id, field).create);
+      }
+      if (snapshot.functions) {
+        this.setMeta("functions_revision", snapshot.functions.revision);
+        this.setMeta("functions_generation", snapshot.functions.generation);
+      }
       for (const collection of snapshot.collections)
         this.sql.exec(
           "INSERT INTO collections (id, name, read_access, write_access) VALUES (?, ?, ?, ?)",

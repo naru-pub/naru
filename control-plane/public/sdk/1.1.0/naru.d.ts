@@ -55,6 +55,11 @@ export type NaruErrorCode =
 export declare class NaruError extends Error {
   private constructor();
   readonly code: NaruErrorCode;
+  /**
+   * The JSON a site function passed as `ctx.fail(code, message, details)`,
+   * such as `{ reason: "sold_out" }`. Undefined for every other failure.
+   */
+  readonly details?: Json;
 }
 
 /** Top-level user fields, combined with AND. */
@@ -71,6 +76,33 @@ export type Filter = Record<
       lte?: string | number;
     }
 >;
+
+/** A top-level user field by name, or document metadata. */
+export type PredicateField = string | { metadata: "id" | "createdBy" };
+
+/**
+ * A condition on documents, as a collection rule's `scope` returns: `true`,
+ * `false`, `all` or `any` of conditions, or one comparison. Values match only
+ * their own JSON type; a missing field matches no comparison except `ne`.
+ * At most 100 nodes, ten levels deep.
+ */
+export type Predicate =
+  | boolean
+  | { all: readonly Predicate[] }
+  | { any: readonly Predicate[] }
+  | { eq: readonly [PredicateField, string | number | boolean | null] }
+  | { ne: readonly [PredicateField, string | number | boolean | null] }
+  | { gt: readonly [PredicateField, string | number] }
+  | { gte: readonly [PredicateField, string | number] }
+  | { lt: readonly [PredicateField, string | number] }
+  | { lte: readonly [PredicateField, string | number] }
+  | {
+      /** Equal to any of 1–100 values. */
+      in: readonly [
+        PredicateField,
+        readonly (string | number | boolean | null)[],
+      ];
+    };
 
 /** One or two keys: a user field by name, or document metadata. */
 export type Sort =
@@ -93,6 +125,8 @@ export type Sort =
 
 export interface ListOptions {
   filter?: Filter;
+  /** Combined with `filter`: documents must match both. */
+  where?: Predicate;
   sort?: Sort;
   /** Default 50; maximum 100. */
   size?: number;
@@ -113,8 +147,12 @@ export interface PublicCollection<T = Json> {
     options?: { signal?: AbortSignal },
   ): Promise<(Document<T> | null)[]>;
   list(options?: ListOptions): Promise<Page<T>>;
-  /** How many documents match `filter`, or the whole collection. */
-  count(options?: { filter?: Filter; signal?: AbortSignal }): Promise<number>;
+  /** How many documents match `filter` and `where`, or the whole collection. */
+  count(options?: {
+    filter?: Filter;
+    where?: Predicate;
+    signal?: AbortSignal;
+  }): Promise<number>;
   /**
    * Every page of a query in turn, following `nextCursor` from `after` (or
    * the start). Not a snapshot: writes in between can shift later pages.
@@ -176,22 +214,24 @@ export interface Member {
    * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
    * transaction, with the site owner's access to its collections, and
    * resolves with what it returned. A function that throws, or exceeds its
-   * limits, changes nothing. Static relative JavaScript imports and re-exports
-   * may share code in `_naru/modules/`; imports stay within `_naru/functions/`
-   * and `_naru/modules/`. Include `.js`; dynamic imports and top-level await
-   * are unsupported. File updates activate an immutable source revision.
+   * limits, changes nothing. Exports the module lists in
+   * `export const readOnly = [...]` cannot write, and count against the
+   * member's read budget instead of their calls. Static relative JavaScript
+   * imports and re-exports may share code in `_naru/modules/`; imports stay
+   * within `_naru/functions/` and `_naru/modules/`. Include `.js`; dynamic
+   * imports and top-level await are unsupported. File updates activate an
+   * immutable source revision.
    */
   call<R = Json>(
     name: string,
     args?: Json,
     options?: { signal?: AbortSignal },
   ): Promise<R>;
-  /** Runs a site function with writes forbidden and a separate read budget. */
-  read<R = Json>(
-    name: string,
-    args?: Json,
-    options?: { signal?: AbortSignal },
-  ): Promise<R>;
+  /**
+   * Hears what the site's functions send this member (`ctx.notify`), and
+   * broadcasts to `topics`, until closed or until their access ends.
+   */
+  live(options: LiveOptions): Live;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
     delete(
@@ -232,6 +272,17 @@ export interface Member {
 
 export interface Admin {
   collection<T = Json>(name: string): AdminCollection<T>;
+  /**
+   * Calls one of the site's functions as the owner, as `Member.call` does
+   * for a member: the function sees `ctx.member` null and `ctx.owner` true,
+   * whatever collections this sign-in approved. Owner calls are not counted
+   * against the site's budget.
+   */
+  call<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
   /**
    * Commits every write or none. Conditions guard individual documents. Does
    * not retry. Resolves, in the order written, with what each `set` stored and
@@ -297,9 +348,39 @@ export interface Admin {
   signOut(): Promise<void>;
 }
 
+/** What a live connection hears from the site's functions. */
+export type LiveMessage =
+  /** `ctx.notify(memberId, data)` to the member this connection signed in as. */
+  | { type: "notice"; data: Json }
+  /** `ctx.broadcast(topic, data)` to every listener of the topic. */
+  | { type: "topic"; topic: string; data: Json };
+
+export interface LiveOptions {
+  /** Up to eight topic names whose broadcasts to hear. */
+  topics?: readonly string[];
+  onMessage(message: LiveMessage): void;
+  /**
+   * Called as the connection opens, drops and reconnects, and once it is
+   * closed for good: by `close()`, or because the member's access ended.
+   * Messages sent while it was down are not delivered later, so read again
+   * on `open` if they matter.
+   */
+  onStatus?(status: "connecting" | "open" | "reconnecting" | "closed"): void;
+}
+
+/** A live connection, reconnecting by itself until closed. */
+export interface Live {
+  close(): void;
+}
+
 export interface NaruClient {
   /** Visitor access, even when signed in. */
   collection<T = Json>(name: string): PublicCollection<T>;
+  /**
+   * Hears what the site's functions broadcast to `topics`, as anyone may:
+   * broadcasts are public. Connecting counts against the site's budget.
+   */
+  live(options: LiveOptions): Live;
   auth: {
     /**
      * The admin client for this page, or null. A sign-in that was denied,

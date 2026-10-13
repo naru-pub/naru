@@ -5,6 +5,8 @@ import { callSiteObject } from "@/lib/edge/client";
 import { MEMBER_TOKEN, memberScope } from "./member-auth";
 import { tokenScope } from "./owner-auth";
 import { DataError, name, functionReference } from "./validation";
+import { queueMediaRelease } from "./media-releases";
+import { signLiveTicket } from "./live-ticket";
 
 // Site databases live in Durable Objects, one per site, in the site-data
 // Worker (edge/ at the repository root); the object applies every
@@ -34,6 +36,8 @@ export type DataCommand = {
   /** JSON array of one or two [field, direction] pairs. */
   sort?: string;
   filter?: unknown;
+  /** A predicate, as a collection rule's scope returns. */
+  where?: unknown;
   includeTotal?: boolean;
   ids?: string;
   ifVersion?: number;
@@ -106,6 +110,25 @@ export async function resolveSiteAccess(command: DataCommand) {
   });
 }
 
+/**
+ * Runs `invoke`, publishing the site's _naru files first if its object has no
+ * function revision yet: functions and collection rules both run from one.
+ */
+async function withRevision<T>(site: string, invoke: () => Promise<T>) {
+  try {
+    return await invoke();
+  } catch (error) {
+    if (
+      !(error instanceof DataError) ||
+      error.status !== 503 ||
+      error.message !== "Site functions have not been published."
+    )
+      throw error;
+    await publishSiteFunctions(site);
+    return invoke();
+  }
+}
+
 export async function executeData(command: DataCommand) {
   const { path, adminUserId } = command;
   if (path.length > 2) throw new DataError(404, "Not found.");
@@ -114,34 +137,37 @@ export async function executeData(command: DataCommand) {
   const admin = adminUserId === owner.id || allowedIds !== undefined;
   if (adminUserId !== undefined && !admin)
     throw new DataError(403, "Permission denied.");
-  const { result, publicRead } = await callSiteObject<{
-    result: unknown;
-    publicRead: boolean;
-  }>(
-    command.site,
-    "execute",
-    {
-      ownerId: String(owner.id),
-      site: command.site,
-      access: {
-        admin,
-        allowedIds: allowedIds?.map(String) ?? null,
-        anonymous: command.bearer === undefined && adminUserId === undefined,
-        member: memberId ?? null,
+  const { result, publicRead } = await withRevision(command.site, () =>
+    callSiteObject<{
+      result: unknown;
+      publicRead: boolean;
+    }>(
+      command.site,
+      "execute",
+      {
+        ownerId: String(owner.id),
+        site: command.site,
+        access: {
+          admin,
+          allowedIds: allowedIds?.map(String) ?? null,
+          anonymous: command.bearer === undefined && adminUserId === undefined,
+          member: memberId ?? null,
+        },
+        path,
+        method: command.method,
+        body: command.body,
+        filter: command.filter,
+        where: command.where,
+        size: command.size,
+        sort: command.sort,
+        after: command.after,
+        includeTotal: command.includeTotal,
+        ids: command.ids,
+        ifVersion: command.ifVersion,
+        clientIp: command.clientIp,
       },
-      path,
-      method: command.method,
-      body: command.body,
-      filter: command.filter,
-      size: command.size,
-      sort: command.sort,
-      after: command.after,
-      includeTotal: command.includeTotal,
-      ids: command.ids,
-      ifVersion: command.ifVersion,
-      clientIp: command.clientIp,
-    },
-    command.signal,
+      command.signal,
+    ),
   );
   if (publicRead && command.cacheability) command.cacheability.public = true;
   return withDates(result);
@@ -175,45 +201,68 @@ export async function executeBatch(command: DataCommand) {
 }
 
 /**
- * A member calls one of the site's functions: `path` is the module and the
- * function, `_naru/functions/<module>.js` and its export.
+ * A member, or the site's owner with an owner token, calls one of the site's
+ * functions: `path` is the module and the function, `_naru/functions/<module>.js`
+ * and its export. A function has the owner's access to every collection
+ * whatever collections the owner's sign-in approved, as it has for members.
  */
-export async function executeCall(command: DataCommand, readonly = false) {
+export async function executeCall(command: DataCommand) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
   const { file, fn } = functionReference(command.path.join("/"));
-  const { owner, memberId } = await resolveSiteAccess(command);
-  if (memberId === undefined)
+  const { owner, memberId, allowedIds } = await resolveSiteAccess(command);
+  if (memberId === undefined && allowedIds === undefined)
     throw new DataError(
       command.bearer || command.adminUserId ? 403 : 401,
-      "Site functions are called by signed-in members.",
+      "Site functions are called by signed-in members or the site's owner.",
     );
   const invoke = () =>
-    callSiteObject<{ result: unknown }>(
+    callSiteObject<{
+      result: unknown;
+      written: string[];
+      mediaReleases?: number;
+    }>(
       command.site,
-      readonly ? "read" : "call",
+      "call",
       {
         ownerId: String(owner.id),
         site: command.site,
-        member: memberId,
+        member: memberId ?? null,
         file,
         name: fn,
         args: command.body?.args ?? null,
       },
       command.signal,
     );
-  try {
-    return await invoke();
-  } catch (error) {
-    if (
-      !(error instanceof DataError) ||
-      error.status !== 503 ||
-      error.message !== "Site functions have not been published."
-    )
-      throw error;
-    await publishSiteFunctions(command.site);
-    return invoke();
-  }
+  const { mediaReleases, ...answer } = await withRevision(command.site, invoke);
+  // The call has committed; a failure here leaves the uploads queued for the
+  // next call on the site to start their deletion.
+  if (mediaReleases)
+    await queueMediaRelease(command.site).catch((error) =>
+      console.error(
+        `Queueing media deletion for ${command.site} failed`,
+        error,
+      ),
+    );
+  return answer;
+}
+
+/**
+ * A member's ticket onto the site's live connection: the WebSocket they open
+ * next at the edge, which hears what site functions send them (ctx.notify).
+ */
+export async function executeLiveTicket(command: DataCommand) {
+  if (command.method !== "POST")
+    throw new DataError(405, "Method not allowed.");
+  const { memberId } = await resolveSiteAccess(command);
+  if (memberId === undefined)
+    throw new DataError(
+      command.bearer ? 403 : 401,
+      "Live tickets are for signed-in members; visitors connect without one.",
+    );
+  const secret = process.env.EDGE_WORKER_SECRET;
+  if (!secret) throw new DataError(503, "Live connections are unavailable.");
+  return { ticket: await signLiveTicket(secret, command.site, memberId) };
 }
 
 /** A site's collections by name, or all of them, ordered by name. */

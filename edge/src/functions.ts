@@ -40,7 +40,27 @@ export const STACK_BYTES = 128 * 1024;
 export const MAX_OPERATIONS = 100;
 export const MAX_WRITES = 25;
 export const MAX_RESULT_BYTES = 64 * 1024;
-export const WRITES = new Set(["add", "set", "delete"]);
+export const MAX_FAILURE_DETAILS_BYTES = 4 * 1024;
+/** URL parses a call may make: each is host time the interrupt checks miss. */
+export const MAX_URL_PARSES = 1000;
+/** Live messages a call may send (ctx.notify, ctx.broadcast). */
+export const MAX_MESSAGES = 50;
+const MESSAGES = new Set(["notify", "broadcast"]);
+const URL_PARTS = [
+  "href",
+  "origin",
+  "protocol",
+  "username",
+  "password",
+  "host",
+  "hostname",
+  "port",
+  "pathname",
+  "search",
+  "hash",
+] as const;
+const URL_SETTERS = new Set(URL_PARTS.slice(2));
+export const WRITES = new Set(["add", "set", "delete", "mediaDelete"]);
 
 /** What a function may do: one call per ctx method, given its arguments. */
 export type Host = (operation: string, args: unknown[]) => unknown;
@@ -52,6 +72,8 @@ export type Invocation = {
   name: string;
   args: unknown;
   member: string | null;
+  /** The site's owner called, rather than a member or the site itself. */
+  owner?: boolean;
   now: number;
   readonly?: boolean;
 };
@@ -76,6 +98,111 @@ const __call = (operation, ...args) => {
   return out === undefined ? undefined : JSON.parse(out);
 };
 Math.random = () => __call("random");
+// URL and URLSearchParams, as browsers have them. The host's own URL parses
+// (QuickJS has none); the parameter list is kept here.
+const __urlParts = (input, base, key, value) =>
+  __call("url", String(input), base === undefined ? null : String(base), key ?? null, value === undefined ? null : String(value));
+const __formEncode = (value) =>
+  encodeURIComponent(value)
+    .replace(/[!'()~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
+    .replace(/%20/g, "+");
+const __formDecode = (value) => {
+  const text = value.replace(/\\+/g, " ");
+  try { return decodeURIComponent(text); } catch { return text; }
+};
+const __searchOwners = new WeakMap();
+class URLSearchParams {
+  #list = [];
+  constructor(init = "") {
+    if (typeof init === "object" && init !== null) {
+      if (typeof init[Symbol.iterator] === "function")
+        for (const pair of init) {
+          const entry = [...pair];
+          if (entry.length !== 2) throw new TypeError("Each pair must have a name and a value.");
+          this.#list.push([String(entry[0]), String(entry[1])]);
+        }
+      else for (const key of Object.keys(init)) this.#list.push([key, String(init[key])]);
+    } else this.#parse(String(init));
+  }
+  #parse(text) {
+    this.#list = [];
+    for (const part of (text.startsWith("?") ? text.slice(1) : text).split("&")) {
+      if (!part) continue;
+      const at = part.indexOf("=");
+      this.#list.push(at < 0 ? [__formDecode(part), ""] : [__formDecode(part.slice(0, at)), __formDecode(part.slice(at + 1))]);
+    }
+  }
+  #changed() {
+    const owner = __searchOwners.get(this);
+    if (owner) owner.__setSearch(this.toString());
+  }
+  static __reparse(params, text) { params.#parse(text); }
+  get size() { return this.#list.length; }
+  append(name, value) { this.#list.push([String(name), String(value)]); this.#changed(); }
+  delete(name, value) {
+    this.#list = this.#list.filter(([key, item]) => key !== String(name) || (value !== undefined && item !== String(value)));
+    this.#changed();
+  }
+  get(name) { return this.#list.find(([key]) => key === String(name))?.[1] ?? null; }
+  getAll(name) { return this.#list.filter(([key]) => key === String(name)).map(([, value]) => value); }
+  has(name, value) { return this.#list.some(([key, item]) => key === String(name) && (value === undefined || item === String(value))); }
+  set(name, value) {
+    const at = this.#list.findIndex(([key]) => key === String(name));
+    if (at < 0) this.#list.push([String(name), String(value)]);
+    else {
+      this.#list[at] = [String(name), String(value)];
+      this.#list = this.#list.filter(([key], index) => index <= at || key !== String(name));
+    }
+    this.#changed();
+  }
+  sort() { this.#list.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)); this.#changed(); }
+  forEach(callback, thisArg) { for (const [key, value] of this.#list) callback.call(thisArg, value, key, this); }
+  *keys() { for (const [key] of this.#list) yield key; }
+  *values() { for (const [, value] of this.#list) yield value; }
+  *entries() { for (const [key, value] of this.#list) yield [key, value]; }
+  [Symbol.iterator]() { return this.entries(); }
+  toString() { return this.#list.map(([key, value]) => __formEncode(key) + "=" + __formEncode(value)).join("&"); }
+}
+class URL {
+  #parts;
+  #params = null;
+  constructor(input, base) {
+    const parts = __urlParts(input, base);
+    if (!parts) throw new TypeError("Invalid URL: " + String(input));
+    this.#parts = parts;
+  }
+  static canParse(input, base) { return __urlParts(input, base) !== null; }
+  static parse(input, base) { const parts = __urlParts(input, base); if (!parts) return null; const url = new URL(parts.href); return url; }
+  #set(key, value) {
+    const parts = __urlParts(this.#parts.href, undefined, key, value);
+    if (!parts) throw new TypeError("Invalid URL");
+    this.#parts = parts;
+    if (this.#params && key !== "hash") URLSearchParams.__reparse(this.#params, parts.search);
+  }
+  __setSearch(text) { this.#parts = __urlParts(this.#parts.href, undefined, "search", text); }
+  get href() { return this.#parts.href; } set href(value) { const parts = __urlParts(value); if (!parts) throw new TypeError("Invalid URL: " + String(value)); this.#parts = parts; if (this.#params) URLSearchParams.__reparse(this.#params, parts.search); }
+  get origin() { return this.#parts.origin; }
+  get protocol() { return this.#parts.protocol; } set protocol(value) { this.#set("protocol", value); }
+  get username() { return this.#parts.username; } set username(value) { this.#set("username", value); }
+  get password() { return this.#parts.password; } set password(value) { this.#set("password", value); }
+  get host() { return this.#parts.host; } set host(value) { this.#set("host", value); }
+  get hostname() { return this.#parts.hostname; } set hostname(value) { this.#set("hostname", value); }
+  get port() { return this.#parts.port; } set port(value) { this.#set("port", value); }
+  get pathname() { return this.#parts.pathname; } set pathname(value) { this.#set("pathname", value); }
+  get search() { return this.#parts.search; } set search(value) { this.#set("search", value); }
+  get hash() { return this.#parts.hash; } set hash(value) { this.#set("hash", value); }
+  get searchParams() {
+    if (!this.#params) {
+      this.#params = new URLSearchParams(this.#parts.search);
+      __searchOwners.set(this.#params, this);
+    }
+    return this.#params;
+  }
+  toString() { return this.#parts.href; }
+  toJSON() { return this.#parts.href; }
+}
+globalThis.URL = URL;
+globalThis.URLSearchParams = URLSearchParams;
 const __unused = new Map();
 class CtxPromise extends Promise {
   static get [Symbol.species]() { return Promise; }
@@ -97,12 +224,13 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, now, args) => {
+globalThis.__run = async (name, member, owner, now, args) => {
   const ctx = Object.freeze({
     member: member === null ? null : Object.freeze({ id: member }),
+    owner,
     now,
     random: () => __call("random"),
-    fail: (code, message) => __call("fail", code, message),
+    fail: (...args) => __call("fail", ...args),
     get: __operation("get"),
     getMany: __operation("getMany"),
     count: (collection, options) =>
@@ -112,6 +240,9 @@ globalThis.__run = async (name, member, now, args) => {
     add: __operation("add"),
     set: __operation("set"),
     delete: __operation("delete"),
+    media: Object.freeze({ delete: __operation("mediaDelete") }),
+    notify: (member, data) => __call("notify", member, data ?? null),
+    broadcast: (topic, data) => __call("broadcast", topic, data ?? null),
   });
   const fn = Object.hasOwn(globalThis.__exports, name)
     ? globalThis.__exports[name]
@@ -135,7 +266,12 @@ export function runFunction(
   const runtime = module.newRuntime();
   runtime.setMaxStackSize(STACK_BYTES);
   let checks = 0;
-  runtime.setInterruptHandler(() => ++checks > INTERRUPT_BUDGET);
+  // Once spent, the budget stays spent: every later check interrupts too, so
+  // even reading the error object could fail, and this says why instead.
+  let interrupted = false;
+  runtime.setInterruptHandler(
+    () => (interrupted ||= ++checks > INTERRUPT_BUDGET),
+  );
   if (invocation.modules)
     runtime.setModuleLoader((filename) => {
       const source = invocation.modules![filename];
@@ -146,13 +282,36 @@ export function runFunction(
   const context = runtime.newContext();
   let operations = 0;
   let writes = 0;
+  let parses = 0;
+  let messages = 0;
   let hostError: DataError | undefined;
   const entry = context.newFunction("__host", (operation, args) => {
     const name = context.getString(operation);
     try {
       if (hostError) throw hostError;
+      if (name === "url") {
+        if (++parses > MAX_URL_PARSES)
+          throw failed(`more than ${MAX_URL_PARSES} URL operations.`);
+        const [input, base, key, value] = JSON.parse(context.getString(args));
+        let url: URL;
+        try {
+          url = new URL(input, base ?? undefined);
+          if (key !== null) {
+            if (!URL_SETTERS.has(key)) return context.newString("null");
+            (url as unknown as Record<string, string>)[key] = value;
+          }
+        } catch {
+          return context.newString("null");
+        }
+        return context.newString(
+          JSON.stringify(
+            Object.fromEntries(URL_PARTS.map((part) => [part, url[part]])),
+          ),
+        );
+      }
       if (name === "fail") {
-        const [code, message] = JSON.parse(context.getString(args));
+        const json = context.getString(args);
+        const [code, message, details = null] = JSON.parse(json);
         if (
           !ERROR_CODES.includes(code) ||
           typeof message !== "string" ||
@@ -162,6 +321,13 @@ export function runFunction(
           throw failed(
             "ctx.fail requires a v1 error code and a message of 1–1000 characters.",
           );
+        // The caller's own JSON: a reason the page can branch on, say.
+        if (
+          details !== null &&
+          new TextEncoder().encode(JSON.stringify(details)).byteLength >
+            MAX_FAILURE_DETAILS_BYTES
+        )
+          throw failed("ctx.fail details must be at most 4 KiB of JSON.");
         const status: Record<ErrorCode, number> = {
           CONFLICT: 409,
           QUOTA_EXCEEDED: 409,
@@ -172,9 +338,24 @@ export function runFunction(
           INVALID_REQUEST: 400,
           UNAVAILABLE: 503,
         };
-        throw new DataError(status[code as ErrorCode], message, code);
+        throw new DataError(
+          status[code as ErrorCode],
+          message,
+          code,
+          details ?? undefined,
+        );
       }
       const values = JSON.parse(context.getString(args));
+      if (MESSAGES.has(name)) {
+        if (invocation.readonly)
+          throw failed("read-only functions cannot send messages.");
+        if (++messages > MAX_MESSAGES)
+          throw failed(`more than ${MAX_MESSAGES} live messages.`);
+        const out = host(name, values);
+        return out === undefined
+          ? context.undefined
+          : context.newString(JSON.stringify(out));
+      }
       if (
         name === "getMany" &&
         (!Array.isArray(values[1]) || values[1].length > MAX_OPERATIONS)
@@ -219,6 +400,7 @@ export function runFunction(
   /** What a call's exception means: the host's error first, then the function's. */
   const outcome = (exception: QuickJSHandle) => {
     if (hostError) return hostError;
+    if (interrupted) return failed("it ran too long.");
     const error = context.dump(exception) as { name?: string };
     if (error?.name === "__Missing")
       return new DataError(404, `No function ${invocation.name}.`);
@@ -228,6 +410,7 @@ export function runFunction(
     `__run(${[
       invocation.name,
       invocation.member,
+      invocation.owner === true,
       invocation.now,
       JSON.stringify(invocation.args ?? null),
     ]

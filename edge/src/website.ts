@@ -1,4 +1,7 @@
-import { parseFilterQuery } from "../../control-plane/src/lib/site-data/filters";
+import {
+  parseFilterQuery,
+  parseWhereQuery,
+} from "../../control-plane/src/lib/site-data/filters";
 import {
   PUBLIC_READ_CACHE,
   publicResult,
@@ -12,6 +15,7 @@ import {
   protocolError,
 } from "../../control-plane/src/lib/site-data/validation";
 import type { SiteData } from "./site";
+import { verifyLiveTicket } from "../../control-plane/src/lib/site-data/live-ticket";
 import type { Outcome, Served } from "./types";
 
 // The public data API, /api/data/v1/<site>/..., routed here for every site.
@@ -19,7 +23,7 @@ import type { Outcome, Served } from "./types";
 // of crossing to the control plane and back. Whatever needs the control plane
 // is sent on to it unchanged: requests with an owner token (sign-in scope and
 // renewal live in PostgreSQL), media (`_files`), batches (owner only),
-// function calls (`_call`, members only), and
+// function calls (`_call`, members and the owner), and
 // any request the object will not answer, such as a site whose paid status it
 // has not had confirmed.
 //
@@ -28,6 +32,8 @@ import type { Outcome, Served } from "./types";
 
 export interface WebsiteEnv {
   SITES: DurableObjectNamespace<SiteData>;
+  /** Shared with the control plane, which signs members' live tickets. */
+  EDGE_WORKER_SECRET?: string;
   /** Tests only: where requests are sent on, instead of the request's own URL. */
   PASSTHROUGH_ORIGIN?: string;
 }
@@ -37,6 +43,42 @@ const METHODS = ["GET", "POST", "PUT", "DELETE"];
 // Sites whose monthly budget is spent, until it resets, so that refusing them
 // costs this isolate a map lookup rather than the object a request.
 const spent = new Map<string, { until: number; message: string }>();
+
+/**
+ * Opens a live connection: `topics` (up to eight names) to hear what site
+ * functions broadcast, and with a member's `ticket`, what they send that
+ * member. Refusals are plain HTTP, before any WebSocket opens.
+ */
+async function live(request: Request, env: WebsiteEnv, site: string) {
+  const url = new URL(request.url);
+  if (!NAME.test(site)) return new Response("Not found.", { status: 404 });
+  const topics = (url.searchParams.get("topics") ?? "")
+    .split(",")
+    .filter(Boolean);
+  if (topics.length > 8 || !topics.every((topic) => NAME.test(topic)))
+    return new Response("Use up to eight topic names.", { status: 400 });
+  const ticket = url.searchParams.get("ticket");
+  let member: string | null = null;
+  if (ticket !== null) {
+    member = env.EDGE_WORKER_SECRET
+      ? await verifyLiveTicket(env.EDGE_WORKER_SECRET, site, ticket)
+      : null;
+    if (!member)
+      return new Response("The live ticket is invalid or expired.", {
+        status: 401,
+      });
+  }
+  const stub = env.SITES.get(env.SITES.idFromName(site));
+  return stub.fetch(
+    new Request("https://site.invalid/_live", {
+      headers: {
+        Upgrade: "websocket",
+        "X-Naru-Topics": topics.join(","),
+        ...(member ? { "X-Naru-Member": member } : {}),
+      },
+    }),
+  );
+}
 
 /** Sends the request to the control plane, the origin behind this route. */
 function passThrough(request: Request, env: WebsiteEnv) {
@@ -60,6 +102,14 @@ export async function website(
   const headers = websiteHeaders(request);
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers });
+  // A live connection: opened here, held by the site's object. Asking for a
+  // member's ticket (POST, with their token) goes to the control plane below.
+  if (
+    path[0] === "_live" &&
+    path.length === 1 &&
+    request.headers.get("Upgrade")?.toLowerCase() === "websocket"
+  )
+    return live(request, env, site);
   if (
     !NAME.test(site) ||
     request.headers.has("authorization") ||
@@ -67,7 +117,6 @@ export async function website(
     path[0] === "_files" ||
     path[0] === "_batch" ||
     path[0] === "_call" ||
-    path[0] === "_read" ||
     !METHODS.includes(request.method)
   )
     return passThrough(request, env);
@@ -100,6 +149,7 @@ export async function website(
       site,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
+      where: parseWhereQuery(url.searchParams.get("where")),
       includeTotal: url.searchParams.get("includeTotal") === "1",
       ifVersion: websiteCondition(url),
       sort: url.searchParams.get("sort") ?? undefined,

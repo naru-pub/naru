@@ -313,7 +313,7 @@ export async function buy(ctx, { item }) {
 
 // 페이지에서
 const result = await member.call("shop:buy", { item: "sword" });
-const boards = await member.read("community/boards:list");`}</Code>
+const boards = await member.call("community/boards:list");`}</Code>
               <p>
                 공통 코드는 <code>_naru/modules/</code>에 두고 상대 경로로
                 import하거나 다시 내보낼 수 있습니다. 경로에 <code>.js</code>를
@@ -329,7 +329,7 @@ import { price } from "../../modules/prices.js";
 export function quote() { return price; }
 
 // 페이지에서
-const price = await member.read("shop/buy:quote");`}</Code>
+const price = await member.call("shop/buy:quote");`}</Code>
               <p>
                 파일을 저장하거나 사이트를 설치하면 나루가 함수 파일의 리비전을
                 만들고 적용합니다. import가 잘못되면 이전 리비전이 계속
@@ -349,6 +349,35 @@ const price = await member.read("shop/buy:quote");`}</Code>
                 작업 100번(쓰기 25번), 수십 밀리초, 메모리 32MiB까지 씁니다.
                 함수 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니 비밀값을
                 넣지 마세요.
+              </p>
+              <p>
+                읽기만 하는 함수는 모듈에서{" "}
+                <code>export const readOnly = [&quot;함수&quot;]</code>로 알려
+                주세요. 그 함수는 쓸 수 없고, 회원의 분당 호출 30번 대신 읽기
+                120번에서 셉니다. 사이트 소유자도 <code>admin.call()</code>로
+                같은 함수를 부를 수 있으며, 이때 <code>ctx.member</code>는 null,{" "}
+                <code>ctx.owner</code>는 true입니다.{" "}
+                <code>ctx.fail(코드, 메시지, 세부)</code>의 세부는 브라우저의{" "}
+                <code>error.details</code>로 전달됩니다.
+              </p>
+              <Code language="javascript">{`// 함수에서: 커밋된 뒤에만 보냅니다.
+ctx.notify(받는회원ID, { unread: true });
+ctx.broadcast("board", { post: "new" });
+
+// 페이지에서: 5초마다 묻는 대신 들으세요.
+const live = member.live({
+  topics: ["board"],
+  onMessage(message) {
+    if (message.type === "notice") showUnread();
+    if (message.type === "topic") refreshBoard();
+  },
+});`}</Code>
+              <p>
+                <code>ctx.notify</code>는 그 회원에게만,{" "}
+                <code>ctx.broadcast</code>는 주제를 듣는 모두(방문자 포함)에게
+                갑니다. 메시지는 저장되지 않으니 다시 연결되면 데이터를 다시
+                읽으세요. 연결은 끊기면 스스로 다시 이어지고, 회원 승인이
+                취소되면 닫힙니다.
               </p>
             </Section>
 

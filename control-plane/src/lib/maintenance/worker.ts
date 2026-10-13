@@ -7,6 +7,10 @@ import { spawn } from "node:child_process";
 import { Client } from "pg";
 import { Absurd } from "absurd-sdk";
 import { pool } from "@/lib/database";
+import {
+  MEDIA_RELEASE_TASK,
+  runMediaRelease,
+} from "@/lib/site-data/media-releases";
 import { noteJobStarted, noteJobResult } from "@/lib/scheduled-jobs";
 import { recordPaymentCronRun } from "@/lib/payments/payment-events";
 import {
@@ -188,6 +192,10 @@ export async function runMaintenanceWorker(signal: AbortSignal): Promise<void> {
   workflows.registerTask<FunctionRelease>(
     { name: FUNCTION_RELEASE_TASK },
     runFunctionRelease,
+  );
+  workflows.registerTask<{ site: string }>(
+    { name: MEDIA_RELEASE_TASK },
+    runMediaRelease,
   );
   const worker = await workflows.startWorker({
     workerId: `maintenance:${process.pid}`,

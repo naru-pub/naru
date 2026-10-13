@@ -13,9 +13,10 @@ export function buy(ctx) {
 }
 ```
 
-Call `member.call("shop/buy:buy")` or `member.read("shop/buy:buy")`. Static
-relative imports and re-exports, including cycles, are supported. Include `.js`.
-Paths stay inside the functions/modules directories. Package names, URL imports,
+Call `member.call("shop/buy:buy")`, or `admin.call(...)` as the owner. Static
+relative imports and re-exports, including cycles, are supported. Include the
+extension, `.js` or `.mjs`. Paths stay inside the functions/modules directories
+(rules may also import other rules). Package names, URL imports,
 dynamic imports and top-level await are rejected. No filesystem, network, Node
 APIs or package installer are exposed to the interpreter. Transpile TypeScript
 before uploading; bundling JavaScript is unnecessary.
@@ -35,7 +36,13 @@ RPC to the site's Durable Object, which stores the active pointer and release
 generation in SQLite. Older task retries cannot replace a newer generation.
 The durable task retries activation if the inline RPC fails. R2 holds
 a complete copy of each release under `_naru-runtime/<site>/revisions/<revision>/`:
-`manifest.json`, `functions/<path>.js`, and `modules/<path>.js`. Every publication
+`manifest.json`, and `functions/`, `modules/` and `rules/` (`.js` or `.mjs`;
+one name may not have both). The manifest also records each functions module's
+`readOnly` exports, read from its `export const readOnly = [...]` literal at
+publication, so a call is classified before it runs. Collection rules run from
+the same revision: their entry is a generated module (`rules/:naru`, a name no
+published path can take) that imports `rules/<name>.js`, so a rule may import
+`_naru/modules/`; functions and modules may not import a rule. Every publication
 gets a new revision, including unchanged releases. The manifest records source
 hashes for integrity; sources are never shared between revision directories.
 The manifest is written last, after all source uploads succeed. Activation changes

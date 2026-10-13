@@ -87,11 +87,21 @@ async function callWorker<T>(
   }
   const body = (await response.json().catch(() => null)) as {
     value?: T;
-    error?: { status: number; message: string; code?: ErrorCode };
+    error?: {
+      status: number;
+      message: string;
+      code?: ErrorCode;
+      details?: unknown;
+    };
   } | null;
   if (response.ok && body && "value" in body) return body.value as T;
   if (body?.error && body.error.status === response.status)
-    throw new DataError(body.error.status, body.error.message, body.error.code);
+    throw new DataError(
+      body.error.status,
+      body.error.message,
+      body.error.code,
+      body.error.details,
+    );
   console.error(`Edge Worker answered ${response.status} to ${what}`);
   throw unavailable();
 }

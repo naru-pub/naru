@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
-import { RULE_WRAPPER, rulePredicate } from "./rules";
+import { ruleEntry, rulePredicate } from "./rules";
 import { beforeEach, describe, expect, test } from "vitest";
 import {
   newQuickJSWASMModuleFromVariant,
@@ -95,6 +95,41 @@ describe("calling", () => {
       math: 0.5,
     });
     expect(documents.get("wallets/m-1")).toEqual({ balance: 50 });
+  });
+
+  test("ctx.owner says the site's owner called", () => {
+    const source =
+      "export function who(ctx) { return [ctx.owner, ctx.member]; }";
+    expect(run(source, "who")).toEqual([false, { id: "m-1" }]);
+    expect(
+      runFunction(
+        module,
+        { source, name: "who", args: null, member: null, owner: true, now: 0 },
+        host,
+      ),
+    ).toEqual([true, null]);
+  });
+
+  test("ctx.fail carries the function's details to the caller", () => {
+    const failure = (args: string) => {
+      try {
+        run(`export function f(ctx) { ctx.fail(${args}); }`, "f");
+      } catch (error) {
+        return error as DataError;
+      }
+      throw new Error("did not fail");
+    };
+    expect(
+      failure(`"CONFLICT", "품절입니다.", { reason: "sold_out" }`),
+    ).toMatchObject({
+      status: 409,
+      code: "CONFLICT",
+      details: { reason: "sold_out" },
+    });
+    expect(failure(`"CONFLICT", "No."`).details).toBeUndefined();
+    expect(failure(`"CONFLICT", "No.", "x".repeat(5000)`).message).toMatch(
+      /4 KiB/,
+    );
   });
 
   test("ctx.fail preserves the protocol code and message without invoking storage", () => {
@@ -258,6 +293,46 @@ describe("calling", () => {
     ).toBe("RangeError");
   });
 
+  test("the guest has URL and URLSearchParams, parsed as the host parses", () => {
+    expect(
+      run(
+        `export function f() {
+          const url = new URL("../b?x=1&y=a+b#top", "https://Example.com:443/a/c");
+          url.searchParams.append("z", "c d");
+          url.searchParams.set("x", "2");
+          const copy = new URL(url);
+          copy.hash = "";
+          copy.pathname = "/other";
+          return {
+            href: url.href,
+            origin: url.origin,
+            host: url.host,
+            y: url.searchParams.get("y"),
+            all: [...new URLSearchParams({ a: 1, b: "x y" })].map((p) => p.join("=")),
+            copy: copy.toString(),
+            json: JSON.stringify({ url }),
+            valid: [URL.canParse("https://x.test"), URL.canParse("nope"), URL.parse("nope")],
+            invalid: (() => { try { new URL("javascript"); } catch (e) { return e.name; } })(),
+          };
+        }`,
+        "f",
+      ),
+    ).toEqual({
+      href: "https://example.com/b?x=2&y=a+b&z=c+d#top",
+      origin: "https://example.com",
+      host: "example.com",
+      y: "a b",
+      all: ["a=1", "b=x y"],
+      copy: "https://example.com/other?x=2&y=a+b&z=c+d",
+      json: '{"url":"https://example.com/b?x=2&y=a+b&z=c+d#top"}',
+      valid: [true, false, null],
+      invalid: "TypeError",
+    });
+    expect(() =>
+      run(`export function f() { for (;;) new URL("https://x.test"); }`, "f"),
+    ).toThrow(/more than 1000 URL operations/);
+  });
+
   test("the guest sees no fetch, timers, or WebAssembly", () => {
     expect(
       run(
@@ -406,15 +481,24 @@ test("read-only execution permits reads", () => {
 });
 
 describe("community board rule example", () => {
-  const source =
-    readFileSync(
+  const modules = {
+    "rules/community-board.js": readFileSync(
       new URL("../../docs/examples/community-board-rules.js", import.meta.url),
       "utf8",
-    ) + RULE_WRAPPER;
+    ),
+  };
   const invoke = (name: string, args: unknown, member: string | null = "m-1") =>
     runFunction(
       module,
-      { source, name, args, member, now: 1, readonly: true },
+      {
+        ...ruleEntry("rules/community-board.js"),
+        modules,
+        name,
+        args,
+        member,
+        now: 1,
+        readonly: true,
+      },
       host,
     );
   const log = {

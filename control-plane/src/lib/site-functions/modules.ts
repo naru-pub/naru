@@ -8,17 +8,20 @@ export type ModuleSources = Record<string, string>;
 const invalid = (message: string) =>
   new DataError(400, `Function modules: ${message}`);
 
-/** Canonical paths below _naru. Import-only modules cannot be called as RPCs. */
+/**
+ * Canonical paths below _naru. Import-only modules cannot be called as RPCs;
+ * collection rules are their own entry points.
+ */
 export function modulePath(value: string): string {
   const parts = value.split("/");
   if (
-    !["functions", "modules"].includes(parts[0]) ||
+    !["functions", "modules", "rules"].includes(parts[0]) ||
     parts.length < 2 ||
     parts.some(
       (part) =>
         !/^[A-Za-z0-9_.-]{1,128}$/.test(part) || part === "." || part === "..",
     ) ||
-    !parts.at(-1)!.endsWith(".js")
+    !/\.m?js$/.test(parts.at(-1)!)
   )
     throw invalid(`invalid path ${value}.`);
   return value;
@@ -38,7 +41,11 @@ export function resolveModule(base: string, specifier: string): string {
       parts.push(part);
     }
   }
-  return modulePath(parts.join("/"));
+  const resolved = modulePath(parts.join("/"));
+  // Rules may share modules; functions and modules never import a rule.
+  if (resolved.startsWith("rules/") && !base.startsWith("rules/"))
+    throw invalid("only collection rules may import from _naru/rules.");
+  return resolved;
 }
 
 export function moduleImports(source: string, filename: string): string[] {
@@ -93,6 +100,72 @@ export function moduleImports(source: string, filename: string): string[] {
   };
   visit(tree);
   return [...new Set(imports)];
+}
+
+/**
+ * The exports a functions module declares read-only, from its
+ * `export const readOnly = ["name", ...]`: string literals only, so publishing
+ * can read them without running anything. Calls to these run with writes
+ * forbidden and count against the member's read budget.
+ */
+export function readOnlyExports(source: string, filename: string): string[] {
+  let tree: Node;
+  try {
+    tree = parse(source, { ecmaVersion: "latest", sourceType: "module" });
+  } catch (error) {
+    throw invalid(
+      `${filename}: ${error instanceof Error ? error.message : "invalid JavaScript"}`,
+    );
+  }
+  const wrong = () =>
+    invalid(
+      `${filename}: declare read-only functions as export const readOnly = ["name", ...].`,
+    );
+  let names: string[] = [];
+  for (const statement of (tree as unknown as { body: Node[] }).body) {
+    const node = statement as Node & Record<string, unknown>;
+    if (node.type !== "ExportNamedDeclaration") continue;
+    for (const specifier of (node.specifiers ?? []) as {
+      exported: { name?: string; value?: string };
+    }[])
+      if ((specifier.exported.name ?? specifier.exported.value) === "readOnly")
+        throw wrong();
+    const declaration = node.declaration as
+      | (Node & Record<string, unknown>)
+      | null;
+    if (!declaration) continue;
+    if (declaration.type !== "VariableDeclaration") {
+      if ((declaration.id as { name?: string } | null)?.name === "readOnly")
+        throw wrong();
+      continue;
+    }
+    for (const declarator of declaration.declarations as {
+      id: { type: string; name?: string };
+      init: (Node & Record<string, unknown>) | null;
+    }[]) {
+      if (declarator.id.type !== "Identifier") {
+        if (JSON.stringify(declarator.id).includes('"readOnly"')) throw wrong();
+        continue;
+      }
+      if (declarator.id.name !== "readOnly") continue;
+      const init = declarator.init;
+      if (
+        declaration.kind !== "const" ||
+        init?.type !== "ArrayExpression" ||
+        (init.elements as ({ type: string; value?: unknown } | null)[]).some(
+          (element) =>
+            element?.type !== "Literal" ||
+            typeof element.value !== "string" ||
+            !/^[a-zA-Z0-9_-]{1,64}$/.test(element.value),
+        )
+      )
+        throw wrong();
+      names = (init.elements as { value: string }[]).map(
+        (element) => element.value,
+      );
+    }
+  }
+  return [...new Set(names)];
 }
 
 /** Storage I/O finishes before QuickJS and the synchronous SQLite transaction. */

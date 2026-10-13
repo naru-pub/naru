@@ -199,100 +199,174 @@ sign-in this tab started for it.
 
 Rules a member's browser must not decide, such as prices, balances, stock or
 dice, run on Naru as site functions. Put a module in the site's files at
-`_naru/functions/<module/path>.js` and export plain functions from it:
+`_naru/functions/<module/path>.js` (or `.mjs`) and export functions from it:
 
 ```js
 // _naru/functions/shop.js
+export const readOnly = ["catalog"];
+
 export async function buy(ctx, { item }) {
   const listing = await ctx.get("shop", item);
-  if (!listing || listing.data.stock < 1) return { ok: false };
+  if (!listing || listing.data.stock < 1)
+    ctx.fail("CONFLICT", "품절입니다.", { reason: "sold_out" });
   const wallet = await ctx.get("wallets", ctx.member.id);
-  if (wallet.data.balance < listing.data.price) return { ok: false };
+  if (wallet.data.balance < listing.data.price)
+    ctx.fail("CONFLICT", "잔액이 부족합니다.", { reason: "not_enough" });
   await ctx.set("wallets", ctx.member.id, {
     balance: wallet.data.balance - listing.data.price,
   });
-  await ctx.set("shop", item, {
-    ...listing.data,
-    stock: listing.data.stock - 1,
-  });
+  await ctx.set(
+    "shop",
+    item,
+    { ...listing.data, stock: listing.data.stock - 1 },
+    { condition: { revision: listing.revision } },
+  );
   await ctx.add("inventory", { owner: ctx.member.id, item });
+  ctx.notify(ctx.member.id, { bought: item });
   return { ok: true };
+}
+
+export async function catalog(ctx) {
+  return (await ctx.list("shop", { where: { gt: ["stock", 0] } })).documents;
 }
 ```
 
 ```js
 const result = await member.call("shop:buy", { item: "sword" });
+const items = await member.call("shop:catalog");
 ```
 
-Module paths may use subdirectories: `member.read("community/boards:list")`
+Module paths may use subdirectories: `member.call("community/boards:list")`
 loads `_naru/functions/community/boards.js` and calls its `list` export.
 Each path segment must be a plain name; empty segments, traversal and
 backslashes are rejected. The colon separates the export from the file path.
+A module may be `.js` or `.mjs`, not both under one name.
 
-A member calls `"<module/path>:<function>"` with JSON arguments, and receives the
-JSON the function returned. Only signed-in members can call. A function runs
-on the server in one transaction, with the site owner's access to every
-collection, so keep the collections it guards (`wallets` above) admin-written
-and let members read them. If it throws or exceeds a limit, none of its writes
-happen, and the call fails with `INVALID_REQUEST` (`NOT_FOUND` for a missing
-module or function). Use `ctx.fail(code, message)` for expected failures that
-must abort the transaction. The browser receives a `NaruError` with that code
-and message from either `member.call()` or `member.read()`:
+**Who calls.** A member calls with `member.call("<module/path>:<function>", args)`
+and receives the JSON the function returned. The site's owner calls the same
+functions with `admin.call(...)`: the function then sees `ctx.member` null and
+`ctx.owner` true, whatever collections the owner's sign-in approved, so a
+function can keep administrative work to the owner with
+`if (!ctx.owner) ctx.fail("ACCESS_DENIED", "...")`. Visitors cannot call.
+
+**Transactions.** A function runs on the server in one transaction, with the
+site owner's access to every collection, so keep the collections it guards
+(`wallets` above) admin-written and let members read them. If it throws or
+exceeds a limit, none of its writes happen, and the call fails with
+`INVALID_REQUEST` (`NOT_FOUND` for a missing module or function). Documents a
+function writes have no member author, so members cannot change them directly.
+
+**Read-only exports.** A module lists the exports that only read in
+`export const readOnly = ["name", ...]`, as an array of string literals: Naru
+reads it when the site's files are published. Those calls cannot write and
+count against the member's 120 reads a minute instead of their 30 calls. The
+caller does not choose; there is one `call()`. Another form of the declaration
+refuses the publication.
+
+**Failing on purpose.** `ctx.fail(code, message, details?)` aborts the call
+with one of the v1 error codes and a nonblank message of at most 1,000
+characters, even if the function catches the exception and returns success.
+Writes made before it roll back. `details`, at most 4 KiB of JSON, reaches the
+browser as `error.details`, so a page can branch on its own reasons:
 
 ```js
-// Inside a site function, before or after writes:
-if (listing.data.stock < 1) ctx.fail("CONFLICT", "품절입니다.");
-// In the browser:
 try {
   await member.call("shop:buy", { item: "sword" });
 } catch (error) {
-  if (error instanceof NaruError && error.code === "CONFLICT") {
+  if (error instanceof NaruError && error.details?.reason === "sold_out")
     status.textContent = error.message;
-  } else throw error;
+  else throw error;
 }
 ```
 
-`ctx.fail` accepts the existing v1 error codes and a nonblank message of at most
-1,000 characters. It always aborts the call, even if the function catches the
-exception and returns success. Writes made before the failure roll back.
 Returning `{ ok: false }` remains valid, but is an ordinary successful return
-and does **not** roll back writes. Messages reach the browser, so do not include
-secrets. Unexpected exceptions still become `INVALID_REQUEST`.
+and does **not** roll back writes. Messages and details reach the browser, so
+do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 
-`ctx` has `member.id`, `now` (milliseconds), `random()` (also behind
-`Math.random`), and `get(collection, id)`, `list(collection, { filter, sort,
-size, after })`, `add(collection, data)`, `set(collection, id, data)` and
-`delete(collection, id)`, which return promises of what the SDK would, so
-`await` them. `member`, `now`, `random()` and `fail()` are not promises.
-Documents a function writes have no member author, so members cannot change
-them directly. A function may be `async` or return a promise; the call ends when
-it settles, and the whole call is still one transaction. Every database
-operation's promise must be used: awaited, returned, chained with `then` or
-`catch`, or passed to `Promise.all`. Otherwise the call fails with
-`INVALID_REQUEST` and rolls back, since a mistake like
-`if (!ctx.get(...))` would otherwise go unnoticed. Functions have no network or
-timers, and awaiting anything other than `ctx` (a promise that never resolves)
-fails the call. A call may make 100 database operations, 25 of them
-writes, run for tens of milliseconds and use 32 MiB of memory; its result is at
-most 64 KiB. A member may make 30 calls a minute, and calls count against the
-site's monthly budget. The module is served like any other file of the site,
-so do not put secrets in it.
+**ctx.** `ctx` has `member` (`{ id }`, or null for the owner), `owner`, `now`
+(milliseconds), `random()` (also behind `Math.random`), `fail()`, and these
+database methods, which return promises of what the SDK would, so `await` them:
 
-Functions also have two bounded read helpers:
+- `get(collection, id)`, `getMany(collection, ids)` (at most 100, in input
+  order, null where missing; each ID counts as an operation), and
+  `count(collection, { filter, where })`;
+- `list(collection, { filter, where, sort, size, after })`;
+- `add(collection, data)`, `set(collection, id, data, { condition })` and
+  `delete(collection, id, { condition })`, where `condition` is
+  `{ revision }` or (for `set`) `{ absent: true }`, as for the SDK's own
+  writes: a mismatch fails the call with `CONFLICT`;
+- `media.delete(uploadId)`: deletes one of the site's uploads once the call
+  commits (see below).
+
+`notify(memberId, data)` and `broadcast(topic, data)` send live messages
+(see Live connections); they return nothing and need no `await`. Functions
+also have `URL` and `URLSearchParams`, as browsers do.
+
+A function may be `async` or return a promise; the call ends when it settles,
+and the whole call is still one transaction. Every database operation's promise
+must be used: awaited, returned, chained with `then` or `catch`, or passed to
+`Promise.all`. Otherwise the call fails with `INVALID_REQUEST` and rolls back,
+since a mistake like `if (!ctx.get(...))` would otherwise go unnoticed.
+Functions have no network or timers, and awaiting anything other than `ctx` (a
+promise that never resolves) fails the call.
+
+**Limits.** A call may make 100 database operations, 25 of them writes, send
+50 live messages of at most 4 KiB each, parse 1,000 URLs, run for tens of
+milliseconds and use 32 MiB of memory; its result is at most 64 KiB. A member
+may make 30 calls and 120 read-only calls a minute, and members' calls count
+against the site's monthly budget; the owner's do not. The module is served
+like any other file of the site, so do not put secrets in it.
+
+**Caching.** The answer names the collections the call changed; the SDK then
+reads only those past shared caches, as after its own writes. A call whose
+answer was lost may have changed any of them.
+
+**Deleting uploads.** Uploads live outside the site's database, so
+`ctx.media.delete(id)` queues the deletion with the call's other writes: it
+happens only if the call commits, shortly after, as an owner's deletion would.
+Use it where a document that referenced an upload goes away. The function must
+check that the caller may delete the upload; Naru does not.
+
+## Live connections (1.1.0)
+
+Pages can hear what site functions send instead of asking again on a timer.
+`naru.live()` listens to topics, as anyone may; `member.live()` also hears what
+functions send that member:
 
 ```js
-const authors = await ctx.getMany("profiles", ["alice", "bob", "missing"]);
-// Results match input order, including duplicates; missing documents are null.
-const comments = await ctx.count("comments", { filter: { post: "post-id" } });
+const live = member.live({
+  topics: ["board"],
+  onMessage(message) {
+    if (message.type === "notice") showUnread(message.data);
+    if (message.type === "topic") refreshBoard();
+  },
+  onStatus(status) {
+    if (status === "open") refreshEverything(); // nothing is replayed
+  },
+});
+// later: live.close();
 ```
 
-`getMany` accepts at most 100 document IDs and executes one document query.
-Each input ID counts toward the function's 100-operation budget (an empty array
-costs one operation). `count` costs one operation and executes only a SQL count,
-without loading document bodies. Both work in read-only functions and see writes
-made earlier in the same transaction. Like other function reads, they use owner
-access; the function must enforce the caller's permissions before returning data.
-These helpers add no browser routes or protocol error codes.
+```js
+// _naru/functions/messages.js
+export async function send(ctx, { to, body }) {
+  await ctx.add("messages", { from: ctx.member.id, to, body });
+  ctx.notify(to, { unread: true });
+}
+```
+
+`ctx.notify(memberId, data)` reaches that member's open connections;
+`ctx.broadcast(topic, data)` reaches every connection listening to the topic,
+including visitors', so broadcast only what anyone may read. Messages leave
+only after the call commits: a failed call sends nothing. Nothing is stored or
+replayed, so treat a message as a reason to read, and read again whenever the
+connection (re)opens.
+
+A connection listens to at most eight topics, which are names like collection
+names. It reconnects by itself with growing pauses, and stops for good when
+`close()`d or when the member's access ends (a ban, or approval withdrawn).
+Opening a connection counts as one request against the site's monthly budget;
+an idle connection costs nothing. A site holds at most 1,000 connections at once.
 
 ## Documents, pages, and queries
 
@@ -318,7 +392,28 @@ interface Page<T> {
 ```
 
 Filters are ANDed predicates on top-level user fields. A value is either scalar
-equality or a range with `gt`, `gte`, `lt`, and/or `lte`. Sorting accepts one or
+equality or a range with `gt`, `gte`, `lt`, and/or `lte`. For anything else,
+`where` (1.1.0) takes a predicate in the language collection rules use,
+combined with `filter`:
+
+```js
+await posts.list({
+  where: {
+    any: [
+      { in: ["board", ["notice", "free"]] },
+      { eq: [{ metadata: "createdBy" }, member.id] },
+    ],
+  },
+});
+```
+
+A predicate is `true`, `false`, `{ all: [...] }`, `{ any: [...] }`, or one
+comparison: `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`,
+and `in` takes `[field, [1 to 100 values]]`. A field is a top-level data field,
+or `{ metadata: "id" | "createdBy" }`. Values match only their own JSON type, a
+missing field matches only `ne`, and ranges compare strings or numbers. At most
+100 nodes, ten levels deep, and 4 KiB as sent. `count({ filter, where })` takes
+it too, and so do `ctx.list` and `ctx.count`. Sorting accepts one or
 two `[field, "asc" | "desc"]` entries. User fields are strings; metadata is
 `{ metadata: "id" | "createdAt" | "updatedAt" }`, where the ID may only be the
 sole key. Without `sort`, and after the last key, documents are in ID order. `size` is 1–100
@@ -333,8 +428,8 @@ last sort key's direction; the default is ID ascending. Arrays and objects
 can be stored but are not meaningfully ordered. String ranges use the same
 code-point comparison. Prefer one consistent scalar type per sortable field.
 
-`nextCursor` is opaque and bound to its original site, collection, filter, and
-sort. Pass it unchanged as `after`. Pagination is not a snapshot across
+`nextCursor` is opaque and bound to its original site, collection, filter,
+`where`, and sort. Pass it unchanged as `after`. Pagination is not a snapshot across
 separate requests, so concurrent writes can change later pages.
 
 Two helpers are built on `list`. `count({ filter })` resolves with how many

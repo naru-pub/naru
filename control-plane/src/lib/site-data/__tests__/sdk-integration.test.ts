@@ -729,12 +729,16 @@ integration("SDK and data API contract", () => {
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
         file: "counter",
-        source: `export async function bump(ctx, { by }) {
+        source: `export const readOnly = ["peek", "sneak"];
+        export async function bump(ctx, { by }) {
           const now = await ctx.get("crud", "count");
           const n = (now ? now.data : 0) + by;
           await ctx.set("crud", "count", n);
           return { n, version: "mine", member: ctx.member.id };
-        }`,
+        }
+        export async function sneak(ctx) { await ctx.set("crud", "count", 0); }
+        export async function peek(ctx) { return (await ctx.get("crud", "count")).data; }
+        export function who(ctx) { return { owner: ctx.owner, member: ctx.member }; }`,
       });
       expect(await member.call("counter:bump", { by: 2 })).toEqual({
         n: 2,
@@ -744,23 +748,36 @@ integration("SDK and data API contract", () => {
       expect(await member.call("counter:bump", { by: 3 })).toMatchObject({
         n: 5,
       });
-      await expect(
-        member.read("counter:bump", { by: 100 }),
-      ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
-      await callSiteObject("alice", "putFunctions", {
-        site: "alice",
-        file: "counter",
-        source:
-          'export async function peek(ctx) { return (await ctx.get("crud", "count")).data; }',
+      // Declared read-only, so its write is refused whoever calls.
+      await expect(member.call("counter:sneak")).rejects.toMatchObject({
+        code: "INVALID_REQUEST",
       });
-      expect(await member.read("counter:peek")).toBe(5);
+      // The same owner session, through 1.1.0, which can call functions: the
+      // owner's page keeps it, so the SDK is asked from that page.
+      const memberPage = location.href;
+      location.href = `${origin}/admin`;
+      const owner = (await createNaru110({ site: "alice" }).auth.session())!;
+      location.href = memberPage;
+      await expect(owner.call("counter:sneak")).rejects.toMatchObject({
+        code: "INVALID_REQUEST",
+      });
+      expect(await member.call("counter:peek")).toBe(5);
+      // The owner calls too, as the owner.
+      expect(await owner.call("counter:who")).toEqual({
+        owner: true,
+        member: null,
+      });
+      expect(await member.call("counter:who")).toEqual({
+        owner: false,
+        member: { id: member.id },
+      });
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
         file: "community/boards",
         source:
           "export function list(ctx) { return { member: ctx.member.id }; }",
       });
-      expect(await member.read("community/boards:list")).toEqual({
+      expect(await member.call("community/boards:list")).toEqual({
         member: member.id,
       });
       expect(await member.call("community/boards:list")).toEqual({
@@ -778,14 +795,14 @@ integration("SDK and data API contract", () => {
         source:
           'import { value } from "../../modules/values.js"; export function read() { return value; }',
       });
-      expect(await member.read("imports/nested:read")).toBe(7);
+      expect(await member.call("imports/nested:read")).toBe(7);
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
         folder: "modules",
         file: "values",
         source: "export const value = 8;",
       });
-      expect(await member.read("imports/nested:read")).toBe(8);
+      expect(await member.call("imports/nested:read")).toBe(8);
       await expect(
         callSiteObject("alice", "putFunctions", {
           site: "alice",
@@ -794,7 +811,7 @@ integration("SDK and data API contract", () => {
           source: 'import "./missing.js";',
         }),
       ).rejects.toThrow("Missing import");
-      expect(await member.read("imports/nested:read")).toBe(8);
+      expect(await member.call("imports/nested:read")).toBe(8);
       // Restore the working copy after the refused revision.
       await callSiteObject("alice", "putFunctions", {
         site: "alice",

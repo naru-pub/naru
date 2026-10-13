@@ -405,26 +405,41 @@ test("a function's failure is a NaruError with the server's code", async () => {
   });
 });
 
-test("typed function failures preserve messages on call and read without retrying", async () => {
+test("typed function failures keep their message and details without retrying", async () => {
   await browser(async ({ respond, local, calls }) => {
     saveMember(local);
     const member = await createNaru().members.session();
     respond(() =>
       Response.json(
-        { error: { code: "CONFLICT", message: "품절입니다." } },
+        {
+          error: {
+            code: "CONFLICT",
+            message: "품절입니다.",
+            details: { reason: "sold_out" },
+          },
+        },
         { status: 409 },
       ),
     );
-    for (const method of ["call", "read"]) {
-      const before = calls.length;
-      await assert.rejects(member[method]("shop:buy"), (error) => {
-        assert.ok(error instanceof NaruError);
-        assert.equal(error.code, "CONFLICT");
-        assert.equal(error.message, "품절입니다.");
-        return true;
-      });
-      assert.equal(calls.length, before + 1);
-    }
+    await assert.rejects(member.call("shop:buy"), (error) => {
+      assert.ok(error instanceof NaruError);
+      assert.equal(error.code, "CONFLICT");
+      assert.equal(error.message, "품절입니다.");
+      assert.deepEqual(error.details, { reason: "sold_out" });
+      return true;
+    });
+    assert.equal(calls.length, 1);
+    respond(() =>
+      Response.json(
+        { error: { code: "CONFLICT", message: "No." } },
+        { status: 409 },
+      ),
+    );
+    await assert.rejects(member.call("shop:buy"), (error) => {
+      assert.equal(error.details, undefined);
+      assert.ok(!("details" in error));
+      return true;
+    });
   });
 });
 
@@ -457,28 +472,124 @@ test("membership checks live state without forgetting a pending member's session
   );
 });
 
-test("read posts to the read-only endpoint with member credentials", async () => {
+test("a call posts with member credentials, and only what it wrote skips caches", async () => {
   await browser(async ({ calls, respond, local }) => {
     saveMember(local);
-    const member = await createNaru().members.session();
-    respond(() => Response.json({ result: { value: 1 } }));
-    assert.deepEqual(await member.read("shop:catalog", { page: 1 }), {
+    // A module of its own: which collections were written is the module's.
+    const { createNaru: isolated } = await import(
+      "../public/sdk/1.1.0/naru.js?written"
+    );
+    const naru = isolated();
+    const member = await naru.members.session();
+    respond(() => Response.json({ result: { value: 1 }, written: ["shop"] }));
+    assert.deepEqual(await member.call("shop:catalog", { page: 1 }), {
       value: 1,
     });
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/_read/shop:catalog",
+      "https://naru.pub/api/data/v1/alice/_call/shop:catalog",
     );
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
     assert.deepEqual(JSON.parse(calls[0].body), { args: { page: 1 } });
-    await assert.rejects(member.read("bad"), TypeError);
+    respond(emptyPage);
+    await naru.collection("shop").list();
+    assert.equal(calls.at(-1).url.searchParams.get("fresh"), "1");
+    await naru.collection("posts").list();
+    assert.equal(calls.at(-1).url.searchParams.get("fresh"), null);
+    // An answer that never arrived may have written anything.
+    respond(() => {
+      throw new TypeError("offline");
+    });
+    await assert.rejects(member.call("shop:catalog"), { code: "UNAVAILABLE" });
+    respond(emptyPage);
+    await naru.collection("posts").list();
+    assert.equal(calls.at(-1).url.searchParams.get("fresh"), "1");
+    await assert.rejects(member.call("bad"), TypeError);
     await assert.rejects(
-      member.read("shop:catalog", { date: new Date() }),
+      member.call("shop:catalog", { date: new Date() }),
       TypeError,
     );
-    assert.equal(calls.length, 1);
   });
+});
+
+test("live connections reconnect with fresh tickets and stop when access ends", async () => {
+  const sockets = [];
+  class FakeSocket {
+    constructor(url) {
+      this.url = new URL(url);
+      this.sent = [];
+      sockets.push(this);
+      queueMicrotask(() => this.onopen?.());
+    }
+    send(text) {
+      this.sent.push(text);
+    }
+    close(code) {
+      this.closedWith = code;
+    }
+  }
+  const saved = globalThis.WebSocket;
+  globalThis.WebSocket = FakeSocket;
+  try {
+    await browser(async ({ calls, respond, local }) => {
+      saveMember(local);
+      const naru = createNaru();
+      const member = await naru.members.session();
+      let tickets = 0;
+      respond(() => Response.json({ ticket: `ticket-${++tickets}` }));
+      const heard = [];
+      const statuses = [];
+      const live = member.live({
+        topics: ["board"],
+        onMessage: (message) => heard.push(message),
+        onStatus: (status) => statuses.push(status),
+      });
+      await new Promise((done) => setTimeout(done, 0));
+      assert.equal(calls[0].url.pathname, "/api/data/v1/alice/_live");
+      assert.equal(calls[0].method, "POST");
+      assert.equal(
+        sockets[0].url.href,
+        "wss://naru.pub/api/data/v1/alice/_live?topics=board&ticket=ticket-1",
+      );
+      sockets[0].onmessage({ data: '{"type":"notice","data":{"unread":1}}' });
+      sockets[0].onmessage({ data: "pong" });
+      assert.deepEqual(heard, [{ type: "notice", data: { unread: 1 } }]);
+      // A dropped connection comes back with a new ticket.
+      sockets[0].onclose({ code: 1006 });
+      await new Promise((done) => setTimeout(done, 1100));
+      assert.equal(sockets.length, 2);
+      assert.match(sockets[1].url.search, /ticket=ticket-2/);
+      // Access ended: no more reconnecting.
+      sockets[1].onclose({ code: 4003 });
+      await new Promise((done) => setTimeout(done, 1100));
+      assert.equal(sockets.length, 2);
+      assert.deepEqual(statuses, [
+        "connecting",
+        "open",
+        "reconnecting",
+        "open",
+        "closed",
+      ]);
+      live.close();
+      // Visitors listen without a ticket.
+      const visitor = naru.live({ topics: ["board"], onMessage() {} });
+      await new Promise((done) => setTimeout(done, 0));
+      assert.equal(
+        sockets[2].url.href,
+        "wss://naru.pub/api/data/v1/alice/_live?topics=board",
+      );
+      visitor.close();
+      assert.equal(sockets[2].closedWith, 1000);
+      assert.throws(
+        () => naru.live({ topics: ["a b"], onMessage() {} }),
+        TypeError,
+      );
+      assert.throws(() => naru.live({}), TypeError);
+    });
+  } finally {
+    globalThis.WebSocket = saved;
+  }
 });
 
 test("media deletion sends a member credential once, validates IDs, and honors aborts", async () => {
@@ -576,7 +687,7 @@ test("nested module references use colon endpoints and reject ambiguous paths", 
     saveMember(local);
     const member = await createNaru().members.session();
     respond(() => Response.json({ result: true }));
-    for (const method of ["call", "read"]) {
+    for (const method of ["call"]) {
       assert.equal(await member[method]("community/boards:list"), true);
       assert.equal(
         calls.at(-1).url.pathname,
@@ -596,6 +707,6 @@ test("nested module references use colon endpoints and reject ambiguous paths", 
       ])
         await assert.rejects(member[method](value), TypeError);
     }
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
   });
 });

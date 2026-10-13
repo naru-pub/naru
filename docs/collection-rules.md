@@ -2,7 +2,11 @@
 
 An owner enables a rules module in the database panel's collection permissions.
 The field contains a module name, for example `community-board`, loaded from the
-site's `_naru/rules/community-board.js`. The equivalent owner control-panel PATCH
+site's `_naru/rules/community-board.js` (or `.mjs`). Rules are published with the
+site's functions, in the same immutable revision: a rule may import
+`_naru/modules/` (and other rules) with relative paths, and changes to it take
+effect, all at once, when the site's `_naru` files are next published. Functions
+and shared modules cannot import a rule. The equivalent owner control-panel PATCH
 body is `{ read: "member", write: "member", rules: "community-board" }`.
 `rules: null` disables rules; omitting it preserves the current setting.
 Collection-scoped website tokens cannot change this setting.
@@ -17,12 +21,15 @@ No PostgreSQL migration or change to frozen SDK 1.0.0 is required.
 
 A module exports two functions, which may be `async`:
 
-- `scope(ctx, { collection, operation, id, filter })`: `operation` is `get` or
-  `list`. Return `true`, `false`, or a predicate built from `all`, `any`, `eq`,
-  and `ne`. Comparisons are `[field, scalar]`; fields name top-level JSON data
-  fields or `{ metadata: "id" | "createdBy" }`. Values are string, finite number,
-  boolean or null. Equality matches JSON types exactly; explicit null does not
-  match a missing field. Inequality includes missing fields.
+- `scope(ctx, { collection, operation, id, filter, where })`: `operation` is
+  `get` or `list`; `where` is the caller's own predicate, or null. Return
+  `true`, `false`, or a predicate built from `all` and `any` of comparisons:
+  `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`, and `in` takes
+  `[field, [1 to 100 values]]`. Fields name top-level JSON data fields or
+  `{ metadata: "id" | "createdBy" }`. Values are string, finite number, boolean
+  or null; ranges compare strings or numbers. Comparisons match JSON types
+  exactly; explicit null does not match a missing field. Inequality includes
+  missing fields. This is the same language as a list's `where`.
 - `canWrite(ctx, { collection, operation, before, after })`: return exactly
   `true` to allow `create`, `update` or `delete`. `before`/`after` are documents
   with canonical id/data/createdBy, or null. Before is read from storage, and the
@@ -31,11 +38,11 @@ A module exports two functions, which may be `async`:
   transaction as the write.
 
 Rules use the function sandbox's read methods (`await ctx.get(...)`,
-`await ctx.list(...)`) and `ctx.member` (null for visitors). Writes are forbidden, including at module load.
-A missing, invalid, mutating or over-budget module fails closed. Rule file
-refresh uses the existing 10-second source cache; publish stricter rules before
-opening permissions and allow that cache window to expire. Rules-bearing reads
-are never shared-cacheable. Previously cached public data can remain visible
+`await ctx.list(...)`) and `ctx.member` (null for visitors). Writes and live
+messages are forbidden, including at module load. A missing, invalid, mutating
+or over-budget module fails closed. Publish stricter rules before opening
+permissions: a rule applies from the revision that contains it. Rules-bearing
+reads are never shared-cacheable. Previously cached public data can remain visible
 for its existing ten-second TTL when rules are first enabled.
 
 The scope predicate is intersected with the caller's filters in SQL before

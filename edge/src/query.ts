@@ -12,6 +12,7 @@ import {
   type Sort,
 } from "../../control-plane/src/lib/site-data/pagination";
 import type { ListInput } from "./types";
+import { predicate } from "./rules";
 
 // The SQL of a site's object (site.ts), as pure functions: its tables, and
 // the list query with Naru's ordering, filters and cursors. Nothing here
@@ -42,6 +43,10 @@ export const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS documents_created ON documents (collection_id, created_at, id);
   CREATE INDEX IF NOT EXISTS documents_updated ON documents (collection_id, updated_at, id);
+  CREATE TABLE IF NOT EXISTS media_releases (
+    id TEXT PRIMARY KEY,
+    queued_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,
     window_start INTEGER NOT NULL,
@@ -160,6 +165,12 @@ export function listQuery(
 ) {
   const filter = filters(input.filter);
   const { conditions, bindings } = filterConditions(filter);
+  if (input.where !== undefined) {
+    const where = predicate(input.where, "where");
+    conditions.push(where.sql);
+    bindings.push(...where.bindings);
+    filter.fingerprint = `${filter.fingerprint ?? ""}:w${where.fingerprint}`;
+  }
   if (authorization) {
     conditions.push(authorization.sql);
     bindings.push(...authorization.bindings);

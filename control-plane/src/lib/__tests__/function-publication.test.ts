@@ -31,9 +31,13 @@ test("file editor preserves the directory when activating its site", async () =>
   await purgeSiteFiles("alice", ["_naru/modules/shared.js"]);
   expect(publish).toHaveBeenCalledWith("alice");
 });
-test("ordinary frontend and rule changes need no function publication", async () => {
-  await purgeSiteFiles("alice", ["index.html", "_naru/rules/auth.js"]);
+test("ordinary frontend changes need no function publication", async () => {
+  await purgeSiteFiles("alice", ["index.html", "_naru/README.md"]);
   expect(publish).not.toHaveBeenCalled();
+});
+test("collection rules publish like functions, since they run from revisions", async () => {
+  await purgeSiteFiles("alice", ["_naru/rules/auth.js"]);
+  expect(publish).toHaveBeenCalledWith("alice");
 });
 test("publication failures reach the caller so saves cannot report activation", async () => {
   publish.mockRejectedValue(new Error("Missing import"));

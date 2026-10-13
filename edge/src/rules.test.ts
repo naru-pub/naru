@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SQLInputValue } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
-import { rulePredicate } from "./rules";
+import { predicate, rulePredicate } from "./rules";
 import { SCHEMA, listQuery } from "./query";
 
 describe("rule predicates", () => {
@@ -80,6 +80,71 @@ describe("rule predicates", () => {
         .prepare(`SELECT count(*) AS n FROM documents WHERE ${ne.sql}`)
         .get(...(ne.bindings as SQLInputValue[])),
     ).toMatchObject({ n: 1 });
+    db.close();
+  });
+  it("where predicates add ranges, in and metadata, and narrow lists and cursors", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(SCHEMA);
+    const insert = db.prepare(
+      "INSERT INTO documents VALUES ('c', ?, ?, 1, 1, 1, 1, ?)",
+    );
+    const rows: [string, unknown, string | null][] = [
+      ["a", { level: 1, tag: "x" }, "m-1"],
+      ["b", { level: 5, tag: "y" }, "m-2"],
+      ["c", { level: 9, tag: "z" }, null],
+      ["d", { level: "9", tag: "x" }, "m-1"],
+      ["e", {}, "m-2"],
+    ];
+    for (const [id, data, by] of rows) insert.run(id, JSON.stringify(data), by);
+    const ids = (where: unknown, size = 50) => {
+      const q = listQuery("c", { where, size, includeTotal: true });
+      return {
+        ids: q
+          .page(
+            db
+              .prepare(q.select.sql)
+              .all(...(q.select.bindings as SQLInputValue[])) as never[],
+          )
+          .documents.map((d) => d.id),
+        total: (
+          db
+            .prepare(q.count!.sql)
+            .get(...(q.count!.bindings as SQLInputValue[])) as {
+            matched: number;
+          }
+        ).matched,
+      };
+    };
+    // Ranges match only their own type: "9" is not >= 5.
+    expect(ids({ gte: ["level", 5] }).ids).toEqual(["b", "c"]);
+    expect(ids({ in: ["tag", ["x", "z"]] }).ids).toEqual(["a", "c", "d"]);
+    expect(
+      ids({
+        any: [{ eq: [{ metadata: "createdBy" }, "m-2"] }, { lt: ["level", 2] }],
+      }).ids,
+    ).toEqual(["a", "b", "e"]);
+    expect(ids({ ne: ["tag", "x"] })).toEqual({
+      ids: ["b", "c", "e"],
+      total: 3,
+    });
+    // A cursor belongs to its where: another one starts over.
+    const first = listQuery("c", { where: { ne: ["tag", "x"] }, size: 1 });
+    const cursor = first.page(
+      db
+        .prepare(first.select.sql)
+        .all(...(first.select.bindings as SQLInputValue[])) as never[],
+    ).nextCursor!;
+    expect(() =>
+      listQuery("c", { where: { eq: ["tag", "x"] }, after: cursor }),
+    ).toThrow();
+    for (const bad of [
+      { gt: ["level", true] },
+      { in: ["tag", []] },
+      { in: ["tag", Array(101).fill("x")] },
+      { like: ["tag", "x"] },
+      { eq: [{ metadata: "createdAt" }, "x"] },
+    ])
+      expect(() => predicate(bad, "where")).toThrow(/^where: /);
     db.close();
   });
 });

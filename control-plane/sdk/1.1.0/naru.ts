@@ -66,6 +66,11 @@ export class NaruError extends Error {
     this.code = code;
   }
   declare readonly code: NaruErrorCode;
+  /**
+   * The JSON a site function passed as `ctx.fail(code, message, details)`,
+   * such as `{ reason: "sold_out" }`. Undefined for every other failure.
+   */
+  declare readonly details?: Json;
 }
 
 // The constructor is private to applications, and TypeScript keeps it to the
@@ -94,6 +99,33 @@ export type Filter = Record<
     }
 >;
 
+/** A top-level user field by name, or document metadata. */
+export type PredicateField = string | { metadata: "id" | "createdBy" };
+
+/**
+ * A condition on documents, as a collection rule's `scope` returns: `true`,
+ * `false`, `all` or `any` of conditions, or one comparison. Values match only
+ * their own JSON type; a missing field matches no comparison except `ne`.
+ * At most 100 nodes, ten levels deep.
+ */
+export type Predicate =
+  | boolean
+  | { all: readonly Predicate[] }
+  | { any: readonly Predicate[] }
+  | { eq: readonly [PredicateField, string | number | boolean | null] }
+  | { ne: readonly [PredicateField, string | number | boolean | null] }
+  | { gt: readonly [PredicateField, string | number] }
+  | { gte: readonly [PredicateField, string | number] }
+  | { lt: readonly [PredicateField, string | number] }
+  | { lte: readonly [PredicateField, string | number] }
+  | {
+      /** Equal to any of 1–100 values. */
+      in: readonly [
+        PredicateField,
+        readonly (string | number | boolean | null)[],
+      ];
+    };
+
 /** One or two keys: a user field by name, or document metadata. */
 export type Sort =
   | readonly [
@@ -115,6 +147,8 @@ export type Sort =
 
 export interface ListOptions {
   filter?: Filter;
+  /** Combined with `filter`: documents must match both. */
+  where?: Predicate;
   sort?: Sort;
   /** Default 50; maximum 100. */
   size?: number;
@@ -135,8 +169,12 @@ export interface PublicCollection<T = Json> {
     options?: { signal?: AbortSignal },
   ): Promise<(Document<T> | null)[]>;
   list(options?: ListOptions): Promise<Page<T>>;
-  /** How many documents match `filter`, or the whole collection. */
-  count(options?: { filter?: Filter; signal?: AbortSignal }): Promise<number>;
+  /** How many documents match `filter` and `where`, or the whole collection. */
+  count(options?: {
+    filter?: Filter;
+    where?: Predicate;
+    signal?: AbortSignal;
+  }): Promise<number>;
   /**
    * Every page of a query in turn, following `nextCursor` from `after` (or
    * the start). Not a snapshot: writes in between can shift later pages.
@@ -198,22 +236,24 @@ export interface Member {
    * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
    * transaction, with the site owner's access to its collections, and
    * resolves with what it returned. A function that throws, or exceeds its
-   * limits, changes nothing. Static relative JavaScript imports and re-exports
-   * may share code in `_naru/modules/`; imports stay within `_naru/functions/`
-   * and `_naru/modules/`. Include `.js`; dynamic imports and top-level await
-   * are unsupported. File updates activate an immutable source revision.
+   * limits, changes nothing. Exports the module lists in
+   * `export const readOnly = [...]` cannot write, and count against the
+   * member's read budget instead of their calls. Static relative JavaScript
+   * imports and re-exports may share code in `_naru/modules/`; imports stay
+   * within `_naru/functions/` and `_naru/modules/`. Include `.js`; dynamic
+   * imports and top-level await are unsupported. File updates activate an
+   * immutable source revision.
    */
   call<R = Json>(
     name: string,
     args?: Json,
     options?: { signal?: AbortSignal },
   ): Promise<R>;
-  /** Runs a site function with writes forbidden and a separate read budget. */
-  read<R = Json>(
-    name: string,
-    args?: Json,
-    options?: { signal?: AbortSignal },
-  ): Promise<R>;
+  /**
+   * Hears what the site's functions send this member (`ctx.notify`), and
+   * broadcasts to `topics`, until closed or until their access ends.
+   */
+  live(options: LiveOptions): Live;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
     delete(
@@ -254,6 +294,17 @@ export interface Member {
 
 export interface Admin {
   collection<T = Json>(name: string): AdminCollection<T>;
+  /**
+   * Calls one of the site's functions as the owner, as `Member.call` does
+   * for a member: the function sees `ctx.member` null and `ctx.owner` true,
+   * whatever collections this sign-in approved. Owner calls are not counted
+   * against the site's budget.
+   */
+  call<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
   /**
    * Commits every write or none. Conditions guard individual documents. Does
    * not retry. Resolves, in the order written, with what each `set` stored and
@@ -321,9 +372,39 @@ export interface Admin {
   signOut(): Promise<void>;
 }
 
+/** What a live connection hears from the site's functions. */
+export type LiveMessage =
+  /** `ctx.notify(memberId, data)` to the member this connection signed in as. */
+  | { type: "notice"; data: Json }
+  /** `ctx.broadcast(topic, data)` to every listener of the topic. */
+  | { type: "topic"; topic: string; data: Json };
+
+export interface LiveOptions {
+  /** Up to eight topic names whose broadcasts to hear. */
+  topics?: readonly string[];
+  onMessage(message: LiveMessage): void;
+  /**
+   * Called as the connection opens, drops and reconnects, and once it is
+   * closed for good: by `close()`, or because the member's access ended.
+   * Messages sent while it was down are not delivered later, so read again
+   * on `open` if they matter.
+   */
+  onStatus?(status: "connecting" | "open" | "reconnecting" | "closed"): void;
+}
+
+/** A live connection, reconnecting by itself until closed. */
+export interface Live {
+  close(): void;
+}
+
 export interface NaruClient {
   /** Visitor access, even when signed in. */
   collection<T = Json>(name: string): PublicCollection<T>;
+  /**
+   * Hears what the site's functions broadcast to `topics`, as anyone may:
+   * broadcasts are public. Connecting counts against the site's budget.
+   */
+  live(options: LiveOptions): Live;
   auth: {
     /**
      * The admin client for this page, or null. A sign-in that was denied,
@@ -475,7 +556,8 @@ function segment(value: unknown): string {
 
 // Once this module writes a collection, its subsequent reads bypass caches.
 // No cache lifetime is baked into deployed SDKs; the server may change it.
-// A function call may have written any collection, so it is recorded as "*".
+// A function call records the collections it changed, or "*" for any when its
+// answer was lost.
 const written = new Set<string>();
 
 // Accept only JSON values, without silently dropping or converting input.
@@ -575,13 +657,21 @@ async function request<Result>(
   if (renew && renewed !== null && Number.isFinite(Number(renewed)))
     renew(Date.now() + Number(renewed) * 1000);
   const result = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new (NaruError as unknown as Fail)(
+  if (!response.ok) {
+    const error = new (NaruError as unknown as Fail)(
       typeof result?.error?.message === "string"
         ? result.error.message
         : `Database request failed (HTTP ${response.status}).`,
       errorCode(response.status, result?.error?.code),
     );
+    // What a site function passed to ctx.fail, for the page to branch on.
+    if (result?.error?.details !== undefined)
+      Object.defineProperty(error, "details", {
+        value: result.error.details,
+        enumerable: true,
+      });
+    throw error;
+  }
   // A proxy or challenge page can answer 200 with HTML. Handing that back as
   // an empty result would make a missing document look like a present one.
   if (result === null || typeof result !== "object")
@@ -594,6 +684,7 @@ async function request<Result>(
 
 function query({
   filter,
+  where,
   sort,
   size,
   after,
@@ -602,6 +693,7 @@ function query({
   const parameters = new URLSearchParams();
   if (filter && Object.keys(filter).length)
     parameters.set("filter", JSON.stringify(filter));
+  if (where !== undefined) parameters.set("where", JSON.stringify(where));
   if (sort) parameters.set("sort", JSON.stringify(sort));
   if (size !== undefined) parameters.set("size", String(size));
   if (after) parameters.set("after", after);
@@ -683,10 +775,12 @@ function documents<T>(
     // the server needs to support.
     async count({
       filter,
+      where,
       signal,
-    }: { filter?: Filter; signal?: AbortSignal } = {}) {
-      return (await list({ filter, size: 1, includeTotal: true, signal }))
-        .totalCount as number;
+    }: { filter?: Filter; where?: Predicate; signal?: AbortSignal } = {}) {
+      return (
+        await list({ filter, where, size: 1, includeTotal: true, signal })
+      ).totalCount as number;
     },
     // Each page as it arrives, following nextCursor. Like the pages it walks,
     // this is not a snapshot: writes in between can shift later pages.
@@ -1093,6 +1187,141 @@ function credential(place: Place, token: string, expiresAt: number) {
   return { send, signOut };
 }
 
+// A mistake in an application's callback is reported, never allowed to break
+// the SDK work that called it.
+function guarded<A extends unknown[]>(
+  fn: ((...args: A) => void) | undefined,
+  ...args: A
+) {
+  try {
+    fn?.(...args);
+  } catch (error) {
+    if (typeof reportError === "function") reportError(error);
+    else
+      setTimeout(() => {
+        throw error;
+      });
+  }
+}
+
+// A live connection to the site's object, through the edge. It reconnects
+// with growing pauses while the network or the site is away, and stops for
+// good when closed, or when the server ends the member's access (4003). A
+// member's connection opens with a fresh ticket each time (`ticket`).
+function live(
+  root: string,
+  options: LiveOptions,
+  ticket?: () => Promise<string>,
+): Live {
+  if (!options || typeof options.onMessage !== "function")
+    throw new TypeError("live() needs an onMessage function.");
+  const topics = [...(options.topics ?? [])];
+  if (topics.length > 8) throw new TypeError("Listen to at most 8 topics.");
+  topics.forEach(segment);
+  let socket: WebSocket | undefined;
+  let closed = false;
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let keepalive: ReturnType<typeof setInterval> | undefined;
+  const status = (value: Parameters<NonNullable<LiveOptions["onStatus"]>>[0]) =>
+    guarded(options.onStatus, value);
+  const stop = () => {
+    closed = true;
+    clearTimeout(timer);
+    clearInterval(keepalive);
+    status("closed");
+  };
+  const retry = () => {
+    if (closed) return;
+    status("reconnecting");
+    const pause = Math.min(30_000, 1000 * 2 ** attempt++);
+    timer = setTimeout(open, pause / 2 + (Math.random() * pause) / 2);
+  };
+  async function open() {
+    if (closed) return;
+    const url = new URL(`${root}/_live`);
+    url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
+    if (topics.length) url.searchParams.set("topics", topics.join(","));
+    if (ticket)
+      try {
+        url.searchParams.set("ticket", await ticket());
+      } catch (error) {
+        const code = (error as NaruError).code;
+        if (code === "AUTH_REQUIRED" || code === "ACCESS_DENIED") stop();
+        else retry();
+        return;
+      }
+    if (closed) return;
+    const current = new WebSocket(url);
+    socket = current;
+    current.onopen = () => {
+      attempt = 0;
+      status("open");
+      // Answered by the server without waking the site's object.
+      keepalive = setInterval(() => current.send("ping"), 50_000);
+    };
+    current.onmessage = (event) => {
+      if (event.data === "pong") return;
+      let message: LiveMessage;
+      try {
+        message = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      guarded(options.onMessage, message);
+    };
+    current.onclose = (event) => {
+      clearInterval(keepalive);
+      if (socket === current) socket = undefined;
+      if (closed) return;
+      if (event.code === 4003) stop();
+      else retry();
+    };
+  }
+  status("connecting");
+  void open();
+  return Object.freeze({
+    close() {
+      if (closed) return;
+      stop();
+      socket?.close(1000);
+    },
+  });
+}
+
+// Calling a site function, as a member or the owner: the same request with the
+// handle's token. The server says which collections the call changed, so only
+// their later reads skip caches; a call whose answer was lost may have changed
+// any of them.
+function functions(root: string, send: Send) {
+  return async function call<R = Json>(
+    name: string,
+    args: Json = null,
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<R> {
+    const parts = typeof name === "string" ? name.split(":") : [];
+    if (parts.length !== 2)
+      throw new TypeError('call() names "<module/path>:<function>".');
+    parts[0].split("/").forEach(segment);
+    segment(parts[1]);
+    jsonValue(args, undefined, "args");
+    let answer;
+    try {
+      answer = await send<{ result: R; written?: string[] }>(
+        `${root}/_call/${parts[0]}:${parts[1]}`,
+        { method: "POST", body: { args }, signal, touches: [] },
+      );
+    } catch (error) {
+      if (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
+        written.add("*");
+      throw error;
+    }
+    for (const collection of answer.written ?? ["*"])
+      written.add(collection === "*" ? "*" : `${root}/${collection}`);
+    return answer.result;
+  };
+}
+
 function admin(context: Context, token: string, expiresAt: number): Admin {
   const { origin, root } = context;
   const { send, signOut } = credential(ownerPlace(context), token, expiresAt);
@@ -1142,6 +1371,7 @@ function admin(context: Context, token: string, expiresAt: number): Admin {
           : null,
       );
     },
+    call: functions(root, send),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });
@@ -1164,40 +1394,16 @@ function member(
       ),
     collection: <T = Json>(name: string): MemberCollection<T> =>
       documents<T>(root, name, send),
-    async call<R = Json>(
-      name: string,
-      args: Json = null,
-      { signal }: { signal?: AbortSignal } = {},
-    ): Promise<R> {
-      const parts = typeof name === "string" ? name.split(":") : [];
-      if (parts.length !== 2)
-        throw new TypeError('call() names "<module/path>:<function>".');
-      parts[0].split("/").forEach(segment);
-      segment(parts[1]);
-      jsonValue(args, undefined, "args");
-      const { result } = await send<{ result: R }>(
-        `${root}/_call/${parts[0]}:${parts[1]}`,
-        { method: "POST", body: { args }, signal, touches: ["*"] },
-      );
-      return result;
-    },
-    async read<R = Json>(
-      name: string,
-      args: Json = null,
-      { signal }: { signal?: AbortSignal } = {},
-    ): Promise<R> {
-      const parts = typeof name === "string" ? name.split(":") : [];
-      if (parts.length !== 2)
-        throw new TypeError('read() names "<module/path>:<function>".');
-      parts[0].split("/").forEach(segment);
-      segment(parts[1]);
-      jsonValue(args, undefined, "args");
-      const { result } = await send<{ result: R }>(
-        `${root}/_read/${parts[0]}:${parts[1]}`,
-        { method: "POST", body: { args }, signal, touches: [] },
-      );
-      return result;
-    },
+    call: functions(root, send),
+    live: (options: LiveOptions) =>
+      live(root, options, async () => {
+        const { ticket } = await send<{ ticket: string }>(`${root}/_live`, {
+          method: "POST",
+          body: {},
+          touches: [],
+        });
+        return ticket;
+      }),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
   });
@@ -1422,6 +1628,7 @@ export function createNaru(options?: { site?: string }): NaruClient {
   return Object.freeze({
     collection: <T = Json>(name: string) =>
       publicDocuments<T>(context.root, name),
+    live: (options: LiveOptions) => live(context.root, options),
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({
