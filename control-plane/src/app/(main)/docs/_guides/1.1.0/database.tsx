@@ -300,14 +300,14 @@ export default function DatabaseDocs() {
                 ‘관리자만’으로 두고 회원은 읽게만 하세요.
               </p>
               <Code language="javascript">{`// _naru/functions/shop.js
-export function buy(ctx, { item }) {
-  const listing = ctx.get("shop", item);
-  const wallet = ctx.get("wallets", ctx.member.id);
+export async function buy(ctx, { item }) {
+  const listing = await ctx.get("shop", item);
+  const wallet = await ctx.get("wallets", ctx.member.id);
   if (!listing || listing.data.stock < 1) return { ok: false, reason: "품절" };
   if (wallet.data.balance < listing.data.price) return { ok: false, reason: "잔액 부족" };
-  ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - listing.data.price });
-  ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
-  ctx.add("inventory", { owner: ctx.member.id, item });
+  await ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - listing.data.price });
+  await ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
+  await ctx.add("inventory", { owner: ctx.member.id, item });
   return { ok: true };
 }
 
@@ -341,10 +341,12 @@ const price = await member.read("shop/buy:quote");`}</Code>
                 <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
                 <code>random()</code>과 <code>get</code>·<code>list</code>·
                 <code>add</code>·<code>set</code>·<code>delete</code>가
-                있습니다. 함수는 동기 자바스크립트이고 네트워크와 타이머는 쓸 수
-                없으며, 한 번 부를 때 데이터베이스 작업 100번(쓰기 25번), 수십
-                밀리초, 메모리 32MiB까지 씁니다. 함수 파일은 사이트의 다른
-                파일처럼 누구나 볼 수 있으니 비밀값을 넣지 마세요.
+                있습니다. 데이터베이스 메서드는 Promise를 돌려주므로{" "}
+                <code>await</code>하세요. 함수는 <code>async</code>여도 되고,
+                끝날 때까지 한 트랜잭션입니다. 네트워크와 타이머는 쓸 수 없으며,
+                한 번 부를 때 데이터베이스 작업 100번(쓰기 25번), 수십 밀리초,
+                메모리 32MiB까지 씁니다. 함수 파일은 사이트의 다른 파일처럼
+                누구나 볼 수 있으니 비밀값을 넣지 마세요.
               </p>
             </Section>
 

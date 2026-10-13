@@ -203,16 +203,19 @@ dice, run on Naru as site functions. Put a module in the site's files at
 
 ```js
 // _naru/functions/shop.js
-export function buy(ctx, { item }) {
-  const listing = ctx.get("shop", item);
+export async function buy(ctx, { item }) {
+  const listing = await ctx.get("shop", item);
   if (!listing || listing.data.stock < 1) return { ok: false };
-  const wallet = ctx.get("wallets", ctx.member.id);
+  const wallet = await ctx.get("wallets", ctx.member.id);
   if (wallet.data.balance < listing.data.price) return { ok: false };
-  ctx.set("wallets", ctx.member.id, {
+  await ctx.set("wallets", ctx.member.id, {
     balance: wallet.data.balance - listing.data.price,
   });
-  ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
-  ctx.add("inventory", { owner: ctx.member.id, item });
+  await ctx.set("shop", item, {
+    ...listing.data,
+    stock: listing.data.stock - 1,
+  });
+  await ctx.add("inventory", { owner: ctx.member.id, item });
   return { ok: true };
 }
 ```
@@ -259,10 +262,15 @@ secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 `ctx` has `member.id`, `now` (milliseconds), `random()` (also behind
 `Math.random`), and `get(collection, id)`, `list(collection, { filter, sort,
 size, after })`, `add(collection, data)`, `set(collection, id, data)` and
-`delete(collection, id)`, which return what the SDK would. Documents a
-function writes have no member author, so members cannot change them
-directly. Functions are synchronous JavaScript with no network, timers or
-modules of their own. A call may make 100 database operations, 25 of them
+`delete(collection, id)`, which return promises of what the SDK would, so
+`await` them. `member`, `now`, `random()` and `fail()` are not promises.
+Documents a function writes have no member author, so members cannot change
+them directly. A function may be `async` or return a promise; the call ends when
+it settles, and the whole call is still one transaction. Every database
+operation runs as soon as it is called, so one that is never awaited still
+counts, and its failure still aborts the call. Functions have no network or
+timers, and awaiting anything other than `ctx` (a promise that never resolves)
+fails the call. A call may make 100 database operations, 25 of them
 writes, run for tens of milliseconds and use 32 MiB of memory; its result is at
 most 64 KiB. A member may make 30 calls a minute, and calls count against the
 site's monthly budget. The module is served like any other file of the site,
@@ -271,9 +279,9 @@ so do not put secrets in it.
 Functions also have two bounded read helpers:
 
 ```js
-const authors = ctx.getMany("profiles", ["alice", "bob", "missing"]);
+const authors = await ctx.getMany("profiles", ["alice", "bob", "missing"]);
 // Results match input order, including duplicates; missing documents are null.
-const comments = ctx.count("comments", { filter: { post: "post-id" } });
+const comments = await ctx.count("comments", { filter: { post: "post-id" } });
 ```
 
 `getMany` accepts at most 100 document IDs and executes one document query.

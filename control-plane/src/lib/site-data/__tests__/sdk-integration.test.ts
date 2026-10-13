@@ -729,10 +729,10 @@ integration("SDK and data API contract", () => {
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
         file: "counter",
-        source: `export function bump(ctx, { by }) {
-          const now = ctx.get("crud", "count");
+        source: `export async function bump(ctx, { by }) {
+          const now = await ctx.get("crud", "count");
           const n = (now ? now.data : 0) + by;
-          ctx.set("crud", "count", n);
+          await ctx.set("crud", "count", n);
           return { n, version: "mine", member: ctx.member.id };
         }`,
       });
@@ -751,7 +751,7 @@ integration("SDK and data API contract", () => {
         site: "alice",
         file: "counter",
         source:
-          'export function peek(ctx) { return ctx.get("crud", "count").data; }',
+          'export async function peek(ctx) { return (await ctx.get("crud", "count")).data; }',
       });
       expect(await member.read("counter:peek")).toBe(5);
       await callSiteObject("alice", "putFunctions", {

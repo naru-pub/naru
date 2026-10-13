@@ -78,10 +78,10 @@ describe("calling", () => {
   test("a function gets ctx and its arguments, and returns JSON", () => {
     documents.set("wallets/m-1", { balance: 150 });
     const result = run(
-      `export function buy(ctx, { item, price }) {
-        const wallet = ctx.get("wallets", ctx.member.id);
+      `export async function buy(ctx, { item, price }) {
+        const wallet = await ctx.get("wallets", ctx.member.id);
         if (wallet.data.balance < price) return { ok: false };
-        ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - price });
+        await ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - price });
         return { ok: true, item, at: ctx.now, roll: ctx.random(), math: Math.random() };
       }`,
       "buy",
@@ -118,9 +118,9 @@ describe("calling", () => {
       runFunction(
         module,
         {
-          source: `export function reject(ctx) {
+          source: `export async function reject(ctx) {
         try { ctx.fail("ACCESS_DENIED", "No access."); } catch {}
-        try { ctx.set("wallets", "x", 1); } catch {}
+        try { await ctx.set("wallets", "x", 1); } catch {}
         return { ok: true };
       }`,
           name: "reject",
@@ -178,16 +178,18 @@ describe("calling", () => {
     ).toEqual([]);
     expect(() =>
       invoke(
-        `export function read(ctx) { ctx.getMany("profiles", Array(100).fill("a")); ctx.count("profiles"); }`,
+        `export async function read(ctx) { await ctx.getMany("profiles", Array(100).fill("a")); await ctx.count("profiles"); }`,
       ),
     ).toThrow(/more than 100 database operations/);
     expect(() =>
       invoke(
-        `export function read(ctx) { ctx.getMany("profiles", Array(101).fill("a")); }`,
+        `export async function read(ctx) { await ctx.getMany("profiles", Array(101).fill("a")); }`,
       ),
     ).toThrow(/at most 100 IDs/);
     expect(() =>
-      invoke(`export function read(ctx) { ctx.getMany("profiles", "a"); }`),
+      invoke(
+        `export async function read(ctx) { await ctx.getMany("profiles", "a"); }`,
+      ),
     ).toThrow(/at most 100 IDs/);
   });
 
@@ -228,9 +230,16 @@ describe("calling", () => {
     expect(
       failure("export function f() { const g = () => g(); g(); }").message,
     ).toMatch(/RangeError/);
-    expect(failure("export async function f() { return 1; }").message).toMatch(
-      /synchronous/,
-    );
+    expect(
+      failure("export async function f() { throw new Error('sold out'); }"),
+    ).toMatchObject({ message: "Function failed: Error: sold out" });
+    expect(
+      failure("export async function f() { await new Promise(() => {}); }")
+        .message,
+    ).toMatch(/never settles/);
+    expect(
+      failure("export async function f() { for (;;) await null; }").message,
+    ).toBe("Function failed: it ran too long.");
     expect(failure("export function f( {").message).toMatch(/does not load/);
     expect(
       failure("export function f() { return 'x'.repeat(70000); }").message,
@@ -271,8 +280,8 @@ describe("the host", () => {
   test("a failed ctx operation fails the call with the host's error, even if caught", () => {
     expect(() =>
       run(
-        `export function f(ctx) {
-          try { ctx.set("full", "x", 1); } catch {}
+        `export async function f(ctx) {
+          try { await ctx.set("full", "x", 1); } catch {}
           return "carried on";
         }`,
         "f",
@@ -280,10 +289,26 @@ describe("the host", () => {
     ).toThrow(expect.objectContaining({ code: "QUOTA_EXCEEDED", status: 409 }));
   });
 
+  test("an operation runs when called, and fails the call even if never awaited", () => {
+    expect(
+      run(
+        `export function f(ctx) { ctx.set("c", "x", 1); return "returned"; }`,
+        "f",
+      ),
+    ).toBe("returned");
+    expect(documents.get("c/x")).toBe(1);
+    expect(() =>
+      run(
+        `export function f(ctx) { ctx.set("full", "x", 1); return "returned"; }`,
+        "f",
+      ),
+    ).toThrow(expect.objectContaining({ code: "QUOTA_EXCEEDED" }));
+  });
+
   test("operations and writes are counted, since the interrupt checks cannot see them", () => {
     expect(() =>
       run(
-        `export function f(ctx) { for (let i = 0; ; i++) ctx.get("c", "x"); }`,
+        `export async function f(ctx) { for (let i = 0; ; i++) await ctx.get("c", "x"); }`,
         "f",
       ),
     ).toThrow(`more than ${MAX_OPERATIONS} database operations`);
@@ -291,7 +316,7 @@ describe("the host", () => {
     operations = [];
     expect(() =>
       run(
-        `export function f(ctx) { for (let i = 0; ; i++) ctx.set("c", "x" + i, i); }`,
+        `export async function f(ctx) { for (let i = 0; ; i++) await ctx.set("c", "x" + i, i); }`,
         "f",
       ),
     ).toThrow(`more than ${MAX_WRITES} writes`);
@@ -299,9 +324,9 @@ describe("the host", () => {
     // Within the limits, everything goes through.
     expect(
       run(
-        `export function f(ctx) {
-          for (let i = 0; i < ${MAX_WRITES}; i++) ctx.set("c", "x" + i, i);
-          return ctx.list("c", { size: 1 }).documents.length;
+        `export async function f(ctx) {
+          for (let i = 0; i < ${MAX_WRITES}; i++) await ctx.set("c", "x" + i, i);
+          return (await ctx.list("c", { size: 1 })).documents.length;
         }`,
         "f",
       ),
@@ -327,7 +352,7 @@ test("read-only execution rejects every write even when caught", () => {
       runFunction(
         module,
         {
-          source: `export function read(ctx) { try { ctx.${operation}("items", "one", {}); } catch {} return true; }`,
+          source: `export async function read(ctx) { try { await ctx.${operation}("items", "one", {}); } catch {} return true; }`,
           name: "read",
           args: null,
           member: "m-1",
@@ -498,7 +523,7 @@ test("preloaded imports execute through the same ctx and read-only guard", () =>
   const modules = {
     [filename]: source,
     "modules/wallet.js":
-      'export function act(ctx) { try { ctx.set("wallets", "one", 10); } catch {} return 1; }',
+      'export async function act(ctx) { try { await ctx.set("wallets", "one", 10); } catch {} return 1; }',
   };
   expect(() =>
     runFunction(

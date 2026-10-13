@@ -75,5 +75,5 @@ export function rulePredicate(value: unknown) {
 
 export const RULE_WRAPPER = `
 export function __naruScope(ctx, args) { return scope(ctx, args); }
-export function __naruWrite(ctx, args) { return canWrite(ctx, args) === true; }
+export async function __naruWrite(ctx, args) { return (await canWrite(ctx, args)) === true; }
 `;

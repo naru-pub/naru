@@ -722,14 +722,14 @@ integration("site members", () => {
       file: "board",
       folder: "rules",
       source: `
-      export function scope(ctx) {
+      export async function scope(ctx) {
         if (!ctx.member) return false;
-        const role = ctx.get("rule_roles", ctx.member.id)?.data;
+        const role = (await ctx.get("rule_roles", ctx.member.id))?.data;
         if (!role || role.level < 2) return false;
         return role.moderator ? true : { any: [{ ne: ["secret", true] }, { eq: ["owner", ctx.member.id] }] };
       }
-      export function canWrite(ctx, {before, after, operation}) {
-        const role = ctx.get("rule_roles", ctx.member.id)?.data;
+      export async function canWrite(ctx, {before, after, operation}) {
+        const role = (await ctx.get("rule_roles", ctx.member.id))?.data;
         if (!role || role.level < 2) return false;
         if (operation === "create") return after.data.owner === ctx.member.id;
         return (role.moderator || before.data.owner === ctx.member.id) && (!after || after.data.owner === before.data.owner);
@@ -840,7 +840,7 @@ integration("site members", () => {
       file: "mutating",
       folder: "rules",
       source:
-        'export function scope(ctx) { ctx.set("rule_roles", "bad", {}); return true; }',
+        'export async function scope(ctx) { await ctx.set("rule_roles", "bad", {}); return true; }',
     });
     await owned("PATCH", ["rule_posts"], {
       read: "member",
@@ -1039,32 +1039,32 @@ integration("site members", () => {
   describe("functions", () => {
     const SHOP = `
       // A shop, as an AvocadoEdition site would have it.
-      export function buy(ctx, { item }) {
-        const listing = ctx.get("shop", item);
+      export async function buy(ctx, { item }) {
+        const listing = await ctx.get("shop", item);
         if (!listing) return { ok: false, reason: "no_such_item" };
         if (listing.data.stock < 1) return { ok: false, reason: "sold_out" };
-        const wallet = ctx.get("wallets", ctx.member.id);
+        const wallet = await ctx.get("wallets", ctx.member.id);
         const balance = wallet ? wallet.data.balance : 0;
         if (balance < listing.data.price) return { ok: false, reason: "not_enough_money" };
-        ctx.set("wallets", ctx.member.id, { balance: balance - listing.data.price });
-        ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
-        const owned = ctx.add("inventory", { owner: ctx.member.id, item });
+        await ctx.set("wallets", ctx.member.id, { balance: balance - listing.data.price });
+        await ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
+        const owned = await ctx.add("inventory", { owner: ctx.member.id, item });
         return { ok: true, balance: balance - listing.data.price, owned };
       }
-      export function buyThenFail(ctx, args) {
-        buy(ctx, args);
+      export async function buyThenFail(ctx, args) {
+        await buy(ctx, args);
         throw new Error("changed my mind");
       }
-      export function buyThenReject(ctx, args) {
-        buy(ctx, args);
+      export async function buyThenReject(ctx, args) {
+        await buy(ctx, args);
         try { ctx.fail("CONFLICT", "Purchase cancelled."); } catch {}
         return { ok: true };
       }
-      export function lookup(ctx) {
-        return { rows: ctx.getMany("shop", ["shield", "missing", "shield"]), empty: ctx.getMany("shop", []), count: ctx.count("shop", { filter: { price: 10 } }), zero: ctx.count("shop", { filter: { price: 999 } }) };
+      export async function lookup(ctx) {
+        return { rows: await ctx.getMany("shop", ["shield", "missing", "shield"]), empty: await ctx.getMany("shop", []), count: await ctx.count("shop", { filter: { price: 10 } }), zero: await ctx.count("shop", { filter: { price: 999 } }) };
       }
-      export function mine(ctx) {
-        return ctx.list("inventory", { filter: { owner: ctx.member.id } }).documents.map((d) => d.data.item);
+      export async function mine(ctx) {
+        return (await ctx.list("inventory", { filter: { owner: ctx.member.id } })).documents.map((d) => d.data.item);
       }
       export function gacha(ctx) {
         return Math.floor(ctx.random() * 100);
@@ -1073,8 +1073,8 @@ integration("site members", () => {
         return { version: "not a revision", list: [1, { version: 2 }] };
       }
       export function spin() { for (;;) {} }
-      export function flood(ctx) { for (let i = 0; ; i++) ctx.set("wallets", "x" + i, i); }
-      export function trespass(ctx) { ctx.get("nowhere", "x"); }
+      export async function flood(ctx) { for (let i = 0; ; i++) await ctx.set("wallets", "x" + i, i); }
+      export async function trespass(ctx) { await ctx.get("nowhere", "x"); }
     `;
     const call = (
       token: string | undefined,

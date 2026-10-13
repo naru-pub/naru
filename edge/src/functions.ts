@@ -16,6 +16,11 @@ import {
 // what a function may do arrives as `host`, so functions.test.ts runs this in
 // plain Node.
 //
+// ctx's database methods return promises, so functions are written as they
+// would be against any asynchronous store. Here the host answers at once and
+// the call drains QuickJS's job queue before returning, so an async function
+// still settles within the one transaction.
+//
 // The limits are the spike's findings (spikes/quickjs-functions/README.md):
 // - CPU is bounded by counting QuickJS's interrupt checks, not by a clock,
 //   which Workers stop while code runs;
@@ -56,42 +61,43 @@ const failed = (message: string) =>
 
 // Guest side: one host entry point, JSON across the boundary. A failing ctx
 // operation fails the whole call (the host keeps the error and rethrows it
-// afterwards), so a function cannot carry on past one.
+// afterwards), so a function cannot carry on past one. The database methods
+// are async: the operation runs when called, and its promise is how the
+// function gets the answer.
 const PRELUDE = `
 const __call = (operation, ...args) => {
   const out = __host(operation, JSON.stringify(args));
   return out === undefined ? undefined : JSON.parse(out);
 };
 Math.random = () => __call("random");
-globalThis.__run = (name, member, now, args) => {
+globalThis.__run = async (name, member, now, args) => {
   const ctx = Object.freeze({
     member: member === null ? null : Object.freeze({ id: member }),
     now,
     random: () => __call("random"),
     fail: (code, message) => __call("fail", code, message),
-    get: (collection, id) => __call("get", collection, id),
-    getMany: (collection, ids) => __call("getMany", collection, ids),
-    count: (collection, options) => __call("count", collection, options ?? {}),
-    list: (collection, options) => __call("list", collection, options ?? {}),
-    add: (collection, data) => __call("add", collection, data),
-    set: (collection, id, data) => __call("set", collection, id, data),
-    delete: (collection, id) => __call("delete", collection, id),
+    get: async (collection, id) => __call("get", collection, id),
+    getMany: async (collection, ids) => __call("getMany", collection, ids),
+    count: async (collection, options) =>
+      __call("count", collection, options ?? {}),
+    list: async (collection, options) =>
+      __call("list", collection, options ?? {}),
+    add: async (collection, data) => __call("add", collection, data),
+    set: async (collection, id, data) => __call("set", collection, id, data),
+    delete: async (collection, id) => __call("delete", collection, id),
   });
   const fn = Object.hasOwn(globalThis.__exports, name)
     ? globalThis.__exports[name]
     : undefined;
   if (typeof fn !== "function")
     throw Object.assign(new Error(name), { name: "__Missing" });
-  const result = fn(ctx, JSON.parse(args));
-  if (result && typeof result.then === "function")
-    throw new TypeError("Functions are synchronous: return a value, not a promise.");
-  return JSON.stringify(result ?? null);
+  return JSON.stringify((await fn(ctx, JSON.parse(args))) ?? null);
 };
 `;
 
 /**
- * Runs `name` from `source` with `args`, synchronously. Resolves with what it
- * returned, as JSON. Throws a DataError: the host's own when a ctx operation
+ * Runs `name` from `source` with `args`, synchronously, settling it if it is
+ * async. Returns what it returned (or resolved with), as JSON. Throws a DataError: the host's own when a ctx operation
  * failed, otherwise a 400 describing the function's failure or limit.
  */
 export function runFunction(
@@ -183,6 +189,14 @@ export function runFunction(
     throw failed(`its module does not load: ${describe(error)}`);
   }
   context.setProp(context.global, "__exports", exports);
+  /** What a call's exception means: the host's error first, then the function's. */
+  const outcome = (exception: QuickJSHandle) => {
+    if (hostError) return hostError;
+    const error = context.dump(exception) as { name?: string };
+    if (error?.name === "__Missing")
+      return new DataError(404, `No function ${invocation.name}.`);
+    return failed(describe(error));
+  };
   const call = context.evalCode(
     `__run(${[
       invocation.name,
@@ -195,14 +209,17 @@ export function runFunction(
     "call.js",
     { type: "global" },
   );
+  if (call.error) throw outcome(call.error);
+  // Every ctx operation has already been answered, so draining the queue
+  // settles the call unless it awaits something no one will ever resolve.
+  const jobs = runtime.executePendingJobs();
+  if (jobs.error) throw outcome(jobs.error);
+  const state = context.getPromiseState(call.value);
+  if (state.type === "rejected") throw outcome(state.error);
   if (hostError) throw hostError;
-  if (call.error) {
-    const error = context.dump(call.error) as { name?: string };
-    if (error?.name === "__Missing")
-      throw new DataError(404, `No function ${invocation.name}.`);
-    throw failed(describe(error));
-  }
-  const json = context.getString(call.value);
+  if (state.type === "pending")
+    throw failed("it awaited something other than ctx, which never settles.");
+  const json = context.getString(state.value);
   if (new TextEncoder().encode(json).byteLength > MAX_RESULT_BYTES)
     throw failed("its result is larger than 64 KiB.");
   return JSON.parse(json);

@@ -3,8 +3,10 @@ const P = "neo_avocado_";
 const LOGS = `${P}logs`;
 const COMMENTS = `${P}comments`;
 const author = (doc) => doc?.createdBy ?? doc?.data.owner;
-function access(ctx) {
-  const data = ctx.member ? ctx.get(`${P}members`, ctx.member.id)?.data : null;
+async function access(ctx) {
+  const data = ctx.member
+    ? (await ctx.get(`${P}members`, ctx.member.id))?.data
+    : null;
   return {
     id: ctx.member?.id,
     moderator: data?.role === "moderator",
@@ -14,9 +16,9 @@ function access(ctx) {
         : 2,
   };
 }
-function board(ctx, id) {
+async function board(ctx, id) {
   return (
-    ctx.get(`${P}boards`, id)?.data ??
+    (await ctx.get(`${P}boards`, id))?.data ??
     (id === "default"
       ? {
           enabled: true,
@@ -39,23 +41,25 @@ function allowed(board, actor, action) {
     board.enabled !== false && actor.level >= (board[`${action}Level`] ?? 2)
   );
 }
-function readable(ctx, log, actor) {
+async function readable(ctx, log, actor) {
   return (
     log &&
     !log.data.deleted &&
-    allowed(board(ctx, log.data.board ?? "default"), actor, "read") &&
+    allowed(await board(ctx, log.data.board ?? "default"), actor, "read") &&
     (!log.data.secret || author(log) === actor.id || actor.moderator)
   );
 }
-export function scope(ctx, { collection, operation, id, filter }) {
-  const actor = access(ctx);
+export async function scope(ctx, { collection, operation, id, filter }) {
+  const actor = await access(ctx);
   if (!actor.id) return false;
   if (collection === COMMENTS) {
     const logId =
-      operation === "get" ? ctx.get(COMMENTS, id)?.data.logId : filter.logId;
+      operation === "get"
+        ? (await ctx.get(COMMENTS, id))?.data.logId
+        : filter.logId;
     if (
       typeof logId !== "string" ||
-      !readable(ctx, ctx.get(LOGS, logId), actor)
+      !(await readable(ctx, await ctx.get(LOGS, logId), actor))
     )
       return false;
     return { eq: ["logId", logId] };
@@ -63,10 +67,10 @@ export function scope(ctx, { collection, operation, id, filter }) {
   if (collection !== LOGS) return false;
   const boardId =
     operation === "get"
-      ? (ctx.get(LOGS, id)?.data.board ?? "default")
+      ? ((await ctx.get(LOGS, id))?.data.board ?? "default")
       : (filter.board ?? "default");
   if (typeof boardId !== "string") return false;
-  const target = board(ctx, boardId);
+  const target = await board(ctx, boardId);
   // Lists return complete documents, so listing must also permit body reads.
   if (
     !allowed(target, actor, "read") ||
@@ -95,8 +99,8 @@ const image = (value) =>
   (typeof value === "string" &&
     value.length <= 2048 &&
     /^https?:\/\/[^\s]+$/i.test(value));
-export function canWrite(ctx, { collection, before, after, operation }) {
-  const actor = access(ctx);
+export async function canWrite(ctx, { collection, before, after, operation }) {
+  const actor = await access(ctx);
   if (!actor.id || ![LOGS, COMMENTS].includes(collection)) return false;
   if (
     before &&
@@ -113,10 +117,10 @@ export function canWrite(ctx, { collection, before, after, operation }) {
     const logId = before?.data.logId ?? after?.data.logId;
     if (typeof logId !== "string" || (after && after.data.logId !== logId))
       return false;
-    const log = ctx.get(LOGS, logId);
+    const log = await ctx.get(LOGS, logId);
     if (
-      !readable(ctx, log, actor) ||
-      !allowed(board(ctx, log.data.board ?? "default"), actor, "comment")
+      !(await readable(ctx, log, actor)) ||
+      !allowed(await board(ctx, log.data.board ?? "default"), actor, "comment")
     )
       return false;
     if (!after) return operation === "delete";
@@ -129,7 +133,7 @@ export function canWrite(ctx, { collection, before, after, operation }) {
   const boardId = before?.data.board ?? after?.data.board;
   if (typeof boardId !== "string" || (after && after.data.board !== boardId))
     return false;
-  const target = board(ctx, boardId);
+  const target = await board(ctx, boardId);
   if (!allowed(target, actor, "write")) return false;
   // Log deletion stays in a transactional function because it has child cleanup.
   if (!after) return false;

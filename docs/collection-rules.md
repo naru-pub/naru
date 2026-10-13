@@ -15,7 +15,7 @@ member collections. Owners bypass rules; owner-authorized site functions and
 batches retain their existing authority and must still check business rules.
 No PostgreSQL migration or change to frozen SDK 1.0.0 is required.
 
-A module exports two synchronous functions:
+A module exports two functions, which may be `async`:
 
 - `scope(ctx, { collection, operation, id, filter })`: `operation` is `get` or
   `list`. Return `true`, `false`, or a predicate built from `all`, `any`, `eq`,
@@ -30,8 +30,8 @@ A module exports two synchronous functions:
   check the supplied revision before the rule executes, inside the same SQLite
   transaction as the write.
 
-Rules use the function sandbox's read methods (`ctx.get`, `ctx.list`) and
-`ctx.member` (null for visitors). Writes are forbidden, including at module load.
+Rules use the function sandbox's read methods (`await ctx.get(...)`,
+`await ctx.list(...)`) and `ctx.member` (null for visitors). Writes are forbidden, including at module load.
 A missing, invalid, mutating or over-budget module fails closed. Rule file
 refresh uses the existing 10-second source cache; publish stricter rules before
 opening permissions and allow that cache window to expire. Rules-bearing reads
