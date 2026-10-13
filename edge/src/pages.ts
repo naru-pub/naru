@@ -57,7 +57,7 @@ const FILE_REDIRECT_CACHE_CONTROL =
 // A directory's redirect to its trailing slash lasts while the directory does,
 // so browsers keep it an hour.
 const REDIRECT_CACHE_CONTROL = "public, max-age=3600, stale-if-error=86400";
-const SERVED = ["html", "htm", "js", "json"];
+const SERVED = ["html", "htm", "js", "mjs", "json"];
 const MAX_METADATA_BYTES = 2048;
 // Larger files are read from the bucket each time: the cached copy is written
 // while the response streams, and both halves of the body are held until the

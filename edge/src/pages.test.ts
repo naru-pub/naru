@@ -46,7 +46,11 @@ function metadata(key: string, body: string) {
     size: new TextEncoder().encode(body).byteLength,
     httpEtag: `"${hash.toString(16).padStart(8, "0")}0000aaaa"`,
     httpMetadata: {
-      contentType: key.endsWith(".json") ? "application/json" : "text/html",
+      contentType: key.endsWith(".json")
+        ? "application/json"
+        : /\.m?js$/.test(key)
+          ? "application/javascript"
+          : "text/html",
     },
   };
 }
@@ -383,4 +387,19 @@ describe("caching", () => {
     expect(reads).toEqual(["alice/index.html", "alice/index.html"]);
     expect(entries.size).toBe(0);
   });
+});
+
+test("serves a deployed .mjs module directly with a JavaScript MIME type", async () => {
+  const ctx = context();
+  const response = await servePage(
+    new Request("https://alice.naru.pub/vendor/purify.es.mjs"),
+    env({ "alice/vendor/purify.es.mjs": "export default {};" }),
+    "alice",
+    ctx,
+    () => {},
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toBe("application/javascript");
+  expect(await response.text()).toBe("export default {};");
+  await ctx.settled();
 });

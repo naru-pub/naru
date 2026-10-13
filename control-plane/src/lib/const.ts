@@ -32,6 +32,7 @@ export const EDITABLE_FILE_EXTENSION_MAP: Record<string, string | null> = {
   css: "css",
   txt: null,
   js: "javascript",
+  mjs: "javascript",
   json: "json",
 };
 
@@ -53,6 +54,7 @@ export const FILE_EXTENSION_MIMETYPE_MAP: Record<
   css: "text/css",
   txt: "text/plain",
   js: "application/javascript",
+  mjs: "application/javascript",
   json: "application/json",
   png: "image/png",
   jpg: "image/jpeg",

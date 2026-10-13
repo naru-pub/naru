@@ -12,6 +12,7 @@ describe("filesFromArchive", () => {
       await githubArchive({
         "index.html": "<title>hi</title>",
         "css/site.css": "body{}",
+        "vendor/purify.es.mjs": "export default {};",
         "README.md": "# readme",
         ".github/workflows/deploy.yml": "on: push",
         ".env": "SECRET=1",
@@ -22,7 +23,12 @@ describe("filesFromArchive", () => {
       }),
       "",
     );
-    expect(paths(files)).toEqual(["README.md", "css/site.css", "index.html"]);
+    expect(paths(files)).toEqual([
+      "README.md",
+      "css/site.css",
+      "index.html",
+      "vendor/purify.es.mjs",
+    ]);
     expect(
       files.find((file) => file.path === "index.html")!.data.toString(),
     ).toBe("<title>hi</title>");
