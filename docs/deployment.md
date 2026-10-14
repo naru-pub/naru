@@ -111,8 +111,8 @@ stale-if-error=86400`, for browsers: Worker responses are not stored in
 Cloudflare's cache, so every pageview reaches the Worker. Cloudflare does
 cache `r2.naru.pub`, which every edit purges.
 
-For the sites in `VERSIONED_ASSET_SITES` (`wrangler.jsonc`, comma-separated
-logins or `*`), the Worker names a page's files by version as the page
+For the sites in `VERSIONED_ASSET_SITES`, comma-separated logins or `*`, the
+Worker names a page's files by version as the page
 streams out (`edge/src/assets.ts`): its classic `<script src>`, stylesheets
 and icons, `<img>`, `srcset`, `<video>`, `<audio>` and `<source>`, and the
 preloads of files the page uses in those (another preload would no longer
@@ -127,7 +127,12 @@ An edit changes the fingerprint, so a visitor's next page names the new
 file. Module scripts, CSS `url()`s, and what scripts fetch keep their plain
 URLs: a module imported under two URLs would run twice. The Worker reads a
 page whole before rewriting it, so a page over 5 MB, past what the edge
-caches, streams unrewritten.
+caches, streams unrewritten. The list is a Worker secret, not a variable in
+`wrangler.jsonc`, so which sites try it stays out of the repository:
+
+```bash
+cd edge && pnpm exec wrangler secret put VERSIONED_ASSET_SITES
+```
 
 What the Worker reads from the bucket, a file or its absence, it keeps in the
 data center's cache for `SITE_FILE_CACHE_SECONDS` (`wrangler.jsonc`), so a
