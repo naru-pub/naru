@@ -10,6 +10,9 @@ export const RESERVED_LOGIN_NAMES = new Set([
   // The edge Worker's custom domain (edge/wrangler.jsonc), and its former one.
   "edge",
   "site-data",
+  // The Data SDK's endpoint, sdk.naru.pub, served from kr-seongsu-m4 rather
+  // than the edge (~/Git/infra cloudflare/dns_naru_pub.tf).
+  "sdk",
   // The payment operator's login (lib/payments/support.ts PAYMENT_OPERATOR_USERS): the
   // role is the name, so the name must never go to anyone else — in a fresh
   // environment, or after that account is deleted.
