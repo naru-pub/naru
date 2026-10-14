@@ -73,6 +73,20 @@ export default async function MemberSignInPage({
         </Link>
       </div>
     );
+  if (preview.needsVerifiedEmail)
+    return (
+      <div className="max-w-xl mx-auto p-6 space-y-5">
+        <h1 className="text-2xl font-bold">{input.site} 회원으로 로그인</h1>
+        <p>
+          이 사이트는 이메일을 인증한 나루 계정만 회원으로 받습니다. 계정
+          설정에서 이메일을 인증한 뒤 사이트에서 다시 로그인해 주세요. 사이트는
+          이메일 주소를 받지 않습니다.
+        </p>
+        <Link href="/account" className="underline">
+          이메일 인증하러 가기
+        </Link>
+      </div>
+    );
   return <MemberConsent input={input} account={user.loginName} />;
 }
 

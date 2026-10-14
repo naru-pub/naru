@@ -28,6 +28,7 @@ import { up as orderingUp } from "@/migrations/1790200121054_explicit_document_o
 import { up as mediaDeletionUp } from "@/migrations/1791803004027_media_deletion_grants";
 import { up as membershipUp } from "@/migrations/1791800344085_site_membership_admission";
 import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
+import { up as verifiedEmailUp } from "@/migrations/1791981028752_site_member_verified_email";
 
 /**
  * The site-data schema of a disposable naru_data_test database. Documents and
@@ -38,7 +39,8 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   if (new URL(process.env.DATABASE_URL!).pathname !== "/naru_data_test")
     throw new Error("Use a disposable naru_data_test database.");
   await sql`create table users(id serial primary key, login_name text not null unique,
-    supporter_comp boolean not null default true, supporter_until timestamptz, deleted_at timestamptz)`.execute(
+    supporter_comp boolean not null default true, supporter_until timestamptz, deleted_at timestamptz,
+    email text, email_verified_at timestamptz)`.execute(
     db,
   );
   await sql`create table subscriptions(id serial primary key, user_id integer not null unique references users(id) on delete cascade, plan text not null default 'supporter')`.execute(
@@ -88,6 +90,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   );
   await membersUp(db);
   await membershipUp(db);
+  await verifiedEmailUp(db);
   await mediaDeletionUp(db);
   await sql.raw(absurdSchema).execute(db);
   await sql`select absurd.create_queue('maintenance')`.execute(db);

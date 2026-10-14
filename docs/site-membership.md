@@ -5,6 +5,15 @@ New members become approved in open mode, pending in approval mode, and cannot
 join in closed mode. Existing members can still sign in when admission closes.
 Changing admission never changes existing member states, including pending members.
 
+A site may also require a verified email (`users.site_member_verified_email`,
+off by default). Then an account whose Naru email is not verified cannot sign
+in to the site as a member, whether joining or returning; Naru's sign-in page
+sends it to verify first. Tokens already issued keep working until they end.
+The site never receives the address. This is separate from supporter status,
+which only the site's owner needs (members join free unless
+`SITE_MEMBERS_SUPPORTERS_ONLY=1`), and supporters may be comp accounts without
+a verified email, so it is not implied by anything else.
+
 Members are `pending`, `approved`, or `banned`. Only the signed-in site owner
 can change admission or member states in the database control panel. Any state
 can transition to either of the other states. IDs and authored documents remain
@@ -35,7 +44,7 @@ only enable approval/ban controls once all processes run the new version.
 
 Owner API: GET /api/account/site-members lists 100 members at a time with an
 opaque member-id `nextCursor` (pass it as `after`). PATCH accepts either
-`{ admission }` or `{ id, status }`. It uses the owner's same-origin Naru session.
+`{ admission }`, `{ verifiedEmail }` or `{ id, status }`. It uses the owner's same-origin Naru session.
 The public status endpoint is GET /api/membership/v1/<site>, using a member Bearer
 token and its bound Origin. Responses are never publicly cached. SDK 1.0.0 and
 the existing data-v1 response shapes remain unchanged.

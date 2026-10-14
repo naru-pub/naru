@@ -145,6 +145,7 @@ integration("site members", () => {
     expect(await previewMemberSignIn(users.bob, input())).toEqual({
       site: "alice",
       mayJoin: true,
+      needsVerifiedEmail: false,
     });
     // The site's own subdomain is one of its pages; another site's is not.
     await expect(
@@ -501,6 +502,49 @@ integration("site members", () => {
       ).toBe(true);
     } finally {
       await manageMembership(owner, "PATCH", { admission: "open" });
+    }
+  });
+
+  test("a site can require a verified email to sign in as a member", async () => {
+    users.hana = await insertUser("hana");
+    await sql`insert into sessions values ('hana-session', ${users.hana}, now() + interval '60 days')`.execute(
+      db,
+    );
+    const bob = await signIn("bob");
+    try {
+      expect((await manageMembership(owner, "GET")).verifiedEmail).toBe(false);
+      await manageMembership(owner, "PATCH", { verifiedEmail: true });
+      expect((await manageMembership(owner, "GET")).verifiedEmail).toBe(true);
+      // Unverified: the sign-in page says so, and approval is refused.
+      expect(await previewMemberSignIn(users.hana, input())).toMatchObject({
+        needsVerifiedEmail: true,
+      });
+      await expect(code("hana")).rejects.toMatchObject({
+        status: 403,
+        code: "ACCESS_DENIED",
+      });
+      // Returning members are checked at sign-in too; issued tokens still work.
+      await expect(code("bob")).rejects.toMatchObject({ status: 403 });
+      await expect(
+        as(bob.accessToken, "GET", ["board"]),
+      ).resolves.toBeDefined();
+      // An email pending verification is not enough; a verified one is.
+      await sql`update users set email = 'hana@example.com' where id = ${users.hana}`.execute(
+        db,
+      );
+      await expect(code("hana")).rejects.toMatchObject({ status: 403 });
+      await sql`update users set email_verified_at = now() where id = ${users.hana}`.execute(
+        db,
+      );
+      expect(await previewMemberSignIn(users.hana, input())).toMatchObject({
+        needsVerifiedEmail: false,
+      });
+      await expect(signIn("hana")).resolves.toHaveProperty("accessToken");
+      await expect(
+        manageMembership(owner, "PATCH", { verifiedEmail: "yes" }),
+      ).rejects.toMatchObject({ status: 400 });
+    } finally {
+      await manageMembership(owner, "PATCH", { verifiedEmail: false });
     }
   });
 

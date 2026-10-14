@@ -6,6 +6,7 @@ import type { AdmissionMode, MembershipStatus } from "./member-auth";
 
 type MemberPage = {
   admission: AdmissionMode;
+  verifiedEmail: boolean;
   members: { id: string; status: MembershipStatus; createdAt: Date }[];
   nextCursor: string | null;
 };
@@ -23,6 +24,7 @@ export function manageMembership(
 ): Promise<
   | MemberPage
   | { admission: AdmissionMode }
+  | { verifiedEmail: boolean }
   | { id: string; status: MembershipStatus }
 >;
 export async function manageMembership(
@@ -36,7 +38,7 @@ export async function manageMembership(
   if (method === "GET") {
     const settings = await db
       .selectFrom("users")
-      .select("site_member_admission")
+      .select(["site_member_admission", "site_member_verified_email"])
       .where("id", "=", ownerId)
       .executeTakeFirstOrThrow();
     let query = db
@@ -54,6 +56,7 @@ export async function manageMembership(
     }));
     return {
       admission: settings.site_member_admission,
+      verifiedEmail: settings.site_member_verified_email,
       members,
       nextCursor: rows.length > 100 ? members.at(-1)!.id : null,
     };
@@ -75,13 +78,29 @@ export async function manageMembership(
     return { admission };
   }
   if (
+    keys.length === 1 &&
+    keys[0] === "verifiedEmail" &&
+    typeof body.verifiedEmail === "boolean"
+  ) {
+    const verifiedEmail = body.verifiedEmail;
+    await db
+      .updateTable("users")
+      .set({ site_member_verified_email: verifiedEmail })
+      .where("id", "=", ownerId)
+      .execute();
+    return { verifiedEmail };
+  }
+  if (
     keys.length !== 2 ||
     !keys.includes("id") ||
     !keys.includes("status") ||
     typeof body.status !== "string" ||
     !["pending", "approved", "banned"].includes(String(body.status))
   )
-    throw new DataError(400, "Provide admission, or a member id and status.");
+    throw new DataError(
+      400,
+      "Provide admission, verifiedEmail, or a member id and status.",
+    );
   const id = uuidId(body.id);
   const status = body.status as MembershipStatus;
   const { member, site } = await db.transaction().execute(async (tx) => {

@@ -20,6 +20,11 @@ import { DataError, name } from "./validation";
 // Membership is free. SITE_MEMBERS_SUPPORTERS_ONLY=1 limits it to accounts
 // with a supporter plan, checked at sign-in and on every request, so turning
 // it on reaches members already signed in.
+//
+// A site may also require a verified email (site_member_verified_email): an
+// account without one cannot sign in to it as a member, new or returning.
+// Requests with a token already issued are not re-checked; verification is
+// about who may sign in, and a Naru email cannot become unverified.
 
 /** A member token is used and renewed for up to this long without a request. */
 export const MEMBER_TOKEN_SECONDS = 7 * 24 * 60 * 60;
@@ -44,6 +49,23 @@ const supporterRequired = () =>
     "Members of Naru sites need a Naru supporter plan.",
     "ACCESS_DENIED",
   );
+
+const emailRequired = () =>
+  new DataError(
+    403,
+    "This site requires members to have a verified email on Naru.",
+    "ACCESS_DENIED",
+  );
+
+/** Whether the account has verified an email on Naru. */
+async function emailVerified(tx: Kysely<DB>, userId: string) {
+  const user = await tx
+    .selectFrom("users")
+    .select(["email", "email_verified_at"])
+    .where("id", "=", userId)
+    .executeTakeFirst();
+  return Boolean(user?.email && user.email_verified_at);
+}
 
 /** Whether an account may be a member anywhere, under the current setting. */
 async function mayJoin(tx: Kysely<DB>, userId: string) {
@@ -83,7 +105,12 @@ export function memberSignInInput(body: Record<string, unknown>) {
 async function siteFor(tx: Kysely<DB>, input: MemberSignInInput) {
   const site = await tx
     .selectFrom("users")
-    .select(["id", "login_name", "site_member_admission"])
+    .select([
+      "id",
+      "login_name",
+      "site_member_admission",
+      "site_member_verified_email",
+    ])
     .where("login_name", "=", input.site)
     .where("deleted_at", "is", null)
     .executeTakeFirst();
@@ -122,7 +149,12 @@ export async function previewMemberSignIn(
       "이 사이트는 신규 회원 가입을 받지 않습니다.",
       "ACCESS_DENIED",
     );
-  return { site: site.login_name, mayJoin: await mayJoin(db, userId) };
+  return {
+    site: site.login_name,
+    mayJoin: await mayJoin(db, userId),
+    needsVerifiedEmail:
+      site.site_member_verified_email && !(await emailVerified(db, userId)),
+  };
 }
 
 /** The member's approval: a single-use code for the page that asked. */
@@ -153,6 +185,8 @@ export async function approveMemberSignIn(
         "ACCESS_DENIED",
       );
     if (!(await mayJoin(tx, userId))) throw supporterRequired();
+    if (site.site_member_verified_email && !(await emailVerified(tx, userId)))
+      throw emailRequired();
     const session = await tx
       .selectFrom("sessions")
       .select("id")

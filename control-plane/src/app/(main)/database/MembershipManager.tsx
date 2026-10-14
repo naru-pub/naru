@@ -8,6 +8,7 @@ type Admission = "open" | "approval" | "closed";
 type Member = { id: string; status: Status; createdAt: string };
 type Page = {
   admission: Admission;
+  verifiedEmail: boolean;
   members: Member[];
   nextCursor: string | null;
 };
@@ -49,7 +50,10 @@ export default function MembershipManager() {
     };
   }, []);
   async function change(
-    body: { admission: Admission } | { id: string; status: Status },
+    body:
+      | { admission: Admission }
+      | { verifiedEmail: boolean }
+      | { id: string; status: Status },
   ) {
     setBusy(true);
     setError("");
@@ -58,8 +62,8 @@ export default function MembershipManager() {
       setPage(
         (current) =>
           current &&
-          ("admission" in body
-            ? { ...current, admission: body.admission }
+          ("admission" in body || "verifiedEmail" in body
+            ? { ...current, ...body }
             : {
                 ...current,
                 members: current.members.map((m) =>
@@ -121,6 +125,20 @@ export default function MembershipManager() {
               <option value="closed">신규 가입 중단</option>
             </Select>
           </label>
+          <label className="flex gap-3 items-center">
+            <input
+              type="checkbox"
+              checked={page.verifiedEmail}
+              disabled={busy}
+              onChange={(e) => change({ verifiedEmail: e.target.checked })}
+            />
+            이메일을 인증한 나루 계정만 회원으로 로그인
+          </label>
+          <p className="text-sm text-muted-foreground">
+            켜면 이메일을 인증하지 않은 계정은 가입하거나 다시 로그인할 수
+            없습니다. 이미 로그인한 회원은 로그인이 끝날 때까지 이용할 수
+            있습니다. 사이트는 회원의 이메일 주소를 받지 않습니다.
+          </p>
           <p className="text-sm text-muted-foreground">
             승인 대기 중이거나 차단된 회원은 회원 데이터와 함수를 이용하거나
             파일을 올릴 수 없습니다. 공개 자료는 방문자로 볼 수 있습니다. 가입
