@@ -11,10 +11,20 @@ import { DataError } from "@/lib/site-data/validation";
 import Consent from "./Consent";
 import Setup from "./Setup";
 
+/** The settings a page asked for, sent as JSON in the query. */
+function settingsParam(query: URLSearchParams): unknown {
+  try {
+    return JSON.parse(query.get("settings")!);
+  } catch {
+    throw new DataError(400, "settings must be JSON.");
+  }
+}
+
 async function authorizationStep(userId: string, query: URLSearchParams) {
   const input = authorizationInput({
     ...Object.fromEntries(query),
     collections: query.get("collections")?.split(","),
+    ...(query.has("settings") ? { settings: settingsParam(query) } : {}),
     ...(query.has("mediaDelete")
       ? {
           mediaDelete:
@@ -46,6 +56,7 @@ export default async function AuthorizePage({
     "challenge",
     "state",
     "collections",
+    "settings",
     "mediaDelete",
   ]) {
     if (typeof params[key] === "string") query.set(key, params[key]);

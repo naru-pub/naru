@@ -426,6 +426,24 @@ export interface NaruClient {
     /** Redirects to Naru for approval. */
     signIn(options: {
       collections: readonly string[];
+      /**
+       * What some of those collections should be (1.1.0). Naru's sign-in page
+       * creates missing ones this way and, on the owner's click, changes
+       * existing ones that differ. Collections left out start private.
+       */
+      settings?: Readonly<
+        Record<
+          string,
+          {
+            read?: "admin" | "member" | "world";
+            write?: "admin" | "create" | "member" | "world";
+            /** A module in `_naru/rules/`, or null for none. */
+            rules?: string | null;
+            /** Up to three top-level fields no two documents may share. */
+            unique?: readonly string[];
+          }
+        >
+      >;
       /** Request explicit permission to delete all of this site's media. */
       mediaDelete?: boolean;
     }): Promise<void>;
@@ -1478,13 +1496,27 @@ async function signIn(
   context: Context,
   collections: readonly string[],
   mediaDelete = false,
+  settings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
 ): Promise<void> {
   if (typeof mediaDelete !== "boolean")
     throw new TypeError("mediaDelete must be a boolean.");
   // Checked here so a bad name fails on this page, not on Naru's consent page.
   collections.forEach(segment);
+  if (settings !== undefined) {
+    if (!settings || typeof settings !== "object")
+      throw new TypeError("settings must map collection names to settings.");
+    for (const [name, value] of Object.entries(settings)) {
+      if (!collections.includes(name))
+        throw new TypeError(`settings names ${name}, which is not requested.`);
+      if (!value || typeof value !== "object")
+        throw new TypeError(`Invalid settings for ${name}.`);
+    }
+  }
   await leave(context, ownerPlace(context), "/database/authorize", {
     collections: collections.join(","),
+    ...(settings && Object.keys(settings).length
+      ? { settings: JSON.stringify(settings) }
+      : {}),
     ...(mediaDelete ? { mediaDelete: "1" } : {}),
   });
 }
@@ -1646,11 +1678,13 @@ export function createNaru(options?: { site?: string }): NaruClient {
       session: () => adminSession(context),
       signIn: ({
         collections,
+        settings,
         mediaDelete,
       }: {
         collections: readonly string[];
+        settings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
         mediaDelete?: boolean;
-      }) => signIn(context, collections, mediaDelete),
+      }) => signIn(context, collections, mediaDelete, settings),
     }),
     members: Object.freeze({
       session: () => memberSession(context),

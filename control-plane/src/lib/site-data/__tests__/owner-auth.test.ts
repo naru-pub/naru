@@ -405,6 +405,7 @@ integration("website owner authorization", () => {
       register: true,
       create: ["notes"],
       extend: [],
+      configure: [],
     });
     // Not the owner's to fix here: another account, or a page off the site.
     expect(await authorizationSetup(bob, input)).toBeNull();
@@ -437,6 +438,7 @@ integration("website owner authorization", () => {
       register: false,
       create: [],
       extend: ["private"],
+      configure: [],
     });
     await prepareAuthorization(owner, wider);
     await expect(data(grant.accessToken, ["notes"])).rejects.toMatchObject({
@@ -455,6 +457,48 @@ integration("website owner authorization", () => {
       { id: bob, loginName: "bob" },
     ])
       expect(await listCollections(site, ["elsewhere"])).toEqual([]);
+  });
+  test("a page can ask for its collections' settings, applied on the owner's click", async () => {
+    const page = "https://alice.example/community.html";
+    const settings = {
+      board: { read: "world", write: "admin", rules: "community-board" },
+      profiles: { read: "admin", write: "admin", unique: ["nick"] },
+      posts: { read: "member", write: "admin" },
+    };
+    const input = authInput({
+      redirectUri: page,
+      collections: ["posts", "board", "profiles"],
+      settings,
+    });
+    const setup = await authorizationSetup(owner, input);
+    expect(setup).toMatchObject({
+      register: true,
+      create: ["board", "profiles"],
+      configure: [
+        { name: "posts", changes: { read: [expect.any(String), "member"] } },
+      ],
+    });
+    // A setting for a collection it does not ask access to is refused.
+    expect(() =>
+      authInput({
+        redirectUri: page,
+        collections: ["posts"],
+        settings: { board: { read: "world" } },
+      }),
+    ).toThrow(/not among/);
+    await prepareAuthorization(owner, input);
+    expect(
+      await listCollections({ id: owner, loginName: "alice" }, [
+        "board",
+        "posts",
+        "profiles",
+      ]),
+    ).toMatchObject([
+      { name: "board", read_access: "world", rules: "community-board" },
+      { name: "posts", read_access: "member", write_access: "admin" },
+      { name: "profiles", read_access: "admin", unique: ["nick"] },
+    ]);
+    expect(await authorizationSetup(owner, input)).toBeNull();
   });
   test("every address of one page is one callback", async () => {
     // Naru serves /blog, /blog/ and /blog/index.html as the page /blog/.

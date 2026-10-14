@@ -104,6 +104,30 @@ A sign-in that comes back without completing, because the owner denied it,
 took longer than ten minutes, or the code could not be exchanged, is an
 ordinary signed-out visit: `session()` resolves `null`.
 
+From 1.1.0 a page can also say what its collections should be, so an app
+installs without a trip through the control panel:
+
+```js
+await naru.auth.signIn({
+  collections: ["posts", "comments", "profiles", "wallets"],
+  settings: {
+    posts: { read: "world", write: "admin", rules: "community-board" },
+    comments: { read: "world", write: "admin", rules: "community-board" },
+    profiles: { read: "admin", write: "admin", unique: ["nick"] },
+  },
+});
+```
+
+`read` is `admin`, `member` or `world`; `write` also takes `create`; `rules`
+names a `_naru/rules/` module (null for none) and `unique` up to three
+fields. Naru's sign-in page lists what it will do before anything changes:
+missing collections are created with these settings (others still start
+private), and existing ones whose settings differ are changed on the same
+click, with access widened beyond admins marked. A settings-only change keeps
+the page's registration and sign-ins. A unique field that documents already
+share fails the step with the field named. Only the owner's click on Naru
+applies settings; nothing in the request is trusted otherwise.
+
 The browser leaves the page during `signIn`, and a page that holds unsaved
 input should put it somewhere that survives, such as `sessionStorage`, before
 calling it, and restore it after the redirect back. The same applies when a

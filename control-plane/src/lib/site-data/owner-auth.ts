@@ -3,8 +3,20 @@ import { uuidv7 } from "@/lib/uuid";
 import { Kysely, sql } from "kysely";
 import type { DB } from "@/lib/db";
 import { db } from "@/lib/database";
-import { DataError, name, unreservedName, uuidId } from "./validation";
-import { createCollections, listCollections } from "./service";
+import {
+  DataError,
+  name,
+  permission,
+  unreservedName,
+  uuidId,
+  writePermission,
+} from "./validation";
+import {
+  configureCollections,
+  listCollections,
+  type Collection,
+  type CollectionSetup,
+} from "./service";
 
 export const TOKEN_SECONDS = 24 * 60 * 60;
 export function tokenLifetime(value: unknown): number {
@@ -47,6 +59,73 @@ export function collectionNames(value: unknown): string[] {
   if (new Set(names).size !== names.length)
     throw new DataError(400, "Duplicate collections.");
   return names;
+}
+/** What a page asks one collection to be: access, rules module, unique fields. */
+export type CollectionRequest = {
+  read: "admin" | "member" | "world";
+  write: "admin" | "create" | "member" | "world";
+  rules?: string | null;
+  unique?: string[];
+};
+/**
+ * The settings a sign-in asks for, by collection name: only for collections
+ * it also asks access to. A collection left out keeps today's behaviour
+ * (created private, existing ones untouched).
+ */
+export function collectionRequests(
+  value: unknown,
+  names: string[],
+): Record<string, CollectionRequest> {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new DataError(400, "settings must map collection names to settings.");
+  const result: Record<string, CollectionRequest> = {};
+  for (const [collection, raw] of Object.entries(value)) {
+    if (!names.includes(collection))
+      throw new DataError(
+        400,
+        `settings names ${collection}, which is not among the collections.`,
+      );
+    if (!raw || typeof raw !== "object" || Array.isArray(raw))
+      throw new DataError(400, `Invalid settings for ${collection}.`);
+    const entry = raw as Record<string, unknown>;
+    for (const key of Object.keys(entry))
+      if (!["read", "write", "rules", "unique"].includes(key))
+        throw new DataError(400, `Unknown setting ${key} for ${collection}.`);
+    const unique = entry.unique;
+    if (
+      unique !== undefined &&
+      (!Array.isArray(unique) ||
+        unique.length > 3 ||
+        new Set(unique).size !== unique.length)
+    )
+      throw new DataError(400, "unique takes at most 3 distinct field names.");
+    result[collection] = {
+      read: permission(entry.read ?? "admin"),
+      write: writePermission(entry.write ?? "admin"),
+      ...(entry.rules === undefined
+        ? {}
+        : { rules: entry.rules === null ? null : name(entry.rules) }),
+      ...(unique === undefined ? {} : { unique: unique.map(name) }),
+    };
+  }
+  return result;
+}
+/** How a collection differs from what the page asked, as [now, asked] pairs. */
+export function settingChanges(row: Collection, wanted: CollectionRequest) {
+  const changes: Record<string, [string, string]> = {};
+  if (row.read_access !== wanted.read)
+    changes.read = [row.read_access, wanted.read];
+  if (row.write_access !== wanted.write)
+    changes.write = [row.write_access, wanted.write];
+  if (wanted.rules !== undefined && (row.rules ?? null) !== wanted.rules)
+    changes.rules = [row.rules ?? "", wanted.rules ?? ""];
+  if (
+    wanted.unique !== undefined &&
+    (row.unique ?? []).join(",") !== wanted.unique.join(",")
+  )
+    changes.unique = [(row.unique ?? []).join(", "), wanted.unique.join(", ")];
+  return changes;
 }
 export function callbackUrl(value: unknown): URL {
   let url: URL;
@@ -338,6 +417,14 @@ export function authorizationInput(body: Record<string, unknown>) {
     challenge,
     state,
     collections: collectionNames(body.collections),
+    ...(body.settings === undefined
+      ? {}
+      : {
+          settings: collectionRequests(
+            body.settings,
+            collectionNames(body.collections),
+          ),
+        }),
     ...(body.mediaDelete === undefined
       ? {}
       : { mediaDelete: mediaDeletionGrant(body.mediaDelete) }),
@@ -404,6 +491,8 @@ export type AuthorizationSetup = {
   register: boolean;
   create: string[];
   extend: string[];
+  /** Existing collections whose settings differ from what the page asked. */
+  configure: { name: string; changes: Record<string, [string, string]> }[];
 };
 async function setupNeeded(
   tx: Kysely<DB>,
@@ -437,8 +526,14 @@ async function setupNeeded(
         .filter((row) => !client.collection_ids.includes(row.id))
         .map((row) => row.name)
     : [];
-  if (client && !create.length && !extend.length) return null;
-  return { register: !client, create, extend };
+  const configure = rows.flatMap((row) => {
+    const wanted = input.settings?.[row.name];
+    const changes = wanted ? settingChanges(row, wanted) : {};
+    return Object.keys(changes).length ? [{ name: row.name, changes }] : [];
+  });
+  if (client && !create.length && !extend.length && !configure.length)
+    return null;
+  return { register: !client, create, extend, configure };
 }
 export function authorizationSetup(userId: string, input: AuthorizationInput) {
   return setupNeeded(db, userId, input);
@@ -458,17 +553,24 @@ export async function prepareAuthorization(
     await lockOwner(tx, userId);
     const setup = await setupNeeded(tx, userId, input);
     if (!setup) return;
-    if (setup.create.length) {
+    if (setup.create.length || setup.configure.length) {
       // The collections are in the site's Durable Object and commit now; a
-      // registration that then fails leaves only empty collections.
-      const created = await createCollections(
-        await siteOwner(tx, userId),
-        setup.create.map((collection) => ({
+      // registration that then fails leaves only the collections. New ones
+      // start private unless the page asked for other settings.
+      const setting = (collection: string): CollectionSetup => {
+        const wanted = input.settings?.[collection];
+        return {
           name: unreservedName(collection),
-          read_access: "admin",
-          write_access: "admin",
-        })),
-      );
+          read_access: wanted?.read ?? "admin",
+          write_access: wanted?.write ?? "admin",
+          ...(wanted?.rules !== undefined ? { rules: wanted.rules } : {}),
+          ...(wanted?.unique !== undefined ? { unique: wanted.unique } : {}),
+        };
+      };
+      const created = await configureCollections(await siteOwner(tx, userId), [
+        ...setup.create.map(setting),
+        ...setup.configure.map((c) => setting(c.name)),
+      ]);
       if (created === null)
         throw new DataError(409, "Collection limit reached.", "QUOTA_EXCEEDED");
     }
@@ -496,6 +598,8 @@ export async function prepareAuthorization(
         .execute();
       return;
     }
+    // Only settings changed: the registration, and its sign-ins, stay as they are.
+    if (!setup.create.length && !setup.extend.length) return;
     const client = clients.find((c) =>
       sameCallback(c.redirect_uri, input.redirectUri),
     )!;

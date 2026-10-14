@@ -57,7 +57,16 @@ export type CollectionSettings = {
   read_access: string;
   write_access: string;
 };
-export type Collection = CollectionSettings & { id: string };
+export type Collection = CollectionSettings & {
+  id: string;
+  rules?: string;
+  unique?: string[];
+};
+/** Settings a page may ask for at owner sign-in, applied on the owner's click. */
+export type CollectionSetup = CollectionSettings & {
+  rules?: string | null;
+  unique?: string[];
+};
 
 export const noSite = (site: string) =>
   new DataError(404, `No Naru site is named ${site}.`);
@@ -296,4 +305,21 @@ export async function createCollections(
     ownerId: String(owner.id),
     collections,
   });
+}
+
+/**
+ * Creates or updates collections to the given settings, all or none: null
+ * when new ones would pass the collection limit. Returns the names created.
+ * A unique field documents already share fails the whole change (CONFLICT).
+ */
+export async function configureCollections(
+  owner: SiteOwner,
+  collections: CollectionSetup[],
+): Promise<string[] | null> {
+  if (!collections.length) return [];
+  return callSiteObject<string[] | null>(
+    owner.loginName,
+    "configureCollections",
+    { ownerId: String(owner.id), collections },
+  );
 }

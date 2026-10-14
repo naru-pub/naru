@@ -397,6 +397,24 @@ export interface NaruClient {
     /** Redirects to Naru for approval. */
     signIn(options: {
       collections: readonly string[];
+      /**
+       * What some of those collections should be (1.1.0). Naru's sign-in page
+       * creates missing ones this way and, on the owner's click, changes
+       * existing ones that differ. Collections left out start private.
+       */
+      settings?: Readonly<
+        Record<
+          string,
+          {
+            read?: "admin" | "member" | "world";
+            write?: "admin" | "create" | "member" | "world";
+            /** A module in `_naru/rules/`, or null for none. */
+            rules?: string | null;
+            /** Up to three top-level fields no two documents may share. */
+            unique?: readonly string[];
+          }
+        >
+      >;
       /** Request explicit permission to delete all of this site's media. */
       mediaDelete?: boolean;
     }): Promise<void>;

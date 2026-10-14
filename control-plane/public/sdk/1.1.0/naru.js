@@ -844,13 +844,26 @@ async function leave(context, place, path, query) {
  * back to this page. Register this page's URL as an administrator callback in
  * the control panel first; Naru says so on its own page if it is not.
  */
-async function signIn(context, collections, mediaDelete = false) {
+async function signIn(context, collections, mediaDelete = false, settings) {
   if (typeof mediaDelete !== "boolean")
     throw new TypeError("mediaDelete must be a boolean.");
   // Checked here so a bad name fails on this page, not on Naru's consent page.
   collections.forEach(segment);
+  if (settings !== undefined) {
+    if (!settings || typeof settings !== "object")
+      throw new TypeError("settings must map collection names to settings.");
+    for (const [name, value] of Object.entries(settings)) {
+      if (!collections.includes(name))
+        throw new TypeError(`settings names ${name}, which is not requested.`);
+      if (!value || typeof value !== "object")
+        throw new TypeError(`Invalid settings for ${name}.`);
+    }
+  }
   await leave(context, ownerPlace(context), "/database/authorize", {
     collections: collections.join(","),
+    ...(settings && Object.keys(settings).length
+      ? { settings: JSON.stringify(settings) }
+      : {}),
     ...(mediaDelete ? { mediaDelete: "1" } : {}),
   });
 }
@@ -999,8 +1012,8 @@ export function createNaru(options) {
     call: functions(context.root, request),
     auth: Object.freeze({
       session: () => adminSession(context),
-      signIn: ({ collections, mediaDelete }) =>
-        signIn(context, collections, mediaDelete),
+      signIn: ({ collections, settings, mediaDelete }) =>
+        signIn(context, collections, mediaDelete, settings),
     }),
     members: Object.freeze({
       session: () => memberSession(context),

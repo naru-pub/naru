@@ -845,14 +845,12 @@ export class SiteData extends DurableObject<Env> {
     // Replacing and deleting there is the owner's, and in `member` also the
     // author's, checked against the document below.
     const authorOnly = !admin && !ruleFile && level === "member" && !creating;
-    if (
-      !(
-        admin ||
-        level === "world" ||
-        (level === "create" && creating) ||
-        (level === "member" && member)
-      )
-    )
+    if (!(
+      admin ||
+      level === "world" ||
+      (level === "create" && creating) ||
+      (level === "member" && member)
+    ))
       throw new DataError(
         403,
         level === "member"
@@ -1569,9 +1567,20 @@ export class SiteData extends DurableObject<Env> {
       const rows = this.rows(
         "SELECT id, name, read_access, write_access FROM collections ORDER BY name",
       ) as unknown as Collection[];
-      return input.names
-        ? rows.filter((row) => input.names!.includes(row.name))
-        : rows;
+      // With each one's rules module and unique fields, when it has them.
+      return (
+        input.names
+          ? rows.filter((row) => input.names!.includes(row.name))
+          : rows
+      ).map((row) => {
+        const rules = this.meta(`rules:${row.id}`);
+        const unique = this.uniqueFields(row.id);
+        return {
+          ...row,
+          ...(rules ? { rules } : {}),
+          ...(unique.length ? { unique } : {}),
+        };
+      });
     });
   }
 
@@ -1603,6 +1612,60 @@ export class SiteData extends DurableObject<Env> {
         if (inserted.length) created.push(collection.name);
       }
       return created;
+    });
+  }
+
+  /**
+   * Gives collections the settings a page asked for at owner sign-in, all or
+   * none: creates those that are missing and updates the others' access,
+   * rules module and unique fields. Null when new ones would pass the
+   * collection limit; a unique field documents already share fails it all.
+   */
+  async configureCollections(input: {
+    ownerId: string;
+    collections: (Omit<Collection, "id"> & {
+      rules?: string | null;
+      unique?: string[];
+    })[];
+  }) {
+    return this.run(() => {
+      this.claim(input.ownerId);
+      const existing = (names: string[]) =>
+        this.rows(
+          `SELECT id, name, read_access, write_access FROM collections WHERE name IN (${names.map(() => "?").join(",")})`,
+          ...names,
+        ) as unknown as Collection[];
+      const found = input.collections.length
+        ? existing(input.collections.map((c) => c.name))
+        : [];
+      const missing = input.collections.filter(
+        (c) => !found.some((row) => row.name === c.name),
+      );
+      const count = Number(
+        this.rows("SELECT count(*) AS count FROM collections")[0].count,
+      );
+      if (count + missing.length > MAX_COLLECTIONS) return null;
+      for (const collection of missing)
+        this.sql.exec(
+          "INSERT INTO collections (id, name, read_access, write_access) VALUES (?, ?, ?, ?)",
+          uuidv7(),
+          collection.name,
+          collection.read_access,
+          collection.write_access,
+        );
+      for (const row of existing(input.collections.map((c) => c.name))) {
+        const wanted = input.collections.find((c) => c.name === row.name)!;
+        this.sql.exec(
+          "UPDATE collections SET read_access = ?, write_access = ? WHERE id = ?",
+          wanted.read_access,
+          wanted.write_access,
+          row.id,
+        );
+        if (wanted.rules !== undefined)
+          this.setMeta(`rules:${row.id}`, wanted.rules);
+        if (wanted.unique !== undefined) this.setUnique(row, wanted.unique);
+      }
+      return missing.map((c) => c.name);
     });
   }
 

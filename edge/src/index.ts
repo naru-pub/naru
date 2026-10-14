@@ -42,6 +42,7 @@ const OPERATIONS = [
   "batch",
   "collections",
   "createCollections",
+  "configureCollections",
   "erase",
   "configure",
   "call",
@@ -73,6 +74,8 @@ function dispatch(
       return stub.collections(input);
     case "createCollections":
       return stub.createCollections(input);
+    case "configureCollections":
+      return stub.configureCollections(input);
     case "export":
       return stub.export();
     case "import":
