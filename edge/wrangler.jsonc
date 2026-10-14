@@ -75,10 +75,6 @@
     // How long each data center keeps a site file it read from the bucket
     // (src/pages.ts). The control plane purges a file's entry when it changes.
     "SITE_FILE_CACHE_SECONDS": "86400",
-    // VERSIONED_ASSET_SITES, the sites whose pages name their files by version
-    // (src/assets.ts), is a secret, so which sites try it stays out of the
-    // repository: wrangler secret put VERSIONED_ASSET_SITES, comma-separated
-    // logins or "*" for every site.
   },
   "observability": { "enabled": true },
 }

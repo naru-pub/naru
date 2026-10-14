@@ -10,7 +10,6 @@ import {
   truncate,
   type PagesEnv,
 } from "./pages";
-import { VERSIONED_CACHE_CONTROL, fingerprint } from "./assets";
 import type { PageviewEvent } from "./pageview-log";
 
 // The retired proxy's own cases, ported from its Rust tests, so sites keep
@@ -23,10 +22,6 @@ const env = (
   PLATFORM_DOMAIN: "naru.pub",
   R2_PUBLIC_DOMAIN: "r2.naru.pub",
   SITE_FILES: {
-    async head(key: string) {
-      reads.push(key);
-      return key in files ? metadata(key, files[key]) : null;
-    },
     async get(key: string) {
       reads.push(key);
       if (!(key in files)) return null;
@@ -267,20 +262,6 @@ describe("serving", () => {
     expect(response.headers.get("content-type")).toBeNull();
   });
 
-  test("lets browsers keep a file requested at its current version", async () => {
-    const version = fingerprint(metadata("alice/data.json", "{}").httpEtag);
-    expect(
-      (await visit(`/data.json?v=${version}`)).response.headers.get(
-        "cache-control",
-      ),
-    ).toBe(VERSIONED_CACHE_CONTROL);
-    // An older version, from a page loaded before an edit, is today's file.
-    for (const path of ["/data.json?v=0123456789ab", "/data.json"])
-      expect((await visit(path)).response.headers.get("cache-control")).toBe(
-        "public, max-age=0, stale-if-error=86400",
-      );
-  });
-
   test("answers a bucket failure 502, never 404", async () => {
     const failing = env();
     failing.SITE_FILES = {
@@ -357,7 +338,6 @@ describe("caching", () => {
     expect(reads).toEqual(["alice/index.html"]);
     const entry = entries.get("https://alice.naru.pub/index.html")!;
     expect(entry.headers.get("cache-control")).toBe("public, max-age=60");
-    expect(entry.headers.get("etag")).toMatch(/^"[0-9a-f]{16}"$/);
     expect(entry.headers.get("cache-tag")).toBe("naru-site-alice");
   });
 

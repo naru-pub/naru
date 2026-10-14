@@ -3,13 +3,6 @@ import {
   edgeFileCacheUrl,
   edgeSiteCacheTag,
 } from "../../control-plane/src/lib/edge/file-cache";
-import {
-  VERSIONED_CACHE_CONTROL,
-  fingerprint,
-  versionAssets,
-  versionsAssets,
-  type AssetEnv,
-} from "./assets";
 import type { PageviewEvent } from "./pageview-log";
 
 // Hosted sites, <login>.naru.pub or a custom domain (domains.ts), answered at
@@ -28,10 +21,9 @@ import type { PageviewEvent } from "./pageview-log";
 // its absence, in each data center's cache for SITE_FILE_CACHE_SECONDS, so a
 // busy page is not one bucket read per request. The control plane purges a
 // file's entry whenever it changes the file (control-plane/src/lib/
-// cache-purge.ts), so edits still appear at once. For the files it redirects
-// it keeps only their ETag, which versioned asset URLs (assets.ts) are made of.
+// cache-purge.ts), so edits still appear at once.
 
-export interface PagesEnv extends AssetEnv {
+export interface PagesEnv {
   /** The site bucket: each site's files under `<login>/`. */
   SITE_FILES: R2Bucket;
   PLATFORM_DOMAIN: string;
@@ -180,21 +172,12 @@ function unavailable() {
 }
 
 /** A file read from the bucket or the cache. */
-type SiteFile = {
-  body: ReadableStream | null;
-  contentType: string;
-  etag: string;
-  /** Bytes; a file from the cache is no larger than MAX_CACHED_BYTES. */
-  size: number;
-};
-
-const extensionOf = (path: string) => path.split(".").at(-1) ?? "";
+type SiteFile = { body: ReadableStream | null; contentType: string };
 
 /**
  * The bucket object `key`, or null when there is none: from this data
  * center's cache when it holds the lookup, else from the bucket, keeping what
- * it finds for the next request. A file the edge does not serve is looked up
- * without its body, which it is never asked for.
+ * it finds for the next request.
  */
 async function readFile(
   env: PagesEnv,
@@ -207,27 +190,18 @@ async function readFile(
     seconds > 0
       ? (globalThis as { caches?: { default: Cache } }).caches?.default
       : undefined;
-  const metadataOnly = !SERVED.includes(extensionOf(key));
-  const read = () =>
-    metadataOnly ? env.SITE_FILES.head(key) : env.SITE_FILES.get(key);
   if (!cache) {
-    const object = await read();
-    return object && fileOf(object);
+    const object = await env.SITE_FILES.get(key);
+    return object && fileOf(object.body, object);
   }
   const url = edgeFileCacheUrl(env.PLATFORM_DOMAIN, key);
   const hit = await cache.match(url);
-  if (hit?.status === 404) return null;
-  // Entries kept before ETags were are read again.
-  if (hit?.headers.has("ETag"))
-    return {
-      body: hit.body,
-      contentType: hit.headers.get("Content-Type") ?? "",
-      etag: hit.headers.get("ETag")!,
-      size: Number(hit.headers.get("X-File-Size")) || MAX_CACHED_BYTES,
-    };
-  await hit?.body?.cancel();
+  if (hit)
+    return hit.status === 404
+      ? null
+      : { body: hit.body, contentType: hit.headers.get("Content-Type") ?? "" };
 
-  const object = await read();
+  const object = await env.SITE_FILES.get(key);
   const headers = {
     "Cache-Control": `public, max-age=${seconds}`,
     "Cache-Tag": edgeSiteCacheTag(login),
@@ -243,43 +217,19 @@ async function readFile(
     store(new Response(null, { status: 404, headers }));
     return null;
   }
-  const file = fileOf(object);
-  const fileHeaders = {
-    ...headers,
-    "Content-Type": file.contentType,
-    ETag: file.etag,
-    "X-File-Size": String(file.size),
-  };
-  if (!file.body) {
-    store(new Response(null, { headers: fileHeaders }));
-    return file;
-  }
-  if (object.size > MAX_CACHED_BYTES) return file;
-  const [served, stored] = file.body.tee();
-  store(new Response(stored, { headers: fileHeaders }));
-  return { ...file, body: served };
+  if (object.size > MAX_CACHED_BYTES) return fileOf(object.body, object);
+  const [served, stored] = object.body.tee();
+  const file = fileOf(served, object);
+  store(
+    new Response(stored, {
+      headers: { ...headers, "Content-Type": file.contentType },
+    }),
+  );
+  return file;
 }
 
-function fileOf(object: R2Object | R2ObjectBody): SiteFile {
-  return {
-    body: "body" in object ? object.body : null,
-    contentType: object.httpMetadata?.contentType ?? "",
-    size: object.size,
-    etag: object.httpEtag,
-  };
-}
-
-/** Looks up ETags through the same cache as the files themselves. */
-function etagLookup(
-  env: PagesEnv,
-  ctx: Pick<ExecutionContext, "waitUntil">,
-  login: string,
-) {
-  return async (key: string) => {
-    const file = await readFile(env, ctx, login, key);
-    await file?.body?.cancel();
-    return file?.etag ?? null;
-  };
+function fileOf(body: ReadableStream, object: R2Object): SiteFile {
+  return { body, contentType: object.httpMetadata?.contentType ?? "" };
 }
 
 /** Answers a request for one of the sites `siteOf` names. */
@@ -295,7 +245,7 @@ export async function servePage(
   const url = new URL(request.url);
   const decoded = decodePath(url.pathname.replace(/^\/+/, ""));
   const path = resolvePath(decoded);
-  const extension = extensionOf(path);
+  const extension = path.split(".").at(-1) ?? "";
   if (!SERVED.includes(extension))
     return new Response(text("Redirecting..."), {
       status: 302,
@@ -332,32 +282,10 @@ export async function servePage(
       referrer: truncate(request.headers.get("referer")),
       userAgent: truncate(request.headers.get("user-agent")),
     });
-  const html = extension === "html" || extension === "htm";
-  // Only a request for the file's current version may be kept: one for an
-  // older version, from a page loaded before an edit, gets today's file.
-  const current = url.searchParams.get("v") === fingerprint(file.etag);
-  const response = new Response(file.body, {
+  return new Response(file.body, {
     headers: {
       "Content-Type": file.contentType,
-      "Cache-Control":
-        current && !html ? VERSIONED_CACHE_CONTROL : SITE_CACHE_CONTROL,
+      "Cache-Control": SITE_CACHE_CONTROL,
     },
   });
-  // Rewriting reads the page whole (assets.ts), so a page past what the edge
-  // caches streams as it is, as it did before versioned URLs.
-  if (
-    !html ||
-    file.size > MAX_CACHED_BYTES ||
-    !versionsAssets(env, login) ||
-    typeof HTMLRewriter === "undefined"
-  )
-    return response;
-  return await versionAssets(
-    response,
-    url,
-    login,
-    env,
-    SERVED,
-    etagLookup(env, ctx, login),
-  );
 }
