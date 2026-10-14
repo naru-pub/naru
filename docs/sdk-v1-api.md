@@ -322,7 +322,11 @@ database methods, which return promises of what the SDK would, so `await` them:
   `{ revision }` or (for `set`) `{ absent: true }`, as for the SDK's own
   writes: a mismatch fails the call with `CONFLICT`;
 - `media.delete(uploadId)`: deletes one of the site's uploads once the call
-  commits (see below).
+  commits (see below);
+- `add` and `set` take `{ secret }` (1.1.0), as a visitor's `add` does, and
+  `secretMatches(collection, id, secret)` resolves whether a secret is the
+  document's: a guest's password, without the app storing a hash. It counts
+  toward the three password operations a call may make.
 
 `notify(memberId, data)` and `broadcast(topic, data)` send live messages
 (see Live connections); they return nothing and need no `await`. Functions

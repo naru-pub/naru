@@ -1203,11 +1203,21 @@ export class SiteData extends DurableObject<Env> {
           : "condition must contain revision or absent.",
       );
     };
+    // A document's write secret (1.1.0), as a visitor's add({ secret }) sets it.
+    const secretOption = (options: unknown) => {
+      if (!options || typeof options !== "object") return undefined;
+      const secret = (options as { secret?: unknown }).secret;
+      if (secret === undefined) return undefined;
+      if (typeof secret !== "string" || !secret || secret.length > 256)
+        throw new DataError(400, "A secret is 1–256 characters.");
+      return secret;
+    };
     const write = (
       target: Collection,
       id: string,
       data: unknown,
       expected?: number,
+      secret?: string,
     ) => {
       const existing = this.rows(
         "SELECT size_bytes, version FROM documents WHERE collection_id = ? AND id = ?",
@@ -1219,6 +1229,13 @@ export class SiteData extends DurableObject<Env> {
       this.checkQuota(existing?.size_bytes, size);
       this.checkUnique(target, id, data);
       this.upsert(target.id, id, encoded, size, null);
+      if (secret !== undefined)
+        this.sql.exec(
+          "UPDATE documents SET secret_hash = ? WHERE collection_id = ? AND id = ?",
+          hashPassword(secret),
+          target.id,
+          id,
+        );
       written.add(target.name);
       return publicResult(documentOf(document(target.id, id)));
     };
@@ -1276,7 +1293,13 @@ export class SiteData extends DurableObject<Env> {
           );
         }
         case "add":
-          return write(collection(args[0]), randomUUID(), args[1]);
+          return write(
+            collection(args[0]),
+            randomUUID(),
+            args[1],
+            undefined,
+            secretOption(args[2]),
+          );
         case "set":
           if (args.length < 3)
             throw new DataError(400, "set(collection, id, data) needs data.");
@@ -1285,7 +1308,21 @@ export class SiteData extends DurableObject<Env> {
             name(args[1]),
             args[2],
             condition(args[3]),
+            secretOption(args[3]),
           );
+        case "secretMatches": {
+          const secret = secretOption({ secret: args[2] });
+          const row = this.rows(
+            "SELECT secret_hash FROM documents WHERE collection_id = ? AND id = ?",
+            collection(args[0]).id,
+            name(args[1]),
+          )[0];
+          return Boolean(
+            secret &&
+              row?.secret_hash &&
+              verifyPassword(secret, row.secret_hash) === true,
+          );
+        }
         case "notify":
         case "broadcast": {
           const target = name(args[0]);

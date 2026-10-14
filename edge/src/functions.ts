@@ -268,6 +268,7 @@ globalThis.__run = async (name, member, owner, visitor, now, args) => {
       __operation("list")(collection, options ?? {}),
     add: __operation("add"),
     set: __operation("set"),
+    secretMatches: __operation("secretMatches"),
     delete: __operation("delete"),
     media: Object.freeze({ delete: __operation("mediaDelete") }),
     notify: (member, data) => __call("notify", member, data ?? null),
@@ -447,6 +448,14 @@ export function runFunction(
         )
           throw failed(
             `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
+          );
+        // A document secret is checked with the hash ctx.password uses.
+        if (
+          name === "secretMatches" &&
+          ++passwords > MAX_PASSWORD_OPERATIONS
+        )
+          throw failed(
+            `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
           );
         operations += name === "getMany" ? Math.max(1, values[1].length) : 1;
         if (operations > MAX_OPERATIONS)

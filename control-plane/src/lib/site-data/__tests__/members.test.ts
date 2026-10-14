@@ -1132,6 +1132,54 @@ integration("site members", () => {
     }
   });
 
+  test("functions store and check a document's secret, shared with native writes", async () => {
+    await owned("POST", [], {
+      name: "secret_book",
+      read: "world",
+      write: "create",
+    });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      file: "secretbook",
+      source: `export const visitors = ["post", "check"];
+        export async function post(ctx, { text, secret }) {
+          return (await ctx.add("secret_book", { text }, { secret })).id;
+        }
+        export async function check(ctx, { id, secret }) {
+          return await ctx.secretMatches("secret_book", id, secret);
+        }`,
+    });
+    try {
+      const call = (name: string, args: unknown) =>
+        callSiteObject<any>("alice", "call", {
+          ownerId: String(owner),
+          site: "alice",
+          member: null,
+          visitor: true,
+          file: "secretbook",
+          name,
+          args,
+        });
+      const { result: id } = await call("post", {
+        text: "hi",
+        secret: "s3cret",
+      });
+      expect((await call("check", { id, secret: "s3cret" })).result).toBe(true);
+      expect((await call("check", { id, secret: "wrong" })).result).toBe(false);
+      // A visitor edits natively with the secret the function stored.
+      await expect(
+        as(undefined, "PUT", ["secret_book", id], {
+          data: { text: "edited" },
+          secret: "s3cret",
+        }),
+      ).resolves.toBeDefined();
+      const read = (await as(undefined, "GET", ["secret_book", id])) as any;
+      expect(JSON.stringify(read)).not.toMatch(/pbkdf2/);
+    } finally {
+      await owned("DELETE", ["secret_book"]);
+    }
+  });
+
   test("visitors call only the exports a module opens to them, by address", async () => {
     await owned("POST", [], {
       name: "visitor_book",
