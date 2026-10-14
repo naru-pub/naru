@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm";
 import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
+import MembershipManager from "./MembershipManager";
 
 type Collection = {
   name: string;
@@ -125,6 +126,7 @@ export default function DatabaseManager({
         <TabsList aria-label="데이터베이스 메뉴">
           <TabsTrigger value="collections">컬렉션과 문서</TabsTrigger>
           <TabsTrigger value="access">웹사이트 관리자 로그인</TabsTrigger>
+          <TabsTrigger value="members">사이트 회원</TabsTrigger>
           <TabsTrigger value="sdk">웹 SDK</TabsTrigger>
         </TabsList>
         {error && (
@@ -478,6 +480,13 @@ export default function DatabaseManager({
           className="data-[state=inactive]:hidden"
         >
           <WebsiteAccess collections={collections} websiteUrl={websiteUrl} />
+        </TabsContent>
+        <TabsContent
+          value="members"
+          forceMount
+          className="data-[state=inactive]:hidden"
+        >
+          <MembershipManager />
         </TabsContent>
         <TabsContent
           value="sdk"

@@ -101,8 +101,8 @@ export default function MembershipManager() {
     }
   }
   return (
-    <section className="max-w-5xl mx-auto px-6 py-8 space-y-4">
-      <h2 className="text-xl font-bold">사이트 회원</h2>
+    <section className="min-w-0 border p-5 space-y-4">
+      <h2 className="font-bold">사이트 회원</h2>
       {error && (
         <p role="alert" className="text-destructive">
           {error}
