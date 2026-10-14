@@ -16,6 +16,9 @@
   "compatibility_date": "2026-10-01",
   // Buffer and node:crypto, for the control plane's cursor and filter code.
   "compatibility_flags": ["nodejs_compat"],
+  // Control-plane modules the Worker imports find their packages here, since
+  // Workers Builds installs only this directory's.
+  "alias": { "acorn": "./node_modules/acorn/dist/acorn.mjs" },
   "durable_objects": {
     "bindings": [
       { "name": "SITES", "class_name": "SiteData" },
