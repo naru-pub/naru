@@ -93,6 +93,20 @@ pnpm dev
 
 - Control Plane: http://localhost:3000
 
+## 사이트 하나를 로컬에서 실행하기 (naru-dev)
+
+Naru 데이터 SDK를 쓰는 사이트를 실제 edge Worker로 로컬에서 실행합니다.
+`edge/`와 `control-plane/`에서 `pnpm install`을 마친 뒤:
+
+```bash
+cd control-plane && pnpm naru-dev ~/Git/neo-avocado --site neo-avocado
+```
+
+http://localhost:4000 에서 사이트 파일, SDK, 데이터 API를 함께 제공하고,
+운영자·회원 로그인은 한 번의 클릭으로 끝납니다. `_naru/`를 고치면 바로 다시
+게시합니다. 데이터는 사이트 폴더의 `.naru-dev/`에 남습니다. 자세한 내용은
+[sdk-v1-api.md](sdk-v1-api.md#local-development-naru-dev)를 참고하세요.
+
 ## 프로젝트 구조
 
 ```
