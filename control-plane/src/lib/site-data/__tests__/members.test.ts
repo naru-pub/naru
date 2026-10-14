@@ -358,6 +358,35 @@ integration("site members", () => {
     ).resolves.toBeDefined();
   });
 
+  test("operators can exempt a site, letting accounts without a plan be members", async () => {
+    await sql`update users set site_members_free = true where id = ${owner}`.execute(
+      db,
+    );
+    try {
+      expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
+        mayJoin: true,
+      });
+      const free = await signIn("ivy");
+      await expect(
+        as(free.accessToken, "GET", ["board"]),
+      ).resolves.toBeDefined();
+      // Withdrawing the exemption reaches members already signed in.
+      await sql`update users set site_members_free = false where id = ${owner}`.execute(
+        db,
+      );
+      await expect(
+        as(free.accessToken, "GET", ["board"]),
+      ).rejects.toMatchObject({
+        status: 403,
+        code: "ACCESS_DENIED",
+      });
+    } finally {
+      await sql`update users set site_members_free = false where id = ${owner}`.execute(
+        db,
+      );
+    }
+  });
+
   test("approval and bans govern existing tokens across data, functions and uploads", async () => {
     const member = await signIn("erin");
     const bearer = { token: member.accessToken, origin };

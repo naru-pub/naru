@@ -754,6 +754,7 @@ export interface Users {
   site_data_document_count: ColumnType<string, never, number>;
   site_member_admission: ColumnType<"open" | "approval" | "closed", "open" | "approval" | "closed" | undefined>;
   site_member_verified_email: Generated<boolean>;
+  site_members_free: Generated<boolean>;
   site_rendered_at: Timestamp | null;
   site_title: string | null;
   site_updated_at: Timestamp | null;

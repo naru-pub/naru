@@ -166,8 +166,7 @@ test("untrusted IP headers do not select a separate rate limit bucket", async ()
     );
     expect(execute.mock.calls[0][0].clientIp).toBeUndefined();
   } finally {
-    if (previous === undefined)
-      delete process.env.TRUST_CLOUDFLARE_IP;
+    if (previous === undefined) delete process.env.TRUST_CLOUDFLARE_IP;
     else process.env.TRUST_CLOUDFLARE_IP = previous;
   }
 });
@@ -185,8 +184,7 @@ test("trusted ingress IP selects the public-write rate limit bucket", async () =
     );
     expect(execute.mock.calls[0][0].clientIp).toBe("2001:db8::99");
   } finally {
-    if (previous === undefined)
-      delete process.env.TRUST_CLOUDFLARE_IP;
+    if (previous === undefined) delete process.env.TRUST_CLOUDFLARE_IP;
     else process.env.TRUST_CLOUDFLARE_IP = previous;
   }
 });

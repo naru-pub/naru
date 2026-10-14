@@ -18,8 +18,9 @@ import { DataError, name } from "./validation";
 // site_members, so a site never learns which account is behind it.
 //
 // Members need a Naru supporter plan (comp, paid, or within the payment
-// grace). It is checked at sign-in and on every request, so a member whose
-// support ends loses access without signing out.
+// grace), except on sites Naru's operators exempt (users.site_members_free).
+// It is checked at sign-in and on every request, so a member whose support
+// ends, or whose site loses its exemption, loses access without signing out.
 //
 // A site may also require a verified email (site_member_verified_email): an
 // account without one cannot sign in to it as a member, new or returning.
@@ -65,9 +66,17 @@ async function emailVerified(tx: Kysely<DB>, userId: string) {
   return Boolean(user?.email && user.email_verified_at);
 }
 
-/** Whether an account may be a member anywhere: it supports Naru. */
-async function mayJoin(tx: Kysely<DB>, userId: string) {
-  return (await getUserEntitlement(userId, tx)).isSupporter;
+/** Whether an account may be a member of the site: it supports Naru, or the site is exempt. */
+async function mayJoin(tx: Kysely<DB>, userId: string, siteUserId: string) {
+  const site = await tx
+    .selectFrom("users")
+    .select("site_members_free")
+    .where("id", "=", siteUserId)
+    .executeTakeFirst();
+  return (
+    site?.site_members_free === true ||
+    (await getUserEntitlement(userId, tx)).isSupporter
+  );
 }
 
 export type MemberSignInInput = ReturnType<typeof memberSignInInput>;
@@ -146,7 +155,7 @@ export async function previewMemberSignIn(
     );
   return {
     site: site.login_name,
-    mayJoin: await mayJoin(db, userId),
+    mayJoin: await mayJoin(db, userId, site.id),
     needsVerifiedEmail:
       site.site_member_verified_email && !(await emailVerified(db, userId)),
   };
@@ -179,7 +188,7 @@ export async function approveMemberSignIn(
         "This site is closed to new members.",
         "ACCESS_DENIED",
       );
-    if (!(await mayJoin(tx, userId))) throw supporterRequired();
+    if (!(await mayJoin(tx, userId, site.id))) throw supporterRequired();
     if (site.site_member_verified_email && !(await emailVerified(tx, userId)))
       throw emailRequired();
     const session = await tx
@@ -286,7 +295,8 @@ export async function exchangeMemberCode(
     if (!member) throw denied();
     if (member.status === "banned") throw membershipDenied("banned");
     await assertSiteOrigin(tx, member.site_user_id, grant.redirect_uri);
-    if (!(await mayJoin(tx, member.user_id))) throw supporterRequired();
+    if (!(await mayJoin(tx, member.user_id, member.site_user_id)))
+      throw supporterRequired();
     await tx
       .deleteFrom("site_member_tokens")
       .where("expires_at", "<=", new Date())
@@ -356,7 +366,8 @@ export async function memberIdentity(
     .executeTakeFirst();
   if (!grant || bearer.origin !== grant.origin) throw denied();
   await assertSiteOrigin(tx, siteUserId, grant.origin);
-  if (!(await mayJoin(tx, grant.user_id))) throw supporterRequired();
+  if (!(await mayJoin(tx, grant.user_id, siteUserId)))
+    throw supporterRequired();
   const current = new Date(grant.expires_at).getTime();
   if (Date.now() >= current - (MEMBER_TOKEN_SECONDS * 1000) / 2) {
     const renewed = Math.max(

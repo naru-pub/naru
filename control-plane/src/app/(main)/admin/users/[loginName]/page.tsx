@@ -17,6 +17,7 @@ import {
 import { formatDate, formatKrw } from "../../_components/format";
 import { SUBSCRIPTION_STATUS_LABELS } from "../../_components/metrics";
 import { requireOperator } from "../../_components/requireOperator";
+import { SiteMembersFreeToggle } from "../../_components/SiteMembersFreeToggle";
 import {
   formatValue,
   METRICS,
@@ -54,6 +55,7 @@ export default async function AccountPage({
       "users.home_directory_size_bytes_updated_at",
       "users.supporter_comp",
       "users.supporter_until",
+      "users.site_members_free",
       "subscriptions.status as subscription_status",
       "subscriptions.billing_interval",
       "subscriptions.next_billing_at",
@@ -190,6 +192,17 @@ export default async function AccountPage({
               : "-"}
           </Field>
           <Field label="다음 결제">{formatDate(user.next_billing_at)}</Field>
+          <Field label="사이트 회원">
+            {user.site_members_free ? "후원 없이 가입 가능" : "후원 플랜 필요"}
+            {!user.deleted_at && (
+              <span className="ml-2">
+                <SiteMembersFreeToggle
+                  loginName={user.login_name}
+                  free={user.site_members_free}
+                />
+              </span>
+            )}
+          </Field>
         </dl>
       </Card>
 

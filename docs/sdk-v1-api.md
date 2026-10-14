@@ -213,7 +213,7 @@ requests count against the site's monthly budget like visitors'.
 
 A sign-in that was denied, took longer than ten minutes, or could not be
 completed resolves `session()` with `null`. Members need a Naru supporter
-plan: an account without one is asked to support Naru on Naru's sign-in page,
+plan, unless Naru has exempted the site: an account without one is asked to support Naru on Naru's sign-in page,
 and a member whose plan has ended gets `ACCESS_DENIED` until it resumes.
 
 An owner's and a member's sign-in can share a page: each only finishes the
