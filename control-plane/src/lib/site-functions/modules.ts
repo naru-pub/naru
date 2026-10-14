@@ -103,12 +103,16 @@ export function moduleImports(source: string, filename: string): string[] {
 }
 
 /**
- * The exports a functions module declares read-only, from its
- * `export const readOnly = ["name", ...]`: string literals only, so publishing
- * can read them without running anything. Calls to these run with writes
- * forbidden and count against the member's read budget.
+ * The exports a functions module lists in `export const <list> = ["name", ...]`,
+ * string literals only, so publishing can read them without running anything:
+ * `readOnly`, whose calls run with writes forbidden on the read budget, and
+ * `visitors`, which visitors may call without signing in.
  */
-export function readOnlyExports(source: string, filename: string): string[] {
+export function declaredExports(
+  source: string,
+  filename: string,
+  list: "readOnly" | "visitors",
+): string[] {
   let tree: Node;
   try {
     tree = parse(source, { ecmaVersion: "latest", sourceType: "module" });
@@ -119,7 +123,7 @@ export function readOnlyExports(source: string, filename: string): string[] {
   }
   const wrong = () =>
     invalid(
-      `${filename}: declare read-only functions as export const readOnly = ["name", ...].`,
+      `${filename}: declare these as export const ${list} = ["name", ...].`,
     );
   let names: string[] = [];
   for (const statement of (tree as unknown as { body: Node[] }).body) {
@@ -128,14 +132,14 @@ export function readOnlyExports(source: string, filename: string): string[] {
     for (const specifier of (node.specifiers ?? []) as {
       exported: { name?: string; value?: string };
     }[])
-      if ((specifier.exported.name ?? specifier.exported.value) === "readOnly")
+      if ((specifier.exported.name ?? specifier.exported.value) === list)
         throw wrong();
     const declaration = node.declaration as
       | (Node & Record<string, unknown>)
       | null;
     if (!declaration) continue;
     if (declaration.type !== "VariableDeclaration") {
-      if ((declaration.id as { name?: string } | null)?.name === "readOnly")
+      if ((declaration.id as { name?: string } | null)?.name === list)
         throw wrong();
       continue;
     }
@@ -144,10 +148,10 @@ export function readOnlyExports(source: string, filename: string): string[] {
       init: (Node & Record<string, unknown>) | null;
     }[]) {
       if (declarator.id.type !== "Identifier") {
-        if (JSON.stringify(declarator.id).includes('"readOnly"')) throw wrong();
+        if (JSON.stringify(declarator.id).includes(`"${list}"`)) throw wrong();
         continue;
       }
-      if (declarator.id.name !== "readOnly") continue;
+      if (declarator.id.name !== list) continue;
       const init = declarator.init;
       if (
         declaration.kind !== "const" ||
@@ -167,6 +171,9 @@ export function readOnlyExports(source: string, filename: string): string[] {
   }
   return [...new Set(names)];
 }
+
+export const readOnlyExports = (source: string, filename: string) =>
+  declaredExports(source, filename, "readOnly");
 
 /** Storage I/O finishes before QuickJS and the synchronous SQLite transaction. */
 export async function loadModuleGraph(

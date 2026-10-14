@@ -10,6 +10,7 @@ import {
 } from "../../control-plane/src/lib/site-data/protocol";
 import {
   DataError,
+  functionReference,
   jsonBody,
   NAME,
   protocolError,
@@ -80,6 +81,53 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
   );
 }
 
+/**
+ * Runs an export its module opens to visitors (`export const visitors`), in
+ * the site's object. What the object will not answer, such as a site whose
+ * paid status it has not had confirmed, goes on to the control plane.
+ */
+async function visit(
+  request: Request,
+  env: WebsiteEnv,
+  site: string,
+  path: string[],
+  headers: Record<string, string>,
+) {
+  const original = request.clone();
+  try {
+    const { file, fn } = functionReference(path.slice(1).join("/"));
+    const body = await jsonBody(request);
+    const stub = env.SITES.get(env.SITES.idFromName(site));
+    const outcome = (await stub.visit({
+      site,
+      file,
+      name: fn,
+      args: body?.args ?? null,
+      clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+    })) as Outcome<
+      { pass: true } | { pass?: undefined; result: unknown; written: string[] }
+    >;
+    if (!outcome.ok) {
+      const { status, message, code, details } = outcome.error;
+      return protocolError(status, message, code, headers, details);
+    }
+    if (outcome.value.pass) return passThrough(original, env);
+    const { result, written } = outcome.value;
+    return Response.json({ result, written }, { headers });
+  } catch (error) {
+    if (error instanceof DataError)
+      return protocolError(
+        error.status,
+        error.message,
+        error.code,
+        headers,
+        error.details,
+      );
+    console.error("A visitor's function call failed", error);
+    return protocolError(500, "Function call failed.", undefined, headers);
+  }
+}
+
 /** Sends the request to the control plane, the origin behind this route. */
 function passThrough(request: Request, env: WebsiteEnv) {
   if (!env.PASSTHROUGH_ORIGIN) return fetch(request);
@@ -110,6 +158,14 @@ export async function website(
     request.headers.get("Upgrade")?.toLowerCase() === "websocket"
   )
     return live(request, env, site);
+  // A visitor's function call: answered here, like a visitor's read.
+  if (
+    path[0] === "_call" &&
+    request.method === "POST" &&
+    !request.headers.has("authorization") &&
+    NAME.test(site)
+  )
+    return visit(request, env, site, path, headers);
   if (
     !NAME.test(site) ||
     request.headers.has("authorization") ||

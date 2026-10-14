@@ -476,9 +476,8 @@ test("a call posts with member credentials, and only what it wrote skips caches"
   await browser(async ({ calls, respond, local }) => {
     saveMember(local);
     // A module of its own: which collections were written is the module's.
-    const { createNaru: isolated } = await import(
-      "../public/sdk/1.1.0/naru.js?written"
-    );
+    const { createNaru: isolated } =
+      await import("../public/sdk/1.1.0/naru.js?written");
     const naru = isolated();
     const member = await naru.members.session();
     respond(() => Response.json({ result: { value: 1 }, written: ["shop"] }));
@@ -510,6 +509,29 @@ test("a call posts with member credentials, and only what it wrote skips caches"
       member.call("shop:catalog", { date: new Date() }),
       TypeError,
     );
+  });
+});
+
+test("visitors call functions without credentials", async () => {
+  await browser(async ({ calls, respond }) => {
+    respond(() => Response.json({ result: ["entry"], written: [] }));
+    assert.deepEqual(await createNaru().call("guest:list"), ["entry"]);
+    assert.equal(
+      calls[0].url.href,
+      "https://naru.pub/api/data/v1/alice/_call/guest:list",
+    );
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].credentials, "omit");
+    assert.equal(calls[0].headers.Authorization, undefined);
+    respond(() =>
+      Response.json(
+        { error: { code: "AUTH_REQUIRED", message: "Sign in." } },
+        { status: 401 },
+      ),
+    );
+    await assert.rejects(createNaru().call("guest:membersOnly"), {
+      code: "AUTH_REQUIRED",
+    });
   });
 });
 

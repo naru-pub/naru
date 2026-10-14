@@ -87,6 +87,12 @@ const MEMBER_WRITES_PER_MINUTE = 30;
 /** Function calls a member may make a minute. */
 const MEMBER_CALLS_PER_MINUTE = 30;
 const MEMBER_READS_PER_MINUTE = 120;
+/**
+ * Calls of exports a module opens to visitors, a minute: per address, and for
+ * the whole site. A visitor's read-only call counts against the reads.
+ */
+const VISITOR_CALLS = { address: 20, site: 300 };
+const VISITOR_READS = { address: 60, site: 900 };
 /** Live connections one site's object holds at once. */
 const MAX_LIVE_CONNECTIONS = 1000;
 /** A message a function sends, as JSON. */
@@ -1255,6 +1261,10 @@ export class SiteData extends DurableObject<Env> {
     ownerId: string;
     site: string;
     member: string | null;
+    /** No one signed in: only exports the module lists in `visitors`. */
+    visitor?: boolean;
+    /** A visitor's address, which their calls are limited by. */
+    clientIp?: string;
     /** The module, _naru/functions/<file>.js. */
     file: string;
     name: string;
@@ -1262,6 +1272,7 @@ export class SiteData extends DurableObject<Env> {
   }): Promise<
     Outcome<{ result: unknown; written: string[]; mediaReleases?: number }>
   > {
+    const visitor = input.member === null && input.visitor === true;
     let filename: string, sources, readonly;
     try {
       functionModule(input.file);
@@ -1271,7 +1282,18 @@ export class SiteData extends DurableObject<Env> {
       const revisions = this.revisions(input.site);
       filename = await revisions.entry(revision, `functions/${input.file}`);
       sources = await revisions.graph(revision, filename);
-      readonly = await revisions.isReadOnly(revision, filename, input.name);
+      const declared = await revisions.declarations(
+        revision,
+        filename,
+        input.name,
+      );
+      readonly = declared.readOnly;
+      if (visitor && !declared.visitors)
+        throw new DataError(
+          401,
+          "Sign in as a member to use this function.",
+          "AUTH_REQUIRED",
+        );
     } catch (error) {
       if (error instanceof DataError)
         return this.run(() => {
@@ -1281,6 +1303,11 @@ export class SiteData extends DurableObject<Env> {
     }
     const admitted = this.run(() => {
       this.claim(input.ownerId);
+      if (visitor) {
+        this.spend();
+        this.limitVisitor(input.clientIp, readonly);
+        return;
+      }
       if (input.member === null) return;
       this.spend();
       this.limitMember(input.member, readonly ? "read" : "call");
@@ -1300,7 +1327,8 @@ export class SiteData extends DurableObject<Env> {
             name: input.name,
             args: input.args,
             member: input.member,
-            owner: input.member === null,
+            owner: input.member === null && !visitor,
+            visitor,
             now: Date.now(),
             readonly,
           },
@@ -1323,6 +1351,74 @@ export class SiteData extends DurableObject<Env> {
           code: "UNAVAILABLE",
         },
       };
+    }
+  }
+
+  /**
+   * A visitor's call at the edge (website.ts): answered here only while the
+   * edge may answer the site's visitors, like `serve`; otherwise the Worker
+   * sends it on to the control plane.
+   */
+  async visit(input: {
+    site: string;
+    file: string;
+    name: string;
+    args: unknown;
+    clientIp?: string;
+  }): Promise<
+    Outcome<
+      { pass: true } | { pass?: undefined; result: unknown; written: string[] }
+    >
+  > {
+    const ownerId = this.meta("owner_id");
+    const until = this.meta("entitled_until");
+    const now = Date.now();
+    if (
+      ownerId === null ||
+      until === null ||
+      Number(this.meta("confirmed_until") ?? 0) <= now ||
+      (until !== "forever" && Number(until) <= now) ||
+      !this.meta("functions_revision")
+    )
+      return { ok: true, value: { pass: true } };
+    const outcome = await this.call({
+      ...input,
+      ownerId,
+      member: null,
+      visitor: true,
+    });
+    if (!outcome.ok) return outcome;
+    const { result, written } = outcome.value;
+    return { ok: true, value: { result, written } };
+  }
+
+  /** A visitor's calls a minute, by address and for the whole site. */
+  private limitVisitor(clientIp: string | undefined, readonly: boolean) {
+    const window = Math.floor(Date.now() / 60000) * 60000;
+    this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
+    const kind = readonly ? "visitor-read" : "visitor-call";
+    const limits = readonly ? VISITOR_READS : VISITOR_CALLS;
+    const caller = createHash("sha256")
+      .update(clientIp || "unknown")
+      .digest("base64url");
+    for (const [key, maximum] of [
+      [`${kind}:site`, limits.site],
+      [`${kind}:${caller}`, limits.address],
+    ] as const) {
+      const count = Number(
+        this.rows("SELECT count FROM rate_limits WHERE key = ?", key)[0]
+          ?.count ?? 0,
+      );
+      if (count >= maximum)
+        throw new DataError(
+          429,
+          "Visitor call rate limit reached. Try again next minute.",
+        );
+      this.sql.exec(
+        "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
+        key,
+        window,
+      );
     }
   }
 

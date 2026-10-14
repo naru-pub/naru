@@ -247,7 +247,9 @@ and receives the JSON the function returned. The site's owner calls the same
 functions with `admin.call(...)`: the function then sees `ctx.member` null and
 `ctx.owner` true, whatever collections the owner's sign-in approved, so a
 function can keep administrative work to the owner with
-`if (!ctx.owner) ctx.fail("ACCESS_DENIED", "...")`. Visitors cannot call.
+`if (!ctx.owner) ctx.fail("ACCESS_DENIED", "...")`. Visitors call only the
+exports a module opens to them (see Visitor calls); `ctx.member` null with
+`ctx.owner` false and `ctx.visitor` true is a visitor.
 
 **Transactions.** A function runs on the server in one transaction, with the
 site owner's access to every collection, so keep the collections it guards
@@ -326,6 +328,61 @@ answer was lost may have changed any of them.
 happens only if the call commits, shortly after, as an owner's deletion would.
 Use it where a document that referenced an upload goes away. The function must
 check that the caller may delete the upload; Naru does not.
+
+## Visitor calls (1.1.0)
+
+A module may open exports to visitors who have signed in to nothing, by listing
+them like read-only ones: `export const visitors = ["post", "edit", "list"]`.
+A page calls them with `naru.call(...)`, no sign-in needed; every other export
+answers a visitor with `AUTH_REQUIRED`. The function sees `ctx.visitor` true and
+`ctx.member` null, and keeps the owner's access to collections, so it decides
+what a visitor may do and what they see. A guest board with passwords:
+
+```js
+// _naru/functions/guest.js
+export const visitors = ["post", "edit", "list"];
+export const readOnly = ["list"];
+
+export async function post(ctx, { name, text, password }) {
+  const doc = await ctx.add("guestbook", {
+    name,
+    text,
+    hash: ctx.password.hash(password),
+  });
+  return doc.id;
+}
+
+export async function edit(ctx, { id, text, password }) {
+  const doc = await ctx.get("guestbook", id);
+  if (!doc || !ctx.password.verify(password, doc.data.hash))
+    ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
+  await ctx.set("guestbook", id, { ...doc.data, text });
+}
+
+export async function list(ctx) {
+  const { documents } = await ctx.list("guestbook");
+  // Never return the stored hash.
+  return documents.map(({ id, data }) => ({
+    id,
+    name: data.name,
+    text: data.text,
+  }));
+}
+```
+
+```js
+const entries = await naru.call("guest:list");
+```
+
+Keep the collection admin-written (and admin-read, when the stored hash is in
+it), so visitors reach it only through the function. `ctx.password.hash(text)`
+returns a salted PBKDF2-SHA256 hash string and `ctx.password.verify(text, hash)`
+a boolean; a call may make three of them. They are not promises.
+
+A visitor's calls are limited by their address: 20 a minute that may write and
+60 read-only ones, and 300 and 900 a minute for all of a site's visitors. They
+count against the site's monthly budget. A visitor's call cannot delete uploads
+(`ctx.media.delete`). Everything else, limits included, is as for members.
 
 ## Live connections (1.1.0)
 

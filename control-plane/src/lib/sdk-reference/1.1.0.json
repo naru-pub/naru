@@ -776,6 +776,55 @@
           "throws": []
         },
         {
+          "name": "call",
+          "optional": false,
+          "signature": "call<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Calls a site function as a visitor, signed in to nothing: only exports the module lists in "
+                },
+                {
+                  "type": "code",
+                  "value": "export const visitors = [...]"
+                },
+                {
+                  "type": "text",
+                  "value": "; others fail with "
+                },
+                {
+                  "type": "code",
+                  "value": "AUTH_REQUIRED"
+                },
+                {
+                  "type": "text",
+                  "value": ". The function sees "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.visitor"
+                },
+                {
+                  "type": "text",
+                  "value": " true and "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.member"
+                },
+                {
+                  "type": "text",
+                  "value": " null. Calls are limited per visitor address and count against the site's budget."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
           "name": "collection",
           "optional": false,
           "signature": "collection<T = Json>(name: string): PublicCollection<T>",

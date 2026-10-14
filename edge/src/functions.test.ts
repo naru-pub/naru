@@ -140,6 +140,42 @@ describe("calling", () => {
     ).toEqual([true, null]);
   });
 
+  test("a visitor's call says so, hashes and checks passwords, and cannot delete uploads", () => {
+    const visit = (source: string) =>
+      runFunction(
+        module,
+        { source, name: "f", args: null, member: null, visitor: true, now: 0 },
+        host,
+      );
+    expect(
+      visit(
+        "export function f(ctx) { return [ctx.visitor, ctx.owner, ctx.member]; }",
+      ),
+    ).toEqual([true, false, null]);
+    expect(run("export function f(ctx) { return ctx.visitor; }", "f")).toBe(
+      false,
+    );
+    const [hash, right, wrong] = visit(`export function f(ctx) {
+      const hash = ctx.password.hash("guest pass");
+      return [hash, ctx.password.verify("guest pass", hash), ctx.password.verify("guess", hash)];
+    }`) as [string, boolean, boolean];
+    expect(hash).toMatch(/^pbkdf2-sha256\$20000\$/);
+    expect([right, wrong]).toEqual([true, false]);
+    expect(() =>
+      visit(`export function f(ctx) { for (;;) ctx.password.hash("x"); }`),
+    ).toThrow(/more than 3 password operations/);
+    expect(() =>
+      visit(
+        `export function f(ctx) { ctx.password.verify("x", "not a hash"); }`,
+      ),
+    ).toThrow(/needs a hash from ctx.password.hash/);
+    expect(() =>
+      visit(
+        `export async function f(ctx) { await ctx.media.delete("0190f1a2-0000-7000-8000-000000000001"); }`,
+      ),
+    ).toThrow(/cannot delete uploads/);
+  });
+
   test("ctx.fail carries the function's details to the caller", () => {
     const failure = (args: string) => {
       try {

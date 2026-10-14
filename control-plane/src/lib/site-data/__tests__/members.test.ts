@@ -903,6 +903,125 @@ integration("site members", () => {
     await owned("DELETE", ["gated"]);
   });
 
+  test("visitors call only the exports a module opens to them, by address", async () => {
+    await owned("POST", [], {
+      name: "visitor_book",
+      read: "admin",
+      write: "admin",
+    });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      file: "guest",
+      source: `export const visitors = ["post", "edit", "list"];
+        export const readOnly = ["list"];
+        export async function post(ctx, { name, text, password }) {
+          const doc = await ctx.add("visitor_book", { name, text, hash: ctx.password.hash(password) });
+          ctx.broadcast("visitor_book", { id: doc.id });
+          return doc.id;
+        }
+        export async function edit(ctx, { id, text, password }) {
+          const doc = await ctx.get("visitor_book", id);
+          if (!doc || !ctx.password.verify(password, doc.data.hash))
+            ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.", { reason: "wrong_password" });
+          await ctx.set("visitor_book", id, { ...doc.data, text }, { condition: { revision: doc.revision } });
+          return true;
+        }
+        export async function list(ctx) {
+          const page = await ctx.list("visitor_book");
+          return page.documents.map((d) => ({ name: d.data.name, text: d.data.text, visitor: ctx.visitor }));
+        }
+        export function membersOnly(ctx) { return ctx.member?.id ?? null; }`,
+    });
+    const visit = (name: string, args: unknown, clientIp = "203.0.113.7") =>
+      executeCall({
+        site: "alice",
+        path: [name],
+        method: "POST",
+        body: { args },
+        clientIp,
+      }) as Promise<{ result: any; written: string[] }>;
+    const id = (
+      await visit("guest:post", {
+        name: "손님",
+        text: "안녕",
+        password: "1234",
+      })
+    ).result;
+    await expect(
+      visit("guest:edit", { id, text: "바꿈", password: "0000" }),
+    ).rejects.toMatchObject({
+      status: 403,
+      details: { reason: "wrong_password" },
+    });
+    expect(
+      (await visit("guest:edit", { id, text: "바꿈", password: "1234" }))
+        .written,
+    ).toEqual(["visitor_book"]);
+    // The function decides what visitors see: never the stored hash.
+    expect((await visit("guest:list", null)).result).toEqual([
+      { name: "손님", text: "바꿈", visitor: true },
+    ]);
+    // Exports not opened to visitors still need a sign-in.
+    await expect(visit("guest:membersOnly", null)).rejects.toMatchObject({
+      status: 401,
+      code: "AUTH_REQUIRED",
+    });
+    // Calls that may write: 20 a minute per address (two made above, one refused).
+    for (let n = 0; n < 18; n++)
+      await visit("guest:membersOnly", null, "203.0.113.9").catch(() => null);
+    const results: number[] = [];
+    for (let n = 0; n < 20; n++)
+      results.push(
+        await visit(
+          "guest:edit",
+          { id, text: "x", password: "1234" },
+          "198.51.100.1",
+        ).then(
+          () => 200,
+          (error) => error.status,
+        ),
+      );
+    expect(results).toEqual(Array(20).fill(200));
+    await expect(
+      visit("guest:edit", { id, text: "x", password: "1234" }, "198.51.100.1"),
+    ).rejects.toMatchObject({ status: 429 });
+    // Another address still may, and reads have their own budget.
+    await visit(
+      "guest:edit",
+      { id, text: "ok", password: "1234" },
+      "198.51.100.2",
+    );
+    await visit("guest:list", null, "198.51.100.1");
+    // At the edge, as browsers reach it: answered by the site's object.
+    await callSiteObject("alice", "configure", {
+      ownerId: String(owner),
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    const atEdge = await fetch(
+      `${process.env.EDGE_WORKER_URL}/api/data/v1/alice/_call/guest:post`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          args: { name: "엣지", text: "hi", password: "pass" },
+        }),
+      },
+    );
+    expect(atEdge.status).toBe(200);
+    expect(await atEdge.json()).toMatchObject({ written: ["visitor_book"] });
+    const refused = await fetch(
+      `${process.env.EDGE_WORKER_URL}/api/data/v1/alice/_call/guest:membersOnly`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+    expect(refused.status).toBe(401);
+    await owned("DELETE", ["visitor_book"]);
+  });
+
   test("unique fields refuse a second document with the same value, on every write path", async () => {
     const bob = await signIn("dave");
     const carol = await signIn("read-budget");

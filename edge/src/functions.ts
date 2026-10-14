@@ -1,4 +1,5 @@
 import { resolveModule, type ModuleSources } from "./modules";
+import { pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 import type {
   QuickJSContext,
   QuickJSHandle,
@@ -54,6 +55,14 @@ export const MAX_URL_PARSES = 1000;
  * `for (;;) await null` would otherwise run some thirty times past it.
  */
 export const MAX_JOBS = 10_000;
+/**
+ * Password hashes or checks a call may make (ctx.password): each is a few
+ * milliseconds of host time the interrupt checks cannot see.
+ */
+export const MAX_PASSWORD_OPERATIONS = 3;
+const PASSWORD_ITERATIONS = 20_000;
+const PASSWORD =
+  /^pbkdf2-sha256\$(\d{1,7})\$([A-Za-z0-9_-]{22})\$([A-Za-z0-9_-]{43})$/;
 /** Live messages a call may send (ctx.notify, ctx.broadcast). */
 export const MAX_MESSAGES = 50;
 const MESSAGES = new Set(["notify", "broadcast"]);
@@ -85,6 +94,8 @@ export type Invocation = {
   member: string | null;
   /** The site's owner called, rather than a member or the site itself. */
   owner?: boolean;
+  /** A visitor called, signed in to nothing (`export const visitors`). */
+  visitor?: boolean;
   now: number;
   readonly?: boolean;
 };
@@ -238,11 +249,16 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, now, args) => {
+globalThis.__run = async (name, member, owner, visitor, now, args) => {
   const ctx = Object.freeze({
     member: member === null ? null : Object.freeze({ id: member }),
     owner,
+    visitor,
     now,
+    password: Object.freeze({
+      hash: (password) => __call("passwordHash", password),
+      verify: (password, hash) => __call("passwordVerify", password, hash),
+    }),
     random: () => __call("random"),
     fail: (...args) => __call("fail", ...args),
     get: __operation("get"),
@@ -332,6 +348,7 @@ export function runFunction(
     let writes = 0;
     let parses = 0;
     let messages = 0;
+    let passwords = 0;
     let hostError: DataError | undefined;
     const entry = context.newFunction("__host", (operation, args) => {
       const name = context.getString(operation);
@@ -355,6 +372,51 @@ export function runFunction(
             JSON.stringify(
               Object.fromEntries(URL_PARTS.map((part) => [part, url[part]])),
             ),
+          );
+        }
+        if (name === "passwordHash" || name === "passwordVerify") {
+          if (++passwords > MAX_PASSWORD_OPERATIONS)
+            throw failed(
+              `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
+            );
+          const [password, stored] = JSON.parse(context.getString(args));
+          if (
+            typeof password !== "string" ||
+            !password ||
+            password.length > 256
+          )
+            throw failed("a password is 1–256 characters.");
+          if (name === "passwordHash") {
+            const salt = randomBytes(16);
+            const hash = pbkdf2Sync(
+              password,
+              salt,
+              PASSWORD_ITERATIONS,
+              32,
+              "sha256",
+            );
+            return context.newString(
+              JSON.stringify(
+                `pbkdf2-sha256$${PASSWORD_ITERATIONS}$${salt.toString("base64url")}$${hash.toString("base64url")}`,
+              ),
+            );
+          }
+          const match =
+            typeof stored === "string" ? PASSWORD.exec(stored) : null;
+          if (!match || Number(match[1]) > 1_000_000)
+            throw failed(
+              "ctx.password.verify needs a hash from ctx.password.hash.",
+            );
+          const expected = Buffer.from(match[3], "base64url");
+          const actual = pbkdf2Sync(
+            password,
+            Buffer.from(match[2], "base64url"),
+            Number(match[1]),
+            expected.length,
+            "sha256",
+          );
+          return context.newString(
+            JSON.stringify(timingSafeEqual(actual, expected)),
           );
         }
         if (name === "fail") {
@@ -416,6 +478,10 @@ export function runFunction(
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
         if (invocation.readonly && WRITES.has(name))
           throw failed("read-only functions cannot write.");
+        // The control plane deletes queued uploads after a call, and a
+        // visitor's call may be answered without it.
+        if (invocation.visitor && name === "mediaDelete")
+          throw failed("a visitor's call cannot delete uploads.");
         if (WRITES.has(name) && ++writes > MAX_WRITES)
           throw failed(`more than ${MAX_WRITES} writes.`);
         const out = host(name, values);
@@ -467,6 +533,7 @@ export function runFunction(
         invocation.name,
         invocation.member,
         invocation.owner === true,
+        invocation.visitor === true,
         invocation.now,
         JSON.stringify(invocation.args ?? null),
       ]

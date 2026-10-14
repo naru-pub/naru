@@ -28,7 +28,10 @@ is historical; these gaps have since been addressed:
   functions, replacing polling. Plain writes do not notify.
 - Functions have `URL` and `URLSearchParams`, and modules may be `.mjs`.
 
-Still open: guest function calls (#3), background and scheduled jobs (#4, #9),
+- Guest function calls (#3): modules open exports to visitors
+  (`export const visitors`), with `ctx.password` for guest edit and delete.
+
+Still open: background and scheduled jobs (#4, #9, deliberately not planned),
 export/import (#10), storage quotas (#2) and a local emulator. Revisit quotas
 with actual usage before raising ceilings. Keep cascading deletes and economy
 operations in transactional functions. UI parity is outside this SDK refinement

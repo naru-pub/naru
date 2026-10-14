@@ -201,21 +201,25 @@ export async function executeBatch(command: DataCommand) {
 }
 
 /**
- * A member, or the site's owner with an owner token, calls one of the site's
- * functions: `path` is the module and the function, `_naru/functions/<module>.js`
- * and its export. A function has the owner's access to every collection
- * whatever collections the owner's sign-in approved, as it has for members.
+ * A member, the site's owner with an owner token, or a visitor with no token
+ * calls one of the site's functions: `path` is the module and the function,
+ * `_naru/functions/<module>.js` and its export. Visitors reach only exports
+ * the module lists in `export const visitors`; the edge usually answers them
+ * itself (website.ts), and sends here what it cannot. A function has the
+ * owner's access to every collection whatever collections the owner's
+ * sign-in approved, as it has for members.
  */
 export async function executeCall(command: DataCommand) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
   const { file, fn } = functionReference(command.path.join("/"));
   const { owner, memberId, allowedIds } = await resolveSiteAccess(command);
-  if (memberId === undefined && allowedIds === undefined)
+  if (command.adminUserId !== undefined)
     throw new DataError(
-      command.bearer || command.adminUserId ? 403 : 401,
+      403,
       "Site functions are called by signed-in members or the site's owner.",
     );
+  const visitor = memberId === undefined && allowedIds === undefined;
   const invoke = () =>
     callSiteObject<{
       result: unknown;
@@ -228,6 +232,7 @@ export async function executeCall(command: DataCommand) {
         ownerId: String(owner.id),
         site: command.site,
         member: memberId ?? null,
+        ...(visitor ? { visitor: true, clientIp: command.clientIp } : {}),
         file,
         name: fn,
         args: command.body?.args ?? null,

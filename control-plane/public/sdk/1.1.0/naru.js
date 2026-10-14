@@ -996,6 +996,7 @@ export function createNaru(options) {
   return Object.freeze({
     collection: (name) => publicDocuments(context.root, name),
     live: (options) => live(context.root, options),
+    call: functions(context.root, request),
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({ collections, mediaDelete }) =>

@@ -376,6 +376,18 @@ export interface NaruClient {
    * broadcasts are public. Connecting counts against the site's budget.
    */
   live(options: LiveOptions): Live;
+  /**
+   * Calls a site function as a visitor, signed in to nothing: only exports
+   * the module lists in `export const visitors = [...]`; others fail with
+   * `AUTH_REQUIRED`. The function sees `ctx.visitor` true and `ctx.member`
+   * null. Calls are limited per visitor address and count against the
+   * site's budget.
+   */
+  call<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
   auth: {
     /**
      * The admin client for this page, or null. A sign-in that was denied,
