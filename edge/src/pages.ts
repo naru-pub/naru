@@ -184,6 +184,8 @@ type SiteFile = {
   body: ReadableStream | null;
   contentType: string;
   etag: string;
+  /** Bytes; a file from the cache is no larger than MAX_CACHED_BYTES. */
+  size: number;
 };
 
 const extensionOf = (path: string) => path.split(".").at(-1) ?? "";
@@ -221,6 +223,7 @@ async function readFile(
       body: hit.body,
       contentType: hit.headers.get("Content-Type") ?? "",
       etag: hit.headers.get("ETag")!,
+      size: Number(hit.headers.get("X-File-Size")) || MAX_CACHED_BYTES,
     };
   await hit?.body?.cancel();
 
@@ -245,6 +248,7 @@ async function readFile(
     ...headers,
     "Content-Type": file.contentType,
     ETag: file.etag,
+    "X-File-Size": String(file.size),
   };
   if (!file.body) {
     store(new Response(null, { headers: fileHeaders }));
@@ -260,6 +264,7 @@ function fileOf(object: R2Object | R2ObjectBody): SiteFile {
   return {
     body: "body" in object ? object.body : null,
     contentType: object.httpMetadata?.contentType ?? "",
+    size: object.size,
     etag: object.httpEtag,
   };
 }
@@ -338,8 +343,11 @@ export async function servePage(
         current && !html ? VERSIONED_CACHE_CONTROL : SITE_CACHE_CONTROL,
     },
   });
+  // Rewriting reads the page whole (assets.ts), so a page past what the edge
+  // caches streams as it is, as it did before versioned URLs.
   if (
     !html ||
+    file.size > MAX_CACHED_BYTES ||
     !versionsAssets(env, login) ||
     typeof HTMLRewriter === "undefined"
   )

@@ -125,7 +125,9 @@ serves, and the zone's cache rule (`cloudflare/rules.tf` in the infra
 repository) for `r2.naru.pub`, where each version is its own cache entry.
 An edit changes the fingerprint, so a visitor's next page names the new
 file. Module scripts, CSS `url()`s, and what scripts fetch keep their plain
-URLs: a module imported under two URLs would run twice.
+URLs: a module imported under two URLs would run twice. The Worker reads a
+page whole before rewriting it, so a page over 5 MB, past what the edge
+caches, streams unrewritten.
 
 What the Worker reads from the bucket, a file or its absence, it keeps in the
 data center's cache for `SITE_FILE_CACHE_SECONDS` (`wrangler.jsonc`), so a
