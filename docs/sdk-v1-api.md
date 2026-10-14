@@ -166,7 +166,7 @@ unless a condition was supplied.
 ## Members (1.1.0)
 
 A member is a visitor who signed in to your site with their own Naru account.
-Any Naru account can be a member of any site with the database; there is
+Any Naru account with a supporter plan can be a member of any site with the database; there is
 nothing to register. Members are what a community site is made of: give a
 collection `member` read access to keep it to members, and `member` write
 access to let them post.
@@ -212,9 +212,9 @@ collections. A member's writes are rate limited per member, and members'
 requests count against the site's monthly budget like visitors'.
 
 A sign-in that was denied, took longer than ten minutes, or could not be
-completed resolves `session()` with `null`. Naru may limit membership to
-accounts with a supporter plan; then signing in shows that on Naru's page, and
-a member whose plan has ended gets `ACCESS_DENIED`.
+completed resolves `session()` with `null`. Members need a Naru supporter
+plan: an account without one is asked to support Naru on Naru's sign-in page,
+and a member whose plan has ended gets `ACCESS_DENIED` until it resumes.
 
 An owner's and a member's sign-in can share a page: each only finishes the
 sign-in this tab started for it.

@@ -116,7 +116,8 @@ integration("site members", () => {
     owner = await insertUser("alice");
     for (const login of ["bob", "carol", "dave", "read-budget", "fern"])
       users[login] = await insertUser(login);
-    users.erin = await insertUser("erin", false);
+    users.erin = await insertUser("erin");
+    users.ivy = await insertUser("ivy", false);
     users.alice = owner;
     for (const [login, id] of Object.entries(users))
       await sql`insert into sessions values (${`${login}-session`}, ${id}, now() + interval '60 days')`.execute(
@@ -136,9 +137,6 @@ integration("site members", () => {
   });
   afterAll(async () => {
     if (ready) await teardownTestDatabase();
-  });
-  afterEach(() => {
-    delete process.env.SITE_MEMBERS_SUPPORTERS_ONLY;
   });
 
   test("sign-in is for a page of a site that has the database", async () => {
@@ -165,7 +163,7 @@ integration("site members", () => {
     ).rejects.toMatchObject({ status: 404 });
     // A site without the database has no members.
     await expect(
-      previewMemberSignIn(users.bob, input({ site: "erin" })),
+      previewMemberSignIn(users.bob, input({ site: "ivy" })),
     ).rejects.toMatchObject({ status: 404 });
     for (const bad of [
       { challenge: "short" },
@@ -328,24 +326,35 @@ integration("site members", () => {
     );
   });
 
-  test("supporters only, when the server says so, also for members already signed in", async () => {
-    const free = await signIn("erin");
-    await expect(as(free.accessToken, "GET", ["board"])).resolves.toBeDefined();
-    process.env.SITE_MEMBERS_SUPPORTERS_ONLY = "1";
-    expect(await previewMemberSignIn(users.erin, input())).toMatchObject({
+  test("members need a supporter plan, also once signed in", async () => {
+    // An account without one is told so, and cannot join.
+    expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
       mayJoin: false,
     });
     await expect(
-      approveMemberSignIn(users.erin, "erin-session", input()),
+      approveMemberSignIn(users.ivy, "ivy-session", input()),
     ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
-    await expect(as(free.accessToken, "GET", ["board"])).rejects.toMatchObject({
-      status: 403,
-      code: "ACCESS_DENIED",
-    });
-    // A supporter is unaffected.
-    const supporter = await signIn("bob");
+    // A member whose support ends loses access on the next request, and
+    // gets it back when it resumes.
+    const member = await signIn("erin");
     await expect(
-      as(supporter.accessToken, "GET", ["board"]),
+      as(member.accessToken, "GET", ["board"]),
+    ).resolves.toBeDefined();
+    await sql`update users set supporter_comp = false where id = ${users.erin}`.execute(
+      db,
+    );
+    try {
+      await expect(
+        as(member.accessToken, "GET", ["board"]),
+      ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+      await expect(code("erin")).rejects.toMatchObject({ status: 403 });
+    } finally {
+      await sql`update users set supporter_comp = true where id = ${users.erin}`.execute(
+        db,
+      );
+    }
+    await expect(
+      as(member.accessToken, "GET", ["board"]),
     ).resolves.toBeDefined();
   });
 

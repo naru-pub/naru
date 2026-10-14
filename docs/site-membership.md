@@ -9,10 +9,9 @@ A site may also require a verified email (`users.site_member_verified_email`,
 off by default). Then an account whose Naru email is not verified cannot sign
 in to the site as a member, whether joining or returning; Naru's sign-in page
 sends it to verify first. Tokens already issued keep working until they end.
-The site never receives the address. This is separate from supporter status,
-which only the site's owner needs (members join free unless
-`SITE_MEMBERS_SUPPORTERS_ONLY=1`), and supporters may be comp accounts without
-a verified email, so it is not implied by anything else.
+The site never receives the address. This is separate from the supporter plan
+every member needs: supporters may be comp accounts without a verified email,
+so a supporter plan does not imply one.
 
 Members are `pending`, `approved`, or `banned`. Only the signed-in site owner
 can change admission or member states in the database control panel. Any state

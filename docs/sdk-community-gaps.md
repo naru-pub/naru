@@ -209,9 +209,9 @@ Safe to skip:
 
 ## Risks
 
-- **Supporters-only membership.** If `SITE_MEMBERS_SUPPORTERS_ONLY=1` is ever
-  turned on, only paying Naru supporters can join a community site. That would
-  quietly kill this use case.
+- **Supporters-only membership.** Members now need a Naru supporter plan
+  (2026-10-14), so only supporters can join a community site. Communities
+  whose members are not supporters will need visitor (guest) access instead.
 - **1.1.0 is still mutable.** The stable `/sdk/1/` alias stays on 1.0.0; sites explicitly importing 1.1.0 follow its changes,
   and pinning `/sdk/1.0.0/` loses members and functions. Freeze 1.1.0 only
   after #1 settles.

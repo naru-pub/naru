@@ -17,9 +17,9 @@ import { DataError, name } from "./validation";
 // identity there, not the owner's collections. A member's id is a row in
 // site_members, so a site never learns which account is behind it.
 //
-// Membership is free. SITE_MEMBERS_SUPPORTERS_ONLY=1 limits it to accounts
-// with a supporter plan, checked at sign-in and on every request, so turning
-// it on reaches members already signed in.
+// Members need a Naru supporter plan (comp, paid, or within the payment
+// grace). It is checked at sign-in and on every request, so a member whose
+// support ends loses access without signing out.
 //
 // A site may also require a verified email (site_member_verified_email): an
 // account without one cannot sign in to it as a member, new or returning.
@@ -41,8 +41,6 @@ const denied = () =>
     "AUTH_REQUIRED",
   );
 
-export const membersSupportersOnly = () =>
-  process.env.SITE_MEMBERS_SUPPORTERS_ONLY === "1";
 const supporterRequired = () =>
   new DataError(
     403,
@@ -67,12 +65,9 @@ async function emailVerified(tx: Kysely<DB>, userId: string) {
   return Boolean(user?.email && user.email_verified_at);
 }
 
-/** Whether an account may be a member anywhere, under the current setting. */
+/** Whether an account may be a member anywhere: it supports Naru. */
 async function mayJoin(tx: Kysely<DB>, userId: string) {
-  return (
-    !membersSupportersOnly() ||
-    (await getUserEntitlement(userId, tx)).isSupporter
-  );
+  return (await getUserEntitlement(userId, tx)).isSupporter;
 }
 
 export type MemberSignInInput = ReturnType<typeof memberSignInInput>;
