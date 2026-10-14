@@ -143,6 +143,34 @@ integration("Durable Objects site database", () => {
     });
   });
 
+  test("several collections are deleted in one request, all or none", async () => {
+    for (const name of ["bulk_a", "bulk_b", "bulk_keep"]) {
+      await call("POST", [], { name }, true);
+      await call("PUT", [name, "doc"], { data: { name } }, true);
+    }
+    // One missing name refuses the whole request; nothing is deleted.
+    await expect(
+      call("DELETE", [], { names: ["bulk_a", "nonexistent"] }, true),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      (await call("GET", ["bulk_a", "doc"], undefined, true)).document,
+    ).toBeDefined();
+    // Only the owner, from the control panel, may do it.
+    await expect(
+      call("DELETE", [], { names: ["bulk_a"] }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      await call("DELETE", [], { names: ["bulk_a", "bulk_b"] }, true),
+    ).toEqual({ deleted: ["bulk_a", "bulk_b"] });
+    const left = (await call("GET", [], undefined, true)).collections.map(
+      (c: { name: string }) => c.name,
+    );
+    expect(left).toContain("bulk_keep");
+    expect(left).not.toContain("bulk_a");
+    expect(left).not.toContain("bulk_b");
+    await call("DELETE", ["bulk_keep"], undefined, true);
+  });
+
   test("PostgreSQL still decides who may use the site", async () => {
     await insertUser("not-enabled");
     await sql`update users set supporter_comp = false where login_name = 'not-enabled'`.execute(

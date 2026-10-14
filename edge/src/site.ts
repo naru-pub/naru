@@ -657,6 +657,29 @@ export class SiteData extends DurableObject<Env> {
           },
           publicRead,
         };
+      // Several collections in one request, all or none: { names: [...] }.
+      if (method === "DELETE") {
+        const names = body.names;
+        if (!Array.isArray(names) || !names.length || names.length > 100)
+          throw new DataError(400, "Name 1–100 collections to delete.");
+        const targets = names.map((value) => {
+          const found = this.rows(
+            "SELECT id, name, read_access, write_access FROM collections WHERE name = ?",
+            name(value),
+          )[0];
+          if (!found)
+            throw new DataError(
+              404,
+              `Collection ${String(value)} does not exist.`,
+            );
+          return found as unknown as Collection;
+        });
+        for (const target of targets) this.deleteCollection(target);
+        return {
+          result: { deleted: targets.map((target) => target.name) },
+          publicRead,
+        };
+      }
       if (method !== "POST") throw new DataError(405, "Method not allowed.");
       const collectionName = unreservedName(body.name);
       if (
@@ -705,23 +728,7 @@ export class SiteData extends DurableObject<Env> {
         throw new DataError(403, "Website tokens cannot manage collections.");
       if (!admin) throw new DataError(403, "Admin access required.");
       if (method === "DELETE") {
-        this.setUnique(collection, null);
-        // Uploads only this collection used go with it.
-        const used = this.rows(
-          "SELECT DISTINCT upload_id FROM media_refs WHERE collection_id = ?",
-          collection.id,
-        ).map((row) => row.upload_id as string);
-        this.sql.exec(
-          "DELETE FROM media_refs WHERE collection_id = ?",
-          collection.id,
-        );
-        for (const upload of used) this.releaseIfUnused(upload);
-        this.sql.exec(
-          "DELETE FROM documents WHERE collection_id = ?",
-          collection.id,
-        );
-        this.sql.exec("DELETE FROM collections WHERE id = ?", collection.id);
-        this.setMeta(`rules:${collection.id}`, null);
+        this.deleteCollection(collection);
         return { result: { success: true }, publicRead };
       }
       if (Object.hasOwn(body, "unique"))
@@ -1319,8 +1326,8 @@ export class SiteData extends DurableObject<Env> {
           )[0];
           return Boolean(
             secret &&
-              row?.secret_hash &&
-              verifyPassword(secret, row.secret_hash) === true,
+            row?.secret_hash &&
+            verifyPassword(secret, row.secret_hash) === true,
           );
         }
         case "notify":
@@ -1556,6 +1563,27 @@ export class SiteData extends DurableObject<Env> {
         window,
       );
     }
+  }
+
+  /** Deletes a collection with its documents, rules, unique fields and upload references. */
+  private deleteCollection(collection: Collection) {
+    this.setUnique(collection, null);
+    // Uploads only this collection used go with it.
+    const used = this.rows(
+      "SELECT DISTINCT upload_id FROM media_refs WHERE collection_id = ?",
+      collection.id,
+    ).map((row) => row.upload_id as string);
+    this.sql.exec(
+      "DELETE FROM media_refs WHERE collection_id = ?",
+      collection.id,
+    );
+    for (const upload of used) this.releaseIfUnused(upload);
+    this.sql.exec(
+      "DELETE FROM documents WHERE collection_id = ?",
+      collection.id,
+    );
+    this.sql.exec("DELETE FROM collections WHERE id = ?", collection.id);
+    this.setMeta(`rules:${collection.id}`, null);
   }
 
   /** Deletes a document, releasing managed uploads only it used. */

@@ -100,23 +100,17 @@ export default function DatabaseManager({
       }))
     )
       return;
+    // One request, one transaction in the site's object: all are deleted,
+    // or none are and the checks stay for another try.
     await run(async () => {
-      const failed: string[] = [];
-      for (const name of names)
-        try {
-          await api(`/${name}`, "DELETE");
-        } catch {
-          failed.push(name);
-        }
+      await api("", "DELETE", { names });
       if (names.includes(selected)) {
         setSelected("");
         setDocuments([]);
         setTotal(null);
       }
+      setMarked([]);
       await refresh();
-      setMarked(failed);
-      if (failed.length)
-        throw new Error(`삭제하지 못한 컬렉션: ${failed.join(", ")}`);
     });
   }
   async function load(collection: string, after?: string) {
