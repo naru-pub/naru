@@ -15,6 +15,17 @@ export function edgeFileCacheUrl(platformDomain: string, objectKey: string) {
   return `https://${login}.${platformDomain}/${encodeURIComponent(path)}`;
 }
 
+/**
+ * A bucket object's path at the bucket's public domain, each segment
+ * percent-encoded: the edge redirects to it and the control plane purges it,
+ * so the URL a browser follows is the one purged. Unencoded, a `?` or `#` in
+ * a name would end the path, and browsers encode some other characters
+ * differently from encodeURIComponent, which the purge would miss.
+ */
+export function encodedObjectPath(objectKey: string) {
+  return objectKey.split("/").map(encodeURIComponent).join("/");
+}
+
 /** Every cached file of one site, for purging the site whole. */
 export function edgeSiteCacheTag(login: string) {
   return `naru-site-${login}`;

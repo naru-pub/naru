@@ -1,6 +1,10 @@
 import { publishSiteFunctions } from "@/lib/site-functions/releases";
 import * as Sentry from "@sentry/nextjs";
-import { edgeFileCacheUrl, edgeSiteCacheTag } from "@/lib/edge/file-cache";
+import {
+  edgeFileCacheUrl,
+  edgeSiteCacheTag,
+  encodedObjectPath,
+} from "@/lib/edge/file-cache";
 import { getSiteBucketUrl, getUserObjectKey } from "@/lib/site-urls";
 
 // After a site's files change, Cloudflare's copies of them go. The edge
@@ -30,8 +34,8 @@ export async function purgeSiteObjects(keys: string[]) {
   return purgeUrls(
     keys.flatMap((key) => [
       edgeFileCacheUrl(domain, key),
-      // As a browser requests it after the edge's redirect.
-      getSiteBucketUrl(key.split("/").map(encodeURIComponent).join("/")),
+      // As the edge redirects to it.
+      getSiteBucketUrl(encodedObjectPath(key)),
     ]),
   );
 }

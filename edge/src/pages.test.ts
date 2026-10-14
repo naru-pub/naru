@@ -254,6 +254,25 @@ describe("serving", () => {
     );
   });
 
+  test("encodes a redirect as the control plane purges it", async () => {
+    for (const [path, location] of [
+      // A name's ? and # stay in the path, not a query or fragment.
+      ["/a%3Fb%23c.png", "https://r2.naru.pub/alice/a%3Fb%23c.png"],
+      ["/a%20b%20(1)!.png", "https://r2.naru.pub/alice/a%20b%20(1)!.png"],
+      [
+        "/%EC%82%AC%EC%A7%84/%EA%B3%A0%EC%96%91%EC%9D%B4.png",
+        "https://r2.naru.pub/alice/%EC%82%AC%EC%A7%84/%EA%B3%A0%EC%96%91%EC%9D%B4.png",
+      ],
+      [
+        "/img/a+b,c;d=e.png",
+        "https://r2.naru.pub/alice/img/a%2Bb%2Cc%3Bd%3De.png",
+      ],
+    ]) {
+      const { response } = await visit(path);
+      expect(response.headers.get("location")).toBe(location);
+    }
+  });
+
   test("answers a missing page 404, uncached", async () => {
     const { response } = await visit("/nowhere/", navigation);
     expect(response.status).toBe(404);

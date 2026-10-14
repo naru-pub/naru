@@ -2,6 +2,7 @@ import { LOGIN_NAME_REGEX } from "../../control-plane/src/lib/const";
 import {
   edgeFileCacheUrl,
   edgeSiteCacheTag,
+  encodedObjectPath,
 } from "../../control-plane/src/lib/edge/file-cache";
 import type { PageviewEvent } from "./pageview-log";
 
@@ -250,7 +251,8 @@ export async function servePage(
     return new Response(text("Redirecting..."), {
       status: 302,
       headers: {
-        Location: `https://${env.R2_PUBLIC_DOMAIN}/${login}/${path}`,
+        // Encoded as the control plane purges it.
+        Location: `https://${env.R2_PUBLIC_DOMAIN}/${encodedObjectPath(`${login}/${path}`)}`,
         "Cache-Control": FILE_REDIRECT_CACHE_CONTROL,
       },
     });
