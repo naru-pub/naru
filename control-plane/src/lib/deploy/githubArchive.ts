@@ -54,7 +54,7 @@ export async function filesFromArchive(
   const done = new Promise<void>((resolve, reject) => {
     parser.on("entry", (header, stream, next) => {
       const chunks: Buffer[] = [];
-      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("data", (chunk) => chunks.push(chunk as Buffer));
       stream.on("error", reject);
       stream.on("end", () => {
         try {

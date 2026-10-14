@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,10 +114,10 @@ export default function DatabaseManager({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <a href="/media">미디어 라이브러리 →</a>
+            <Link href="/media">미디어 라이브러리 →</Link>
           </Button>
           <Button asChild variant="outline">
-            <a href="/docs/database">사용 안내 및 예제 블로그 →</a>
+            <Link href="/docs/database">사용 안내 및 예제 블로그 →</Link>
           </Button>
         </div>
       </header>

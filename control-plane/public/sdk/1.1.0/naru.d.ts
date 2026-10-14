@@ -5,12 +5,7 @@
  */
 
 export type Json =
-  | null
-  | boolean
-  | number
-  | string
-  | Json[]
-  | { [key: string]: Json };
+  null | boolean | number | string | Json[] | { [key: string]: Json };
 
 /** @internal */
 declare const revisionBrand: unique symbol;

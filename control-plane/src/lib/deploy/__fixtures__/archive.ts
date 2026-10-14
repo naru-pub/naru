@@ -12,9 +12,11 @@ export async function githubArchive(
 ) {
   const tar = pack();
   const chunks: Buffer[] = [];
-  tar.on("data", (chunk: Buffer) => chunks.push(chunk));
-  const ended = new Promise((resolve) => tar.on("end", resolve));
-  tar.entry({ name: "pax_global_header", type: "pax-global-header" }, "");
+  tar.on("data", (chunk) => chunks.push(chunk as Buffer));
+  const ended = new Promise<void>((resolve) => tar.on("end", () => resolve()));
+  // tar-stream cannot write a pax global header's type, so, as it always
+  // has here, this is a plain entry under the name GitHub's carries.
+  tar.entry({ name: "pax_global_header" }, "");
   tar.entry({ name: `${top}/`, type: "directory" });
   for (const [path, content] of Object.entries(entries)) {
     if (typeof content === "object" && !Buffer.isBuffer(content))

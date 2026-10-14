@@ -35,18 +35,18 @@ export default async function MediaPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a
+          <Link
             href="/database"
             className="border px-4 py-2 text-sm hover:bg-muted"
           >
             데이터베이스 →
-          </a>
-          <a
+          </Link>
+          <Link
             href="/docs/media"
             className="border px-4 py-2 text-sm hover:bg-muted"
           >
             미디어 사용 안내 →
-          </a>
+          </Link>
         </div>
       </header>
 

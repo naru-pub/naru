@@ -1,4 +1,8 @@
 packages: []
+# Wrangler's bundler and runtime, as in edge/.
 allowBuilds:
-  esbuild: set this to true or false
-  workerd: set this to true or false
+  esbuild: true
+  workerd: true
+# Miniflare's image library, past an advisory, within its major version.
+overrides:
+  "sharp@0.35": "^0.35.5"

@@ -1,4 +1,7 @@
 allowBuilds:
+  # Jest's optional file watcher: it ships prebuilt binaries, so nothing here
+  # needs its install script.
+  "@parcel/watcher": false
   "@sentry/cli": true
   esbuild: true
   sharp: true
@@ -17,3 +20,8 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - unrs-resolver
+# Advisories in packages only reached through others, each lifted to its
+# patched release within the major version its dependents ask for.
+overrides:
+  "dompurify@3": "^3.4.16"
+  "@opentelemetry/core@2": "^2.8.0"
