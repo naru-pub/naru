@@ -165,11 +165,18 @@ function referenceRewriter(
     .on("video[poster]", attribute("poster"));
 }
 
+/** Distinct files a page may have looked up; past it, references stay plain. */
+export const MAX_LOOKUPS = 200;
+
 /**
  * The page's response with its references to the site's files versioned. A
  * preload is versioned only when the page uses its file where it is
  * versioned too, or the two would download it twice; so the page is read
- * whole first, to find those uses, then rewritten.
+ * whole first, to find those uses, and to start looking up every file it
+ * names at once rather than one by one as it streams. A page that is not
+ * UTF-8, which the rewriter would misread, is sent as it is, as are the
+ * references past MAX_LOOKUPS distinct files, which would otherwise run the
+ * Worker past its subrequests.
  */
 export async function versionAssets(
   response: Response,
@@ -179,7 +186,36 @@ export async function versionAssets(
   served: string[],
   etagOf: EtagLookup,
 ) {
-  const html = await response.text();
+  const bytes = await response.arrayBuffer();
+  try {
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
+  } catch {
+    return new Response(bytes, response);
+  }
+
+  // Each file is looked up once per page, however often the page names it.
+  const lookups = new Map<string, Promise<string | null>>();
+  const cachedEtag: EtagLookup = (key) => {
+    if (!lookups.has(key)) {
+      if (lookups.size >= MAX_LOOKUPS) return Promise.resolve(null);
+      lookups.set(
+        key,
+        etagOf(key).catch(() => null),
+      );
+    }
+    return lookups.get(key)!;
+  };
+  const versions = new Map<string, Promise<string | null>>();
+  const version = (ref: string, base: URL) => {
+    const key = `${base.href} ${ref}`;
+    if (!versions.has(key))
+      versions.set(
+        key,
+        versionedUrl(ref, base, login, env, served, cachedEtag),
+      );
+    return versions.get(key)!;
+  };
+
   const used = new Set<string>();
   await referenceRewriter(
     pageUrl,
@@ -189,26 +225,16 @@ export async function versionAssets(
       } catch {
         // Not a URL: nothing to version.
       }
+      // Started, not awaited: the second pass finds it done or under way.
+      void version(ref, base);
       return null;
     },
     () => false,
   )
-    .transform(new Response(html))
+    .transform(new Response(bytes))
     .arrayBuffer();
 
-  // Each file is looked up once per page, however often the page names it.
-  const lookups = new Map<string, Promise<string | null>>();
-  const cachedEtag: EtagLookup = (key) => {
-    if (!lookups.has(key))
-      lookups.set(
-        key,
-        etagOf(key).catch(() => null),
-      );
-    return lookups.get(key)!;
-  };
-  return referenceRewriter(
-    pageUrl,
-    (ref, base) => versionedUrl(ref, base, login, env, served, cachedEtag),
-    (href) => used.has(href),
-  ).transform(new Response(html, response));
+  return referenceRewriter(pageUrl, version, (href) =>
+    used.has(href),
+  ).transform(new Response(bytes, response));
 }
