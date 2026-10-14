@@ -1,4 +1,5 @@
-// A local Naru for one site: pnpm naru-dev <site folder> [--site name] [--port 4000]
+// A local Naru for one site:
+//   pnpm naru-dev <site folder> [--site name] [--port 4000] [--state dir]
 //
 // Runs the real edge Worker (`wrangler dev`, workerd with SQLite-backed
 // Durable Objects), so documents, collection rules, site functions, live
@@ -44,6 +45,7 @@ const option = (flag: string) => {
 };
 const port = Number(option("--port") ?? 4000);
 const siteOption = option("--site");
+const stateOption = option("--state");
 const folder = resolve(args[0] ?? ".");
 const site = siteOption ?? "localsite";
 if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(site)) {
@@ -54,7 +56,8 @@ if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(site)) {
 }
 const origin = `http://localhost:${port}`;
 const OWNER = "1";
-const state = join(folder, ".naru-dev");
+// --state keeps a test's data apart from the site's own .naru-dev/.
+const state = stateOption ? resolve(stateOption) : join(folder, ".naru-dev");
 const mediaDir = join(state, "media", OWNER);
 const root = resolve(import.meta.dirname, "..");
 const edge = resolve(root, "../edge");
