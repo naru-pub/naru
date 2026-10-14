@@ -92,7 +92,12 @@ export default async function AuthorizePage({
   return (
     <Consent
       input={step.input}
-      names={collections.map((c) => c.name)}
+      collections={collections.map((c) => ({
+        name: c.name,
+        read: c.read_access,
+        write: c.write_access,
+        rules: c.rules ?? null,
+      }))}
       tokenLifetimeSeconds={client.token_lifetime_seconds}
     />
   );
