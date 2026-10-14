@@ -24,7 +24,23 @@ Sentry.init({
 
   // Setting this option to true will print useful information to the console while you're setting up Sentry.
   debug: false,
+
+  beforeSend(event) {
+    return isMonacoDisposedTimerError(event) ? null : event;
+  },
 });
+
+// Monaco runs deferred work on timers that can fire after its editor is
+// disposed, and then throws "AbstractContextKeyService has been disposed".
+// The editor is already gone, so nothing visible breaks.
+function isMonacoDisposedTimerError(event: Sentry.ErrorEvent) {
+  const exception = event.exception?.values?.[0];
+  if (exception?.value !== "AbstractContextKeyService has been disposed") {
+    return false;
+  }
+  const frames = exception.stacktrace?.frames;
+  return frames?.at(-1)?.filename?.includes("/monaco-editor@") ?? false;
+}
 
 // Next calls this as each client-side navigation begins: link clicks,
 // router.push, back and forward. Sentry traces it, and the loading bar under
