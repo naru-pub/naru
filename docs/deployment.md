@@ -199,14 +199,6 @@ allows five). Each change is told in Discord. The job and the page need
 Read and Zone > Zone WAF: Edit on naru.pub; without them the job fails and
 alerts after three hours.
 
-## Former cache rule for hosted sites
-
-The zone's `Hosted site fallback` Cache Rule (Caching → Cache Rules) gave the
-retired hosted-site proxy's pages a one-day `stale-if-error` fallback. Worker
-responses bypass the cache, so the rule no longer has any effect and can be
-deleted from the dashboard. Always Online no longer matters for hosted sites
-either.
-
 ## Public data caching
 
 The edge Worker caches anonymous reads of world-readable collections
