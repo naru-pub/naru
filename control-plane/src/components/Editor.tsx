@@ -39,6 +39,23 @@ export default function Editor({
 
   const diffEditorRef = useRef<any>(null);
 
+  // @monaco-editor/react disposes the diff models before the diff editor on
+  // unmount, which makes Monaco throw "TextModel got disposed before
+  // DiffEditorWidget model got reset". Keep the models in the library and
+  // dispose the editor first, then its models, whenever the diff view closes.
+  useEffect(() => {
+    if (!showDiff) return;
+    return () => {
+      const diffEditor = diffEditorRef.current;
+      diffEditorRef.current = null;
+      if (!diffEditor) return;
+      const model = diffEditor.getModel();
+      diffEditor.dispose();
+      model?.original.dispose();
+      model?.modified.dispose();
+    };
+  }, [showDiff]);
+
   useEffect(() => {
     // Monaco's _doFindMatchesMultiline doesn't catch invalid regex errors (monaco-editor bug).
     // Suppress them here so they don't surface as unhandled errors.
@@ -53,8 +70,6 @@ export default function Editor({
     window.addEventListener("error", handleError);
     return () => {
       window.removeEventListener("error", handleError);
-      diffEditorRef.current?.dispose();
-      diffEditorRef.current = null;
     };
   }, []);
 
@@ -108,6 +123,8 @@ export default function Editor({
             language={language}
             theme={theme}
             height="100%"
+            keepCurrentOriginalModel
+            keepCurrentModifiedModel
             onMount={(diffEditor) => {
               diffEditorRef.current = diffEditor;
               const modifiedEditor = diffEditor.getModifiedEditor();
