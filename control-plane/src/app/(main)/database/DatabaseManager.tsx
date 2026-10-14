@@ -49,6 +49,8 @@ export default function DatabaseManager({
   const [view, setView] = useState("collections");
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selected, setSelected] = useState("");
+  // Collections checked for deleting several at once.
+  const [marked, setMarked] = useState<string[]>([]);
   const [newName, setNewName] = useState("");
   const [read, setRead] = useState("admin");
   const [write, setWrite] = useState("admin");
@@ -79,7 +81,43 @@ export default function DatabaseManager({
     }
   }
   async function refresh() {
-    setCollections((await api()).collections);
+    const next: Collection[] = (await api()).collections;
+    setCollections(next);
+    setMarked((current) =>
+      current.filter((name) => next.some((c) => c.name === name)),
+    );
+  }
+  /** Deletes every checked collection with its documents, after one confirmation. */
+  async function deleteMarked() {
+    const names = [...marked];
+    if (
+      !names.length ||
+      !(await confirm({
+        title: `컬렉션 ${names.length}개와 그 안의 모든 문서를 영구 삭제할까요?`,
+        description: names.join(", "),
+        confirmText: `${names.length}개 삭제`,
+        destructive: true,
+      }))
+    )
+      return;
+    await run(async () => {
+      const failed: string[] = [];
+      for (const name of names)
+        try {
+          await api(`/${name}`, "DELETE");
+        } catch {
+          failed.push(name);
+        }
+      if (names.includes(selected)) {
+        setSelected("");
+        setDocuments([]);
+        setTotal(null);
+      }
+      await refresh();
+      setMarked(failed);
+      if (failed.length)
+        throw new Error(`삭제하지 못한 컬렉션: ${failed.join(", ")}`);
+    });
   }
   async function load(collection: string, after?: string) {
     // The list is paged, so the collection's real size comes with the first
@@ -189,30 +227,73 @@ export default function DatabaseManager({
                 />
                 <Button type="submit">컬렉션 만들기</Button>
               </form>
+              {collections.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label="모든 컬렉션 선택"
+                      checked={marked.length === collections.length}
+                      onChange={(e) =>
+                        setMarked(
+                          e.target.checked
+                            ? collections.map((c) => c.name)
+                            : [],
+                        )
+                      }
+                    />
+                    모두 선택
+                  </label>
+                  {marked.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={busy}
+                      onClick={() => void deleteMarked()}
+                    >
+                      선택한 컬렉션 삭제 ({marked.length})
+                    </Button>
+                  )}
+                </div>
+              )}
               <div className="flex flex-col gap-2" aria-label="컬렉션 목록">
                 {collections.map((c) => (
-                  <Button
-                    key={c.name}
-                    className="h-auto justify-start whitespace-normal text-left"
-                    aria-pressed={selected === c.name}
-                    variant={selected === c.name ? "default" : "outline"}
-                    onClick={() =>
-                      void run(async () => {
-                        setSelected(c.name);
-                        setRead(c.read_access);
-                        setWrite(c.write_access);
-                        setRules(c.rules ?? "");
-                        setUnique((c.unique ?? []).join(", "));
-                        setId("");
-                        setDocuments([]);
-                        setTotal(null);
-                        setCursor(null);
-                        await load(c.name);
-                      })
-                    }
-                  >
-                    <CollectionName name={c.name} />
-                  </Button>
+                  <div key={c.name} className="flex items-stretch gap-2">
+                    <input
+                      type="checkbox"
+                      className="shrink-0"
+                      aria-label={`${c.name} 선택`}
+                      checked={marked.includes(c.name)}
+                      onChange={(e) =>
+                        setMarked((current) =>
+                          e.target.checked
+                            ? [...current, c.name]
+                            : current.filter((name) => name !== c.name),
+                        )
+                      }
+                    />
+                    <Button
+                      className="h-auto flex-1 justify-start whitespace-normal text-left"
+                      aria-pressed={selected === c.name}
+                      variant={selected === c.name ? "default" : "outline"}
+                      onClick={() =>
+                        void run(async () => {
+                          setSelected(c.name);
+                          setRead(c.read_access);
+                          setWrite(c.write_access);
+                          setRules(c.rules ?? "");
+                          setUnique((c.unique ?? []).join(", "));
+                          setId("");
+                          setDocuments([]);
+                          setTotal(null);
+                          setCursor(null);
+                          await load(c.name);
+                        })
+                      }
+                    >
+                      <CollectionName name={c.name} />
+                    </Button>
+                  </div>
                 ))}
               </div>
               {!collections.length && (
