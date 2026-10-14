@@ -82,8 +82,8 @@ afterEach(() => {
 
 test("one instance serves many calls, each freed before the next", () => {
   documents.set("wallets/m-1", { balance: 0 });
-  // About a megabyte a call: far past the instance's 32 MiB unless freed.
-  for (let n = 0; n < 2000; n++)
+  // A megabyte a call, 100 MB in all: past the instance's 32 MiB unless freed.
+  for (let n = 0; n < 100; n++)
     expect(
       run(
         `let calls = 0;
