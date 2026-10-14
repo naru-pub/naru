@@ -11,6 +11,7 @@ import { sql } from "kysely";
 import { db, requestDeadline } from "@/lib/database";
 import { s3Client } from "@/lib/s3";
 import { resolveSiteAccess } from "./service";
+import { callSiteObject } from "@/lib/edge/client";
 import { DataError, uuidId } from "./validation";
 import { decodeCursor, encodeCursor, sorting } from "./pagination";
 
@@ -127,7 +128,14 @@ function uploadInput(body: Record<string, unknown>) {
     Number(size) > MAX_MEDIA_FILE_BYTES
   )
     throw new DataError(413, "File must be between 1 byte and 25 MiB.");
-  return { filename, contentType, size: Number(size) };
+  if (body.managed !== undefined && typeof body.managed !== "boolean")
+    throw new DataError(400, "managed must be a boolean.");
+  return {
+    filename,
+    contentType,
+    size: Number(size),
+    managed: body.managed === true,
+  };
 }
 
 export async function executeMedia(command: MediaCommand) {
@@ -297,6 +305,7 @@ export async function executeMedia(command: MediaCommand) {
           content_type: input.contentType,
           size_bytes: input.size,
           member_id: memberId ?? null,
+          managed: input.managed,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -356,6 +365,13 @@ export async function executeMedia(command: MediaCommand) {
         "Uploaded file does not match its authorization.",
       );
     }
+    // A managed upload is registered with the site's object first, so that a
+    // finished file is never left unmanaged; a failure here is retried.
+    if (file.managed)
+      await callSiteObject(command.site, "manageMedia", {
+        ownerId: String(owner.id),
+        id,
+      });
     const ready = await db
       .updateTable("site_data_files")
       .where("id", "=", id)

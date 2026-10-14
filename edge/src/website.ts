@@ -195,9 +195,13 @@ export async function website(
   // Kept whole in case the object hands the request back.
   const original = request.method === "GET" ? request : request.clone();
   try {
-    const body = ["POST", "PUT"].includes(request.method)
-      ? await jsonBody(request)
-      : undefined;
+    // A DELETE may carry a JSON body for a document's write secret (1.1.0).
+    const body =
+      ["POST", "PUT"].includes(request.method) ||
+      (request.method === "DELETE" &&
+        request.headers.get("content-type")?.includes("application/json"))
+        ? await jsonBody(request)
+        : undefined;
     const stub = env.SITES.get(env.SITES.idFromName(site));
     const outcome = (await stub.serve({
       path,

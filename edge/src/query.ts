@@ -47,6 +47,17 @@ export const SCHEMA = `
     id TEXT PRIMARY KEY,
     queued_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS managed_media (
+    id TEXT PRIMARY KEY,
+    registered_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS media_refs (
+    upload_id TEXT NOT NULL,
+    collection_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    PRIMARY KEY (collection_id, document_id, upload_id)
+  );
+  CREATE INDEX IF NOT EXISTS media_refs_upload ON media_refs (upload_id);
   CREATE TABLE IF NOT EXISTS rate_limits (
     key TEXT PRIMARY KEY,
     window_start INTEGER NOT NULL,

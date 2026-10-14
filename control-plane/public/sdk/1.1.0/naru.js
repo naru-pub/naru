@@ -263,35 +263,44 @@ function documents(root, name, send) {
         after = page.nextCursor;
       } while (after);
     },
-    add(data, { signal } = {}) {
+    add(data, { secret, signal } = {}) {
       jsonValue(data);
       return send(path, {
         method: "POST",
-        body: { data },
+        body: { data, ...secretOf(secret) },
         signal,
         touches,
       });
     },
-    set(id, data, { signal, condition: expected } = {}) {
+    set(id, data, { signal, secret, condition: expected } = {}) {
       jsonValue(data);
       return send(`${path}/${segment(id)}${condition(expected)}`, {
         method: "PUT",
-        body: { data },
+        body: { data, ...secretOf(secret) },
         signal,
         touches,
       });
     },
-    async delete(id, { signal, condition: expected } = {}) {
+    async delete(id, { signal, secret, condition: expected } = {}) {
       await send(
         `${path}/${segment(id)}${condition(expected, { deleting: true })}`,
         {
           method: "DELETE",
+          ...(secret === undefined ? {} : { body: secretOf(secret) }),
           signal,
           touches,
         },
       );
     },
   });
+}
+
+/** A write secret as the request body carries it; checked before sending. */
+function secretOf(secret) {
+  if (secret === undefined) return {};
+  if (typeof secret !== "string" || !secret || secret.length > 256)
+    throw new TypeError("A secret is 1-256 characters.");
+  return { secret };
 }
 
 /** A collection of the site this page belongs to. Nothing is requested yet. */
@@ -304,6 +313,8 @@ function publicDocuments(root, name) {
     count: collection.count,
     pages: collection.pages,
     add: collection.add,
+    set: collection.set,
+    delete: collection.delete,
   });
 }
 
@@ -452,9 +463,11 @@ function media(root, send) {
         touches: [],
       });
     },
-    async upload(source, { signal, onProgress } = {}) {
+    async upload(source, { signal, managed, onProgress } = {}) {
       if (onProgress !== undefined && typeof onProgress !== "function")
         throw new TypeError("onProgress must be a function.");
+      if (managed !== undefined && typeof managed !== "boolean")
+        throw new TypeError("managed must be a boolean.");
       // A caller's mistake in its progress handler is reported, never
       // allowed to fail an upload partway through.
       const report = (progress) => {
@@ -485,6 +498,7 @@ function media(root, send) {
           name: file.name || "upload",
           contentType: file.type,
           size: file.size,
+          ...(managed ? { managed: true } : {}),
         },
         signal,
         touches: [],

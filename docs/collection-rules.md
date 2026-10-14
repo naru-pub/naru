@@ -30,12 +30,21 @@ A module exports two functions, which may be `async`:
   or null; ranges compare strings or numbers. Comparisons match JSON types
   exactly; explicit null does not match a missing field. Inequality includes
   missing fields. This is the same language as a list's `where`.
-- `canWrite(ctx, { collection, operation, before, after })`: return exactly
-  `true` to allow `create`, `update` or `delete`. `before`/`after` are documents
-  with canonical id/data/createdBy, or null. Before is read from storage, and the
-  owner/member author cannot be forged through the request. Updates and deletes
-  check the supplied revision before the rule executes, inside the same SQLite
-  transaction as the write.
+- `canWrite(ctx, { collection, operation, before, after, secret })`: return
+  exactly `true` to allow `create`, `update` or `delete`. `before`/`after` are
+  documents with canonical id/data/createdBy, or null. Before is read from
+  storage, and the owner/member author cannot be forged through the request.
+  Updates and deletes check the supplied revision before the rule executes,
+  inside the same SQLite transaction as the write. `secret` (1.1.0) is `true`
+  when the request gave the secret the document was added with, `false` when
+  it gave another, and `null` otherwise: a guest's password, checked by Naru.
+- `present(ctx, { collection, document })` (optional, 1.1.0): returns the data
+  a non-owner reads of `document`, for example without its private fields. It
+  applies to gets, lists, batch reads and the result of a write. A module that
+  exports it also exports `queryable`, the fields non-owners may filter,
+  `where` and sort on (`export const queryable = ["board", "tags"]`); other
+  fields are refused with `INVALID_REQUEST`, so a hidden value cannot be found
+  by asking which documents match it. Rows still come from `scope`.
 
 Rules use the function sandbox's read methods (`await ctx.get(...)`,
 `await ctx.list(...)`) and `ctx.member` (null for visitors). Writes and live

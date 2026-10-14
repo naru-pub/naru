@@ -19,7 +19,8 @@ import {
   publicResult,
 } from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
-import { ruleEntry, rulePredicate } from "./rules";
+import { presented, queriedFields, ruleEntry, rulePredicate } from "./rules";
+import { hashPassword, verifyPassword } from "./passwords";
 import type { ModuleSources } from "./modules";
 import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { quickjs } from "./quickjs";
@@ -246,6 +247,13 @@ export class SiteData extends DurableObject<Env> {
       )
     )
       this.sql.exec("ALTER TABLE documents ADD COLUMN created_by TEXT");
+    // A document's write secret (1.1.0), hashed; never read back out.
+    if (
+      !this.rows("PRAGMA table_info(documents)").some(
+        (column) => column.name === "secret_hash",
+      )
+    )
+      this.sql.exec("ALTER TABLE documents ADD COLUMN secret_hash TEXT");
   }
   private run<T>(work: () => T): Outcome<T> {
     try {
@@ -478,11 +486,13 @@ export class SiteData extends DurableObject<Env> {
     encoded: string,
     size: number,
     author: string | null,
+    secretHash: string | null = null,
   ) {
+    this.trackMedia(collectionId, id, encoded);
     const now = Date.now();
     this.sql.exec(
-      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at, created_by, secret_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (collection_id, id) DO UPDATE SET data = excluded.data,
          size_bytes = excluded.size_bytes, updated_at = excluded.updated_at,
          version = documents.version + 1`,
@@ -493,6 +503,7 @@ export class SiteData extends DurableObject<Env> {
       now,
       now,
       author,
+      secretHash,
     );
   }
 
@@ -695,6 +706,16 @@ export class SiteData extends DurableObject<Env> {
       if (!admin) throw new DataError(403, "Admin access required.");
       if (method === "DELETE") {
         this.setUnique(collection, null);
+        // Uploads only this collection used go with it.
+        const used = this.rows(
+          "SELECT DISTINCT upload_id FROM media_refs WHERE collection_id = ?",
+          collection.id,
+        ).map((row) => row.upload_id as string);
+        this.sql.exec(
+          "DELETE FROM media_refs WHERE collection_id = ?",
+          collection.id,
+        );
+        for (const upload of used) this.releaseIfUnused(upload);
         this.sql.exec(
           "DELETE FROM documents WHERE collection_id = ?",
           collection.id,
@@ -744,8 +765,43 @@ export class SiteData extends DurableObject<Env> {
           member: access.member ?? null,
           now: Date.now(),
           readonly: true,
+          // A page of trimmed documents can be as large as the page itself.
+          ...(hook === "__naruPresent"
+            ? { maxResultBytes: 101 * 64 * 1024 }
+            : {}),
         },
         ruleHost,
+      );
+    };
+    // A rule that exports `present` trims what non-owners read, and allows
+    // queries only on its `queryable` fields, so hidden values cannot be
+    // probed by filtering on them.
+    let view: string[] | null | undefined;
+    const ruleView = () => {
+      if (view === undefined)
+        view =
+          !admin && ruleFile
+            ? (invokeRule("__naruView", {}) as string[] | null)
+            : null;
+      return view;
+    };
+    const present = <T extends { id: string; data: unknown } | null>(
+      documents: T[],
+    ): T[] => {
+      if (!ruleView()) return documents;
+      const shown = documents.filter((document) => document !== null);
+      if (!shown.length) return documents;
+      const data = invokeRule("__naruPresent", {
+        collection: collection.name,
+        documents: shown,
+      }) as unknown[];
+      const byId = new Map(
+        shown.map((document, index) => [document!.id, presented(data[index])]),
+      );
+      return documents.map((document) =>
+        document === null
+          ? document
+          : { ...document, data: byId.get(document.id) },
       );
     };
     const authorization =
@@ -769,6 +825,7 @@ export class SiteData extends DurableObject<Env> {
           before,
           after,
           operation,
+          secret: secretMatches,
         }) !== true
       )
         throw new DataError(
@@ -778,6 +835,17 @@ export class SiteData extends DurableObject<Env> {
         );
     };
     const member = access.member ?? null;
+    if (method === "GET" && ruleView()) {
+      const allowed = ruleView()!;
+      const asked = queriedFields(input).filter(
+        (field) => !allowed.includes(field),
+      );
+      if (asked.length)
+        throw new DataError(
+          400,
+          `Collection ${collection.name} can be queried only on ${allowed.join(", ") || "its metadata"}; not ${asked.join(", ")}.`,
+        );
+    }
     if (method === "GET") {
       const level = collection.read_access;
       if (!(admin || level === "world" || (level === "member" && member)))
@@ -812,7 +880,9 @@ export class SiteData extends DurableObject<Env> {
           : [];
         const found = new Map(rows.map((row) => [row.id, documentOf(row)]));
         return {
-          result: { documents: ids.map((id) => found.get(id) ?? null) },
+          result: {
+            documents: present(ids.map((id) => found.get(id) ?? null)),
+          },
           publicRead,
         };
       }
@@ -832,15 +902,40 @@ export class SiteData extends DurableObject<Env> {
           );
           if (!visible.length) throw new DataError(404, "Document not found.");
         }
-        return { result: { document: documentOf(row) }, publicRead };
+        return {
+          result: { document: present([documentOf(row)])[0] },
+          publicRead,
+        };
       }
+      const page = this.list(collection, input, authorization);
       return {
-        result: this.list(collection, input, authorization),
+        result: { ...page, documents: present(page.documents) },
         publicRead,
       };
     }
     const creating = method === "POST" && path.length === 1;
     const level = collection.write_access;
+    // A write secret (1.1.0): given when adding, it lets whoever knows it
+    // replace or delete the document later, as a guest's password does.
+    const secret = body.secret;
+    if (
+      secret !== undefined &&
+      (typeof secret !== "string" || !secret || secret.length > 256)
+    )
+      throw new DataError(400, "A secret is 1–256 characters.");
+    const stored =
+      path.length === 2 && !creating
+        ? (this.rows(
+            "SELECT secret_hash FROM documents WHERE collection_id = ? AND id = ?",
+            collection.id,
+            path[1],
+          )[0]?.secret_hash as string | null | undefined)
+        : undefined;
+    // true or false when a secret was given for a document that has one.
+    const secretMatches =
+      typeof secret === "string" && stored
+        ? verifyPassword(secret, stored) === true
+        : null;
     // Adding is open to anyone in `create` and to members in `member`.
     // Replacing and deleting there is the owner's, and in `member` also the
     // author's, checked against the document below.
@@ -848,7 +943,7 @@ export class SiteData extends DurableObject<Env> {
     if (!(
       admin ||
       level === "world" ||
-      (level === "create" && creating) ||
+      (level === "create" && (creating || secretMatches === true)) ||
       (level === "member" && member)
     ))
       throw new DataError(
@@ -884,11 +979,7 @@ export class SiteData extends DurableObject<Env> {
         );
       if (existing)
         checkWrite(this.ruleDocument(collection.id, path[1]), null, "delete");
-      this.sql.exec(
-        "DELETE FROM documents WHERE collection_id = ? AND id = ?",
-        collection.id,
-        path[1],
-      );
+      this.removeDocument(collection.id, path[1]);
       return { result: { success: true }, publicRead };
     }
     if (!(creating || (method === "PUT" && path.length === 2)))
@@ -928,8 +1019,17 @@ export class SiteData extends DurableObject<Env> {
       },
       existing ? "update" : "create",
     );
-    this.upsert(collection.id, id, encoded, size, admin ? null : member);
-    return { result: { id, ...this.written(collection.id, id) }, publicRead };
+    this.upsert(
+      collection.id,
+      id,
+      encoded,
+      size,
+      admin ? null : member,
+      creating && typeof secret === "string" ? hashPassword(secret) : null,
+    );
+    // A writer sees what they wrote as a reader would.
+    const [result] = present([{ id, ...this.written(collection.id, id) }]);
+    return { result, publicRead };
   }
 
   /** Refuses a write of `size` bytes, over a document of `existing`, past the site's quota. */
@@ -1209,6 +1309,11 @@ export class SiteData extends DurableObject<Env> {
             )
           )
             throw new DataError(400, "ctx.media.delete() needs an upload ID.");
+          // Deleted on purpose: no longer kept by references either.
+          this.sql.exec(
+            "DELETE FROM managed_media WHERE id = ?",
+            args[0].toLowerCase(),
+          );
           this.sql.exec(
             "INSERT INTO media_releases (id, queued_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
             args[0].toLowerCase(),
@@ -1231,11 +1336,7 @@ export class SiteData extends DurableObject<Env> {
                 )[0] as { version: number } | undefined
               )?.version,
             );
-          this.sql.exec(
-            "DELETE FROM documents WHERE collection_id = ? AND id = ?",
-            target.id,
-            id,
-          );
+          this.removeDocument(target.id, id);
           written.add(target.name);
           return null;
         }
@@ -1420,6 +1521,115 @@ export class SiteData extends DurableObject<Env> {
     }
   }
 
+  /** Deletes a document, releasing managed uploads only it used. */
+  private removeDocument(collectionId: string, id: string) {
+    this.trackMedia(collectionId, id, null);
+    this.sql.exec(
+      "DELETE FROM documents WHERE collection_id = ? AND id = ?",
+      collectionId,
+      id,
+    );
+  }
+
+  /**
+   * Managed uploads (1.1.0) a document's JSON names by address: the site's
+   * media URLs end in `/<owner id>/<upload id>.<ext>`, in plain fields or
+   * inside HTML alike. Only uploads registered as managed count.
+   */
+  private referencedMedia(encoded: string | null) {
+    const owner = this.meta("owner_id");
+    if (!encoded || !owner || !/^\d+$/.test(owner)) return [];
+    const pattern = new RegExp(
+      `https?://[^"\\\\\\s]+?/${owner}/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`,
+      "g",
+    );
+    const ids = [...new Set([...encoded.matchAll(pattern)].map((m) => m[1]))];
+    if (!ids.length) return [];
+    return this.rows(
+      `SELECT id FROM managed_media WHERE id IN (${ids.map(() => "?").join(",")})`,
+      ...ids,
+    ).map((row) => row.id as string);
+  }
+
+  /** Moves a document's upload references to what `encoded` names (null: none). */
+  private trackMedia(collectionId: string, id: string, encoded: string | null) {
+    const before = this.rows(
+      "SELECT upload_id FROM media_refs WHERE collection_id = ? AND document_id = ?",
+      collectionId,
+      id,
+    ).map((row) => row.upload_id as string);
+    const after = this.referencedMedia(encoded);
+    for (const upload of after)
+      if (!before.includes(upload))
+        this.sql.exec(
+          "INSERT INTO media_refs (upload_id, collection_id, document_id) VALUES (?, ?, ?)",
+          upload,
+          collectionId,
+          id,
+        );
+    for (const upload of before)
+      if (!after.includes(upload)) {
+        this.sql.exec(
+          "DELETE FROM media_refs WHERE upload_id = ? AND collection_id = ? AND document_id = ?",
+          upload,
+          collectionId,
+          id,
+        );
+        this.releaseIfUnused(upload);
+      }
+  }
+
+  /** Queues a managed upload for deletion once no document references it. */
+  private releaseIfUnused(upload: string) {
+    if (
+      this.rows("SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1", upload)
+        .length
+    )
+      return;
+    this.sql.exec("DELETE FROM managed_media WHERE id = ?", upload);
+    this.sql.exec(
+      "INSERT INTO media_releases (id, queued_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+      upload,
+      Date.now(),
+    );
+  }
+
+  /** Registers a finished upload as managed (1.1.0): references keep it. */
+  async manageMedia(input: { ownerId: string; id: string }) {
+    return this.run(() => {
+      this.claim(input.ownerId);
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          input.id,
+        )
+      )
+        throw new DataError(400, "Invalid upload ID.");
+      this.sql.exec(
+        "INSERT INTO managed_media (id, registered_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
+        input.id,
+        Date.now(),
+      );
+      return true;
+    });
+  }
+
+  /**
+   * Queues managed uploads no document has used for an hour after they were
+   * registered; returns how many uploads wait for deletion.
+   */
+  async sweepMedia(input: { now?: number } = {}) {
+    return this.run(() => {
+      const cutoff = (input.now ?? Date.now()) - 60 * 60 * 1000;
+      for (const row of this.rows(
+        `SELECT id FROM managed_media m WHERE registered_at < ?
+         AND NOT EXISTS (SELECT 1 FROM media_refs r WHERE r.upload_id = m.id) LIMIT 500`,
+        cutoff,
+      ))
+        this.releaseIfUnused(row.id as string);
+      return this.pendingMedia().mediaReleases ?? 0;
+    });
+  }
+
   /** How many uploads functions queued for deletion, when any wait. */
   private pendingMedia() {
     const pending = Number(
@@ -1455,6 +1665,8 @@ export class SiteData extends DurableObject<Env> {
     file: string;
     source: string | null;
     folder?: "functions" | "rules" | "modules";
+    /** False stores the file only, for a batch published by its last file. */
+    publish?: boolean;
   }) {
     const folder =
       input.folder === "rules"
@@ -1465,6 +1677,7 @@ export class SiteData extends DurableObject<Env> {
     const key = `${input.site}/_naru/${folder}/${folder !== "rules" ? functionModule(input.file) : name(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
+    if (input.publish === false) return { ok: true, value: null };
     const published = await this.publishFunctions({ site: input.site });
     if (!published.ok) return published;
     return { ok: true, value: null };
@@ -1528,11 +1741,7 @@ export class SiteData extends DurableObject<Env> {
             )?.version,
           );
         if (operation.type === "delete") {
-          this.sql.exec(
-            "DELETE FROM documents WHERE collection_id = ? AND id = ?",
-            collection.id,
-            id,
-          );
+          this.removeDocument(collection.id, id);
           results.push(null);
           continue;
         }

@@ -97,6 +97,10 @@ export type Predicate =
         PredicateField,
         readonly (string | number | boolean | null)[],
       ];
+    }
+  | {
+      /** An array field holding the value (1.1.0). */
+      has: readonly [string, string | number | boolean | null];
     };
 
 /** One or two keys: a user field by name, or document metadata. */
@@ -153,7 +157,37 @@ export interface PublicCollection<T = Json> {
    * the start). Not a snapshot: writes in between can shift later pages.
    */
   pages(options?: ListOptions): AsyncIterable<Page<T>>;
-  add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>;
+  /**
+   * `secret` (1.1.0): whoever later gives the same secret may replace or
+   * delete the document, as a guest's password lets them edit a post. Naru
+   * keeps only a hash and never returns it.
+   */
+  add(
+    data: T,
+    options?: { secret?: string; signal?: AbortSignal },
+  ): Promise<Document<T>>;
+  /**
+   * Replaces a document (1.1.0), when its collection or rule allows this
+   * visitor to: for a guest, by giving the secret it was added with.
+   */
+  set(
+    id: string,
+    data: T,
+    options?: {
+      condition?: WriteCondition;
+      secret?: string;
+      signal?: AbortSignal;
+    },
+  ): Promise<Document<T>>;
+  /** Deletes a document (1.1.0), as `set` may replace it. */
+  delete(
+    id: string,
+    options?: {
+      condition?: { revision: Revision };
+      secret?: string;
+      signal?: AbortSignal;
+    },
+  ): Promise<void>;
 }
 
 export interface AdminCollection<T = Json> extends PublicCollection<T> {
@@ -161,12 +195,20 @@ export interface AdminCollection<T = Json> extends PublicCollection<T> {
   set(
     id: string,
     data: T,
-    options?: { condition?: WriteCondition; signal?: AbortSignal },
+    options?: {
+      condition?: WriteCondition;
+      secret?: string;
+      signal?: AbortSignal;
+    },
   ): Promise<Document<T>>;
   /** Deleting a missing document succeeds unless a condition was supplied. */
   delete(
     id: string,
-    options?: { condition?: { revision: Revision }; signal?: AbortSignal },
+    options?: {
+      condition?: { revision: Revision };
+      secret?: string;
+      signal?: AbortSignal;
+    },
   ): Promise<void>;
 }
 
@@ -183,12 +225,20 @@ export interface MemberCollection<T = Json> extends PublicCollection<T> {
   set(
     id: string,
     data: T,
-    options?: { condition?: WriteCondition; signal?: AbortSignal },
+    options?: {
+      condition?: WriteCondition;
+      secret?: string;
+      signal?: AbortSignal;
+    },
   ): Promise<Document<T>>;
   /** Deleting a missing document succeeds unless a condition was supplied. */
   delete(
     id: string,
-    options?: { condition?: { revision: Revision }; signal?: AbortSignal },
+    options?: {
+      condition?: { revision: Revision };
+      secret?: string;
+      signal?: AbortSignal;
+    },
   ): Promise<void>;
 }
 
@@ -242,6 +292,8 @@ export interface Member {
       file: File | Blob,
       options?: {
         signal?: AbortSignal;
+        /** As for an owner's upload. */
+        managed?: boolean;
         /** As for an owner's upload. */
         onProgress?: (
           progress:
@@ -317,6 +369,13 @@ export interface Admin {
       file: File | Blob,
       options?: {
         signal?: AbortSignal;
+        /**
+         * A managed upload (1.1.0) lives as long as the site's documents use
+         * it: any document whose JSON contains its URL, HTML included, keeps
+         * it, and Naru deletes it once none does (or if none has used it an
+         * hour after the upload). Other uploads stay until deleted.
+         */
+        managed?: boolean;
         /**
          * Called as the upload moves along: `preparing` while a photo is
          * shrunk and the upload authorized, `uploading` with the bytes sent

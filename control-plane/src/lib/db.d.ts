@@ -600,6 +600,7 @@ export interface SiteDataFiles {
   delete_completed_at: Timestamp | null;
   deleted_at: Timestamp | null;
   id: string;
+  managed: Generated<boolean>;
   member_id: string | null;
   object_key: string;
   original_name: string;

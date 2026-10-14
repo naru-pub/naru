@@ -985,6 +985,153 @@ integration("site members", () => {
     await owned("DELETE", ["gated"]);
   });
 
+  test("a rule's present trims what non-owners read, and limits their queries", async () => {
+    const reader = await signIn("dave");
+    await owned("POST", [], { name: "sheets", read: "member", write: "admin" });
+    await owned("PUT", ["sheets", "a"], {
+      data: { name: "A", side: "east", note: "owner only", tags: ["x"] },
+    });
+    await owned("PUT", ["sheets", "b"], {
+      data: { name: "B", side: "west", note: "hidden too", tags: ["y"] },
+    });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "rules",
+      file: "sheets",
+      source: `export const queryable = ["name", "side", "tags"];
+        export function scope() { return true; }
+        export function canWrite() { return false; }
+        export function present(ctx, { document }) {
+          const { note, ...shown } = document.data;
+          return shown;
+        }`,
+    });
+    await owned("PATCH", ["sheets"], {
+      read: "member",
+      write: "admin",
+      rules: "sheets",
+    });
+    try {
+      const page = (await as(reader.accessToken, "GET", ["sheets"])) as any;
+      expect(page.documents.map((d: any) => d.data)).toEqual([
+        { name: "A", side: "east", tags: ["x"] },
+        { name: "B", side: "west", tags: ["y"] },
+      ]);
+      expect(
+        ((await as(reader.accessToken, "GET", ["sheets", "a"])) as any).document
+          .data.note,
+      ).toBeUndefined();
+      const many = (await as(reader.accessToken, "GET", ["sheets"], undefined, {
+        ids: JSON.stringify(["b", "missing"]),
+      })) as any;
+      expect(many.documents).toEqual([
+        expect.objectContaining({
+          data: { name: "B", side: "west", tags: ["y"] },
+        }),
+        null,
+      ]);
+      // Queries on queryable fields work; on hidden ones they are refused.
+      expect(
+        (
+          (await as(reader.accessToken, "GET", ["sheets"], undefined, {
+            where: { has: ["tags", "y"] },
+          })) as any
+        ).documents.map((d: any) => d.id),
+      ).toEqual(["b"]);
+      for (const extra of [
+        { filter: { note: "owner only" } },
+        { where: { any: [{ eq: ["note", "owner only"] }] } },
+        { sort: JSON.stringify([["note", "asc"]]) },
+      ])
+        await expect(
+          as(reader.accessToken, "GET", ["sheets"], undefined, extra),
+        ).rejects.toMatchObject({ status: 400 });
+      // The owner reads and queries everything.
+      expect(
+        ((await owned("GET", ["sheets", "a"])) as any).document.data.note,
+      ).toBe("owner only");
+    } finally {
+      await owned("DELETE", ["sheets"]);
+    }
+  });
+
+  test("a guest edits and deletes a document with the secret it was added with", async () => {
+    await owned("POST", [], { name: "guests", read: "world", write: "create" });
+    try {
+      const added = (await as(undefined, "POST", ["guests"], {
+        data: { name: "길손", text: "hi" },
+        secret: "pass1234",
+      })) as any;
+      // The hash never comes back, to the writer or to anyone else.
+      expect(JSON.stringify(added)).not.toMatch(/pbkdf2|pass1234/);
+      const read = (await as(undefined, "GET", ["guests", added.id])) as any;
+      expect(JSON.stringify(read)).not.toMatch(/pbkdf2|secret/);
+      // Without the secret, or with a wrong one, a visitor cannot change it.
+      for (const secret of [undefined, "wrong"])
+        await expect(
+          as(undefined, "PUT", ["guests", added.id], {
+            data: { name: "x" },
+            ...(secret ? { secret } : {}),
+          }),
+        ).rejects.toMatchObject({ status: 403 });
+      const edited = (await as(undefined, "PUT", ["guests", added.id], {
+        data: { name: "길손", text: "edited" },
+        secret: "pass1234",
+      })) as any;
+      expect(edited.data.text).toBe("edited");
+      // A document added without a secret stays the owner's to change.
+      const plain = (await as(undefined, "POST", ["guests"], {
+        data: { text: "plain" },
+      })) as any;
+      await expect(
+        as(undefined, "DELETE", ["guests", plain.id], { secret: "pass1234" }),
+      ).rejects.toMatchObject({ status: 403 });
+      await as(undefined, "DELETE", ["guests", added.id], {
+        secret: "pass1234",
+      });
+      await expect(
+        as(undefined, "GET", ["guests", added.id]),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(
+        as(undefined, "POST", ["guests"], { data: {}, secret: "" }),
+      ).rejects.toMatchObject({ status: 400 });
+      // A rule sees whether the secret matched, and decides.
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "rules",
+        file: "guests",
+        source: `export function scope() { return true; }
+          export function canWrite(ctx, { before, after, secret }) {
+            if (!before) return typeof after.data.name === "string";
+            return secret === true && (!after || after.data.name === before.data.name);
+          }`,
+      });
+      await owned("PATCH", ["guests"], {
+        read: "world",
+        write: "create",
+        rules: "guests",
+      });
+      const ruled = (await as(undefined, "POST", ["guests"], {
+        data: { name: "손님", text: "a" },
+        secret: "s3cret",
+      })) as any;
+      await expect(
+        as(undefined, "PUT", ["guests", ruled.id], {
+          data: { name: "바꿈", text: "b" },
+          secret: "s3cret",
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        as(undefined, "PUT", ["guests", ruled.id], {
+          data: { name: "손님", text: "b" },
+          secret: "s3cret",
+        }),
+      ).resolves.toBeDefined();
+    } finally {
+      await owned("DELETE", ["guests"]);
+    }
+  });
+
   test("visitors call only the exports a module opens to them, by address", async () => {
     await owned("POST", [], {
       name: "visitor_book",
@@ -1295,6 +1442,77 @@ integration("site members", () => {
       jest.restoreAllMocks();
     });
     const file = { name: "log.png", contentType: "image/png", size: 3 };
+
+    test("a managed upload lives while documents use it, in any field or HTML", async () => {
+      const bob = await signIn("bob");
+      const upload = async () => {
+        const authorized = await media(bob.accessToken, "POST", [], {
+          ...file,
+          managed: true,
+        });
+        return (await media(bob.accessToken, "PUT", [authorized.id])).file;
+      };
+      const kept = await upload();
+      const swapped = await upload();
+      const unused = await upload();
+      const plain = (
+        await media(bob.accessToken, "PUT", [
+          (await media(bob.accessToken, "POST", [], file)).id,
+        ])
+      ).file;
+      const released = async () =>
+        (await callSiteObject<string[]>("alice", "mediaReleases", {})).sort();
+      await owned("POST", [], {
+        name: "posts_m",
+        read: "world",
+        write: "admin",
+      });
+      try {
+        await owned("PUT", ["posts_m", "a"], {
+          data: { image: kept.url, body: `<p><img src="${swapped.url}"></p>` },
+        });
+        await owned("PUT", ["posts_m", "b"], {
+          data: { html: `<img src="${kept.url}">`, other: plain.url },
+        });
+        expect(await released()).toEqual([]);
+        // Editing out an upload releases it; another document still keeps one.
+        await owned("PUT", ["posts_m", "a"], { data: { image: kept.url } });
+        expect(await released()).toEqual([swapped.id]);
+        await owned("DELETE", ["posts_m", "a"]);
+        expect(await released()).toEqual([swapped.id]);
+        await owned("DELETE", ["posts_m", "b"]);
+        expect(await released()).toEqual([kept.id, swapped.id].sort());
+        // Never used: swept an hour after it was registered.
+        await callSiteObject("alice", "sweepMedia", { now: Date.now() });
+        expect(await released()).not.toContain(unused.id);
+        await callSiteObject("alice", "sweepMedia", {
+          now: Date.now() + 61 * 60 * 1000,
+        });
+        expect(await released()).toContain(unused.id);
+        // An unmanaged upload is never released by references.
+        expect(await released()).not.toContain(plain.id);
+        await runMediaRelease({ site: "alice" }, {
+          step: (_name: string, work: () => Promise<unknown>) => work(),
+        } as never);
+        const rows = await db
+          .selectFrom("site_data_files")
+          .select(["id", "deleted_at"])
+          .where("id", "in", [kept.id, swapped.id, unused.id, plain.id])
+          .execute();
+        expect(
+          Object.fromEntries(
+            rows.map((row) => [row.id, Boolean(row.deleted_at)]),
+          ),
+        ).toEqual({
+          [kept.id]: true,
+          [swapped.id]: true,
+          [unused.id]: true,
+          [plain.id]: false,
+        });
+      } finally {
+        await owned("DELETE", ["posts_m"]);
+      }
+    });
 
     test("a member uploads into the site's media, and finishes only their own", async () => {
       const bob = await signIn("bob");

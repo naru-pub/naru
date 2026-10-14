@@ -37,7 +37,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  delete(\n    id: string,\n    options?: { signal?: AbortSignal; uploadedBy?: string | null },\n  ): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  delete(\n    id: string,\n    options?: { signal?: AbortSignal; uploadedBy?: string | null },\n  ): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      managed?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -162,7 +162,7 @@
         {
           "name": "delete",
           "optional": false,
-          "signature": "delete(\n  id: string,\n  options?: { condition?: { revision: Revision }; signal?: AbortSignal },\n): Promise<void>",
+          "signature": "delete(\n  id: string,\n  options?: {\n    condition?: { revision: Revision };\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<void>",
           "summary": [
             {
               "type": "paragraph",
@@ -179,7 +179,7 @@
         {
           "name": "set",
           "optional": false,
-          "signature": "set(\n  id: string,\n  data: T,\n  options?: { condition?: WriteCondition; signal?: AbortSignal },\n): Promise<Document<T>>",
+          "signature": "set(\n  id: string,\n  data: T,\n  options?: {\n    condition?: WriteCondition;\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<Document<T>>",
           "summary": [
             {
               "type": "paragraph",
@@ -504,7 +504,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  delete(\n    id: string,\n    options?: { signal?: AbortSignal; uploadedBy?: string | null },\n  ): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  delete(\n    id: string,\n    options?: { signal?: AbortSignal; uploadedBy?: string | null },\n  ): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      managed?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -712,7 +712,7 @@
         {
           "name": "delete",
           "optional": false,
-          "signature": "delete(\n  id: string,\n  options?: { condition?: { revision: Revision }; signal?: AbortSignal },\n): Promise<void>",
+          "signature": "delete(\n  id: string,\n  options?: {\n    condition?: { revision: Revision };\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<void>",
           "summary": [
             {
               "type": "paragraph",
@@ -729,7 +729,7 @@
         {
           "name": "set",
           "optional": false,
-          "signature": "set(\n  id: string,\n  data: T,\n  options?: { condition?: WriteCondition; signal?: AbortSignal },\n): Promise<Document<T>>",
+          "signature": "set(\n  id: string,\n  data: T,\n  options?: {\n    condition?: WriteCondition;\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<Document<T>>",
           "summary": [
             {
               "type": "paragraph",
@@ -910,8 +910,22 @@
         {
           "name": "add",
           "optional": false,
-          "signature": "add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>",
-          "summary": [],
+          "signature": "add(\n  data: T,\n  options?: { secret?: string; signal?: AbortSignal },\n): Promise<Document<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "code",
+                  "value": "secret"
+                },
+                {
+                  "type": "text",
+                  "value": " (1.1.0): whoever later gives the same secret may replace or delete the document, as a guest's password lets them edit a post. Naru keeps only a hash and never returns it."
+                }
+              ]
+            }
+          ],
           "throws": []
         },
         {
@@ -941,6 +955,31 @@
                 {
                   "type": "text",
                   "value": ", or the whole collection."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "delete",
+          "optional": false,
+          "signature": "delete(\n  id: string,\n  options?: {\n    condition?: { revision: Revision };\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<void>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Deletes a document (1.1.0), as "
+                },
+                {
+                  "type": "code",
+                  "value": "set"
+                },
+                {
+                  "type": "text",
+                  "value": " may replace it."
                 }
               ]
             }
@@ -1005,6 +1044,23 @@
                 {
                   "type": "text",
                   "value": " (or the start). Not a snapshot: writes in between can shift later pages."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "set",
+          "optional": false,
+          "signature": "set(\n  id: string,\n  data: T,\n  options?: {\n    condition?: WriteCondition;\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<Document<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Replaces a document (1.1.0), when its collection or rule allows this visitor to: for a guest, by giving the secret it was added with."
                 }
               ]
             }
@@ -1204,7 +1260,7 @@
         }
       ],
       "throws": [],
-      "signature": "type Predicate =\n  | boolean\n  | { all: readonly Predicate[] }\n  | { any: readonly Predicate[] }\n  | { eq: readonly [PredicateField, string | number | boolean | null] }\n  | { ne: readonly [PredicateField, string | number | boolean | null] }\n  | { gt: readonly [PredicateField, string | number] }\n  | { gte: readonly [PredicateField, string | number] }\n  | { lt: readonly [PredicateField, string | number] }\n  | { lte: readonly [PredicateField, string | number] }\n  | {\n      in: readonly [\n        PredicateField,\n        readonly (string | number | boolean | null)[],\n      ];\n    }"
+      "signature": "type Predicate =\n  | boolean\n  | { all: readonly Predicate[] }\n  | { any: readonly Predicate[] }\n  | { eq: readonly [PredicateField, string | number | boolean | null] }\n  | { ne: readonly [PredicateField, string | number | boolean | null] }\n  | { gt: readonly [PredicateField, string | number] }\n  | { gte: readonly [PredicateField, string | number] }\n  | { lt: readonly [PredicateField, string | number] }\n  | { lte: readonly [PredicateField, string | number] }\n  | {\n      in: readonly [\n        PredicateField,\n        readonly (string | number | boolean | null)[],\n      ];\n    }\n  | { has: readonly [string, string | number | boolean | null] }"
     },
     {
       "name": "PredicateField",

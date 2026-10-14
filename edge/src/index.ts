@@ -43,6 +43,8 @@ const OPERATIONS = [
   "collections",
   "createCollections",
   "configureCollections",
+  "manageMedia",
+  "sweepMedia",
   "erase",
   "configure",
   "call",
@@ -76,6 +78,10 @@ function dispatch(
       return stub.createCollections(input);
     case "configureCollections":
       return stub.configureCollections(input);
+    case "manageMedia":
+      return stub.manageMedia(input);
+    case "sweepMedia":
+      return stub.sweepMedia(input);
     case "export":
       return stub.export();
     case "import":

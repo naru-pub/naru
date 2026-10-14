@@ -15,8 +15,9 @@ const COMPARE: Record<string, string> = {
 /**
  * A predicate, never SQL: what a rule's `scope` returns, and what a list's
  * `where` asks for. Built from `all` and `any` of comparisons: `eq`, `ne`,
- * `gt`, `gte`, `lt` and `lte` take `[field, value]`, and `in` takes
- * `[field, [value, ...]]`. A field is a top-level data field by name, or
+ * `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
+ * `[field, [value, ...]]`, and `has` takes `[field, value]` and matches an
+ * array field holding that value. A field is a top-level data field by name, or
  * `{ metadata: "id" | "createdBy" }`. Values are strings, finite numbers,
  * booleans or null, and match only their own JSON type; ranges take strings or
  * numbers. SQL applies it before paging and counting.
@@ -97,6 +98,22 @@ export function predicate(value: unknown, what = "Rule predicate") {
     }
     if (operator === "ne")
       return `NOT coalesce((${comparison(field, "eq", bound)}), 0)`;
+    if (operator === "has") {
+      // An array of scalars holding the value, matched by JSON type as eq is.
+      if (field && typeof field === "object")
+        throw invalid("has takes a data field, not metadata.");
+      const path = `'$."${name(field)}"'`;
+      const item = scalar(bound);
+      let match: string;
+      if (item === null) match = "type = 'null'";
+      else if (typeof item === "boolean")
+        match = `type = '${item ? "true" : "false"}'`;
+      else {
+        bindings.push(item);
+        match = `type ${typeof item === "string" ? "= 'text'" : "IN ('integer', 'real')"} AND value = ?`;
+      }
+      return `coalesce((json_type(data, ${path}) = 'array' AND EXISTS (SELECT 1 FROM json_each(data, ${path}) WHERE ${match})), 0)`;
+    }
     if (operator !== "eq" && !Object.hasOwn(COMPARE, operator))
       throw invalid(`unknown operator ${operator}.`);
     return `coalesce((${comparison(field, operator, bound)}), 0)`;
@@ -126,6 +143,67 @@ export function ruleEntry(path: string) {
     source: `import * as rules from "./${path.slice("rules/".length)}";
 export async function __naruScope(ctx, args) { return rules.scope(ctx, args); }
 export async function __naruWrite(ctx, args) { return (await rules.canWrite(ctx, args)) === true; }
+export function __naruView() {
+  if (typeof rules.present !== "function") return null;
+  const fields = rules.queryable ?? [];
+  if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string"))
+    throw new Error("queryable must be a list of field names.");
+  return fields;
+}
+export async function __naruPresent(ctx, args) {
+  const shown = [];
+  for (const document of args.documents)
+    shown.push(await rules.present(ctx, { collection: args.collection, document }));
+  return shown;
+}
 `,
   };
+}
+
+/**
+ * The user fields a read's filter, `where` and sort name. A rule that trims
+ * documents (`present`) allows only its `queryable` ones, so a caller cannot
+ * probe hidden values by asking which documents match them.
+ */
+export function queriedFields(input: {
+  filter?: unknown;
+  where?: unknown;
+  sort?: string;
+}) {
+  const fields = new Set<string>();
+  if (input.filter && typeof input.filter === "object")
+    for (const key of Object.keys(input.filter)) fields.add(key);
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    for (const [operator, value] of Object.entries(node)) {
+      if (operator === "all" || operator === "any") {
+        if (Array.isArray(value)) value.forEach(walk);
+      } else if (Array.isArray(value) && typeof value[0] === "string")
+        fields.add(value[0]);
+    }
+  };
+  walk(input.where);
+  if (input.sort !== undefined) {
+    let sort: unknown;
+    try {
+      sort = JSON.parse(input.sort);
+    } catch {
+      sort = null;
+    }
+    if (Array.isArray(sort))
+      for (const item of sort)
+        if (Array.isArray(item) && typeof item[0] === "string")
+          fields.add(item[0]);
+  }
+  return [...fields];
+}
+
+/** What `present` returned for one document: its data as the caller sees it. */
+export function presented(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new DataError(
+      400,
+      "Collection rule present() must return the document's data as an object.",
+    );
+  return value as Record<string, unknown>;
 }

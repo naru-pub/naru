@@ -1,5 +1,5 @@
 import { resolveModule, type ModuleSources } from "./modules";
-import { pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
+import { hashPassword, verifyPassword } from "./passwords";
 import type {
   QuickJSContext,
   QuickJSHandle,
@@ -60,9 +60,6 @@ export const MAX_JOBS = 10_000;
  * milliseconds of host time the interrupt checks cannot see.
  */
 export const MAX_PASSWORD_OPERATIONS = 3;
-const PASSWORD_ITERATIONS = 20_000;
-const PASSWORD =
-  /^pbkdf2-sha256\$(\d{1,7})\$([A-Za-z0-9_-]{22})\$([A-Za-z0-9_-]{43})$/;
 /** Live messages a call may send (ctx.notify, ctx.broadcast). */
 export const MAX_MESSAGES = 50;
 const MESSAGES = new Set(["notify", "broadcast"]);
@@ -98,6 +95,8 @@ export type Invocation = {
   visitor?: boolean;
   now: number;
   readonly?: boolean;
+  /** A larger result cap, for rules presenting a page of documents. */
+  maxResultBytes?: number;
 };
 
 const failed = (message: string) =>
@@ -386,38 +385,14 @@ export function runFunction(
             password.length > 256
           )
             throw failed("a password is 1–256 characters.");
-          if (name === "passwordHash") {
-            const salt = randomBytes(16);
-            const hash = pbkdf2Sync(
-              password,
-              salt,
-              PASSWORD_ITERATIONS,
-              32,
-              "sha256",
-            );
-            return context.newString(
-              JSON.stringify(
-                `pbkdf2-sha256$${PASSWORD_ITERATIONS}$${salt.toString("base64url")}$${hash.toString("base64url")}`,
-              ),
-            );
-          }
-          const match =
-            typeof stored === "string" ? PASSWORD.exec(stored) : null;
-          if (!match || Number(match[1]) > 1_000_000)
+          if (name === "passwordHash")
+            return context.newString(JSON.stringify(hashPassword(password)));
+          const verified = verifyPassword(password, stored);
+          if (verified === null)
             throw failed(
               "ctx.password.verify needs a hash from ctx.password.hash.",
             );
-          const expected = Buffer.from(match[3], "base64url");
-          const actual = pbkdf2Sync(
-            password,
-            Buffer.from(match[2], "base64url"),
-            Number(match[1]),
-            expected.length,
-            "sha256",
-          );
-          return context.newString(
-            JSON.stringify(timingSafeEqual(actual, expected)),
-          );
+          return context.newString(JSON.stringify(verified));
         }
         if (name === "fail") {
           const json = context.getString(args);
@@ -568,7 +543,10 @@ export function runFunction(
     if (unawaited !== undefined)
       throw failed(`it did not await ctx.${unawaited}.`);
     const json = context.getString(state.value);
-    if (new TextEncoder().encode(json).byteLength > MAX_RESULT_BYTES)
+    if (
+      new TextEncoder().encode(json).byteLength >
+      (invocation.maxResultBytes ?? MAX_RESULT_BYTES)
+    )
       throw failed("its result is larger than 64 KiB.");
     return JSON.parse(json);
   }

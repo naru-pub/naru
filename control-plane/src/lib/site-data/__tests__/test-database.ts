@@ -30,6 +30,7 @@ import { up as membershipUp } from "@/migrations/1791800344085_site_membership_a
 import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
 import { up as verifiedEmailUp } from "@/migrations/1791981028752_site_member_verified_email";
 import { up as membersFreeUp } from "@/migrations/1791981384263_site_members_free";
+import { up as managedMediaUp } from "@/migrations/1791981970276_site_data_files_managed";
 
 /**
  * The site-data schema of a disposable naru_data_test database. Documents and
@@ -91,6 +92,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await membershipUp(db);
   await verifiedEmailUp(db);
   await membersFreeUp(db);
+  await managedMediaUp(db);
   await mediaDeletionUp(db);
   await sql.raw(absurdSchema).execute(db);
   await sql`select absurd.create_queue('maintenance')`.execute(db);

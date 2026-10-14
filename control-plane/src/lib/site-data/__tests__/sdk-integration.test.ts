@@ -184,7 +184,7 @@ integration("SDK and data API contract", () => {
     );
     // The Worker's storage outlives a suite, and other suites use alice too.
     await eraseSiteData("alice");
-    const collections = ["crud", "feed", "atomic", "private"];
+    const collections = ["crud", "feed", "atomic", "private", "guests"];
     for (const name of collections)
       await executeData({
         site: "alice",
@@ -194,7 +194,12 @@ integration("SDK and data API contract", () => {
         body: {
           name,
           read: name === "private" ? "admin" : "world",
-          write: name === "private" ? "admin" : "world",
+          write:
+            name === "private"
+              ? "admin"
+              : name === "guests"
+                ? "create"
+                : "world",
         },
       });
     // Registered as one address of the page and signed in from another; Naru
@@ -565,6 +570,32 @@ integration("SDK and data API contract", () => {
       expect(anonymousAtControlPlane).toBe(0);
     },
   );
+
+  test("SDK 1.1.0 lets a visitor edit and delete with the secret they added with", async () => {
+    const guests = createNaru110({ site: "alice" }).collection<{
+      text: string;
+    }>("guests");
+    const added = await guests.add({ text: "hi" }, { secret: "pass1234" });
+    await expect(guests.set(added.id, { text: "x" })).rejects.toMatchObject({
+      code: "ACCESS_DENIED",
+    });
+    await expect(
+      guests.set(added.id, { text: "x" }, { secret: "wrong" }),
+    ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+    const edited = await guests.set(
+      added.id,
+      { text: "edited" },
+      { secret: "pass1234", condition: { revision: added.revision } },
+    );
+    expect(edited.data.text).toBe("edited");
+    await expect(guests.delete(added.id)).rejects.toMatchObject({
+      code: "ACCESS_DENIED",
+    });
+    await guests.delete(added.id, { secret: "pass1234" });
+    await expect(guests.get(added.id)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
 
   test("only anonymous reads of world collections are marked cacheable", async () => {
     const anonymous = await nativeFetch(`${origin}/api/data/v1/alice/feed`, {

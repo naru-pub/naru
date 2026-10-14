@@ -179,6 +179,34 @@ describe("filters", () => {
   });
 });
 
+describe("array membership", () => {
+  test("has matches an array holding the value, by JSON type", () => {
+    const insert = db.prepare(
+      "INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
+    );
+    insert.run(COLLECTION, "tags", '{"t":["봄","꽃",1,true,null]}', BASE, BASE);
+    insert.run(COLLECTION, "text", '{"t":"봄"}', BASE, BASE);
+    insert.run(COLLECTION, "map", '{"t":{"a":"봄"}}', BASE, BASE);
+    insert.run(COLLECTION, "numbers", '{"t":["1",2]}', BASE, BASE);
+    const has = (value: unknown) => readAll({ where: { has: ["t", value] } });
+    expect(has("봄")).toEqual(["tags"]);
+    expect(has(1)).toEqual(["tags"]);
+    expect(has("1")).toEqual(["numbers"]);
+    expect(has(true)).toEqual(["tags"]);
+    expect(has(false)).toEqual([]);
+    expect(has(null)).toEqual(["tags"]);
+    expect(
+      readAll({ where: { any: [{ has: ["t", 2] }, { eq: ["v", "apple"] }] } }),
+    ).toEqual(["lower", "numbers"]);
+    expect(() =>
+      listQuery(COLLECTION, { where: { has: [{ metadata: "id" }, "x"] } }),
+    ).toThrow(/metadata/);
+    expect(() =>
+      listQuery(COLLECTION, { where: { has: ["t", ["a"]] } }),
+    ).toThrow();
+  });
+});
+
 describe("cursors and limits", () => {
   test("a time cursor keeps the six-digit form and comes back to the same instant", () => {
     const at = BASE + 123;

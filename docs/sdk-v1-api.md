@@ -408,6 +408,38 @@ A visitor's calls are limited by their address: 20 a minute that may write and
 count against the site's monthly budget. A visitor's call cannot delete uploads
 (`ctx.media.delete`). Everything else, limits included, is as for members.
 
+## Guest edits with a secret (1.1.0)
+
+A visitor who adds a document can give it a secret, as guests give a password
+to a board post, and later change or delete it with the same secret, without
+a site function:
+
+```js
+const posts = naru.collection("guestbook"); // write access: create
+const post = await posts.add({ name: "Visitor", text: "Hi" }, { secret: pw });
+await posts.set(post.id, { name: "Visitor", text: "Edited" }, { secret: pw });
+await posts.delete(post.id, { secret: pw });
+```
+
+Naru keeps only a salted PBKDF2 hash, never returned or readable. In a
+`create` collection, the matching secret is what lets a visitor replace or
+delete a document; a document added without one stays the owner's. A
+collection rule decides itself: `canWrite` receives `secret`, `true` when the
+request's secret matched the document's, `false` when it did not, and `null`
+when either has none. A secret is 1–256 characters; member and owner handles
+take it too.
+
+## Managed uploads (1.1.0)
+
+`media.upload(file, { managed: true })` makes an upload the site's documents
+keep alive: any document whose JSON contains the upload's URL, in a plain
+field or inside HTML, holds a reference, from any write path (pages,
+functions, batches). When the last reference goes, by an edit, a deletion or
+a deleted collection, Naru deletes the upload, within about fifteen minutes;
+an upload no document has used an hour after it was made is deleted too.
+`ctx.media.delete(id)` still deletes one at once. Uploads made without
+`managed` are unchanged: they stay until deleted.
+
 ## Live connections (1.1.0)
 
 Pages can hear what site functions send instead of asking again on a timer.
@@ -490,7 +522,9 @@ await posts.list({
 
 A predicate is `true`, `false`, `{ all: [...] }`, `{ any: [...] }`, or one
 comparison: `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`,
-and `in` takes `[field, [1 to 100 values]]`. A field is a top-level data field,
+`in` takes `[field, [1 to 100 values]]`, and `has` takes `[field, value]` and
+matches a data field holding an array with that value (1.1.0):
+`{ has: ["tags", "spring"] }`. A field is a top-level data field,
 or `{ metadata: "id" | "createdBy" }`. Values match only their own JSON type, a
 missing field matches only `ne`, and ranges compare strings or numbers. At most
 100 nodes, ten levels deep, and 4 KiB as sent. `count({ filter, where })` takes
@@ -557,6 +591,19 @@ reading the document back, and `null` for a `delete`. Any failed condition or
 write rolls back every write in the batch. Conditions are checked as they are
 for single writes, before anything is sent. The SDK does not automatically
 retry writes or batches.
+
+## Local development (naru-dev)
+
+From a checkout of Naru, `pnpm naru-dev <site folder> --site <name>` (in
+`control-plane/`, after `pnpm install` there and in `edge/`) runs one site
+locally on http://localhost:4000: the real edge Worker under `wrangler dev`
+for documents, rules, functions, live connections and limits, and a stand-in
+for naru.pub that serves the site's files and the SDK, signs owners and
+members in on one click (members are named test accounts with a status),
+keeps uploads in a folder and republishes `_naru/` on every change. Pages keep
+importing `https://naru.pub/sdk/1.1.0/naru.js`; an import map sends them to
+the local SDK, and uploads keep their `https://media.naru.pub` addresses,
+served locally by a service worker. Data persists in `<site>/.naru-dev/`.
 
 ## Media and sign-out
 
