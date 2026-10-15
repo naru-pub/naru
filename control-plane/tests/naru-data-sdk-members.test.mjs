@@ -197,7 +197,7 @@ test("a member writes with their token, and an ended sign-in is forgotten", asyn
     assert.equal(calls[0].method, "PUT");
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/board/m-1",
+      "https://sdk.naru.pub/api/data/v1/alice/board/m-1",
     );
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
     respond(emptyPage);
@@ -351,7 +351,7 @@ test("call posts its arguments to the function, and resolves with its result", a
     assert.equal(calls[0].method, "POST");
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/_call/shop:buy",
+      "https://sdk.naru.pub/api/data/v1/alice/_call/shop:buy",
     );
     assert.deepEqual(JSON.parse(calls[0].body), {
       args: { item: "sword", qty: 1 },
@@ -486,7 +486,7 @@ test("a call posts with member credentials, and only what it wrote skips caches"
     });
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/_call/shop:catalog",
+      "https://sdk.naru.pub/api/data/v1/alice/_call/shop:catalog",
     );
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
@@ -518,7 +518,7 @@ test("visitors call functions without credentials", async () => {
     assert.deepEqual(await createNaru().call("guest:list"), ["entry"]);
     assert.equal(
       calls[0].url.href,
-      "https://naru.pub/api/data/v1/alice/_call/guest:list",
+      "https://sdk.naru.pub/api/data/v1/alice/_call/guest:list",
     );
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].credentials, "omit");
@@ -572,7 +572,7 @@ test("live connections reconnect with fresh tickets and stop when access ends", 
       assert.equal(calls[0].method, "POST");
       assert.equal(
         sockets[0].url.href,
-        "wss://naru.pub/api/data/v1/alice/_live?topics=board&ticket=ticket-1",
+        "wss://sdk.naru.pub/api/data/v1/alice/_live?topics=board&ticket=ticket-1",
       );
       sockets[0].onmessage({ data: '{"type":"notice","data":{"unread":1}}' });
       sockets[0].onmessage({ data: "pong" });
@@ -599,7 +599,7 @@ test("live connections reconnect with fresh tickets and stop when access ends", 
       await new Promise((done) => setTimeout(done, 0));
       assert.equal(
         sockets[2].url.href,
-        "wss://naru.pub/api/data/v1/alice/_live?topics=board",
+        "wss://sdk.naru.pub/api/data/v1/alice/_live?topics=board",
       );
       visitor.close();
       assert.equal(sockets[2].closedWith, 1000);

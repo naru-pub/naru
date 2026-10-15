@@ -35,7 +35,10 @@ test("a page on <site>.naru.pub needs no site; anywhere else must name one", asy
   await browser(async ({ calls, respond }) => {
     respond(emptyPage);
     await collection("posts").list();
-    assert.equal(calls[0].url.href, "https://naru.pub/api/data/v1/alice/posts");
+    assert.equal(
+      calls[0].url.href,
+      "https://sdk.naru.pub/api/data/v1/alice/posts",
+    );
     await collection("posts", { site: "bob" }).list();
     assert.equal(calls[1].url.pathname, "/api/data/v1/bob/posts");
     // An unfilled config's empty string means the same as leaving it out.
@@ -46,7 +49,7 @@ test("a page on <site>.naru.pub needs no site; anywhere else must name one", asy
       site: "alice",
       controlPlaneOrigin: "http://localhost:3000",
     }).list();
-    assert.equal(calls[3].url.origin, "https://naru.pub");
+    assert.equal(calls[3].url.origin, "https://sdk.naru.pub");
   });
   await browser(
     async () => {
@@ -825,9 +828,9 @@ test("upload authorizes, sends the bytes straight to storage, then finalizes", a
   assert.deepEqual(
     calls.map(({ method, url }) => [method, url.href]),
     [
-      ["POST", "https://naru.pub/api/data/v1/alice/_files"],
+      ["POST", "https://sdk.naru.pub/api/data/v1/alice/_files"],
       ["PUT", "https://upload.example/signed"],
-      ["PUT", "https://naru.pub/api/data/v1/alice/_files/f1"],
+      ["PUT", "https://sdk.naru.pub/api/data/v1/alice/_files/f1"],
     ],
   );
   assert.deepEqual(declared, {

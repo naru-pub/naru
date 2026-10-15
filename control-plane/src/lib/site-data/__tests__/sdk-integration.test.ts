@@ -147,10 +147,10 @@ integration("SDK and data API contract", () => {
         $metadata: {},
       };
     });
-    // The SDK only ever calls https://naru.pub; here that is this loopback
-    // server. Node fetch does not add a browser Origin header. Everything else,
-    // including HTTP errors, JSON serialization and response bodies, crosses
-    // the socket.
+    // The SDK calls https://naru.pub for sign-in and https://sdk.naru.pub for
+    // data; here both are this loopback server. Node fetch does not add a
+    // browser Origin header. Everything else, including HTTP errors, JSON
+    // serialization and response bodies, crosses the socket.
     const worker = process.env.EDGE_WORKER_URL;
     globalThis.fetch = (input, init) => {
       const url = new URL(String(input));
@@ -159,12 +159,15 @@ integration("SDK and data API contract", () => {
         return nativeFetch(input, init);
       if (
         edge &&
-        url.origin === "https://naru.pub" &&
+        url.origin === "https://sdk.naru.pub" &&
         url.pathname.startsWith("/api/data/v1/")
       )
-        // As Cloudflare routes a moved site's data requests to the Worker.
+        // As sdk.naru.pub serves data requests with the Worker.
         input = `${worker}${url.pathname}${url.search}`;
-      else if (url.origin === "https://naru.pub")
+      else if (
+        url.origin === "https://naru.pub" ||
+        url.origin === "https://sdk.naru.pub"
+      )
         input = `${origin}${url.pathname}${url.search}`;
       else if (url.origin !== origin)
         throw new Error("SDK test attempted nonlocal HTTP");

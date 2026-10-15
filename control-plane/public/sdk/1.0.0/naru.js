@@ -34,10 +34,13 @@ const errorCode = (status, code) => {
   return "INVALID_REQUEST";
 };
 const CONTROL_PLANE = "https://naru.pub";
+// The data API, served from Seoul (sdk.naru.pub); sign-in stays on naru.pub.
+const DATA_API = "https://sdk.naru.pub";
 const SITE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
-// Where requests go: always naru.pub. A page on alice.naru.pub belongs to the
-// site alice, so only custom domains and local development say which site.
+// Where requests go: the data API at sdk.naru.pub, sign-in at naru.pub. A
+// page on alice.naru.pub belongs to the site alice, so only custom domains and
+// local development say which site.
 function target({ site } = {}) {
   site ||= /^([a-z0-9-]+)\.naru\.pub$/.exec(
     globalThis.location?.hostname ?? "",
@@ -49,7 +52,7 @@ function target({ site } = {}) {
   return {
     site,
     origin: CONTROL_PLANE,
-    root: `${CONTROL_PLANE}/api/data/v1/${site}`,
+    root: `${DATA_API}/api/data/v1/${site}`,
   };
 }
 

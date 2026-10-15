@@ -9,7 +9,7 @@
 // with EDGE_WORKER_SECRET, PASSTHROUGH_ORIGIN and the R2_* variables in its
 // environment.
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,25 +31,6 @@ execFileSync(
 await cp(join(edge, "../control-plane/public/sdk"), join(dist, "sdk-files"), {
   recursive: true,
 });
-// Its copies of the SDK send data requests here, to sdk.naru.pub; sign-in
-// and membership stay on naru.pub. naru.pub/sdk/ serves the originals.
-const DATA_ROOT = "root: `${CONTROL_PLANE}/api/data/v1/${site}`,";
-for (const version of await readdir(join(dist, "sdk-files"))) {
-  const file = join(dist, "sdk-files", version, "naru.js");
-  const source = await readFile(file, "utf8").catch(() => null);
-  if (source === null) continue;
-  if (!source.includes(DATA_ROOT))
-    throw new Error(
-      `${version}/naru.js no longer builds its data root as expected.`,
-    );
-  await writeFile(
-    file,
-    source.replace(
-      DATA_ROOT,
-      "root: `https://sdk.naru.pub/api/data/v1/${site}`,",
-    ),
-  );
-}
 
 const files = (await readdir(join(dist, "worker"))).filter(
   (file) => !file.endsWith(".map") && file !== "README.md",
