@@ -123,9 +123,20 @@ await admin.collection("posts").set("hello", {
 
             <Section id="manage" title="03 · 관리와 삭제">
               <p>
-                SDK 1.1.0의 업로드 결과에는 파일 ID가 있습니다. URL과 함께
-                문서에 저장하고, 더 이상 사용하는 문서가 없을 때 ID로
-                삭제하세요. 회원은 자신이 올린 파일만 지울 수 있습니다.
+                가장 쉬운 방법은 <code>managed: true</code>로 올리는 것입니다.
+                그러면 파일을 따로 지울 필요가 없습니다. 어느 문서든 파일의
+                URL을 담고 있는 동안 파일이 남고, 글을 고치거나 지워 URL을 담은
+                문서가 하나도 없게 되면 나루가 15분 안팎에 지웁니다. 올린 뒤 한
+                시간이 지나도록 어떤 문서에도 쓰이지 않은 파일도 지웁니다.
+              </p>
+              <Code>{`const image = await member.media.upload(file, { managed: true });
+await posts.add({ title: "사진", image: image.url });
+// 글을 지우거나 다른 사진으로 바꾸면, 나루가 이 파일을 지웁니다.`}</Code>
+              <p>
+                <code>managed</code> 없이 올린 파일은 지울 때까지 남습니다.
+                업로드 결과에는 파일 ID가 있습니다. URL과 함께 문서에 저장하고,
+                더 이상 사용하는 문서가 없을 때 ID로 삭제하세요. 회원은 자신이
+                올린 파일만 지울 수 있습니다.
               </p>
               <Code>{`const uploaded = await member.media.upload(file);
 await posts.add({ image: uploaded.url, imageId: uploaded.id });

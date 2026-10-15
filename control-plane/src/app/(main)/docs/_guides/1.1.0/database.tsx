@@ -486,6 +486,14 @@ export default function DatabaseDocs() {
   login.onclick = () => naru.auth.signIn({ collections: ["posts", "drafts"] });
   // 다음 예제의 owner는 이 스크립트 안에서 사용하세요.
 </script>`}</Code>
+              <p>
+                <code>session()</code>은 이 페이지에서 로그인한 적이 있으면
+                관리자 클라이언트를, 아니면 null을 돌려줍니다. 로그인을 끝내려면{" "}
+                <code>admin.signOut()</code>을 부르세요. 나루에 남은 이 페이지의
+                로그인도 함께 끝납니다.
+              </p>
+              <Code>{`await admin.signOut();
+location.reload();`}</Code>
             </Section>
 
             <Section id="members" title="06 · 회원과 서버 함수">
@@ -520,10 +528,11 @@ export default function DatabaseDocs() {
               <p>
                 회원 로그인은 사이트의 모든 페이지와 탭에서 유지되며, 7일 동안
                 쓰지 않거나 로그인한 지 30일이 지나면, 또는 나루에서
-                로그아웃하면 끝납니다. 회원은 <code>member.media.upload()</code>
-                로 사이트의 미디어에 파일을 올릴 수 있고, 쓰기와 업로드에는
-                회원마다 횟수 제한이 있습니다. 관리자는 회원의 문서도 고치고
-                지울 수 있습니다.
+                로그아웃하면 끝납니다. 페이지에서 끝내려면{" "}
+                <code>member.signOut()</code>을 부르세요. 회원은{" "}
+                <code>member.media.upload()</code>로 사이트의 미디어에 파일을
+                올릴 수 있고, 쓰기와 업로드에는 회원마다 횟수 제한이 있습니다.
+                관리자는 회원의 문서도 고치고 지울 수 있습니다.
               </p>
               <h3 className="font-bold">서버 함수</h3>
               <p>
@@ -600,6 +609,25 @@ const price = await member.call("shop/buy:quote");`}</Code>
                 같은 함수를 부를 수 있으며, 이때 <code>ctx.member</code>는 null,{" "}
                 <code>ctx.owner</code>는 true입니다.
               </p>
+              <h3 className="font-bold">방문자가 부르는 함수</h3>
+              <p>
+                로그인하지 않은 방문자에게도 열 함수는{" "}
+                <code>export const visitors = [&quot;함수&quot;]</code>로
+                알리세요. 방문자는 <code>naru.call()</code>로 부르고, 함수에서는{" "}
+                <code>ctx.visitor</code>가 true, <code>ctx.member</code>가
+                null입니다. 손님 글쓰기처럼 로그인 없이 쓰는 기능을 만들 때
+                씁니다. 방문자의 호출은 주소마다 분당 쓰기 20번, 읽기
+                60번까지입니다.
+              </p>
+              <Code language="javascript">{`// _naru/functions/guestbook.js
+export const visitors = ["sign"];
+export async function sign(ctx, { name, text }) {
+  if (!text?.trim()) ctx.fail("INVALID_REQUEST", "내용을 입력해 주세요.");
+  return (await ctx.add("guestbook", { name, text })).id;
+}
+
+// 페이지에서, 로그인 없이
+await naru.call("guestbook:sign", { name: "손님", text: "안녕하세요" });`}</Code>
               <p>
                 요청을 거절할 때는 <code>ctx.fail(코드, 메시지, 세부)</code>를
                 부르세요. 함수가 한 일은 모두 되돌려지고, 페이지에서 받는{" "}
@@ -638,9 +666,11 @@ const live = member.live({
 });`}</Code>
               <p>
                 <code>ctx.notify</code>는 그 회원에게만,{" "}
-                <code>ctx.broadcast</code>는 주제를 듣는 모두(방문자 포함)에게
-                갑니다. 메시지는 저장되지 않으니 다시 연결되면 데이터를 다시
-                읽으세요. 연결은 끊기면 스스로 다시 이어지고, 회원 승인이
+                <code>ctx.broadcast</code>는 주제를 듣는 모두에게 갑니다.
+                로그인하지 않은 방문자는{" "}
+                <code>naru.live(&#123; topics, onMessage &#125;)</code>로 같은
+                주제를 듣습니다. 메시지는 저장되지 않으니 다시 연결되면 데이터를
+                다시 읽으세요. 연결은 끊기면 스스로 다시 이어지고, 회원 승인이
                 취소되면 닫힙니다.
               </p>
             </Section>
@@ -693,6 +723,26 @@ try {
   { collection: "drafts", delete: { id, condition: { revision: draft.revision } } },
 ]);
 // saved.revision → 다음 저장의 condition`}</Code>
+              <h3 className="font-bold">손님 글과 비밀번호</h3>
+              <p>
+                그누보드의 손님 글처럼, 방문자가 비밀번호를 걸어 글을 쓰고
+                나중에 같은 비밀번호로 고치거나 지울 수 있습니다. 쓰기가 ‘누구나
+                생성만’인 컬렉션에서 <code>secret</code>을 넘기세요. 나루는
+                비밀번호를 해시로만 보관하고 돌려주지 않으며, 비밀번호 없이 쓴
+                글은 관리자만 고칠 수 있습니다.
+              </p>
+              <Code>{`const guestbook = naru.collection("guestbook");
+const post = await guestbook.add({ name: "손님", text: "안녕" }, { secret: pw });
+await guestbook.set(post.id, { name: "손님", text: "고침" }, { secret: pw });
+await guestbook.delete(post.id, { secret: pw });`}</Code>
+              <p>
+                비밀번호가 틀리면 <code>ACCESS_DENIED</code>로 실패합니다.
+                컬렉션 규칙이 있으면 규칙의 <code>canWrite</code>가{" "}
+                <code>secret</code>(맞으면 true, 틀리면 false, 없으면 null)을
+                보고 정하고, 서버 함수에서는{" "}
+                <code>ctx.secretMatches(컬렉션, ID, 비밀번호)</code>로
+                확인합니다.
+              </p>
             </Section>
 
             <Section id="read" title="08 · 목록·검색·페이지">
@@ -810,6 +860,29 @@ const found = await posts.list({
                 컬렉션에서는 <code>filter</code>로 게시판 같은 범위를 함께
                 좁히세요.
               </p>
+              <h3 className="font-bold">요청 취소하기</h3>
+              <p>
+                읽기, 쓰기, 업로드, 함수 호출은 옵션으로 <code>signal</code>을
+                받습니다. 검색어를 바꿀 때 이전 검색을 멈추는 것처럼, 더 필요
+                없는 요청은 <code>AbortController</code>로 취소하세요. 취소된
+                요청은 <code>NaruError</code>가 아니라 브라우저의{" "}
+                <code>AbortError</code>로 끝나며, 나루가 이미 받은 쓰기는
+                되돌리지 않습니다.
+              </p>
+              <Code>{`let searching;
+input.oninput = async () => {
+  searching?.abort();
+  searching = new AbortController();
+  try {
+    const page = await posts.list({
+      where: { contains: ["title", input.value] },
+      signal: searching.signal,
+    });
+    show(page.documents);
+  } catch (error) {
+    if (error.name !== "AbortError") throw error;
+  }
+};`}</Code>
             </Section>
 
             <Section id="rules" title="09 · 컬렉션 규칙">
