@@ -408,3 +408,24 @@ test("canceled requests do not log an unexpected server failure", async () => {
     log.mockRestore();
   }
 });
+
+test("while site data moves, every request is refused as unavailable", async () => {
+  process.env.SITE_DATA_MAINTENANCE = "1";
+  try {
+    const response = await dataRequest(
+      new Request("https://sdk.naru.pub/api/data/v1/alice/posts", {
+        headers: { Origin: "https://alice.naru.pub" },
+      }),
+      ["posts"],
+      "alice",
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await response.json()).toMatchObject({
+      error: { code: "UNAVAILABLE" },
+    });
+    expect(execute).not.toHaveBeenCalled();
+  } finally {
+    delete process.env.SITE_DATA_MAINTENANCE;
+  }
+});

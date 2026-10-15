@@ -39,6 +39,14 @@ export async function dataRequest(
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers });
   try {
+    // While site databases move between hosts, nothing may write to either
+    // copy (cli/move-site-data.ts): every request is refused, briefly.
+    if (process.env.SITE_DATA_MAINTENANCE === "1")
+      throw new DataError(
+        503,
+        "Site data is moving. Try again in a few minutes.",
+        "UNAVAILABLE",
+      );
     let adminUserId: string | undefined;
     if (admin) {
       // Never elevate cross-origin requests using ambient owner cookies.
@@ -52,8 +60,7 @@ export async function dataRequest(
     const authorization = request.headers.get("authorization");
     // The service fills in expiresAt only when it renews the token behind it.
     let bearer:
-      | { token: string; origin: string | null; expiresAt?: number }
-      | undefined;
+      { token: string; origin: string | null; expiresAt?: number } | undefined;
     if (!admin && authorization !== null) {
       // An owner token, or a member's, which starts with "m.".
       const match = /^Bearer ((?:m\.)?[A-Za-z0-9_-]{43})$/i.exec(authorization);

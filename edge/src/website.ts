@@ -46,19 +46,17 @@ export interface WebsiteEnv {
    */
   EDGE_CACHE?: string;
   /**
-   * Sites whose databases have moved to the mini, comma-separated: their
-   * requests here go on to the control plane (`website`).
+   * Sites whose databases have moved to the mini, comma-separated, or "*"
+   * for all: their requests here go on to the control plane (`website`).
    */
   MOVED_SITES?: string;
 }
 
-const movedSites = (env: WebsiteEnv) =>
-  new Set(
-    (env.MOVED_SITES ?? "")
-      .split(",")
-      .map((site) => site.trim())
-      .filter(Boolean),
-  );
+/** Whether `site`'s database is on the mini: MOVED_SITES lists it, or is "*". */
+const moved = (env: WebsiteEnv, site: string) => {
+  const sites = (env.MOVED_SITES ?? "").split(",").map((name) => name.trim());
+  return sites.includes("*") || sites.includes(site);
+};
 
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
 
@@ -175,7 +173,7 @@ export async function website(
   // no longer its database. Requests go on to the control plane, which calls
   // the mini, so a page holding an older SDK still works; a live connection
   // would attach to this copy, so it is refused and the SDK retries.
-  if (movedSites(env).has(site)) {
+  if (moved(env, site)) {
     if (request.headers.get("Upgrade")?.toLowerCase() === "websocket")
       return protocolError(
         503,
