@@ -21,7 +21,10 @@ No PostgreSQL migration or change to frozen SDK 1.0.0 is required.
 
 A module exports two functions, which may be `async`:
 
-- `scope(ctx, { collection, operation, id, filter, where })`: `operation` is
+- `readable(ctx, { collection, operation, id, filter, where })`: which
+  documents this reader may read, as a condition, not a yes or no for one
+  document: Naru adds it to the query, so pages and counts hold only what the
+  reader sees. `operation` is
   `get` or `list`; `where` is the caller's own predicate, or null. Return
   `true`, `false`, or a predicate built from `all` and `any` of comparisons:
   `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
@@ -45,7 +48,7 @@ A module exports two functions, which may be `async`:
   exports it also exports `queryable`, the fields non-owners may filter,
   `where` and sort on (`export const queryable = ["board", "tags"]`); other
   fields are refused with `INVALID_REQUEST`, so a hidden value cannot be found
-  by asking which documents match it. Rows still come from `scope`.
+  by asking which documents match it. Rows still come from `readable`.
 
 Rules use the function sandbox's read methods (`await ctx.get(...)`,
 `await ctx.list(...)`) and `ctx.member` (null for visitors). Writes and live
@@ -55,11 +58,11 @@ permissions: a rule applies from the revision that contains it. Rules-bearing
 reads are never shared-cacheable. Previously cached public data can remain visible
 for its existing ten-second TTL when rules are first enabled.
 
-The scope predicate is intersected with the caller's filters in SQL before
+The `readable` predicate is intersected with the caller's filters in SQL before
 sorting, pagination and count. Hidden secrets cannot create short pages, inflate
-totals or contribute cursor values. Cursors bind to the scope fingerprint; if a
-role or board change changes that scope, start pagination again. Hidden get
-requests return NOT_FOUND. A false list scope returns an empty list and zero
+totals or contribute cursor values. Cursors bind to the predicate's fingerprint;
+if a role or board change changes it, start pagination again. Hidden get
+requests return NOT_FOUND. A `false` from `readable` makes a list empty with a zero
 count. A denied write returns ACCESS_DENIED. Predicates are limited to 100 nodes
 and ten nesting levels; sandbox CPU, memory and read budgets remain bounded.
 
@@ -70,14 +73,14 @@ guessing, a members-only board, say. Naru's own refusals name the rule for the
 owner, in the English account SDK 1.1.0 keeps as `error.cause.message`:
 
 - a write `canWrite` did not allow: `Collection rule _naru/rules/board.js
-  refused this update on posts: canWrite returned undefined. …` (a missing
+refused this update on posts: canWrite returned undefined. …` (a missing
   `return true` is the usual cause), or `no canWrite function`;
-- a `scope` result that is not a predicate: `Collection rule … scope() for
-  posts returned an invalid predicate: …`;
+- a `readable` result that is not a predicate: `Collection rule … readable() for
+posts returned an invalid predicate: …`;
 - a rule that throws or runs past a limit: `Collection rule … failed in
-  scope() for posts: …`, also for a module that exports no `scope`;
+readable() for posts: …`, also for a module that exports no `readable`;
 - a rule the site's published files do not have: `Collection posts uses
-  _naru/rules/board.js, which the site's published files do not have; …`.
+_naru/rules/board.js, which the site's published files do not have; …`.
 
 [The board example](examples/community-board-rules.js) uses neo-avocado's board,
 member-role, log and comment shapes. Publish it as the rules module, then enable

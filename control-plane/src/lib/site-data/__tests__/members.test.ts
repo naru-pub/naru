@@ -805,7 +805,7 @@ integration("site members", () => {
       file: "board",
       folder: "rules",
       source: `
-      export async function scope(ctx) {
+      export async function readable(ctx) {
         if (!ctx.member) return false;
         const role = (await ctx.get("rule_roles", ctx.member.id))?.data;
         if (!role || role.level < 2) return false;
@@ -923,7 +923,7 @@ integration("site members", () => {
       file: "mutating",
       folder: "rules",
       source:
-        'export async function scope(ctx) { await ctx.set("rule_roles", "bad", {}); return true; }',
+        'export async function readable(ctx) { await ctx.set("rule_roles", "bad", {}); return true; }',
     });
     await owned("PATCH", ["rule_posts"], {
       read: "member",
@@ -962,7 +962,7 @@ integration("site members", () => {
     const read = () => as(reader.accessToken, "GET", ["told"]);
 
     // Forgetting to return true is the usual mistake: the refusal says so.
-    await rule(`export function scope() { return true; }
+    await rule(`export function readable() { return true; }
       export function canWrite() {}`);
     await expect(write()).rejects.toMatchObject({
       status: 403,
@@ -970,13 +970,13 @@ integration("site members", () => {
         /_naru\/rules\/told\.js refused this \w+ on told: canWrite returned undefined\. .*returns true/,
       ),
     });
-    await rule(`export function scope() { return true; }`);
+    await rule(`export function readable() { return true; }`);
     await expect(write()).rejects.toMatchObject({
       status: 403,
       message: expect.stringContaining("no canWrite function"),
     });
     // ctx.fail in a rule is the site's own word, as in a function.
-    await rule(`export function scope() { return true; }
+    await rule(`export function readable() { return true; }
       export function canWrite(ctx) { ctx.fail("ACCESS_DENIED", "운영진만 고칠 수 있습니다."); }`);
     await expect(write()).rejects.toMatchObject({
       status: 403,
@@ -984,30 +984,30 @@ integration("site members", () => {
       site: true,
     });
     await rule(
-      `export function scope(ctx) { ctx.fail("AUTH_REQUIRED", "회원만 볼 수 있는 게시판입니다."); }`,
+      `export function readable(ctx) { ctx.fail("AUTH_REQUIRED", "회원만 볼 수 있는 게시판입니다."); }`,
     );
     await expect(read()).rejects.toMatchObject({
       status: 401,
       message: "회원만 볼 수 있는 게시판입니다.",
       site: true,
     });
-    await rule(`export function scope() { return { eq: "board" }; }`);
+    await rule(`export function readable() { return { eq: "board" }; }`);
     await expect(read()).rejects.toMatchObject({
       status: 400,
       message: expect.stringContaining(
-        "Collection rule _naru/rules/told.js scope() for told returned an invalid predicate",
+        "Collection rule _naru/rules/told.js readable() for told returned an invalid predicate",
       ),
     });
-    await rule(`export function scope() { throw new Error("no board"); }`);
+    await rule(`export function readable() { throw new Error("no board"); }`);
     await expect(read()).rejects.toMatchObject({
       status: 400,
       message: expect.stringMatching(
-        /Collection rule _naru\/rules\/told\.js failed in scope\(\) for told: .*no board/,
+        /Collection rule _naru\/rules\/told\.js failed in readable\(\) for told: .*no board/,
       ),
     });
     await rule(`export const nothing = 1;`);
     await expect(read()).rejects.toMatchObject({
-      message: expect.stringContaining("exports no scope function"),
+      message: expect.stringContaining("exports no readable function"),
     });
     await owned("PATCH", ["told"], {
       read: "member",
@@ -1039,7 +1039,7 @@ integration("site members", () => {
       folder: "rules",
       file: "gated",
       source: `import { visible } from "../modules/levels.js";
-        export function scope() { return { lte: ["level", visible] }; }
+        export function readable() { return { lte: ["level", visible] }; }
         export function canWrite() { return false; }`,
     });
     await owned("PATCH", ["gated"], {
@@ -1076,7 +1076,7 @@ integration("site members", () => {
       folder: "rules",
       file: "sheets",
       source: `export const queryable = ["name", "side", "tags"];
-        export function scope() { return true; }
+        export function readable() { return true; }
         export function canWrite() { return false; }
         export function present(ctx, { document }) {
           const { note, ...shown } = document.data;
@@ -1177,7 +1177,7 @@ integration("site members", () => {
         site: "alice",
         folder: "rules",
         file: "guests",
-        source: `export function scope() { return true; }
+        source: `export function readable() { return true; }
           export function canWrite(ctx, { before, after, secret }) {
             if (!before) return typeof after.data.name === "string";
             return secret === true && (!after || after.data.name === before.data.name);

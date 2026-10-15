@@ -13,7 +13,7 @@ const COMPARE: Record<string, string> = {
 };
 
 /**
- * A predicate, never SQL: what a rule's `scope` returns, and what a list's
+ * A predicate, never SQL: what a rule's `readable` returns, and what a list's
  * `where` asks for. Built from `all` and `any` of comparisons: `eq`, `ne`,
  * `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
  * `[field, [value, ...]]`, `has` takes `[field, value]` and matches an
@@ -146,7 +146,7 @@ export function predicate(value: unknown, what = "Rule predicate") {
   };
 }
 
-/** What a rule's `scope` returned, as SQL; `what` names it in errors. */
+/** What a rule's `readable` returned, as SQL; `what` names it in errors. */
 export const rulePredicate = (value: unknown, what?: string) =>
   predicate(value, what);
 
@@ -160,9 +160,9 @@ export function ruleEntry(path: string) {
   return {
     filename: "rules/:naru",
     source: `import * as rules from "./${path.slice("rules/".length)}";
-export async function __naruScope(ctx, args) {
-  if (typeof rules.scope !== "function") throw new Error("it exports no scope function.");
-  return rules.scope(ctx, args);
+export async function __naruReadable(ctx, args) {
+  if (typeof rules.readable !== "function") throw new Error("it exports no readable function.");
+  return rules.readable(ctx, args);
 }
 // true, or what canWrite gave instead, for the refusal to quote.
 export async function __naruWrite(ctx, args) {

@@ -614,7 +614,7 @@ describe("community board rule example", () => {
   test("board read/list levels produce restrictive SQL and anonymous access is denied", () => {
     documents.set("neo_avocado_boards/default", { listLevel: 3, readLevel: 2 });
     expect(
-      invoke("__naruScope", {
+      invoke("__naruReadable", {
         collection: "neo_avocado_logs",
         operation: "list",
         filter: { board: "default" },
@@ -622,13 +622,13 @@ describe("community board rule example", () => {
     ).toBe(false);
     expect(
       invoke(
-        "__naruScope",
+        "__naruReadable",
         { collection: "neo_avocado_logs", operation: "list", filter: {} },
         null,
       ),
     ).toBe(false);
     documents.set("neo_avocado_boards/default", { listLevel: 2, readLevel: 2 });
-    const predicate = invoke("__naruScope", {
+    const predicate = invoke("__naruReadable", {
       collection: "neo_avocado_logs",
       operation: "list",
       filter: { board: "default" },
@@ -675,9 +675,9 @@ describe("community board rule example", () => {
       operation: "list",
       filter: { logId: "log" },
     };
-    expect(invoke("__naruScope", args)).toBe(false);
+    expect(invoke("__naruReadable", args)).toBe(false);
     documents.set("neo_avocado_logs/log", log.data);
-    expect(invoke("__naruScope", args)).toEqual({ eq: ["logId", "log"] });
+    expect(invoke("__naruReadable", args)).toEqual({ eq: ["logId", "log"] });
     const comment = {
       id: "comment",
       createdBy: "m-1",

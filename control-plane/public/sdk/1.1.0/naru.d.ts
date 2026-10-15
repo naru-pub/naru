@@ -85,7 +85,7 @@ export type Filter = Record<
 export type PredicateField = string | { metadata: "id" | "createdBy" };
 
 /**
- * A condition on documents, as a collection rule's `scope` returns: `true`,
+ * A condition on documents, as a collection rule's `readable` returns: `true`,
  * `false`, `all` or `any` of conditions, or one comparison. Values match only
  * their own JSON type; a missing field matches no comparison except `ne`.
  * At most 100 nodes, ten levels deep.

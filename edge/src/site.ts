@@ -23,7 +23,7 @@ import { presented, queriedFields, ruleEntry, rulePredicate } from "./rules";
 
 /** What each rule hook is in the owner's file, for errors. */
 const HOOKS: Record<string, string> = {
-  __naruScope: "scope()",
+  __naruReadable: "readable()",
   __naruWrite: "canWrite()",
   __naruView: "queryable",
   __naruPresent: "present()",
@@ -853,14 +853,14 @@ export class SiteData extends DurableObject<Env> {
     const authorization =
       reading && !admin && ruleFile
         ? rulePredicate(
-            invokeRule("__naruScope", {
+            invokeRule("__naruReadable", {
               collection: collection.name,
               operation: path.length === 2 ? "get" : "list",
               id: path[1] ?? null,
               filter: input.filter ?? {},
               where: input.where ?? null,
             }),
-            `Collection rule ${ruleName} scope() for ${collection.name} returned an invalid predicate`,
+            `Collection rule ${ruleName} readable() for ${collection.name} returned an invalid predicate`,
           )
         : undefined;
     const checkWrite = (before: unknown, after: unknown, operation: string) => {

@@ -896,7 +896,7 @@ input.oninput = async () => {
                 부릅니다. 관리자는 규칙을 거치지 않습니다.
               </p>
               <Code language="javascript">{`// _naru/rules/board.js  (collections.json: "rules": "board")
-export async function scope(ctx, { operation, id, filter }) {
+export async function readable(ctx, { operation, id, filter }) {
   // 읽기: 이 회원에게 보일 문서의 조건을 돌려줍니다.
   // 글 하나(get)는 그 글의 게시판, 목록(list)은 filter의 게시판을 봅니다.
   const boardId =
@@ -925,13 +925,14 @@ export async function canWrite(ctx, { operation, before, after }) {
 }`}</Code>
               <ul className="list-disc space-y-3 pl-6">
                 <li>
-                  <code>scope</code>는 <code>true</code>(모두),{" "}
-                  <code>false</code>
-                  (아무것도), 또는 <a href="#read">where와 같은 조건</a>을
-                  돌려줍니다. 나루가 그 조건을 회원의 filter와 합쳐서 읽으므로,
-                  숨긴 글 때문에 쪽이 짧아지거나 개수가 틀리지 않습니다.{" "}
-                  <code>false</code>는 오류가 아니라 빈 목록이 되니, 왜 안
-                  보이는지 알려야 하면 <code>ctx.fail</code>을 쓰세요.
+                  <code>readable</code>은 이 사람이 읽을 수 있는 문서를
+                  고릅니다. 글 하나를 읽어도 되는지 예·아니오로 답하는 대신{" "}
+                  <code>true</code>(모두), <code>false</code>(아무것도), 또는{" "}
+                  <a href="#read">where와 같은 조건</a>을 돌려줍니다. 나루가 그
+                  조건을 회원의 filter와 합쳐서 읽으므로, 숨긴 글 때문에 쪽이
+                  짧아지거나 개수가 틀리지 않습니다. <code>false</code>는 오류가
+                  아니라 빈 목록이 되니, 왜 안 보이는지 알려야 하면{" "}
+                  <code>ctx.fail</code>을 쓰세요.
                 </li>
                 <li>
                   <code>canWrite</code>는 <code>create</code>·

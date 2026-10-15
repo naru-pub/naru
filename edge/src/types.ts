@@ -28,7 +28,7 @@ export type ExecuteInput = {
   method: string;
   body?: Record<string, unknown>;
   filter?: unknown;
-  /** A predicate, as a rule's scope returns (rules.ts), ANDed with filter. */
+  /** A predicate, as a rule's readable returns (rules.ts), ANDed with filter. */
   where?: unknown;
   size?: number;
   sort?: string;

@@ -36,7 +36,7 @@ export type DataCommand = {
   /** JSON array of one or two [field, direction] pairs. */
   sort?: string;
   filter?: unknown;
-  /** A predicate, as a collection rule's scope returns. */
+  /** A predicate, as a collection rule's readable returns. */
   where?: unknown;
   includeTotal?: boolean;
   ids?: string;

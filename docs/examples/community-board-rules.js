@@ -41,7 +41,7 @@ function allowed(board, actor, action) {
     board.enabled !== false && actor.level >= (board[`${action}Level`] ?? 2)
   );
 }
-async function readable(ctx, log, actor) {
+async function logReadable(ctx, log, actor) {
   return (
     log &&
     !log.data.deleted &&
@@ -49,7 +49,7 @@ async function readable(ctx, log, actor) {
     (!log.data.secret || author(log) === actor.id || actor.moderator)
   );
 }
-export async function scope(ctx, { collection, operation, id, filter }) {
+export async function readable(ctx, { collection, operation, id, filter }) {
   const actor = await access(ctx);
   if (!actor.id) return false;
   if (collection === COMMENTS) {
@@ -59,7 +59,7 @@ export async function scope(ctx, { collection, operation, id, filter }) {
         : filter.logId;
     if (
       typeof logId !== "string" ||
-      !(await readable(ctx, await ctx.get(LOGS, logId), actor))
+      !(await logReadable(ctx, await ctx.get(LOGS, logId), actor))
     )
       return false;
     return { eq: ["logId", logId] };
@@ -119,7 +119,7 @@ export async function canWrite(ctx, { collection, before, after, operation }) {
       return false;
     const log = await ctx.get(LOGS, logId);
     if (
-      !(await readable(ctx, log, actor)) ||
+      !(await logReadable(ctx, log, actor)) ||
       !allowed(await board(ctx, log.data.board ?? "default"), actor, "comment")
     )
       return false;
