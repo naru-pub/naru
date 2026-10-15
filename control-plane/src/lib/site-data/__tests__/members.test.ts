@@ -1978,6 +1978,12 @@ integration("site members", () => {
 
     test("declared read-only exports cannot write and have their own budget", async () => {
       const reader = await signIn("read-budget");
+      // Buckets are wall-clock minutes in the Worker, whose clock Jest cannot
+      // hold: start early in a minute so all 121 counted calls fall inside it.
+      const into = Date.now() % 60_000;
+      if (into > 20_000)
+        await new Promise((resolve) => setTimeout(resolve, 60_500 - into));
+      const minute = Math.floor(Date.now() / 60_000);
       await expect(call(undefined, "shop:versioned")).rejects.toMatchObject({
         status: 401,
       });
@@ -1991,9 +1997,13 @@ integration("site members", () => {
         expect(await call(reader.accessToken, "shop:versioned")).toMatchObject({
           result: { version: "not a revision" },
         });
-      await expect(
-        call(reader.accessToken, "shop:versioned"),
-      ).rejects.toMatchObject({ status: 429 });
+      const refused = await call(reader.accessToken, "shop:versioned").then(
+        () => undefined,
+        (error) => error,
+      );
+      // A slower runner than this allows fails here, not as a missing 429.
+      expect(Math.floor(Date.now() / 60_000)).toBe(minute);
+      expect(refused).toMatchObject({ status: 429 });
       // Calls that may write still have their own 30.
       expect(
         (await call(reader.accessToken, "shop:gacha")).result,
@@ -2011,7 +2021,7 @@ integration("site members", () => {
         file: "broken",
         source: null,
       });
-    });
+    }, 90_000);
 
     test("conditional writes, failure details and where predicates in functions", async () => {
       const erin = await signIn("fern");
