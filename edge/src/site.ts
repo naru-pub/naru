@@ -56,6 +56,13 @@ import { DUMP_TABLES } from "./types";
 // synchronous inside `transactionSync`, so the object needs no owner-row lock
 // or write queue: each request sees and leaves a consistent site.
 
+const readOnlyStandby = () =>
+  new DataError(
+    503,
+    "Naru's server is away: this site can be read, not changed, until it is back.",
+    "UNAVAILABLE",
+  );
+
 const outsideScope = (collection: string) =>
   new DataError(
     403,
@@ -1408,6 +1415,11 @@ export class SiteData extends DurableObject<Env> {
     member: string | null;
     /** No one signed in: only exports the module lists in `visitors`. */
     visitor?: boolean;
+    /**
+     * Only exports declared read-only may run: this copy is the standby,
+     * answering while the mini is away, and must not change.
+     */
+    readOnlyOnly?: boolean;
     /** A visitor's address, which their calls are limited by. */
     clientIp?: string;
     /** The module, _naru/functions/<file>.js. */
@@ -1433,6 +1445,7 @@ export class SiteData extends DurableObject<Env> {
         input.name,
       );
       readonly = declared.readOnly;
+      if (input.readOnlyOnly && !readonly) throw readOnlyStandby();
       if (visitor && !declared.visitors)
         throw new DataError(
           401,
@@ -1510,6 +1523,7 @@ export class SiteData extends DurableObject<Env> {
     name: string;
     args: unknown;
     clientIp?: string;
+    readOnlyOnly?: boolean;
   }): Promise<
     Outcome<
       { pass: true } | { pass?: undefined; result: unknown; written: string[] }
@@ -2034,6 +2048,72 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
+   * What the site holds, as one hash and two counts, to tell whether the
+   * standby on Cloudflare has it (cli/sync-standby.ts). Counters that every
+   * read moves (the monthly budget, rate limits) are left out, and so is
+   * what this records about the standby itself.
+   */
+  async fingerprint(): Promise<
+    Outcome<{
+      fingerprint: string;
+      collections: number;
+      documents: number;
+      standby: string | null;
+    }>
+  > {
+    return this.run(() => {
+      const hash = createHash("sha256");
+      for (const table of DUMP_TABLES) {
+        if (table === "rate_limits") continue;
+        for (const row of this.rows(`SELECT * FROM ${table} ORDER BY 1, 2`)) {
+          if (table === "meta" && /^(budget_|standby_)/.test(String(row.key)))
+            continue;
+          hash.update(`${table}\u0000${JSON.stringify(row)}\n`);
+        }
+      }
+      return {
+        fingerprint: hash.digest("hex"),
+        collections: Number(
+          this.rows("SELECT count(*) AS n FROM collections")[0].n,
+        ),
+        documents: Number(
+          this.rows("SELECT count(*) AS n FROM documents")[0].n,
+        ),
+        standby: this.meta("standby_fingerprint"),
+      };
+    });
+  }
+
+  /** Records which `fingerprint` the standby on Cloudflare now holds. */
+  async markStandby(input: { fingerprint: string }) {
+    return this.run(() => {
+      if (!/^[a-f0-9]{64}$/.test(String(input?.fingerprint)))
+        throw new DataError(400, "Expected a fingerprint.");
+      this.setMeta("standby_fingerprint", input.fingerprint);
+      return null;
+    });
+  }
+
+  /**
+   * Overwrites this copy with the mini's `dump`, whatever it held: the
+   * standby on Cloudflare only (index.ts refuses it anywhere else).
+   */
+  async replace(input: Dump): Promise<Outcome<{ rows: number }>> {
+    return this.run(() => {
+      for (const table of DUMP_TABLES) this.sql.exec(`DELETE FROM ${table}`);
+      return this.fill(input);
+    });
+  }
+
+  /** Whether this object's database answers, for the health check. */
+  async ping(): Promise<Outcome<null>> {
+    return this.run(() => {
+      this.rows("SELECT 1");
+      return null;
+    });
+  }
+
+  /**
    * Every row of every table, to move the site to another runtime (its
    * `restore`): collections, documents with their write secrets, managed
    * media and its references, queued releases, limits and settings.
@@ -2060,37 +2140,38 @@ export class SiteData extends DurableObject<Env> {
     return this.run(() => {
       if (this.rows("SELECT 1 FROM collections LIMIT 1").length)
         throw new DataError(409, "The site already has collections.");
-      let rows = 0;
-      for (const table of DUMP_TABLES) {
-        const given = input?.tables?.[table];
-        if (!Array.isArray(given))
-          throw new DataError(400, `The dump has no ${table} table.`);
-        // Column names come from this object's own schema, never the input.
-        const columns = this.rows(`PRAGMA table_info(${table})`).map((column) =>
-          String(column.name),
-        );
-        this.sql.exec(`DELETE FROM ${table}`);
-        for (const row of given) {
-          const present = columns.filter((column) =>
-            Object.hasOwn(row, column),
-          );
-          this.sql.exec(
-            `INSERT INTO ${table} (${present.join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
-            ...present.map((column) => row[column] ?? null),
-          );
-          rows++;
-        }
-      }
-      for (const row of this.rows(
-        "SELECT key, value FROM meta WHERE key LIKE 'unique:%'",
-      ))
-        for (const field of JSON.parse(String(row.value)) as string[])
-          this.sql.exec(
-            this.uniqueIndex(String(row.key).slice(7), field).create,
-          );
-      this.budget = undefined;
-      return { rows };
+      return this.fill(input);
     });
+  }
+
+  /** Writes a `dump` into tables `restore` or `replace` emptied. */
+  private fill(input: Dump) {
+    let rows = 0;
+    for (const table of DUMP_TABLES) {
+      const given = input?.tables?.[table];
+      if (!Array.isArray(given))
+        throw new DataError(400, `The dump has no ${table} table.`);
+      // Column names come from this object's own schema, never the input.
+      const columns = this.rows(`PRAGMA table_info(${table})`).map((column) =>
+        String(column.name),
+      );
+      this.sql.exec(`DELETE FROM ${table}`);
+      for (const row of given) {
+        const present = columns.filter((column) => Object.hasOwn(row, column));
+        this.sql.exec(
+          `INSERT INTO ${table} (${present.join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
+          ...present.map((column) => row[column] ?? null),
+        );
+        rows++;
+      }
+    }
+    for (const row of this.rows(
+      "SELECT key, value FROM meta WHERE key LIKE 'unique:%'",
+    ))
+      for (const field of JSON.parse(String(row.value)) as string[])
+        this.sql.exec(this.uniqueIndex(String(row.key).slice(7), field).create);
+    this.budget = undefined;
+    return { rows };
   }
 
   /** Erases the site, for account deletion. */

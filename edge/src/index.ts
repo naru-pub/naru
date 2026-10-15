@@ -9,13 +9,18 @@ import { notFound, servePage, siteOf, type PagesEnv } from "./pages";
 import type { PageviewLog } from "./pageview-log";
 import { serveSdk, type SdkEnv } from "./sdk";
 import type { SiteData } from "./site";
+import { Standby, type Mode, type StandbyEnv } from "./standby";
 import type { Outcome } from "./types";
 import { website, type WebsiteEnv } from "./website";
 
 export { PageviewLog } from "./pageview-log";
 export { SiteData } from "./site";
+export { Standby } from "./standby";
 
-export interface Env extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv {
+export interface Env
+  extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv, StandbyEnv {
+  /** The standby's state and health check, on Cloudflare (standby.ts). */
+  STANDBY?: DurableObjectNamespace<Standby>;
   PAGEVIEWS: DurableObjectNamespace<PageviewLog>;
   SITES: DurableObjectNamespace<SiteData>;
   /** Shared with the control plane, the only caller of /v1/sites. */
@@ -55,6 +60,11 @@ const OPERATIONS = [
   // Moving a site's database to another runtime (sdk.naru.pub on the mini).
   "dump",
   "restore",
+  // Keeping the standby on Cloudflare (standby.ts): what a site holds, which
+  // copy the standby has, and overwriting the standby's copy.
+  "fingerprint",
+  "markStandby",
+  "replace",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
@@ -105,6 +115,12 @@ function dispatch(
       return stub.disconnect(input);
     case "dump":
       return stub.dump();
+    case "fingerprint":
+      return stub.fingerprint();
+    case "markStandby":
+      return stub.markStandby(input);
+    case "replace":
+      return stub.replace(input);
     case "restore":
       return stub.restore(input);
     case "putFunctions":
@@ -205,6 +221,69 @@ export function platformHost(hostname: string, env: Env) {
   );
 }
 
+/** The one object holding the standby's state, where it exists. */
+const standbyObject = (env: Env) =>
+  env.STANDBY?.get(env.STANDBY.idFromName("standby"));
+
+// Asked for each request to sdk.naru.pub here; the mode changes at most once
+// a minute, so this isolate keeps it for a few seconds.
+let known: { mode: Mode; at: number } | null = null;
+async function currentMode(env: Env): Promise<Mode> {
+  if (known && Date.now() - known.at < 10_000) return known.mode;
+  const mode = (await standbyObject(env)?.mode()) ?? "mini";
+  known = { mode, at: Date.now() };
+  return mode;
+}
+
+/**
+ * sdk.naru.pub on Cloudflare: forwarded to the mini while it is up, and
+ * served read-only from the standby's copies while it is away.
+ */
+async function sdkHost(request: Request, env: Env, ctx: ExecutionContext) {
+  const url = new URL(request.url);
+  if ((await currentMode(env)) !== "standby") {
+    url.hostname = env.SDK_ORIGIN_HOST!;
+    return fetch(new Request(url, request));
+  }
+  if (url.pathname === "/healthz") return new Response("standby");
+  if (url.pathname.startsWith("/sdk/")) return serveSdk(request, env);
+  const route = /^\/api\/data\/v1\/([^/]+)(?:\/(.*))?$/.exec(url.pathname);
+  if (!route) return failure(404, "Not found.");
+  return website(
+    request,
+    { ...env, READ_ONLY: "1", MOVED_SITES: "" },
+    ctx,
+    decodeURIComponent(route[1]),
+    (route[2] ?? "")
+      .split("/")
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part)),
+  );
+}
+
+/** The control plane's heartbeat, and status and drills, by hand. */
+async function standbyOperation(request: Request, env: Env, operation: string) {
+  const standby = standbyObject(env);
+  if (!standby) return failure(404, "Not found.");
+  if (operation === "status")
+    return Response.json({ value: await standby.status() });
+  if (request.method !== "POST") return failure(405, "Method not allowed.");
+  let input: Record<string, unknown>;
+  try {
+    input = await request.json();
+  } catch {
+    return failure(400, "Expected a JSON body.");
+  }
+  if (operation === "heartbeat")
+    return Response.json({ value: await standby.heartbeat(input as never) });
+  if (operation === "force") {
+    await standby.force(input as never);
+    known = null;
+    return Response.json({ value: null });
+  }
+  return failure(404, "Not found.");
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx): Promise<Response> {
     const { hostname, pathname } = new URL(request.url);
@@ -212,6 +291,10 @@ export default {
     // custom domains. Routes without a Worker keep the platform domain on the
     // control plane and the bucket's public domains on R2; this Worker's own
     // custom domain takes precedence over all of them (docs/deployment.md).
+    // sdk.naru.pub reaches Cloudflare only while its proxy is on: failed over,
+    // or for a while after, from resolvers holding the proxied record.
+    if (env.SDK_ORIGIN_HOST && hostname === `sdk.${env.PLATFORM_DOMAIN}`)
+      return sdkHost(request, env, ctx);
     if (!platformHost(hostname, env)) return hostedSite(request, env, ctx);
     if (pathname.startsWith("/sdk/")) return serveSdk(request, env);
     const route = /^\/api\/data\/v1\/([^/]+)(?:\/(.*))?$/.exec(pathname);
@@ -229,6 +312,8 @@ export default {
     if (!(await authorized(request, env.EDGE_WORKER_SECRET)))
       return failure(401, "Unauthorized.");
     if (pathname === "/v1/domains/replace") return replaceDomains(request, env);
+    const standby = /^\/v1\/standby\/([a-z]+)$/.exec(pathname);
+    if (standby) return standbyOperation(request, env, standby[1]);
     const pageview = /^\/v1\/pageviews\/([a-z]+)$/.exec(pathname);
     if (pageview) return pageviewOperation(request, env, pageview[1]);
     const match = /^\/v1\/sites\/([^/]+)\/([A-Za-z]+)$/.exec(pathname);
@@ -239,6 +324,9 @@ export default {
         ? [...OPERATIONS, ...TEST_OPERATIONS]
         : OPERATIONS;
     if (!site || !SITE.test(site) || !operations.includes(operation!))
+      return failure(404, "Not found.");
+    // Only the standby's copy may be overwritten, never the mini's.
+    if (operation === "replace" && !env.STANDBY)
       return failure(404, "Not found.");
     if (request.method !== "POST") return failure(405, "Method not allowed.");
     let input: unknown;
@@ -254,6 +342,8 @@ export default {
       operation!,
       input as never,
     )) as Outcome<unknown>;
+    if (outcome.ok && operation === "replace")
+      await standbyObject(env)!.held(site);
     return outcome.ok
       ? // JSON drops `undefined`; the caller tells success by `value`.
         Response.json({ value: outcome.value ?? null })
@@ -261,5 +351,10 @@ export default {
           { error: outcome.error },
           { status: outcome.error.status },
         );
+  },
+  /** Each minute: the standby's health check (standby.ts). */
+  async scheduled(_controller, env, ctx) {
+    const standby = standbyObject(env);
+    if (standby) ctx.waitUntil(standby.check());
   },
 } satisfies ExportedHandler<Env>;

@@ -92,6 +92,16 @@ export function replaceEdgeDomains(table: {
   return callWorker<null>("/v1/domains/replace", "domain table", table);
 }
 
+/**
+ * Tells the standby's health check on Cloudflare that the mini is up, with
+ * each site's counts there (edge/src/standby.ts, lib/edge/standby.ts).
+ */
+export function sendStandbyHeartbeat(input: {
+  sites: Record<string, { collections: number; documents: number }>;
+}) {
+  return callWorker<null>("/v1/standby/heartbeat", "standby heartbeat", input);
+}
+
 /** Calls one operation on the edge's pageview log (pageview-log.ts). */
 export function callPageviewLog<T>(operation: string, input: unknown) {
   return callWorker<T>(

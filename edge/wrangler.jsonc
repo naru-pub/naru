@@ -24,6 +24,8 @@
       { "name": "SITES", "class_name": "SiteData" },
       // One log of every edge-served pageview, drained by the control plane.
       { "name": "PAGEVIEWS", "class_name": "PageviewLog" },
+      // The Data SDK's standby and its health check (src/standby.ts).
+      { "name": "STANDBY", "class_name": "Standby" },
     ],
   },
   // The classes' namespaces. Both moved here, with their data, from the
@@ -31,6 +33,7 @@
   "exports": {
     "SiteData": { "type": "durable-object", "storage": "sqlite" },
     "PageviewLog": { "type": "durable-object", "storage": "sqlite" },
+    "Standby": { "type": "durable-object", "storage": "sqlite" },
   },
   // The site bucket: each site's files under <login>/.
   "r2_buckets": [{ "binding": "SITE_FILES", "bucket_name": "naru-pub" }],
@@ -54,6 +57,9 @@
     // The Data SDK, so sites that import it load while the control plane is
     // down.
     { "pattern": "naru.pub/sdk/*", "zone_name": "naru.pub" },
+    // sdk.naru.pub, the Data SDK on the mini: here only while its proxy is
+    // on, failed over to the standby or just after (src/standby.ts).
+    { "pattern": "sdk.naru.pub/*", "zone_name": "naru.pub" },
     // The control plane calls /v1/sites/* and /v1/pageviews/* here.
     { "pattern": "edge.naru.pub", "custom_domain": true },
     // Hosted sites. r2.naru.pub and media.naru.pub, the bucket's public
@@ -78,6 +84,9 @@
     // Sites whose databases are on the mini (sdk.naru.pub), comma-separated:
     // their requests here go on to the control plane (src/website.ts).
     "MOVED_SITES": "*",
+    // The mini's own name, which never fails over: probed by the health
+    // check, and where sdk.naru.pub's traffic is forwarded while it is up.
+    "SDK_ORIGIN_HOST": "origin.sdk.naru.pub",
   },
   "observability": { "enabled": true },
 }

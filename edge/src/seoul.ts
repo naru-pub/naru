@@ -27,9 +27,19 @@ export class SiteData extends EdgeSiteData {
 const SERVED = /^\/(?:sdk\/|api\/data\/v1\/|v1\/sites\/)/;
 
 export default {
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/healthz") return new Response("ok");
+    // What the standby's health check probes (standby.ts): workerd answers
+    // and a site object's database opens on this disk.
+    if (url.pathname === "/healthz/deep") {
+      const outcome = await env.SITES.get(
+        env.SITES.idFromName("_health"),
+      ).ping();
+      return outcome.ok
+        ? new Response("ok")
+        : new Response("unhealthy", { status: 503 });
+    }
     if (!SERVED.test(url.pathname))
       return new Response("Not found.", { status: 404 });
     // Everything here is the platform's, however it was reached: Caddy sends
