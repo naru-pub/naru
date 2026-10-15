@@ -558,7 +558,9 @@ async function signed(
   if (member) {
     const status = (await members())[member]?.status ?? "approved";
     if (status !== "approved")
-      throw new DataError(403, `Membership is ${status}.`, "ACCESS_DENIED");
+      throw new DataError(403, `Membership is ${status}.`, "ACCESS_DENIED", {
+        membership: status,
+      });
   }
   const raw = await readBody(req);
   const body = raw.length ? JSON.parse(raw.toString("utf8")) : undefined;
@@ -770,17 +772,6 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/data-auth/v1/"))
       return json(res, 200, { success: true });
-    if (url.pathname === `/api/membership/v1/${site}`) {
-      const id = memberTokens.get(
-        /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "",
-      );
-      if (!id)
-        throw new DataError(401, "Sign in as a member.", "AUTH_REQUIRED");
-      return json(res, 200, {
-        id,
-        status: (await members())[id]?.status ?? "approved",
-      });
-    }
     if (url.pathname === "/_naru-dev/media-worker.js")
       return res
         .writeHead(200, {

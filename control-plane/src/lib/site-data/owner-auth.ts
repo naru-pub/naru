@@ -417,14 +417,6 @@ export function authorizationInput(body: Record<string, unknown>) {
     challenge,
     state,
     collections: collectionNames(body.collections),
-    ...(body.settings === undefined
-      ? {}
-      : {
-          settings: collectionRequests(
-            body.settings,
-            collectionNames(body.collections),
-          ),
-        }),
     ...(body.mediaDelete === undefined
       ? {}
       : { mediaDelete: mediaDeletionGrant(body.mediaDelete) }),
@@ -491,8 +483,6 @@ export type AuthorizationSetup = {
   register: boolean;
   create: string[];
   extend: string[];
-  /** Existing collections whose settings differ from what the page asked. */
-  configure: { name: string; changes: Record<string, [string, string]> }[];
 };
 async function setupNeeded(
   tx: Kysely<DB>,
@@ -526,14 +516,8 @@ async function setupNeeded(
         .filter((row) => !client.collection_ids.includes(row.id))
         .map((row) => row.name)
     : [];
-  const configure = rows.flatMap((row) => {
-    const wanted = input.settings?.[row.name];
-    const changes = wanted ? settingChanges(row, wanted) : {};
-    return Object.keys(changes).length ? [{ name: row.name, changes }] : [];
-  });
-  if (client && !create.length && !extend.length && !configure.length)
-    return null;
-  return { register: !client, create, extend, configure };
+  if (client && !create.length && !extend.length) return null;
+  return { register: !client, create, extend };
 }
 export function authorizationSetup(userId: string, input: AuthorizationInput) {
   return setupNeeded(db, userId, input);
@@ -553,24 +537,20 @@ export async function prepareAuthorization(
     await lockOwner(tx, userId);
     const setup = await setupNeeded(tx, userId, input);
     if (!setup) return;
-    if (setup.create.length || setup.configure.length) {
+    if (setup.create.length) {
       // The collections are in the site's Durable Object and commit now; a
       // registration that then fails leaves only the collections. New ones
-      // start private unless the page asked for other settings.
-      const setting = (collection: string): CollectionSetup => {
-        const wanted = input.settings?.[collection];
-        return {
-          name: unreservedName(collection),
-          read_access: wanted?.read ?? "admin",
-          write_access: wanted?.write ?? "admin",
-          ...(wanted?.rules !== undefined ? { rules: wanted.rules } : {}),
-          ...(wanted?.unique !== undefined ? { unique: wanted.unique } : {}),
-        };
-      };
-      const created = await configureCollections(await siteOwner(tx, userId), [
-        ...setup.create.map(setting),
-        ...setup.configure.map((c) => setting(c.name)),
-      ]);
+      // start private; _naru/collections.json is how a site asks for more.
+      const created = await configureCollections(
+        await siteOwner(tx, userId),
+        setup.create.map(
+          (collection): CollectionSetup => ({
+            name: unreservedName(collection),
+            read_access: "admin",
+            write_access: "admin",
+          }),
+        ),
+      );
       if (created === null)
         throw new DataError(409, "Collection limit reached.", "QUOTA_EXCEEDED");
     }
@@ -598,8 +578,6 @@ export async function prepareAuthorization(
         .execute();
       return;
     }
-    // Only settings changed: the registration, and its sign-ins, stay as they are.
-    if (!setup.create.length && !setup.extend.length) return;
     const client = clients.find((c) =>
       sameCallback(c.redirect_uri, input.redirectUri),
     )!;

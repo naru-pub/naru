@@ -409,6 +409,10 @@ export async function revokeMemberToken(token: string, origin: string | null) {
 export type MembershipStatus = "pending" | "approved" | "banned";
 export type AdmissionMode = "open" | "approval" | "closed";
 
+/**
+ * A member's request refused for their standing: `details.membership` tells
+ * the page which, so it can show an approval screen without asking again.
+ */
 function membershipDenied(status: MembershipStatus) {
   return new DataError(
     403,
@@ -416,6 +420,7 @@ function membershipDenied(status: MembershipStatus) {
       ? "Membership is banned."
       : "Membership is awaiting approval.",
     "ACCESS_DENIED",
+    { membership: status },
   );
 }
 

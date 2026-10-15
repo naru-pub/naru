@@ -59,7 +59,9 @@ export declare class NaruError extends Error {
   readonly code: NaruErrorCode;
   /**
    * The JSON a site function passed as `ctx.fail(code, message, details)`,
-   * such as `{ reason: "sold_out" }`. Undefined for every other failure.
+   * such as `{ reason: "sold_out" }`; or, when a member's request is refused
+   * because the site has not approved them, `{ membership: "pending" }` or
+   * `{ membership: "banned" }`. Undefined for every other failure.
    */
   readonly details?: Json;
 }
@@ -152,7 +154,11 @@ export interface ListOptions {
 /** Write only at this revision, or only if the document does not exist yet. */
 export type WriteCondition = { revision: Revision } | { absent: true };
 
-export interface PublicCollection<T = Json> {
+/**
+ * A handle on one collection, the same for a visitor, a member and the owner:
+ * what each may do, the collection's permissions and rules decide on Naru.
+ */
+export interface Collection<T = Json> {
   get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>;
   /** One bounded read, in input order; missing or unreadable rows are null. */
   getMany(
@@ -181,8 +187,10 @@ export interface PublicCollection<T = Json> {
     options?: { secret?: string; signal?: AbortSignal },
   ): Promise<Document<T>>;
   /**
-   * Replaces a document (1.1.0), when its collection or rule allows this
-   * visitor to: for a guest, by giving the secret it was added with.
+   * Replaces the whole document, or creates it, when the collection or its
+   * rule allows: the owner always; a member, a document they created or the
+   * one named by their own `member.id`; a guest, with the secret it was
+   * added with (1.1.0).
    */
   set(
     id: string,
@@ -193,59 +201,10 @@ export interface PublicCollection<T = Json> {
       signal?: AbortSignal;
     },
   ): Promise<Document<T>>;
-  /** Deletes a document (1.1.0), as `set` may replace it. */
-  delete(
-    id: string,
-    options?: {
-      condition?: { revision: Revision };
-      secret?: string;
-      signal?: AbortSignal;
-    },
-  ): Promise<void>;
-}
-
-export interface AdminCollection<T = Json> extends PublicCollection<T> {
-  /** Replaces the whole document or creates it. */
-  set(
-    id: string,
-    data: T,
-    options?: {
-      condition?: WriteCondition;
-      secret?: string;
-      signal?: AbortSignal;
-    },
-  ): Promise<Document<T>>;
-  /** Deleting a missing document succeeds unless a condition was supplied. */
-  delete(
-    id: string,
-    options?: {
-      condition?: { revision: Revision };
-      secret?: string;
-      signal?: AbortSignal;
-    },
-  ): Promise<void>;
-}
-
-/**
- * A member's handle on a collection. What the collection's permissions allow
- * a member, the server decides: in a `member` collection, `add`, and `set`
- * and `delete` of the documents this member created.
- */
-export interface MemberCollection<T = Json> extends PublicCollection<T> {
   /**
-   * Replaces a document this member created, or creates the one named by
-   * their own member ID (`member.id`), which no one else can.
+   * Deletes a document, as `set` may replace it. Deleting a missing document
+   * succeeds unless a condition was supplied.
    */
-  set(
-    id: string,
-    data: T,
-    options?: {
-      condition?: WriteCondition;
-      secret?: string;
-      signal?: AbortSignal;
-    },
-  ): Promise<Document<T>>;
-  /** Deleting a missing document succeeds unless a condition was supplied. */
   delete(
     id: string,
     options?: {
@@ -255,19 +214,20 @@ export interface MemberCollection<T = Json> extends PublicCollection<T> {
     },
   ): Promise<void>;
 }
+
+/** The names SDK 1.0.0 gave the one collection handle. */
+export type PublicCollection<T = Json> = Collection<T>;
+export type AdminCollection<T = Json> = Collection<T>;
+export type MemberCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
 export interface Member {
-  /** Current platform membership, including pending approval or a ban. */
-  membership(options?: {
-    signal?: AbortSignal;
-  }): Promise<{ id: string; status: "pending" | "approved" | "banned" }>;
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.
    */
   readonly id: string;
-  collection<T = Json>(name: string): MemberCollection<T>;
+  collection<T = Json>(name: string): Collection<T>;
   /**
    * Calls one of the site's functions, `"<module/path>:<function>"`: an export of
    * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
@@ -293,10 +253,7 @@ export interface Member {
   live(options: LiveOptions): Live;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(
-      id: string,
-      options?: { signal?: AbortSignal; uploadedBy?: string | null },
-    ): Promise<void>;
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -332,7 +289,7 @@ export interface Member {
 }
 
 export interface Admin {
-  collection<T = Json>(name: string): AdminCollection<T>;
+  collection<T = Json>(name: string): Collection<T>;
   /**
    * Calls one of the site's functions as the owner, as `Member.call` does
    * for a member: the function sees `ctx.member` null and `ctx.owner` true,
@@ -371,10 +328,7 @@ export interface Admin {
   >;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(
-      id: string,
-      options?: { signal?: AbortSignal; uploadedBy?: string | null },
-    ): Promise<void>;
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
@@ -443,7 +397,7 @@ export interface Live {
 
 export interface NaruClient {
   /** Visitor access, even when signed in. */
-  collection<T = Json>(name: string): PublicCollection<T>;
+  collection<T = Json>(name: string): Collection<T>;
   /**
    * Hears what the site's functions broadcast to `topics`, as anyone may:
    * broadcasts are public. Connecting counts against the site's budget.
@@ -470,24 +424,6 @@ export interface NaruClient {
     /** Redirects to Naru for approval. */
     signIn(options: {
       collections: readonly string[];
-      /**
-       * What some of those collections should be (1.1.0). Naru's sign-in page
-       * creates missing ones this way and, on the owner's click, changes
-       * existing ones that differ. Collections left out start private.
-       */
-      settings?: Readonly<
-        Record<
-          string,
-          {
-            read?: "admin" | "member" | "world";
-            write?: "admin" | "create" | "member" | "world";
-            /** A module in `_naru/rules/`, or null for none. */
-            rules?: string | null;
-            /** Up to three top-level fields no two documents may share. */
-            unique?: readonly string[];
-          }
-        >
-      >;
       /** Request explicit permission to delete all of this site's media. */
       mediaDelete?: boolean;
     }): Promise<void>;

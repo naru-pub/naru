@@ -24,17 +24,13 @@ Owner website handles require a new, explicit consent grant:
 await naru.auth.signIn({ collections: ["posts"], mediaDelete: true });
 const admin = await naru.auth.session();
 await admin.media.delete(id);
-// When recovering app cleanup, verify the uploader from the ledger:
-await admin.media.delete(id, { uploadedBy: memberId });
 ```
 
 The Naru consent page states that this grant permits deletion of all site media,
 including member uploads. Authorization codes and tokens store this flag; existing
 and ordinary new owner tokens default to false. Changing token-exchange parameters
 cannot add the grant. Revoke/signout/expiry and callback registration revocation
-also revoke deletion authority. Listing files remains control-panel-only. `uploadedBy` is an optional deletion
-guard checked against the real stored uploader; use a member ID, or null for
-owner uploads. A mismatch returns ACCESS_DENIED without queuing deletion.
+also revoke deletion authority. Listing files remains control-panel-only.
 
 A DELETE records a durable tombstone before deleting storage. Tombstones disappear
 from the media library and cannot be finalized again. Storage failure returns

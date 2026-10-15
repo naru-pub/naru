@@ -104,32 +104,9 @@ A sign-in that comes back without completing, because the owner denied it,
 took longer than ten minutes, or the code could not be exchanged, is an
 ordinary signed-out visit: `session()` resolves `null`.
 
-From 1.1.0 a page can also say what its collections should be, so an app
-installs without a trip through the control panel:
-
-```js
-await naru.auth.signIn({
-  collections: ["posts", "comments", "profiles", "wallets"],
-  settings: {
-    posts: { read: "world", write: "admin", rules: "community-board" },
-    comments: { read: "world", write: "admin", rules: "community-board" },
-    profiles: { read: "admin", write: "admin", unique: ["nick"] },
-  },
-});
-```
-
-`read` is `admin`, `member` or `world`; `write` also takes `create`; `rules`
-names a `_naru/rules/` module (null for none) and `unique` up to three
-fields. Naru's sign-in page lists what it will do before anything changes:
-missing collections are created with these settings (others still start
-private), and existing ones whose settings differ are changed on the same
-click, with access widened beyond admins marked. A settings-only change keeps
-the page's registration and sign-ins. A unique field that documents already
-share fails the step with the field named. Only the owner's click on Naru
-applies settings; nothing in the request is trusted otherwise.
-
-A site can instead declare its collections in a file, `_naru/collections.json`,
-so they exist before anyone signs in and sign-in stays a sign-in:
+Collections the consent page creates start private. A site says what its
+collections should be in a file, `_naru/collections.json`, so they exist
+before anyone signs in and sign-in stays a sign-in:
 
 ```json
 {
@@ -141,8 +118,9 @@ so they exist before anyone signs in and sign-in stays a sign-in:
 }
 ```
 
-Each entry takes the same `read`, `write`, `rules` and `unique` as `settings`.
-`read` and `write` are required, so the file states who can reach every
+`read` is `admin`, `member` or `world`; `write` also takes `create`; `rules`
+names a `_naru/rules/` module and `unique` up to three fields no two documents
+may share. `read` and `write` are required, so the file states who can reach every
 collection; an entry without them fails the whole file. `rules` and `unique`
 may be left out. When the file arrives (a template applied, a GitHub
 deploy, a save in the editor) Naru creates the collections the site lacks with
@@ -335,7 +313,7 @@ and does **not** roll back writes. Messages and details reach the browser, so
 do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 
 **ctx.** `ctx` has `member` (`{ id }`, or null for the owner), `owner`, `now`
-(milliseconds), `random()` (also behind `Math.random`), `fail()`, and these
+(milliseconds), `fail()`, and these
 database methods, which return promises of what the SDK would, so `await` them:
 
 - `get(collection, id)`, `getMany(collection, ids)` (at most 100, in input
@@ -397,24 +375,19 @@ export const visitors = ["post", "edit", "list"];
 export const readOnly = ["list"];
 
 export async function post(ctx, { name, text, password }) {
-  const doc = await ctx.add("guestbook", {
-    name,
-    text,
-    hash: ctx.password.hash(password),
-  });
+  const doc = await ctx.add("guestbook", { name, text }, { secret: password });
   return doc.id;
 }
 
 export async function edit(ctx, { id, text, password }) {
   const doc = await ctx.get("guestbook", id);
-  if (!doc || !ctx.password.verify(password, doc.data.hash))
+  if (!doc || !(await ctx.secretMatches("guestbook", id, password)))
     ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
   await ctx.set("guestbook", id, { ...doc.data, text });
 }
 
 export async function list(ctx) {
   const { documents } = await ctx.list("guestbook");
-  // Never return the stored hash.
   return documents.map(({ id, data }) => ({
     id,
     name: data.name,
@@ -427,10 +400,10 @@ export async function list(ctx) {
 const entries = await naru.call("guest:list");
 ```
 
-Keep the collection admin-written (and admin-read, when the stored hash is in
-it), so visitors reach it only through the function. `ctx.password.hash(text)`
-returns a salted PBKDF2-SHA256 hash string and `ctx.password.verify(text, hash)`
-a boolean; a call may make three of them. They are not promises.
+Keep the collection admin-written, so visitors reach it only through the
+function. The password is the document's secret: Naru keeps it as a salted
+PBKDF2-SHA256 hash beside the document, never in its data, and
+`ctx.secretMatches` checks it; a call may check three.
 
 A visitor's calls are limited by their address: 20 a minute that may write and
 60 read-only ones, and 300 and 900 a minute for all of a site's visitors. They
@@ -724,8 +697,11 @@ roll back a write the server already accepted.
 The declarations export only what an application names itself: `createNaru`,
 `NaruError`, `NaruErrorCode`, `NaruClient`, `Admin`, `PublicCollection`,
 `AdminCollection`, `Document`, `Page`, `ListOptions`, `Filter`, `Sort`,
-`WriteCondition`, `Revision` and `Json`, and from 1.1.0 `Member` and
-`MemberCollection`. Other option and result shapes are written out in place.
+`WriteCondition`, `Revision` and `Json`, and from 1.1.0 `Member`, `Collection`
+and `MemberCollection`. In 1.1.0 the three collection names are one type,
+`Collection`: a visitor's, a member's and the owner's handles have the same
+methods, and Naru decides what each may do. Other option and result shapes are
+written out in place.
 
 Naru v1 guarantees the public TypeScript shapes and behavior described here:
 

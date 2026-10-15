@@ -112,7 +112,7 @@ describe("calling", () => {
         const wallet = await ctx.get("wallets", ctx.member.id);
         if (wallet.data.balance < price) return { ok: false };
         await ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - price });
-        return { ok: true, item, at: ctx.now, roll: ctx.random(), math: Math.random() };
+        return { ok: true, item, at: ctx.now, roll: Math.random(), more: [ctx.random, ctx.password] };
       }`,
       "buy",
       { item: "sword", price: 100 },
@@ -122,7 +122,9 @@ describe("calling", () => {
       item: "sword",
       at: 1_700_000_000_000,
       roll: 0.5,
-      math: 0.5,
+      // Math.random is the host's; ctx keeps no second way to it, nor to
+      // password hashes (document secrets are ctx.secretMatches).
+      more: [null, null],
     });
     expect(documents.get("wallets/m-1")).toEqual({ balance: 50 });
   });
@@ -140,7 +142,7 @@ describe("calling", () => {
     ).toEqual([true, null]);
   });
 
-  test("a visitor's call says so, hashes and checks passwords, and cannot delete uploads", () => {
+  test("a visitor's call says so, and cannot delete uploads", () => {
     const visit = (source: string) =>
       runFunction(
         module,
@@ -155,20 +157,6 @@ describe("calling", () => {
     expect(run("export function f(ctx) { return ctx.visitor; }", "f")).toBe(
       false,
     );
-    const [hash, right, wrong] = visit(`export function f(ctx) {
-      const hash = ctx.password.hash("guest pass");
-      return [hash, ctx.password.verify("guest pass", hash), ctx.password.verify("guess", hash)];
-    }`) as [string, boolean, boolean];
-    expect(hash).toMatch(/^pbkdf2-sha256\$20000\$/);
-    expect([right, wrong]).toEqual([true, false]);
-    expect(() =>
-      visit(`export function f(ctx) { for (;;) ctx.password.hash("x"); }`),
-    ).toThrow(/more than 3 password operations/);
-    expect(() =>
-      visit(
-        `export function f(ctx) { ctx.password.verify("x", "not a hash"); }`,
-      ),
-    ).toThrow(/needs a hash from ctx.password.hash/);
     expect(() =>
       visit(
         `export async function f(ctx) { await ctx.media.delete("0190f1a2-0000-7000-8000-000000000001"); }`,

@@ -101,14 +101,6 @@ export async function dataRequest(
       // The control panel's quota readout; the media service ignores it for
       // anyone but a signed-in owner.
       usage: url.searchParams.get("usage") === "1",
-      ...(url.searchParams.has("uploadedBy")
-        ? {
-            uploadedBy:
-              url.searchParams.get("uploadedBy") === "owner"
-                ? null
-                : url.searchParams.get("uploadedBy")!,
-          }
-        : {}),
       ifVersion: !admin
         ? websiteCondition(url)
         : url.searchParams.has("ifVersion")

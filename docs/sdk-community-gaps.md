@@ -29,7 +29,7 @@ is historical; these gaps have since been addressed:
 - Functions have `URL` and `URLSearchParams`, and modules may be `.mjs`.
 
 - Guest function calls (#3): modules open exports to visitors
-  (`export const visitors`), with `ctx.password` for guest edit and delete.
+  (`export const visitors`), with document secrets (`ctx.secretMatches`) for guest edit and delete.
 
 Still open: background and scheduled jobs (#4, #9, deliberately not planned),
 export/import (#10), storage quotas (#2) and a local emulator. Revisit quotas

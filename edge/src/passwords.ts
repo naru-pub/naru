@@ -1,6 +1,6 @@
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 
-// Salted PBKDF2-SHA256, for ctx.password and documents' write secrets.
+// Salted PBKDF2-SHA256, for documents' write secrets.
 export const PASSWORD_ITERATIONS = 20_000;
 const PASSWORD =
   /^pbkdf2-sha256\$(\d{1,7})\$([A-Za-z0-9_-]{22})\$([A-Za-z0-9_-]{43})$/;

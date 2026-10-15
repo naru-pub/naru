@@ -1,5 +1,4 @@
 import { resolveModule, type ModuleSources } from "./modules";
-import { hashPassword, verifyPassword } from "./passwords";
 import type {
   QuickJSContext,
   QuickJSHandle,
@@ -56,7 +55,7 @@ export const MAX_URL_PARSES = 1000;
  */
 export const MAX_JOBS = 10_000;
 /**
- * Password hashes or checks a call may make (ctx.password): each is a few
+ * Secret checks a call may make (ctx.secretMatches): each is a few
  * milliseconds of host time the interrupt checks cannot see.
  */
 export const MAX_PASSWORD_OPERATIONS = 3;
@@ -254,11 +253,6 @@ globalThis.__run = async (name, member, owner, visitor, now, args) => {
     owner,
     visitor,
     now,
-    password: Object.freeze({
-      hash: (password) => __call("passwordHash", password),
-      verify: (password, hash) => __call("passwordVerify", password, hash),
-    }),
-    random: () => __call("random"),
     fail: (...args) => __call("fail", ...args),
     get: __operation("get"),
     getMany: __operation("getMany"),
@@ -374,27 +368,6 @@ export function runFunction(
             ),
           );
         }
-        if (name === "passwordHash" || name === "passwordVerify") {
-          if (++passwords > MAX_PASSWORD_OPERATIONS)
-            throw failed(
-              `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
-            );
-          const [password, stored] = JSON.parse(context.getString(args));
-          if (
-            typeof password !== "string" ||
-            !password ||
-            password.length > 256
-          )
-            throw failed("a password is 1–256 characters.");
-          if (name === "passwordHash")
-            return context.newString(JSON.stringify(hashPassword(password)));
-          const verified = verifyPassword(password, stored);
-          if (verified === null)
-            throw failed(
-              "ctx.password.verify needs a hash from ctx.password.hash.",
-            );
-          return context.newString(JSON.stringify(verified));
-        }
         if (name === "fail") {
           const json = context.getString(args);
           const [code, message, details = null] = JSON.parse(json);
@@ -450,7 +423,7 @@ export function runFunction(
           throw failed(
             `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
           );
-        // A document secret is checked with the hash ctx.password uses.
+        // A document secret is checked with a slow hash, on the host.
         if (
           name === "secretMatches" &&
           ++passwords > MAX_PASSWORD_OPERATIONS

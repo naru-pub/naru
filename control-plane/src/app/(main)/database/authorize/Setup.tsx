@@ -56,7 +56,7 @@ export default function Setup({
           {input.redirectUri}
         </p>
       </div>
-      <CollectionChanges setup={setup} settings={input.settings} />
+      <CollectionChanges setup={{ create: setup.create, configure: [] }} />
       <section className="space-y-1 text-sm">
         <h2 className="font-bold text-base">이 페이지의 등록</h2>
         {setup.register ? (

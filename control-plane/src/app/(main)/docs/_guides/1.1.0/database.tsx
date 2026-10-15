@@ -448,7 +448,7 @@ const price = await member.call("shop/buy:quote");`}</Code>
               </p>
               <p>
                 <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
-                <code>random()</code>과 <code>get</code>·<code>getMany</code>·
+                <code>get</code>·<code>getMany</code>·
                 <code>list</code>·<code>count</code>·<code>add</code>·
                 <code>set</code>·<code>delete</code>가 있습니다. 데이터베이스
                 메서드는 Promise를 돌려주므로 <code>await</code>하세요.{" "}

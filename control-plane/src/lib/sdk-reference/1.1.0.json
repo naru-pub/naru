@@ -37,7 +37,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  delete(\n    id: string,\n    options?: { signal?: AbortSignal; uploadedBy?: string | null },\n  ): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      managed?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      managed?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -126,7 +126,7 @@
         {
           "name": "collection",
           "optional": false,
-          "signature": "collection<T = Json>(name: string): AdminCollection<T>",
+          "signature": "collection<T = Json>(name: string): Collection<T>",
           "summary": [],
           "throws": []
         },
@@ -150,15 +150,77 @@
       ]
     },
     {
-      "name": "AdminCollection",
+      "name": "Collection",
       "kind": "interface",
-      "summary": [],
-      "throws": [],
-      "signature": "interface AdminCollection<T = Json> extends PublicCollection<T>",
-      "extends": [
-        "PublicCollection<T>"
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A handle on one collection, the same for a visitor, a member and the owner: what each may do, the collection's permissions and rules decide on Naru."
+            }
+          ]
+        }
       ],
+      "throws": [],
+      "signature": "interface Collection<T = Json>",
+      "extends": [],
       "members": [
+        {
+          "name": "add",
+          "optional": false,
+          "signature": "add(\n  data: T,\n  options?: { secret?: string; signal?: AbortSignal },\n): Promise<Document<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "code",
+                  "value": "secret"
+                },
+                {
+                  "type": "text",
+                  "value": " (1.1.0): whoever later gives the same secret may replace or delete the document, as a guest's password lets them edit a post. Naru keeps only a hash and never returns it."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "count",
+          "optional": false,
+          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n  where?: Predicate;\n}): Promise<number>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "How many documents match "
+                },
+                {
+                  "type": "code",
+                  "value": "filter"
+                },
+                {
+                  "type": "text",
+                  "value": " and "
+                },
+                {
+                  "type": "code",
+                  "value": "where"
+                },
+                {
+                  "type": "text",
+                  "value": ", or the whole collection."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
         {
           "name": "delete",
           "optional": false,
@@ -169,7 +231,79 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "Deleting a missing document succeeds unless a condition was supplied."
+                  "value": "Deletes a document, as "
+                },
+                {
+                  "type": "code",
+                  "value": "set"
+                },
+                {
+                  "type": "text",
+                  "value": " may replace it. Deleting a missing document succeeds unless a condition was supplied."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "get",
+          "optional": false,
+          "signature": "get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "getMany",
+          "optional": false,
+          "signature": "getMany(\n  ids: readonly string[],\n  options?: { signal?: AbortSignal },\n): Promise<(Document<T> | null)[]>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "One bounded read, in input order; missing or unreadable rows are null."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "list",
+          "optional": false,
+          "signature": "list(options?: ListOptions): Promise<Page<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "pages",
+          "optional": false,
+          "signature": "pages(options?: ListOptions): AsyncIterable<Page<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Every page of a query in turn, following "
+                },
+                {
+                  "type": "code",
+                  "value": "nextCursor"
+                },
+                {
+                  "type": "text",
+                  "value": " from "
+                },
+                {
+                  "type": "code",
+                  "value": "after"
+                },
+                {
+                  "type": "text",
+                  "value": " (or the start). Not a snapshot: writes in between can shift later pages."
                 }
               ]
             }
@@ -186,7 +320,15 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "Replaces the whole document or creates it."
+                  "value": "Replaces the whole document, or creates it, when the collection or its rule allows: the owner always; a member, a document they created or the one named by their own "
+                },
+                {
+                  "type": "code",
+                  "value": "member.id"
+                },
+                {
+                  "type": "text",
+                  "value": "; a guest, with the secret it was added with (1.1.0)."
                 }
               ]
             }
@@ -504,7 +646,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  delete(\n    id: string,\n    options?: { signal?: AbortSignal; uploadedBy?: string | null },\n  ): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      managed?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      managed?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -584,7 +726,7 @@
         {
           "name": "collection",
           "optional": false,
-          "signature": "collection<T = Json>(name: string): MemberCollection<T>",
+          "signature": "collection<T = Json>(name: string): Collection<T>",
           "summary": [],
           "throws": []
         },
@@ -622,23 +764,6 @@
           "throws": []
         },
         {
-          "name": "membership",
-          "optional": false,
-          "signature": "membership(options?: {\n  signal?: AbortSignal;\n}): Promise<{ id: string; status: \"pending\" | \"approved\" | \"banned\" }>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Current platform membership, including pending approval or a ban."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
           "name": "signOut",
           "optional": false,
           "signature": "signOut(): Promise<void>",
@@ -658,102 +783,6 @@
       ]
     },
     {
-      "name": "MemberCollection",
-      "kind": "interface",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "A member's handle on a collection. What the collection's permissions allow a member, the server decides: in a "
-            },
-            {
-              "type": "code",
-              "value": "member"
-            },
-            {
-              "type": "text",
-              "value": " collection, "
-            },
-            {
-              "type": "code",
-              "value": "add"
-            },
-            {
-              "type": "text",
-              "value": ", and "
-            },
-            {
-              "type": "code",
-              "value": "set"
-            },
-            {
-              "type": "text",
-              "value": " and "
-            },
-            {
-              "type": "code",
-              "value": "delete"
-            },
-            {
-              "type": "text",
-              "value": " of the documents this member created."
-            }
-          ]
-        }
-      ],
-      "throws": [],
-      "signature": "interface MemberCollection<T = Json> extends PublicCollection<T>",
-      "extends": [
-        "PublicCollection<T>"
-      ],
-      "members": [
-        {
-          "name": "delete",
-          "optional": false,
-          "signature": "delete(\n  id: string,\n  options?: {\n    condition?: { revision: Revision };\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<void>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Deleting a missing document succeeds unless a condition was supplied."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "set",
-          "optional": false,
-          "signature": "set(\n  id: string,\n  data: T,\n  options?: {\n    condition?: WriteCondition;\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<Document<T>>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Replaces a document this member created, or creates the one named by their own member ID ("
-                },
-                {
-                  "type": "code",
-                  "value": "member.id"
-                },
-                {
-                  "type": "text",
-                  "value": "), which no one else can."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        }
-      ]
-    },
-    {
       "name": "NaruClient",
       "kind": "interface",
       "summary": [],
@@ -764,7 +793,7 @@
         {
           "name": "auth",
           "optional": false,
-          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options: {\n    collections: readonly string[];\n    mediaDelete?: boolean;\n    settings?: Readonly<\n      Record<\n        string,\n        {\n          read?: \"admin\" | \"member\" | \"world\";\n          rules?: string | null;\n          unique?: readonly string[];\n          write?: \"admin\" | \"member\" | \"world\" | \"create\";\n        }\n      >\n    >;\n  }): Promise<void>;\n}",
+          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options: {\n    collections: readonly string[];\n    mediaDelete?: boolean;\n  }): Promise<void>;\n}",
           "summary": [],
           "throws": []
         },
@@ -827,7 +856,7 @@
         {
           "name": "collection",
           "optional": false,
-          "signature": "collection<T = Json>(name: string): PublicCollection<T>",
+          "signature": "collection<T = Json>(name: string): Collection<T>",
           "summary": [
             {
               "type": "paragraph",
@@ -900,176 +929,6 @@
       ]
     },
     {
-      "name": "PublicCollection",
-      "kind": "interface",
-      "summary": [],
-      "throws": [],
-      "signature": "interface PublicCollection<T = Json>",
-      "extends": [],
-      "members": [
-        {
-          "name": "add",
-          "optional": false,
-          "signature": "add(\n  data: T,\n  options?: { secret?: string; signal?: AbortSignal },\n): Promise<Document<T>>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "code",
-                  "value": "secret"
-                },
-                {
-                  "type": "text",
-                  "value": " (1.1.0): whoever later gives the same secret may replace or delete the document, as a guest's password lets them edit a post. Naru keeps only a hash and never returns it."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "count",
-          "optional": false,
-          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n  where?: Predicate;\n}): Promise<number>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "How many documents match "
-                },
-                {
-                  "type": "code",
-                  "value": "filter"
-                },
-                {
-                  "type": "text",
-                  "value": " and "
-                },
-                {
-                  "type": "code",
-                  "value": "where"
-                },
-                {
-                  "type": "text",
-                  "value": ", or the whole collection."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "delete",
-          "optional": false,
-          "signature": "delete(\n  id: string,\n  options?: {\n    condition?: { revision: Revision };\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<void>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Deletes a document (1.1.0), as "
-                },
-                {
-                  "type": "code",
-                  "value": "set"
-                },
-                {
-                  "type": "text",
-                  "value": " may replace it."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "get",
-          "optional": false,
-          "signature": "get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>",
-          "summary": [],
-          "throws": []
-        },
-        {
-          "name": "getMany",
-          "optional": false,
-          "signature": "getMany(\n  ids: readonly string[],\n  options?: { signal?: AbortSignal },\n): Promise<(Document<T> | null)[]>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "One bounded read, in input order; missing or unreadable rows are null."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "list",
-          "optional": false,
-          "signature": "list(options?: ListOptions): Promise<Page<T>>",
-          "summary": [],
-          "throws": []
-        },
-        {
-          "name": "pages",
-          "optional": false,
-          "signature": "pages(options?: ListOptions): AsyncIterable<Page<T>>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Every page of a query in turn, following "
-                },
-                {
-                  "type": "code",
-                  "value": "nextCursor"
-                },
-                {
-                  "type": "text",
-                  "value": " from "
-                },
-                {
-                  "type": "code",
-                  "value": "after"
-                },
-                {
-                  "type": "text",
-                  "value": " (or the start). Not a snapshot: writes in between can shift later pages."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "set",
-          "optional": false,
-          "signature": "set(\n  id: string,\n  data: T,\n  options?: {\n    condition?: WriteCondition;\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<Document<T>>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Replaces a document (1.1.0), when its collection or rule allows this visitor to: for a guest, by giving the secret it was added with."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        }
-      ]
-    },
-    {
       "name": "NaruError",
       "kind": "class",
       "summary": [
@@ -1083,6 +942,51 @@
             {
               "type": "code",
               "value": "instanceof"
+            },
+            {
+              "type": "text",
+              "value": "."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "code",
+              "value": "message"
+            },
+            {
+              "type": "text",
+              "value": " is a short Korean sentence a visitor can read, so a page may show it as is ("
+            },
+            {
+              "type": "code",
+              "value": "status.textContent = error.message"
+            },
+            {
+              "type": "text",
+              "value": "): a site function's own "
+            },
+            {
+              "type": "code",
+              "value": "ctx.fail"
+            },
+            {
+              "type": "text",
+              "value": " message, or Naru's wording for "
+            },
+            {
+              "type": "code",
+              "value": "code"
+            },
+            {
+              "type": "text",
+              "value": ". Naru's English account of what went wrong, for developers, is "
+            },
+            {
+              "type": "code",
+              "value": "error.cause.message"
             },
             {
               "type": "text",
@@ -1130,6 +1034,22 @@
                 },
                 {
                   "type": "text",
+                  "value": "; or, when a member's request is refused because the site has not approved them, "
+                },
+                {
+                  "type": "code",
+                  "value": "{ membership: \"pending\" }"
+                },
+                {
+                  "type": "text",
+                  "value": " or "
+                },
+                {
+                  "type": "code",
+                  "value": "{ membership: \"banned\" }"
+                },
+                {
+                  "type": "text",
                   "value": ". Undefined for every other failure."
                 }
               ]
@@ -1138,6 +1058,13 @@
           "throws": []
         }
       ]
+    },
+    {
+      "name": "AdminCollection",
+      "kind": "type",
+      "summary": [],
+      "throws": [],
+      "signature": "type AdminCollection<T = Json> = Collection<T>"
     },
     {
       "name": "Filter",
@@ -1161,7 +1088,7 @@
       "kind": "type",
       "summary": [],
       "throws": [],
-      "signature": "type Json =\n  | null\n  | boolean\n  | number\n  | string\n  | Json[]\n  | { [key: string]: Json }"
+      "signature": "type Json =\n  null | boolean | number | string | Json[] | { [key: string]: Json }"
     },
     {
       "name": "LiveMessage",
@@ -1179,6 +1106,13 @@
       ],
       "throws": [],
       "signature": "type LiveMessage =\n  | { data: Json; type: \"notice\" }\n  | { data: Json; topic: string; type: \"topic\" }"
+    },
+    {
+      "name": "MemberCollection",
+      "kind": "type",
+      "summary": [],
+      "throws": [],
+      "signature": "type MemberCollection<T = Json> = Collection<T>"
     },
     {
       "name": "NaruErrorCode",
@@ -1260,7 +1194,7 @@
         }
       ],
       "throws": [],
-      "signature": "type Predicate =\n  | boolean\n  | { all: readonly Predicate[] }\n  | { any: readonly Predicate[] }\n  | { eq: readonly [PredicateField, string | number | boolean | null] }\n  | { ne: readonly [PredicateField, string | number | boolean | null] }\n  | { gt: readonly [PredicateField, string | number] }\n  | { gte: readonly [PredicateField, string | number] }\n  | { lt: readonly [PredicateField, string | number] }\n  | { lte: readonly [PredicateField, string | number] }\n  | {\n      in: readonly [\n        PredicateField,\n        readonly (string | number | boolean | null)[],\n      ];\n    }\n  | { has: readonly [string, string | number | boolean | null] }"
+      "signature": "type Predicate =\n  | boolean\n  | { all: readonly Predicate[] }\n  | { any: readonly Predicate[] }\n  | { eq: readonly [PredicateField, string | number | boolean | null] }\n  | { ne: readonly [PredicateField, string | number | boolean | null] }\n  | { gt: readonly [PredicateField, string | number] }\n  | { gte: readonly [PredicateField, string | number] }\n  | { lt: readonly [PredicateField, string | number] }\n  | { lte: readonly [PredicateField, string | number] }\n  | {\n      in: readonly [\n        PredicateField,\n        readonly (string | number | boolean | null)[],\n      ];\n    }\n  | { has: readonly [string, string | number | boolean | null] }\n  | { contains: readonly [string, string] }"
     },
     {
       "name": "PredicateField",
@@ -1278,6 +1212,23 @@
       ],
       "throws": [],
       "signature": "type PredicateField = string | { metadata: \"id\" | \"createdBy\" }"
+    },
+    {
+      "name": "PublicCollection",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The names SDK 1.0.0 gave the one collection handle."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type PublicCollection<T = Json> = Collection<T>"
     },
     {
       "name": "Revision",

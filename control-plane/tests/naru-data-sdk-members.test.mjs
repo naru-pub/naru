@@ -448,33 +448,30 @@ test("typed function failures keep their message and details without retrying", 
   });
 });
 
-test("membership checks live state without forgetting a pending member's session", async () => {
-  const local = new Map();
-  saveMember(local);
-  await browser(
-    async ({ calls, respond }) => {
-      const member = await createNaru().members.session();
-      for (const status of ["pending", "approved", "banned"]) {
-        respond(() => Response.json({ id: "m-1", status }));
-        assert.deepEqual(await member.membership(), { id: "m-1", status });
-        const call = calls.at(-1);
-        assert.equal(
-          call.url.origin + call.url.pathname,
-          "https://naru.pub/api/membership/v1/alice",
-        );
-        assert.equal(call.method, "GET");
-        assert.equal(call.headers.Authorization, `Bearer ${TOKEN}`);
-        assert.equal(call.credentials, "omit");
-      }
-      assert.ok(local.has(MEMBER));
-      await member.signOut();
-      await assert.rejects(
-        member.membership(),
-        (e) => e.code === "AUTH_REQUIRED",
-      );
-    },
-    { local },
-  );
+test("a member the site has not approved learns so from the refusal", async () => {
+  await browser(async ({ respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    respond(() =>
+      Response.json(
+        {
+          error: {
+            code: "ACCESS_DENIED",
+            message: "Membership is awaiting approval.",
+            details: { membership: "pending" },
+          },
+        },
+        { status: 403 },
+      ),
+    );
+    await assert.rejects(member.collection("board").list(), (error) => {
+      assert.equal(error.code, "ACCESS_DENIED");
+      assert.deepEqual(error.details, { membership: "pending" });
+      return true;
+    });
+    // The session stays, for when the owner approves.
+    assert.ok(local.has(MEMBER));
+  });
 });
 
 test("a call posts with member credentials, and only what it wrote skips caches", async () => {
@@ -662,25 +659,6 @@ test("owners explicitly request media deletion at sign-in", async () => {
     });
     assert.equal(new URL(location.href).searchParams.get("mediaDelete"), "1");
     assert.equal(calls.length, 0);
-  });
-});
-
-test("media deletion can require the platform uploader to match an app cleanup record", async () => {
-  await browser(async ({ calls, respond, local }) => {
-    saveMember(local);
-    const member = await createNaru().members.session();
-    respond(() => Response.json({ success: true }));
-    await member.media.delete("0190f1a2-0000-7000-8000-000000000001", {
-      uploadedBy: "0190f1a2-0000-7000-8000-000000000002",
-    });
-    assert.equal(
-      calls[0].url.searchParams.get("uploadedBy"),
-      "0190f1a2-0000-7000-8000-000000000002",
-    );
-    await member.media.delete("0190f1a2-0000-7000-8000-000000000001", {
-      uploadedBy: null,
-    });
-    assert.equal(calls[1].url.searchParams.get("uploadedBy"), "owner");
   });
 });
 

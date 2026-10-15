@@ -18,7 +18,6 @@ import {
   executeLiveTicket,
 } from "../service";
 import { manageMembership } from "../membership";
-import { membershipStatusRequest } from "../membership-http";
 import { digest } from "../owner-auth";
 import { encodeRevision } from "../protocol";
 import {
@@ -395,23 +394,9 @@ integration("site members", () => {
       file: "membership",
       source: "export function ping() { return true; }",
     });
-    const statusRequest = () =>
-      membershipStatusRequest(
-        new Request("https://naru.pub/api/membership/v1/alice", {
-          headers: {
-            Authorization: `Bearer ${member.accessToken}`,
-            Origin: origin,
-          },
-        }),
-        "alice",
-      );
     try {
       for (const status of ["pending", "banned"] as const) {
         await manageMembership(owner, "PATCH", { id: member.memberId, status });
-        const response = await statusRequest();
-        expect(response.status).toBe(200);
-        expect(response.headers.get("cache-control")).toBe("no-store");
-        expect(await response.json()).toEqual({ id: member.memberId, status });
         for (const [method, path, body] of [
           ["GET", ["board"], undefined],
           ["GET", ["board", "anything"], undefined],
@@ -422,7 +407,12 @@ integration("site members", () => {
         ] as const) {
           await expect(
             as(member.accessToken, method, [...path], body),
-          ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+          ).rejects.toMatchObject({
+            status: 403,
+            code: "ACCESS_DENIED",
+            // The refusal says why, so the page needs no status request.
+            details: { membership: status },
+          });
         }
         await expect(
           executeCall({
@@ -431,7 +421,11 @@ integration("site members", () => {
             path: ["membership:ping"],
             bearer,
           }),
-        ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+        ).rejects.toMatchObject({
+          status: 403,
+          code: "ACCESS_DENIED",
+          details: { membership: status },
+        });
         for (const [method, path] of [
           ["POST", []],
           ["PUT", [crypto.randomUUID()]],
@@ -1275,13 +1269,13 @@ integration("site members", () => {
       source: `export const visitors = ["post", "edit", "list"];
         export const readOnly = ["list"];
         export async function post(ctx, { name, text, password }) {
-          const doc = await ctx.add("visitor_book", { name, text, hash: ctx.password.hash(password) });
+          const doc = await ctx.add("visitor_book", { name, text }, { secret: password });
           ctx.broadcast("visitor_book", { id: doc.id });
           return doc.id;
         }
         export async function edit(ctx, { id, text, password }) {
           const doc = await ctx.get("visitor_book", id);
-          if (!doc || !ctx.password.verify(password, doc.data.hash))
+          if (!doc || !(await ctx.secretMatches("visitor_book", id, password)))
             ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.", { reason: "wrong_password" });
           await ctx.set("visitor_book", id, { ...doc.data, text }, { condition: { revision: doc.revision } });
           return true;
@@ -1889,7 +1883,7 @@ integration("site members", () => {
         return (await ctx.list("inventory", { filter: { owner: ctx.member.id } })).documents.map((d) => d.data.item);
       }
       export function gacha(ctx) {
-        return Math.floor(ctx.random() * 100);
+        return Math.floor(Math.random() * 100);
       }
       export function versioned() {
         return { version: "not a revision", list: [1, { version: 2 }] };

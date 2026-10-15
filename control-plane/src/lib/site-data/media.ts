@@ -79,7 +79,6 @@ type MediaCommand = {
   after?: string;
   size?: number;
   usage?: boolean;
-  uploadedBy?: string | null;
   filter?: unknown;
 };
 /** Newest first is what a media library is for, and the only order offered. */
@@ -383,11 +382,7 @@ export async function executeMedia(command: MediaCommand) {
     return { file: output(ready) };
   }
   if (command.method === "DELETE" && id) {
-    const uploadedBy =
-      command.uploadedBy === undefined || command.uploadedBy === null
-        ? command.uploadedBy
-        : uuidId(command.uploadedBy);
-    await deleteMedia(owner.id, id, memberId, uploadedBy);
+    await deleteMedia(owner.id, id, memberId);
     return { success: true };
   }
   throw new DataError(405, "Method not allowed.");

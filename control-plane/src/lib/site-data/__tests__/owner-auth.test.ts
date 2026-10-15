@@ -151,16 +151,6 @@ integration("website owner authorization", () => {
       await expect(
         remove(allowed, "https://evil.example"),
       ).rejects.toMatchObject({ status: 401 });
-      await expect(
-        executeMedia({
-          site: "alice",
-          path: [id],
-          method: "DELETE",
-          bearer: { token: allowed, origin },
-          uploadedBy: crypto.randomUUID(),
-        }),
-      ).rejects.toMatchObject({ status: 403 });
-      expect(deletion).not.toHaveBeenCalled();
       await expect(remove(allowed)).resolves.toEqual({ success: true });
       expect(deletion).toHaveBeenCalledWith(`${owner}/${id}.png`);
       await revokeToken(allowed, origin);
@@ -405,7 +395,6 @@ integration("website owner authorization", () => {
       register: true,
       create: ["notes"],
       extend: [],
-      configure: [],
     });
     // Not the owner's to fix here: another account, or a page off the site.
     expect(await authorizationSetup(bob, input)).toBeNull();
@@ -438,7 +427,6 @@ integration("website owner authorization", () => {
       register: false,
       create: [],
       extend: ["private"],
-      configure: [],
     });
     await prepareAuthorization(owner, wider);
     await expect(data(grant.accessToken, ["notes"])).rejects.toMatchObject({
@@ -458,45 +446,24 @@ integration("website owner authorization", () => {
     ])
       expect(await listCollections(site, ["elsewhere"])).toEqual([]);
   });
-  test("a page can ask for its collections' settings, applied on the owner's click", async () => {
+  test("a sign-in creates the collections it asks for, private, on the owner's click", async () => {
     const page = "https://alice.example/community.html";
-    const settings = {
-      board: { read: "world", write: "admin", rules: "community-board" },
-      profiles: { read: "admin", write: "admin", unique: ["nick"] },
-      posts: { read: "member", write: "admin" },
-    };
     const input = authInput({
       redirectUri: page,
-      collections: ["posts", "board", "profiles"],
-      settings,
+      collections: ["posts", "board"],
+      // What a 1.1.0 draft once sent: settings are _naru/collections.json's.
+      settings: { board: { read: "world" } },
     });
-    const setup = await authorizationSetup(owner, input);
-    expect(setup).toMatchObject({
+    expect(input).not.toHaveProperty("settings");
+    expect(await authorizationSetup(owner, input)).toMatchObject({
       register: true,
-      create: ["board", "profiles"],
-      configure: [
-        { name: "posts", changes: { read: [expect.any(String), "member"] } },
-      ],
+      create: ["board"],
     });
-    // A setting for a collection it does not ask access to is refused.
-    expect(() =>
-      authInput({
-        redirectUri: page,
-        collections: ["posts"],
-        settings: { board: { read: "world" } },
-      }),
-    ).toThrow(/not among/);
     await prepareAuthorization(owner, input);
     expect(
-      await listCollections({ id: owner, loginName: "alice" }, [
-        "board",
-        "posts",
-        "profiles",
-      ]),
+      await listCollections({ id: owner, loginName: "alice" }, ["board"]),
     ).toMatchObject([
-      { name: "board", read_access: "world", rules: "community-board" },
-      { name: "posts", read_access: "member", write_access: "admin" },
-      { name: "profiles", read_access: "admin", unique: ["nick"] },
+      { name: "board", read_access: "admin", write_access: "admin" },
     ]);
     expect(await authorizationSetup(owner, input)).toBeNull();
   });
