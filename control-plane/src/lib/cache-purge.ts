@@ -49,14 +49,21 @@ export async function purgeSiteObjects(keys: string[]) {
       Sentry.captureException(error, { extra: { site } }),
     );
   const domain = process.env.NEXT_PUBLIC_DOMAIN!;
-  return purgeUrls(
-    keys.flatMap((key) => [
-      edgeFileCacheUrl(domain, key),
-      // As the edge redirects to it.
-      getSiteBucketUrl(encodedObjectPath(key)),
-    ]),
-  );
+  const urls = keys.flatMap((key) => [
+    edgeFileCacheUrl(domain, key),
+    // As the edge redirects to it.
+    getSiteBucketUrl(encodedObjectPath(key)),
+  ]);
+  await purgeUrls(urls);
+  // A request that read a file just before it changed stores the old copy
+  // when its read finishes, which can be after this purge; the copy would
+  // then stay for a day (SITE_FILE_CACHE_SECONDS), so a page could load a new
+  // index.html with an old module. Purge again once such reads are done.
+  setTimeout(() => void purgeUrls(urls), REPURGE_AFTER_MS).unref?.();
 }
+
+/** How long after a purge it is repeated, past any read still storing. */
+export const REPURGE_AFTER_MS = 30_000;
 
 /** Purges every file of the user's site the edge keeps, for its deletion. */
 export function purgeSite(loginName: string) {

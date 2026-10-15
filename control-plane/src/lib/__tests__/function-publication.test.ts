@@ -45,3 +45,34 @@ test("publication failures reach the caller so saves cannot report activation", 
     purgeSiteFiles("alice", ["_naru/functions/a.js"]),
   ).rejects.toThrow("Missing import");
 });
+
+test("a site change is purged at once and again after reads in flight have stored", async () => {
+  jest.useFakeTimers();
+  const environment = { ...process.env };
+  Object.assign(process.env, {
+    CLOUDFLARE_ZONE_ID: "zone",
+    CLOUDFLARE_USER_API_TOKEN: "token",
+    NEXT_PUBLIC_DOMAIN: "naru.pub",
+  });
+  const purged: string[][] = [];
+  const original = global.fetch;
+  global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+    purged.push(JSON.parse(String(init?.body)).files);
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  try {
+    await purgeSiteFiles("alice", ["app/shop.js"]);
+    expect(purged).toHaveLength(1);
+    expect(purged[0]).toContain("https://alice.naru.pub/app%2Fshop.js");
+    const { REPURGE_AFTER_MS } =
+      jest.requireActual<typeof import("@/lib/cache-purge")>(
+        "@/lib/cache-purge",
+      );
+    await jest.advanceTimersByTimeAsync(REPURGE_AFTER_MS);
+    expect(purged).toEqual([purged[0], purged[0]]);
+  } finally {
+    global.fetch = original;
+    process.env = environment;
+    jest.useRealTimers();
+  }
+});
