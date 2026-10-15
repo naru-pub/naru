@@ -218,7 +218,6 @@ export interface Collection<T = Json> {
 /** The names SDK 1.0.0 gave the one collection handle. */
 export type PublicCollection<T = Json> = Collection<T>;
 export type AdminCollection<T = Json> = Collection<T>;
-export type MemberCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
 export interface Member {

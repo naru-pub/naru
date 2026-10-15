@@ -1108,13 +1108,6 @@
       "signature": "type LiveMessage =\n  | { data: Json; type: \"notice\" }\n  | { data: Json; topic: string; type: \"topic\" }"
     },
     {
-      "name": "MemberCollection",
-      "kind": "type",
-      "summary": [],
-      "throws": [],
-      "signature": "type MemberCollection<T = Json> = Collection<T>"
-    },
-    {
       "name": "NaruErrorCode",
       "kind": "type",
       "summary": [

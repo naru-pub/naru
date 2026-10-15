@@ -697,10 +697,10 @@ roll back a write the server already accepted.
 The declarations export only what an application names itself: `createNaru`,
 `NaruError`, `NaruErrorCode`, `NaruClient`, `Admin`, `PublicCollection`,
 `AdminCollection`, `Document`, `Page`, `ListOptions`, `Filter`, `Sort`,
-`WriteCondition`, `Revision` and `Json`, and from 1.1.0 `Member`, `Collection`
-and `MemberCollection`. In 1.1.0 the three collection names are one type,
-`Collection`: a visitor's, a member's and the owner's handles have the same
-methods, and Naru decides what each may do. Other option and result shapes are
+`WriteCondition`, `Revision` and `Json`, and from 1.1.0 `Member` and
+`Collection`. In 1.1.0 a visitor's, a member's and the owner's handles are one
+type, `Collection`, with the same methods; Naru decides what each may do.
+1.0.0's `PublicCollection` and `AdminCollection` remain as its names. Other option and result shapes are
 written out in place.
 
 Naru v1 guarantees the public TypeScript shapes and behavior described here:

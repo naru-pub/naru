@@ -4,8 +4,8 @@ import {
   createNaru,
   type Admin,
   type Document,
+  type Collection,
   type Member,
-  type MemberCollection,
   type PublicCollection,
 } from "../public/sdk/1.1.0/naru.js";
 
@@ -20,7 +20,7 @@ async function members() {
   const id: string = member.id;
   // @ts-expect-error A member's id is the site's to read, not to change.
   member.id = "someone";
-  const profiles: MemberCollection<Profile> =
+  const profiles: Collection<Profile> =
     member.collection<Profile>("profiles");
   const mine: Document<Profile> = await profiles.set(id, { nick: "bob" });
   const author: string | null = mine.createdBy;
