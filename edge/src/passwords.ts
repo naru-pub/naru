@@ -29,18 +29,3 @@ export function verifyPassword(password: string, stored: unknown) {
   );
   return timingSafeEqual(actual, expected);
 }
-
-/**
- * A hash Naru stored before it used PHC strings
- * (pbkdf2-sha256$<iterations>$<salt>$<hash>, base64url), spelled as one: the
- * same salt and bytes, so no secret is needed. Null for anything else.
- */
-export function phcFromEarlier(stored: string) {
-  const match =
-    /^pbkdf2-sha256\$(\d{1,7})\$([A-Za-z0-9_-]{22})\$([A-Za-z0-9_-]{43})$/.exec(
-      stored,
-    );
-  if (!match) return null;
-  const standard = (text: string) => base64(Buffer.from(text, "base64url"));
-  return `$pbkdf2-sha256$i=${match[1]}$${standard(match[2])}$${standard(match[3])}`;
-}

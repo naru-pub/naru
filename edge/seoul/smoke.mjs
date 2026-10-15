@@ -7,7 +7,6 @@
 //   node seoul/smoke.mjs
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { pbkdf2Sync } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -207,18 +206,6 @@ try {
   const moved = await operate("beta", "dump", {});
   assert.deepEqual(moved.value.tables.documents, dump.value.tables.documents);
   assert.deepEqual(moved.value.tables.meta, dump.value.tables.meta);
-
-  // A secret hashed before Naru wrote PHC strings comes out of a restore
-  // spelled as one: the same salt and bytes.
-  const salt = Buffer.alloc(16, 7);
-  const bytes = pbkdf2Sync("1234", salt, 20_000, 32, "sha256");
-  const earlier = structuredClone(dump.value);
-  earlier.tables.documents[0].secret_hash = `pbkdf2-sha256$20000$${salt.toString("base64url")}$${bytes.toString("base64url")}`;
-  assert.equal((await operate("gamma", "restore", earlier)).status, 200);
-  assert.equal(
-    (await operate("gamma", "dump", {})).value.tables.documents[0].secret_hash,
-    `$pbkdf2-sha256$i=20000$${salt.toString("base64").replace(/=+$/, "")}$${bytes.toString("base64").replace(/=+$/, "")}`,
-  );
 
   // A copy holds what the original does, and its fingerprint says so; what
   // is recorded about the standby is not part of it.
