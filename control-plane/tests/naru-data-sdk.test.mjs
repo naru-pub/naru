@@ -270,15 +270,44 @@ test("errors have semantic codes and transport details stay diagnostic", async (
       assert.equal(error.cause.message, "offline");
       return true;
     });
+    // The caller's signal reaches the request (with the SDK's own timeout),
+    // and their abort stays an abort.
     const controller = new AbortController();
     respond(({ signal }) => {
-      assert.equal(signal, controller.signal);
-      throw new DOMException("aborted", "AbortError");
+      assert.equal(signal.aborted, true);
+      throw signal.reason;
     });
     controller.abort();
     await assert.rejects(posts.list({ signal: controller.signal }), {
       name: "AbortError",
     });
+    // A request Naru never answers fails as UNAVAILABLE once the SDK stops
+    // waiting, with or without the caller's own signal.
+    const timeout = AbortSignal.timeout;
+    let expire;
+    AbortSignal.timeout = () => {
+      const timer = new AbortController();
+      expire = () => timer.abort(new DOMException("timed out", "TimeoutError"));
+      return timer.signal;
+    };
+    try {
+      for (const options of [{}, { signal: new AbortController().signal }]) {
+        respond(
+          ({ signal }) =>
+            new Promise((_, fail) =>
+              signal.addEventListener("abort", () => fail(signal.reason)),
+            ),
+        );
+        const waiting = posts.list(options);
+        expire();
+        await assert.rejects(waiting, {
+          code: "UNAVAILABLE",
+          message: "Naru did not answer in time.",
+        });
+      }
+    } finally {
+      AbortSignal.timeout = timeout;
+    }
   });
 });
 

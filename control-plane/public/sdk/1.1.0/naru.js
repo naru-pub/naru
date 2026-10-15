@@ -111,6 +111,12 @@ function jsonValue(value, ancestors = new Set(), path = "data") {
   ancestors.delete(value);
 }
 
+// How long a request may go unanswered before it fails as UNAVAILABLE. Naru
+// answers or refuses within about ten seconds, so a request still waiting
+// after this is one that will not arrive: a page can say so instead of
+// waiting on the browser's own limit, which can be minutes.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function request(
   url,
   { method = "GET", body, token, signal, touches, renew },
@@ -130,9 +136,10 @@ async function request(
   const encoded = body === undefined ? undefined : JSON.stringify(body);
   let response;
   try {
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
     response = await fetch(url, {
       method,
-      signal,
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       credentials: "omit",
       redirect: "error",
       cache: fresh ? "no-store" : "default",
@@ -143,8 +150,15 @@ async function request(
       body: encoded,
     });
   } catch (cause) {
+    // The caller's own abort; a timeout (TimeoutError) is Naru's silence.
     if (cause?.name === "AbortError") throw cause;
-    throw new NaruError("Naru is unavailable.", "UNAVAILABLE", cause);
+    throw new NaruError(
+      cause?.name === "TimeoutError"
+        ? "Naru did not answer in time."
+        : "Naru is unavailable.",
+      "UNAVAILABLE",
+      cause,
+    );
   } finally {
     // Also when the response was lost: the write may still have landed.
     if (method !== "GET") for (const path of touches) written.add(path);
