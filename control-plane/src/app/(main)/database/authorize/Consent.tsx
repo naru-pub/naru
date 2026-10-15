@@ -72,9 +72,12 @@ export default function Consent({
       <p className="break-all rounded bg-muted p-3 font-mono text-sm">
         {input.redirectUri}
       </p>
-      <section className="space-y-2">
-        <h2 className="font-bold">허용할 컬렉션 ({collections.length})</h2>
-        <div className="overflow-x-auto border">
+      {/* Folded: a site can ask for dozens of collections. */}
+      <details className="space-y-2">
+        <summary className="cursor-pointer font-bold">
+          허용할 컬렉션 ({collections.length})
+        </summary>
+        <div className="mt-2 overflow-x-auto border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -102,7 +105,7 @@ export default function Consent({
             </TableBody>
           </Table>
         </div>
-      </section>
+      </details>
       <p>
         이 웹사이트에서 위 컬렉션의 모든 문서를 읽고, 생성하고, 덮어쓰고, 삭제할
         수 있습니다. 비공개 문서도 포함됩니다. 계정 설정이나 컬렉션 권한은
