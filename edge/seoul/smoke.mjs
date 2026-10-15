@@ -100,7 +100,9 @@ try {
     headers: { Host: "sdk.naru.pub" },
   });
   assert.equal(sdk.status, 200);
-  assert.match(await sdk.text(), /createNaru/);
+  const sdkSource = await sdk.text();
+  assert.match(sdkSource, /createNaru/);
+  assert.match(sdkSource, /https:\/\/sdk\.naru\.pub\/api\/data\/v1\//);
   assert.equal(
     (await fetch(`${base}/`, { headers: { Host: "alpha.naru.pub" } })).status,
     404,

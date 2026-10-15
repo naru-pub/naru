@@ -4,7 +4,7 @@ import { db } from "@/lib/database";
 import {
   callSiteObjectAt,
   edgeWorker,
-  siteDataWorker,
+  type WorkerTarget,
 } from "@/lib/edge/client";
 
 // Moves site databases from the edge Worker on Cloudflare (EDGE_WORKER_URL)
@@ -47,8 +47,11 @@ async function main() {
     },
   });
   const from = edgeWorker();
-  const to = siteDataWorker();
-  if (!process.env.SITE_DATA_URL || to.base === from.base)
+  const to: WorkerTarget = {
+    base: process.env.SITE_DATA_URL,
+    secret: process.env.SITE_DATA_SECRET ?? process.env.EDGE_WORKER_SECRET,
+  };
+  if (!to.base || to.base === from.base)
     throw new Error(
       "Set SITE_DATA_URL to the Worker beside this control plane.",
     );

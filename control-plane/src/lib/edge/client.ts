@@ -29,7 +29,13 @@ export function callSiteObject<T>(
   input: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  return callSiteObjectAt<T>(siteDataWorker(), site, operation, input, signal);
+  return callSiteObjectAt<T>(
+    siteDataWorker(site),
+    site,
+    operation,
+    input,
+    signal,
+  );
 }
 
 /** A Worker that holds site objects, and the secret it takes. */
@@ -39,14 +45,21 @@ export const edgeWorker = (): WorkerTarget => ({
   base: process.env.EDGE_WORKER_URL,
   secret: process.env.EDGE_WORKER_SECRET,
 });
-/** Where site objects live: the mini's workerd when set, else Cloudflare. */
-export const siteDataWorker = (): WorkerTarget =>
-  process.env.SITE_DATA_URL
+/**
+ * Where a site's object lives: the mini's workerd when SITE_DATA_URL is set,
+ * else Cloudflare. SITE_DATA_SITES, when set, names the only sites moved so
+ * far (comma-separated), as during a rehearsal; the rest stay on Cloudflare.
+ */
+export const siteDataWorker = (site?: string): WorkerTarget => {
+  const moved = process.env.SITE_DATA_SITES?.split(",").map((s) => s.trim());
+  return process.env.SITE_DATA_URL &&
+    (!moved || (site !== undefined && moved.includes(site)))
     ? {
         base: process.env.SITE_DATA_URL,
         secret: process.env.SITE_DATA_SECRET ?? process.env.EDGE_WORKER_SECRET,
       }
     : edgeWorker();
+};
 
 /** callSiteObject on a given Worker, for moving a site between two. */
 export function callSiteObjectAt<T>(

@@ -45,7 +45,20 @@ export interface WebsiteEnv {
    * are then answered by the object each time, which is local there.
    */
   EDGE_CACHE?: string;
+  /**
+   * Sites whose databases have moved to the mini, comma-separated: their
+   * requests here go on to the control plane (`website`).
+   */
+  MOVED_SITES?: string;
 }
+
+const movedSites = (env: WebsiteEnv) =>
+  new Set(
+    (env.MOVED_SITES ?? "")
+      .split(",")
+      .map((site) => site.trim())
+      .filter(Boolean),
+  );
 
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
 
@@ -158,6 +171,20 @@ export async function website(
   const headers = websiteHeaders(request);
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers });
+  // A site whose database has moved to the mini (sdk.naru.pub): this copy is
+  // no longer its database. Requests go on to the control plane, which calls
+  // the mini, so a page holding an older SDK still works; a live connection
+  // would attach to this copy, so it is refused and the SDK retries.
+  if (movedSites(env).has(site)) {
+    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket")
+      return protocolError(
+        503,
+        "This site's live connections have moved.",
+        "UNAVAILABLE",
+        headers,
+      );
+    return passThrough(request, env);
+  }
   // A live connection: opened here, held by the site's object. Asking for a
   // member's ticket (POST, with their token) goes to the control plane below.
   if (

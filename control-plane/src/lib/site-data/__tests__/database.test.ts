@@ -701,6 +701,32 @@ integration("answering visitors at the edge", () => {
     });
   });
 
+  test("a site that moved to the mini goes on to the control plane, visitors too", async () => {
+    passed.length = 0;
+    const read = await fetch(`${worker}/api/data/v1/moved-away/posts/one`, {
+      headers: { Origin: "https://moved.example" },
+    });
+    expect(read.status).toBe(299);
+    const call = await fetch(
+      `${worker}/api/data/v1/moved-away/_call/site:frame`,
+      {
+        method: "POST",
+        headers: {
+          Origin: "https://moved.example",
+          "Content-Type": "application/json",
+        },
+        body: '{"args":null}',
+      },
+    );
+    expect(call.status).toBe(299);
+    expect(passed.map(({ method, url }) => [method, url])).toEqual([
+      ["GET", "/api/data/v1/moved-away/posts/one"],
+      ["POST", "/api/data/v1/moved-away/_call/site:frame"],
+    ]);
+    expect(passed[1].body).toBe('{"args":null}');
+    passed.length = 0;
+  });
+
   test("public reads are cached for seconds; fresh reads are not", async () => {
     expect((await (await visit("posts?size=5")).json()).documents).toHaveLength(
       1,
