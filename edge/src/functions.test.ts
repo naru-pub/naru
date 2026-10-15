@@ -293,9 +293,15 @@ describe("calling", () => {
         `export function read(ctx) { return ctx.getMany("profiles", []); }`,
       ),
     ).toEqual([]);
+    // A getMany of 100 IDs is one operation, as a list of 100 is.
+    expect(
+      invoke(
+        `export async function read(ctx) { for (let i = 0; i < 100; i++) await ctx.getMany("profiles", Array(100).fill("a")); return null; }`,
+      ),
+    ).toBeNull();
     expect(() =>
       invoke(
-        `export async function read(ctx) { await ctx.getMany("profiles", Array(100).fill("a")); await ctx.count("profiles"); }`,
+        `export async function read(ctx) { for (let i = 0; i < 101; i++) await ctx.getMany("profiles", ["a"]); }`,
       ),
     ).toThrow(/more than 100 database operations/);
     expect(() =>
@@ -602,6 +608,8 @@ describe("community board rule example", () => {
       },
       host,
     );
+  // The write hook answers true, or what canWrite gave instead.
+  const allowed = (args: unknown) => invoke("__naruWrite", args) === true;
   const log = {
     id: "log",
     createdBy: "m-1",
@@ -646,7 +654,7 @@ describe("community board rule example", () => {
       kind: "image",
     });
     const write = (before: unknown, after: unknown, operation = "update") =>
-      invoke("__naruWrite", {
+      allowed({
         collection: "neo_avocado_logs",
         before,
         after,
@@ -692,7 +700,7 @@ describe("community board rule example", () => {
       commentLevel: 3,
     });
     expect(
-      invoke("__naruWrite", {
+      allowed({
         collection: "neo_avocado_comments",
         operation: "create",
         before: null,
@@ -704,7 +712,7 @@ describe("community board rule example", () => {
       commentLevel: 2,
     });
     expect(
-      invoke("__naruWrite", {
+      allowed({
         collection: "neo_avocado_comments",
         operation: "create",
         before: null,
@@ -712,7 +720,7 @@ describe("community board rule example", () => {
       }),
     ).toBe(true);
     expect(
-      invoke("__naruWrite", {
+      allowed({
         collection: "neo_avocado_comments",
         operation: "update",
         before: comment,

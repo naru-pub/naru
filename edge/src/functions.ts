@@ -458,7 +458,8 @@ export function runFunction(
           throw failed(
             `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
           );
-        operations += name === "getMany" ? Math.max(1, values[1].length) : 1;
+        // One query, like a list: getMany of 100 IDs is one operation.
+        operations += 1;
         if (operations > MAX_OPERATIONS)
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
         if (invocation.readonly && WRITES.has(name))

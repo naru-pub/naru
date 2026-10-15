@@ -16,8 +16,9 @@ const COMPARE: Record<string, string> = {
  * A predicate, never SQL: what a rule's `scope` returns, and what a list's
  * `where` asks for. Built from `all` and `any` of comparisons: `eq`, `ne`,
  * `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
- * `[field, [value, ...]]`, and `has` takes `[field, value]` and matches an
- * array field holding that value. A field is a top-level data field by name, or
+ * `[field, [value, ...]]`, `has` takes `[field, value]` and matches an
+ * array field holding that value, and `contains` takes `[field, text]` and
+ * matches a string field with that text in it (A–Z in either case). A field is a top-level data field by name, or
  * `{ metadata: "id" | "createdBy" }`. Values are strings, finite numbers,
  * booleans or null, and match only their own JSON type; ranges take strings or
  * numbers. SQL applies it before paging and counting.
@@ -114,6 +115,23 @@ export function predicate(value: unknown, what = "Rule predicate") {
       }
       return `coalesce((json_type(data, ${path}) = 'array' AND EXISTS (SELECT 1 FROM json_each(data, ${path}) WHERE ${match})), 0)`;
     }
+    if (operator === "contains") {
+      // Text within a string field: a board's search, say. instr, not LIKE,
+      // so % and _ are only characters; lower() folds A–Z alone.
+      if (field && typeof field === "object")
+        throw invalid("contains takes a data field, not metadata.");
+      if (
+        typeof bound !== "string" ||
+        !bound ||
+        bound.length > 100 ||
+        bound.includes("\u0000") ||
+        !bound.isWellFormed()
+      )
+        throw invalid("contains takes [field, text of 1–100 characters].");
+      const path = `'$."${name(field)}"'`;
+      bindings.push(bound);
+      return `coalesce((json_type(data, ${path}) = 'text' AND instr(lower(json_extract(data, ${path})), lower(?)) > 0), 0)`;
+    }
     if (operator !== "eq" && !Object.hasOwn(COMPARE, operator))
       throw invalid(`unknown operator ${operator}.`);
     return `coalesce((${comparison(field, operator, bound)}), 0)`;
@@ -128,8 +146,9 @@ export function predicate(value: unknown, what = "Rule predicate") {
   };
 }
 
-/** What a rule's `scope` returned, as SQL. */
-export const rulePredicate = (value: unknown) => predicate(value);
+/** What a rule's `scope` returned, as SQL; `what` names it in errors. */
+export const rulePredicate = (value: unknown, what?: string) =>
+  predicate(value, what);
 
 /**
  * The module a rule runs from: it imports the owner's `_naru/rules/<file>.js`
@@ -141,8 +160,18 @@ export function ruleEntry(path: string) {
   return {
     filename: "rules/:naru",
     source: `import * as rules from "./${path.slice("rules/".length)}";
-export async function __naruScope(ctx, args) { return rules.scope(ctx, args); }
-export async function __naruWrite(ctx, args) { return (await rules.canWrite(ctx, args)) === true; }
+export async function __naruScope(ctx, args) {
+  if (typeof rules.scope !== "function") throw new Error("it exports no scope function.");
+  return rules.scope(ctx, args);
+}
+// true, or what canWrite gave instead, for the refusal to quote.
+export async function __naruWrite(ctx, args) {
+  if (typeof rules.canWrite !== "function") return "no canWrite function";
+  const allowed = await rules.canWrite(ctx, args);
+  if (allowed === true) return true;
+  const shown = allowed === undefined ? "undefined" : JSON.stringify(allowed) ?? String(allowed);
+  return "canWrite returned " + (shown.length > 60 ? shown.slice(0, 60) + "…" : shown);
+}
 export function __naruView() {
   if (typeof rules.present !== "function") return null;
   const fields = rules.queryable ?? [];

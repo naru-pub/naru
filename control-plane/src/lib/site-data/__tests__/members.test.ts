@@ -946,6 +946,89 @@ integration("site members", () => {
     await owned("DELETE", ["rule_roles"]);
   });
 
+  test("a rule's refusals and mistakes name the rule, and ctx.fail speaks for it", async () => {
+    const reader = await signIn("dave");
+    await owned("POST", [], { name: "told", read: "member", write: "member" });
+    await owned("PUT", ["told", "one"], { data: { text: "a" } });
+    const rule = async (source: string) => {
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "rules",
+        file: "told",
+        source,
+      });
+      await owned("PATCH", ["told"], {
+        read: "member",
+        write: "member",
+        rules: "told",
+      });
+    };
+    const write = () =>
+      as(reader.accessToken, "PUT", ["told", "one"], { data: { text: "b" } });
+    const read = () => as(reader.accessToken, "GET", ["told"]);
+
+    // Forgetting to return true is the usual mistake: the refusal says so.
+    await rule(`export function scope() { return true; }
+      export function canWrite() {}`);
+    await expect(write()).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringMatching(
+        /_naru\/rules\/told\.js refused this \w+ on told: canWrite returned undefined\. .*returns true/,
+      ),
+    });
+    await rule(`export function scope() { return true; }`);
+    await expect(write()).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringContaining("no canWrite function"),
+    });
+    // ctx.fail in a rule is the site's own word, as in a function.
+    await rule(`export function scope() { return true; }
+      export function canWrite(ctx) { ctx.fail("ACCESS_DENIED", "운영진만 고칠 수 있습니다."); }`);
+    await expect(write()).rejects.toMatchObject({
+      status: 403,
+      message: "운영진만 고칠 수 있습니다.",
+      site: true,
+    });
+    await rule(
+      `export function scope(ctx) { ctx.fail("AUTH_REQUIRED", "회원만 볼 수 있는 게시판입니다."); }`,
+    );
+    await expect(read()).rejects.toMatchObject({
+      status: 401,
+      message: "회원만 볼 수 있는 게시판입니다.",
+      site: true,
+    });
+    await rule(`export function scope() { return { eq: "board" }; }`);
+    await expect(read()).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining(
+        "Collection rule _naru/rules/told.js scope() for told returned an invalid predicate",
+      ),
+    });
+    await rule(`export function scope() { throw new Error("no board"); }`);
+    await expect(read()).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(
+        /Collection rule _naru\/rules\/told\.js failed in scope\(\) for told: .*no board/,
+      ),
+    });
+    await rule(`export const nothing = 1;`);
+    await expect(read()).rejects.toMatchObject({
+      message: expect.stringContaining("exports no scope function"),
+    });
+    await owned("PATCH", ["told"], {
+      read: "member",
+      write: "member",
+      rules: "unpublished",
+    });
+    await expect(read()).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringContaining(
+        "Collection told uses _naru/rules/unpublished.js, which the site's published files do not have",
+      ),
+    });
+    await owned("DELETE", ["told"]);
+  });
+
   test("a collection rule imports shared modules from the same revision", async () => {
     const bob = await signIn("dave");
     await owned("POST", [], { name: "gated", read: "member", write: "member" });

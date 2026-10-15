@@ -158,6 +158,13 @@ export type Predicate =
   | {
       /** An array field holding the value (1.1.0). */
       has: readonly [string, string | number | boolean | null];
+    }
+  | {
+      /**
+       * A string field with this text in it, 1–100 characters; A–Z match
+       * in either case (1.1.0).
+       */
+      contains: readonly [string, string];
     };
 
 /** One or two keys: a user field by name, or document metadata. */

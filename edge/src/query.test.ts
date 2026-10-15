@@ -207,6 +207,37 @@ describe("array membership", () => {
   });
 });
 
+describe("text search", () => {
+  test("contains finds text within a string field, A–Z in either case", () => {
+    const insert = db.prepare(
+      "INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
+    );
+    insert.run(COLLECTION, "post", '{"q":"오늘의 Avocado 로그"}', BASE, BASE);
+    insert.run(COLLECTION, "list", '{"q":["avocado"]}', BASE, BASE);
+    insert.run(COLLECTION, "wild", '{"q":"100%_done"}', BASE, BASE);
+    const contains = (text: unknown) =>
+      readAll({ where: { contains: ["q", text] } });
+    expect(contains("avocado")).toEqual(["post"]);
+    expect(contains("AVOCADO")).toEqual(["post"]);
+    expect(contains("의 Av")).toEqual(["post"]);
+    expect(contains("%")).toEqual(["wild"]);
+    expect(contains("_")).toEqual(["wild"]);
+    expect(contains("없는 말")).toEqual([]);
+    expect(
+      readAll({
+        where: { any: [{ contains: ["q", "done"] }, { eq: ["v", "apple"] }] },
+      }),
+    ).toEqual(["lower", "wild"]);
+    for (const bad of ["", "x".repeat(101), 1, null])
+      expect(() =>
+        listQuery(COLLECTION, { where: { contains: ["q", bad] } }),
+      ).toThrow(/contains/);
+    expect(() =>
+      listQuery(COLLECTION, { where: { contains: [{ metadata: "id" }, "x"] } }),
+    ).toThrow(/metadata/);
+  });
+});
+
 describe("cursors and limits", () => {
   test("a time cursor keeps the six-digit form and comes back to the same instant", () => {
     const at = BASE + 123;

@@ -24,8 +24,9 @@ A module exports two functions, which may be `async`:
 - `scope(ctx, { collection, operation, id, filter, where })`: `operation` is
   `get` or `list`; `where` is the caller's own predicate, or null. Return
   `true`, `false`, or a predicate built from `all` and `any` of comparisons:
-  `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`, and `in` takes
-  `[field, [1 to 100 values]]`. Fields name top-level JSON data fields or
+  `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
+  `[field, [1 to 100 values]]`, `has` takes `[field, value]` (an array field
+  holding it) and `contains` takes `[field, text]` (a string field with it). Fields name top-level JSON data fields or
   `{ metadata: "id" | "createdBy" }`. Values are string, finite number, boolean
   or null; ranges compare strings or numbers. Comparisons match JSON types
   exactly; explicit null does not match a missing field. Inequality includes
@@ -61,6 +62,22 @@ role or board change changes that scope, start pagination again. Hidden get
 requests return NOT_FOUND. A false list scope returns an empty list and zero
 count. A denied write returns ACCESS_DENIED. Predicates are limited to 100 nodes
 and ten nesting levels; sandbox CPU, memory and read budgets remain bounded.
+
+Either hook may call `ctx.fail(code, message, details)`, as a function does:
+the request fails with that code, and the message is the site's own, shown to
+the visitor as is (`site: true`). Use it where `false` would leave a member
+guessing, a members-only board, say. Naru's own refusals name the rule for the
+owner, in the English account SDK 1.1.0 keeps as `error.cause.message`:
+
+- a write `canWrite` did not allow: `Collection rule _naru/rules/board.js
+  refused this update on posts: canWrite returned undefined. …` (a missing
+  `return true` is the usual cause), or `no canWrite function`;
+- a `scope` result that is not a predicate: `Collection rule … scope() for
+  posts returned an invalid predicate: …`;
+- a rule that throws or runs past a limit: `Collection rule … failed in
+  scope() for posts: …`, also for a module that exports no `scope`;
+- a rule the site's published files do not have: `Collection posts uses
+  _naru/rules/board.js, which the site's published files do not have; …`.
 
 [The board example](examples/community-board-rules.js) uses neo-avocado's board,
 member-role, log and comment shapes. Publish it as the rules module, then enable

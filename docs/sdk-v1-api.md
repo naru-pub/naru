@@ -339,7 +339,7 @@ do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 database methods, which return promises of what the SDK would, so `await` them:
 
 - `get(collection, id)`, `getMany(collection, ids)` (at most 100, in input
-  order, null where missing; each ID counts as an operation), and
+  order, null where missing; one operation, as a list of 100 is), and
   `count(collection, { filter, where })`;
 - `list(collection, { filter, where, sort, size, after })`;
 - `add(collection, data)`, `set(collection, id, data, { condition })` and
@@ -551,9 +551,13 @@ await posts.list({
 
 A predicate is `true`, `false`, `{ all: [...] }`, `{ any: [...] }`, or one
 comparison: `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`,
-`in` takes `[field, [1 to 100 values]]`, and `has` takes `[field, value]` and
+`in` takes `[field, [1 to 100 values]]`, `has` takes `[field, value]` and
 matches a data field holding an array with that value (1.1.0):
-`{ has: ["tags", "spring"] }`. A field is a top-level data field,
+`{ has: ["tags", "spring"] }`, and `contains` takes `[field, text]` and
+matches a string data field with that text in it, 1–100 characters, A–Z in
+either case (1.1.0): `{ contains: ["title", "spring"] }`, a board's search.
+`contains` reads every document the rest of the query leaves, so narrow it
+with a `filter` on a large collection. A field is a top-level data field,
 or `{ metadata: "id" | "createdBy" }`. Values match only their own JSON type, a
 missing field matches only `ne`, and ranges compare strings or numbers. At most
 100 nodes, ten levels deep, and 4 KiB as sent. `count({ filter, where })` takes

@@ -20,6 +20,14 @@ import {
 } from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
 import { presented, queriedFields, ruleEntry, rulePredicate } from "./rules";
+
+/** What each rule hook is in the owner's file, for errors. */
+const HOOKS: Record<string, string> = {
+  __naruScope: "scope()",
+  __naruWrite: "canWrite()",
+  __naruView: "queryable",
+  __naruPresent: "present()",
+};
 import { hashPassword, verifyPassword } from "./passwords";
 import type { ModuleSources } from "./modules";
 import type { QuickJSWASMModule } from "quickjs-emscripten-core";
@@ -769,26 +777,47 @@ export class SiteData extends DurableObject<Env> {
     if (!admin && ruleFile && rules?.file !== ruleFile)
       throw new DataError(503, "Collection rules changed; retry the request.");
     const ruleHost = this.functionHost();
+    const ruleName = `_naru/rules/${ruleFile}.js`;
     const invokeRule = (hook: string, args: unknown) => {
       if (!rules) throw new DataError(503, "Collection rules are unavailable.");
-      const entry = ruleEntry(rules.entry);
-      return runFunction(
-        rules.module,
-        {
-          ...entry,
-          modules: rules.sources,
-          name: hook,
-          args,
-          member: access.member ?? null,
-          now: Date.now(),
-          readonly: true,
-          // A page of trimmed documents can be as large as the page itself.
-          ...(hook === "__naruPresent"
-            ? { maxResultBytes: 101 * 64 * 1024 }
-            : {}),
-        },
-        ruleHost,
-      );
+      const loaded = rules;
+      const entry = ruleEntry(loaded.entry);
+      try {
+        return runRule();
+      } catch (error) {
+        // A rule's own mistake names the rule: "Function failed" alone
+        // leaves the owner guessing which file and which hook.
+        if (
+          error instanceof DataError &&
+          !error.site &&
+          error.status === 400 &&
+          error.message.startsWith("Function failed: ")
+        )
+          throw new DataError(
+            400,
+            `Collection rule ${ruleName} failed in ${HOOKS[hook]} for ${collection.name}: ${error.message.slice("Function failed: ".length)}`,
+          );
+        throw error;
+      }
+      function runRule() {
+        return runFunction(
+          loaded.module,
+          {
+            ...entry,
+            modules: loaded.sources,
+            name: hook,
+            args,
+            member: access.member ?? null,
+            now: Date.now(),
+            readonly: true,
+            // A page of trimmed documents can be as large as the page itself.
+            ...(hook === "__naruPresent"
+              ? { maxResultBytes: 101 * 64 * 1024 }
+              : {}),
+          },
+          ruleHost,
+        );
+      }
     };
     // A rule that exports `present` trims what non-owners read, and allows
     // queries only on its `queryable` fields, so hidden values cannot be
@@ -831,23 +860,22 @@ export class SiteData extends DurableObject<Env> {
               filter: input.filter ?? {},
               where: input.where ?? null,
             }),
+            `Collection rule ${ruleName} scope() for ${collection.name} returned an invalid predicate`,
           )
         : undefined;
     const checkWrite = (before: unknown, after: unknown, operation: string) => {
-      if (
-        !admin &&
-        ruleFile &&
-        invokeRule("__naruWrite", {
-          collection: collection.name,
-          before,
-          after,
-          operation,
-          secret: secretMatches,
-        }) !== true
-      )
+      if (admin || !ruleFile) return;
+      const answer = invokeRule("__naruWrite", {
+        collection: collection.name,
+        before,
+        after,
+        operation,
+        secret: secretMatches,
+      });
+      if (answer !== true)
         throw new DataError(
           403,
-          "Collection rule denied this write.",
+          `Collection rule ${ruleName} refused this ${operation} on ${collection.name}: ${answer}. A write is allowed only when canWrite returns true; to tell the visitor why not, call ctx.fail(code, message) there.`,
           "ACCESS_DENIED",
         );
     };
@@ -1106,7 +1134,7 @@ export class SiteData extends DurableObject<Env> {
       if (error instanceof DataError && error.status === 404)
         throw new DataError(
           403,
-          "Configured collection rules are missing.",
+          `Collection ${input.path[0]} uses _naru/rules/${file}.js, which the site's published files do not have; members and visitors are refused until it is published.`,
           "ACCESS_DENIED",
         );
       throw error;

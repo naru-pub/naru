@@ -12,13 +12,15 @@ export const metadata: Metadata = {
 
 const sections = [
   ["start", "01 · 빠른 시작"],
-  ["collections", "02 · 컬렉션과 공개 범위"],
-  ["admin", "03 · 관리자 로그인"],
-  ["members", "04 · 회원"],
-  ["write", "05 · 글 수정과 충돌 처리"],
-  ["read", "06 · 목록과 페이지 나누기"],
-  ["recipes", "07 · 사용 예"],
-  ["errors", "08 · 한도와 오류"],
+  ["php", "02 · PHP와 견주어 보기"],
+  ["collections", "03 · 컬렉션과 공개 범위"],
+  ["admin", "04 · 관리자 로그인"],
+  ["members", "05 · 회원과 서버 함수"],
+  ["write", "06 · 글 수정과 충돌 처리"],
+  ["read", "07 · 목록·검색·페이지"],
+  ["rules", "08 · 컬렉션 규칙"],
+  ["recipes", "09 · 사용 예"],
+  ["errors", "10 · 한도와 오류"],
 ];
 
 function Section({
@@ -159,7 +161,90 @@ export default function DatabaseDocs() {
 </script>`}</Code>
             </Section>
 
-            <Section id="collections" title="02 · 컬렉션과 공개 범위">
+            <Section id="php" title="02 · PHP와 견주어 보기">
+              <p>
+                그누보드나 PHP로 게시판을 만들어 봤다면, 나루에서도 하는 일은
+                같습니다. 다만 서버 파일 대신 페이지의 스크립트가 SDK를 부르고,
+                PHP에서 직접 짜던 검사는 서버 함수와 컬렉션 규칙이 맡습니다.
+              </p>
+              <Table
+                head={["PHP에서", "나루에서"]}
+                rows={[
+                  [
+                    <code key="c">CREATE TABLE</code>,
+                    <>
+                      <a href="#collections">
+                        <code>_naru/collections.json</code>
+                      </a>
+                      에 컬렉션을 적거나 제어판에서 만듭니다.
+                    </>,
+                  ],
+                  [
+                    <code key="c">
+                      SELECT … WHERE board = &apos;free&apos;
+                    </code>,
+                    <code key="n">
+                      list({'{ filter: { board: "free" } }'})
+                    </code>,
+                  ],
+                  [
+                    <code key="c">WHERE title LIKE &apos;%봄%&apos;</code>,
+                    <code key="n">
+                      list({'{ where: { contains: ["title", "봄"] } }'})
+                    </code>,
+                  ],
+                  [
+                    <code key="c">LIMIT 20 OFFSET 40</code>,
+                    <>
+                      <code>size: 20</code>과 <code>nextCursor</code>로 다음
+                      쪽을 읽습니다.
+                    </>,
+                  ],
+                  [
+                    <code key="c">INSERT</code>,
+                    <>
+                      <code>add(data)</code>, ID를 정하면{" "}
+                      <code>set(id, data)</code>
+                    </>,
+                  ],
+                  [
+                    <code key="c">$_SESSION[&apos;mb_id&apos;]</code>,
+                    <>
+                      <a href="#members">회원 로그인</a> 뒤의{" "}
+                      <code>member.id</code>
+                    </>,
+                  ],
+                  [
+                    <>
+                      <code>write_update.php</code>의 권한·포인트 검사
+                    </>,
+                    <>
+                      <a href="#members">서버 함수</a>(
+                      <code>_naru/functions/</code>)나{" "}
+                      <a href="#rules">컬렉션 규칙</a>(<code>_naru/rules/</code>
+                      )
+                    </>,
+                  ],
+                  [
+                    <code key="c">alert(&apos;권한이 없습니다.&apos;)</code>,
+                    <>
+                      함수와 규칙의 <code>ctx.fail(코드, 메시지)</code>.
+                      메시지가 그대로 방문자에게 보입니다.
+                    </>,
+                  ],
+                ]}
+              />
+              <p>
+                실제 커뮤니티 하나를 통째로 옮긴 예는{" "}
+                <a href="https://github.com/naru-pub/neo-avocado">
+                  네오 아보카도
+                </a>
+                입니다. 아보카도 에디션(그누보드 기반)을 나루로 옮긴 것이라, PHP
+                파일과 나루 파일을 나란히 견주어 볼 수 있습니다.
+              </p>
+            </Section>
+
+            <Section id="collections" title="03 · 컬렉션과 공개 범위">
               <p>
                 <strong>컬렉션</strong>은 문서를 모으는 곳이고,{" "}
                 <strong>문서</strong>는 ID 하나와 JSON 데이터 하나입니다. 이름과
@@ -215,9 +300,33 @@ export default function DatabaseDocs() {
                 누구나 읽을 수 있으니, 비공개로 둘 데이터는 ‘관리자만’ 읽는
                 컬렉션에 따로 저장하세요.
               </p>
+              <h3 className="font-bold">파일로 컬렉션 정하기</h3>
+              <p>
+                사이트 파일에 <code>_naru/collections.json</code>을 두면, 파일을
+                올릴 때 나루가 없는 컬렉션을 만듭니다. 템플릿을 설치한 사람도
+                제어판에서 하나씩 만들 필요가 없습니다. 이미 있는 컬렉션의 공개
+                범위나 규칙을 바꾸는 내용은 소유자가{" "}
+                <a href="/database">제어판</a>에서 확인한 뒤에 적용됩니다.
+              </p>
+              <Code language="json">{`{
+  "collections": {
+    "posts": { "read": "world", "write": "admin" },
+    "guestbook": { "read": "world", "write": "create" },
+    "profiles": { "read": "member", "write": "member", "unique": ["nick"] },
+    "logs": { "read": "world", "write": "admin", "rules": "board" }
+  }
+}`}</Code>
+              <p>
+                <code>read</code>는 <code>admin</code>·<code>member</code>·
+                <code>world</code>(누구나), <code>write</code>는 여기에{" "}
+                <code>create</code>(누구나 생성만)를 더한 넷 중 하나이며 둘 다
+                꼭 적어야 합니다. <code>unique</code>는 겹치면 안 되는 필드,{" "}
+                <code>rules</code>는 <a href="#rules">컬렉션 규칙</a> 파일
+                이름입니다.
+              </p>
             </Section>
 
-            <Section id="admin" title="03 · 관리자 로그인">
+            <Section id="admin" title="04 · 관리자 로그인">
               <p>
                 나루 홈페이지의 소유자가 로그인하면 홈페이지에 로그인할 수
                 있습니다.
@@ -249,7 +358,7 @@ export default function DatabaseDocs() {
 </script>`}</Code>
             </Section>
 
-            <Section id="members" title="04 · 회원">
+            <Section id="members" title="05 · 회원과 서버 함수">
               <p>
                 <strong>회원</strong>은 자기 나루 계정으로 이 사이트에 로그인한
                 방문자입니다. 나루 계정이 있으면 누구나 회원이 될 수 있고, 미리
@@ -339,16 +448,19 @@ const price = await member.call("shop/buy:quote");`}</Code>
               </p>
               <p>
                 <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
-                <code>random()</code>과 <code>get</code>·<code>list</code>·
-                <code>add</code>·<code>set</code>·<code>delete</code>가
-                있습니다. 데이터베이스 메서드는 Promise를 돌려주므로{" "}
-                <code>await</code>하세요. <code>await</code>하지 않은 호출이
-                있으면 함수 전체가 실패하고 되돌려집니다. 함수는{" "}
-                <code>async</code>여도 되고, 끝날 때까지 한 트랜잭션입니다.
-                네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때 데이터베이스
-                작업 100번(쓰기 25번), 수십 밀리초, 메모리 32MiB까지 씁니다.
-                함수 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니 비밀값을
-                넣지 마세요.
+                <code>random()</code>과 <code>get</code>·<code>getMany</code>·
+                <code>list</code>·<code>count</code>·<code>add</code>·
+                <code>set</code>·<code>delete</code>가 있습니다. 데이터베이스
+                메서드는 Promise를 돌려주므로 <code>await</code>하세요.{" "}
+                <code>await</code>하지 않은 호출이 있으면 함수 전체가 실패하고
+                되돌려집니다. 함수는 <code>async</code>여도 되고, 끝날 때까지 한
+                트랜잭션입니다. 네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때
+                데이터베이스 작업 100번(쓰기 25번), 수십 밀리초, 메모리
+                32MiB까지 씁니다. ID 100개를 한꺼번에 읽는 <code>getMany</code>
+                도 <code>list</code>처럼 한 번으로 셉니다. 글 20개의 글쓴이를
+                하나씩 <code>get</code>하지 말고 <code>getMany</code>로 한 번에
+                읽으세요. 함수 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니
+                비밀값을 넣지 마세요.
               </p>
               <p>
                 읽기만 하는 함수는 모듈에서{" "}
@@ -356,10 +468,32 @@ const price = await member.call("shop/buy:quote");`}</Code>
                 주세요. 그 함수는 쓸 수 없고, 회원의 분당 호출 30번 대신 읽기
                 120번에서 셉니다. 사이트 소유자도 <code>admin.call()</code>로
                 같은 함수를 부를 수 있으며, 이때 <code>ctx.member</code>는 null,{" "}
-                <code>ctx.owner</code>는 true입니다.{" "}
-                <code>ctx.fail(코드, 메시지, 세부)</code>의 세부는 브라우저의{" "}
-                <code>error.details</code>로 전달됩니다.
+                <code>ctx.owner</code>는 true입니다.
               </p>
+              <p>
+                요청을 거절할 때는 <code>ctx.fail(코드, 메시지, 세부)</code>를
+                부르세요. 함수가 한 일은 모두 되돌려지고, 페이지에서 받는{" "}
+                <code>error.message</code>는 함수가 쓴 메시지 그대로라
+                방문자에게 바로 보여 줄 수 있습니다. 세부는{" "}
+                <code>error.details</code>로 전달되어, 페이지가 이유에 따라
+                다르게 처리할 수 있습니다.
+              </p>
+              <Code language="javascript">{`// _naru/functions/points.js
+export async function give(ctx, { to, amount }) {
+  if (!Number.isInteger(amount) || amount < 1)
+    ctx.fail("INVALID_REQUEST", "포인트는 1 이상의 정수로 보내 주세요.");
+  const wallet = await ctx.get("wallets", ctx.member.id);
+  if (wallet.data.points < amount)
+    ctx.fail("CONFLICT", "포인트가 부족합니다.", { reason: "short" });
+  // …
+}
+
+// 페이지에서
+try {
+  await member.call("points:give", { to, amount: 10 });
+} catch (error) {
+  status.textContent = error.message; // "포인트가 부족합니다."
+}`}</Code>
               <Code language="javascript">{`// 함수에서: 커밋된 뒤에만 보냅니다.
 ctx.notify(받는회원ID, { unread: true });
 ctx.broadcast("board", { post: "new" });
@@ -381,7 +515,7 @@ const live = member.live({
               </p>
             </Section>
 
-            <Section id="write" title="05 · 글 수정과 충돌 처리">
+            <Section id="write" title="06 · 글 수정과 충돌 처리">
               <Table
                 head={["호출", "동작"]}
                 rows={[
@@ -431,7 +565,7 @@ try {
 // saved.revision → 다음 저장의 condition`}</Code>
             </Section>
 
-            <Section id="read" title="06 · 목록과 페이지 나누기">
+            <Section id="read" title="07 · 목록·검색·페이지">
               <Code>{`const posts = naru.collection("posts");
 
 const post = await posts.get("hello");
@@ -487,9 +621,139 @@ for await (const { documents } of posts.pages({ ...query, size: 100 })) {
                   끝까지 읽지 말고 필요한 만큼만 받으세요.
                 </li>
               </ul>
+              <h3 className="font-bold">검색과 여러 조건</h3>
+              <p>
+                <code>where</code>는 filter로 못 하는 조건을 적습니다.{" "}
+                <code>all</code>(그리고)과 <code>any</code>(또는) 안에 비교를
+                넣습니다. <code>contains</code>는 글자가 들어 있는 문자열 필드를
+                찾으니, 게시판 검색에 쓰세요. 영문은 대소문자를 가리지 않습니다.
+              </p>
+              <Code>{`// 자유게시판에서 제목이나 본문에 "봄"이 들어간 글, 최신순
+const found = await posts.list({
+  filter: { board: "free" },
+  where: {
+    any: [
+      { contains: ["title", "봄"] },
+      { contains: ["text", "봄"] },
+    ],
+  },
+  sort: [[{ metadata: "createdAt" }, "desc"]],
+  size: 20,
+});`}</Code>
+              <Table
+                head={["비교", "뜻"]}
+                rows={[
+                  [
+                    <code key="c">{'{ eq: ["board", "free"] }'}</code>,
+                    "같다 (ne는 다르다)",
+                  ],
+                  [
+                    <code key="c">{'{ gte: ["level", 2] }'}</code>,
+                    "크거나 같다 (gt·lt·lte도 있습니다)",
+                  ],
+                  [
+                    <code key="c">
+                      {'{ in: ["board", ["free", "notice"]] }'}
+                    </code>,
+                    "목록의 값 중 하나 (100개까지)",
+                  ],
+                  [
+                    <code key="c">{'{ has: ["tags", "여행"] }'}</code>,
+                    "배열 필드가 그 값을 담고 있다",
+                  ],
+                  [
+                    <code key="c">{'{ contains: ["title", "봄"] }'}</code>,
+                    "문자열 필드에 그 글자(1~100자)가 들어 있다",
+                  ],
+                  [
+                    <code key="c">
+                      {'{ eq: [{ metadata: "createdBy" }, member.id] }'}
+                    </code>,
+                    "그 회원이 만든 문서",
+                  ],
+                ]}
+              />
+              <p>
+                <code>count()</code>와 서버 함수의 <code>ctx.list</code>·
+                <code>ctx.count</code>도 같은 <code>where</code>를 받습니다.
+                검색은 조건에 맞는 문서를 모두 살피므로, 문서가 아주 많은
+                컬렉션에서는 <code>filter</code>로 게시판 같은 범위를 함께
+                좁히세요.
+              </p>
             </Section>
 
-            <Section id="recipes" title="07 · 사용 예">
+            <Section id="rules" title="08 · 컬렉션 규칙">
+              <p>
+                공개 범위는 컬렉션 전체에 하나입니다. ‘레벨 2 이상만 읽는
+                게시판’, ‘비밀글은 글쓴이와 운영진만’처럼 문서마다 다른 권한이
+                필요하면 <strong>컬렉션 규칙</strong>을 씁니다.{" "}
+                <code>_naru/rules/&lt;이름&gt;.js</code>에서 두 함수를 내보내고,
+                컬렉션의 <code>rules</code>에 그 이름을 적습니다. 그러면 회원과
+                방문자가 SDK로 바로 읽고 쓰는 요청마다 나루가 규칙을 먼저
+                부릅니다. 관리자는 규칙을 거치지 않습니다.
+              </p>
+              <Code language="javascript">{`// _naru/rules/board.js  (collections.json: "rules": "board")
+export async function scope(ctx, { operation, id, filter }) {
+  // 읽기: 이 회원에게 보일 문서의 조건을 돌려줍니다.
+  // 글 하나(get)는 그 글의 게시판, 목록(list)은 filter의 게시판을 봅니다.
+  const boardId =
+    operation === "get" ? (await ctx.get("posts", id))?.data.board : filter.board;
+  const board = boardId && (await ctx.get("boards", boardId));
+  if (!board) return false; // 빈 목록
+  if (board.data.membersOnly && !ctx.member)
+    ctx.fail("AUTH_REQUIRED", "회원만 볼 수 있는 게시판입니다.");
+  return {
+    all: [
+      { eq: ["board", board.id] },
+      ctx.member
+        ? { any: [{ ne: ["secret", true] }, { eq: ["owner", ctx.member.id] }] }
+        : { ne: ["secret", true] },
+    ],
+  };
+}
+
+export async function canWrite(ctx, { operation, before, after }) {
+  // 쓰기: 정확히 true를 돌려줘야 허락됩니다.
+  if (!ctx.member) return false;
+  if (operation === "create") return after.data.owner === ctx.member.id;
+  if (before.data.owner !== ctx.member.id)
+    ctx.fail("ACCESS_DENIED", "내가 쓴 글만 고칠 수 있습니다.");
+  return true;
+}`}</Code>
+              <ul className="list-disc space-y-3 pl-6">
+                <li>
+                  <code>scope</code>는 <code>true</code>(모두),{" "}
+                  <code>false</code>
+                  (아무것도), 또는 <a href="#read">where와 같은 조건</a>을
+                  돌려줍니다. 나루가 그 조건을 회원의 filter와 합쳐서 읽으므로,
+                  숨긴 글 때문에 쪽이 짧아지거나 개수가 틀리지 않습니다.{" "}
+                  <code>false</code>는 오류가 아니라 빈 목록이 되니, 왜 안
+                  보이는지 알려야 하면 <code>ctx.fail</code>을 쓰세요.
+                </li>
+                <li>
+                  <code>canWrite</code>는 <code>create</code>·
+                  <code>update</code>·<code>delete</code>마다 불리고, 정확히{" "}
+                  <code>true</code>를 돌려줄 때만 허락합니다.{" "}
+                  <code>return</code>을 빠뜨리면 거절됩니다. 그때 오류의 원인(
+                  <code>error.cause.message</code>)에{" "}
+                  <code>canWrite returned undefined</code>처럼 규칙 파일과 받은
+                  값이 적혀 있습니다.
+                </li>
+                <li>
+                  규칙은 <code>ctx.get</code>·<code>ctx.list</code>로 읽기만 할
+                  수 있고, <code>_naru/modules/</code>의 공통 코드를 서버 함수와
+                  함께 쓸 수 있습니다. 규칙 파일이 없거나 오류가 나면 회원과
+                  방문자의 요청은 거절됩니다.
+                </li>
+                <li>
+                  일부 필드만 숨기려면 <code>present</code>와{" "}
+                  <code>queryable</code>도 내보냅니다. 자세한 내용은{" "}
+                  <a href="/docs/sdk/1.1.0">SDK 레퍼런스</a>를 보세요.
+                </li>
+              </ul>
+            </Section>
+
+            <Section id="recipes" title="09 · 사용 예">
               <div className="grid gap-4 md:grid-cols-2">
                 {[
                   {
@@ -539,6 +803,14 @@ await posts.set(id, { ...post.data, cover: image.url },
   { condition: { revision: post.revision } });`,
                   },
                   {
+                    title: "게시판 검색",
+                    setup: "posts · 읽기 누구나 / 쓰기 관리자만",
+                    code: `naru.collection("posts").list({
+  filter: { board: "free" },
+  where: { contains: ["title", word] },
+});`,
+                  },
+                  {
                     title: "특정 글의 댓글",
                     setup: "comments · 읽기 누구나 / 쓰기 누구나 생성만",
                     code: `naru
@@ -571,7 +843,7 @@ await posts.set(id, { ...post.data, cover: image.url },
               </p>
             </Section>
 
-            <Section id="errors" title="08 · 한도와 오류">
+            <Section id="errors" title="10 · 한도와 오류">
               <ul className="list-disc space-y-3 pl-6">
                 <li>
                   사이트당 컬렉션 100개, 문서 10,000개, 데이터 10 MiB. 요청
@@ -583,8 +855,13 @@ await posts.set(id, { ...post.data, cover: image.url },
                 <li>관리자 로그인 페이지는 사이트당 20개까지 등록합니다.</li>
               </ul>
               <p>
-                실패하면 <code>NaruError</code>를 던집니다. <code>code</code>로
-                구분하세요.
+                실패하면 <code>NaruError</code>를 던집니다. 방문자에게는{" "}
+                <code>error.message</code>를 보여 주세요. 나루의 오류는 한국어로
+                적혀 있고, 서버 함수나 규칙의 <code>ctx.fail</code>은 그 메시지
+                그대로입니다. 무엇이 왜 실패했는지 개발자를 위한 자세한 설명은{" "}
+                <code>error.cause.message</code>에 영어로 있으니, 막히면
+                콘솔에서 확인하세요. 처리를 나눌 때는 <code>code</code>를
+                쓰세요.
               </p>
               <Table
                 head={["code", "뜻"]}
@@ -592,7 +869,7 @@ await posts.set(id, { ...post.data, cover: image.url },
                   ["NOT_FOUND", "문서, 컬렉션 또는 사이트가 없습니다."],
                   [
                     "ACCESS_DENIED",
-                    "공개 범위나 등록된 컬렉션이 허용하지 않습니다.",
+                    "공개 범위, 등록된 컬렉션 또는 컬렉션 규칙이 허용하지 않습니다.",
                   ],
                   [
                     "AUTH_REQUIRED",
@@ -620,8 +897,8 @@ await posts.set(id, { ...post.data, cover: image.url },
               <Code>{`try {
   await naru.collection("guestbook").add({ message });
 } catch (error) {
-  status.textContent =
-    error.code === "RATE_LIMITED" ? "잠시 후 다시 시도하세요." : error.message;
+  status.textContent = error.message; // 예: "요청이 너무 많습니다. 잠시 뒤에 다시 해 주세요."
+  console.error(error.cause?.message); // 개발자를 위한 자세한 설명
 }`}</Code>
             </Section>
           </article>
