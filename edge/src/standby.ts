@@ -200,6 +200,18 @@ export class Standby extends DurableObject<StandbyEnv> {
     return { mode: next.mode, healthy, action };
   }
 
+  /**
+   * A request that reached sdk.naru.pub here while the mini is up, sent on
+   * to origin.sdk.naru.pub. From this object: the Worker's own data center
+   * (Los Angeles, for Korea) could not connect to the mini's home line in
+   * the 2026-10-15 drill, while this object's probes always did.
+   */
+  async forward(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    url.hostname = this.env.SDK_ORIGIN_HOST!;
+    return fetch(new Request(url, request));
+  }
+
   /** By hand, for drills: switch to `mode` now, whatever the checks say. */
   async force(input: { mode: Mode }) {
     if (input?.mode !== "mini" && input?.mode !== "standby")

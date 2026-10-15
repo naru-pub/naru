@@ -242,8 +242,12 @@ async function currentMode(env: Env): Promise<Mode> {
 async function sdkHost(request: Request, env: Env, ctx: ExecutionContext) {
   const url = new URL(request.url);
   if ((await currentMode(env)) !== "standby") {
-    url.hostname = env.SDK_ORIGIN_HOST!;
-    return fetch(new Request(url, request));
+    // Through the standby's object, which reaches the mini (standby.ts). A
+    // live connection cannot go through it: the SDK retries, and reaches the
+    // mini once the visitor's DNS does.
+    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket")
+      return failure(503, "Reconnect shortly.");
+    return standbyObject(env)!.forward(request);
   }
   if (url.pathname === "/healthz") return new Response("standby");
   if (url.pathname.startsWith("/sdk/")) return serveSdk(request, env);
