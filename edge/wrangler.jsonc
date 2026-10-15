@@ -89,4 +89,8 @@
     "SDK_ORIGIN_HOST": "origin.sdk.naru.pub",
   },
   "observability": { "enabled": true },
+  // The standby's health check, each minute (src/standby.ts). Its secrets,
+  // set with `wrangler secret put`: CLOUDFLARE_DNS_TOKEN, which can edit
+  // naru.pub's DNS, and DISCORD_WEBHOOK.
+  "triggers": { "crons": ["* * * * *"] },
 }

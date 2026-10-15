@@ -46,6 +46,9 @@ type State = {
   /** A warning already posted for the present spell, so it is not repeated. */
   warned: boolean;
   changedAt: number;
+  /** The last minute the health check ran, and what it found. */
+  checkedAt?: number;
+  healthy?: boolean;
 };
 
 export const FAIL_AFTER = 3;
@@ -193,7 +196,7 @@ export class Standby extends DurableObject<StandbyEnv> {
       );
     }
     if (warning) await this.notify(`⚠️ ${warning}`);
-    await this.save(next);
+    await this.save({ ...next, checkedAt: Date.now(), healthy });
     return { mode: next.mode, healthy, action };
   }
 
