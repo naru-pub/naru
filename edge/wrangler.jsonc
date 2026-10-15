@@ -77,7 +77,7 @@
     "SITE_FILE_CACHE_SECONDS": "86400",
     // Sites whose databases are on the mini (sdk.naru.pub), comma-separated:
     // their requests here go on to the control plane (src/website.ts).
-    "MOVED_SITES": "neo-avocado",
+    "MOVED_SITES": "*",
   },
   "observability": { "enabled": true },
 }
