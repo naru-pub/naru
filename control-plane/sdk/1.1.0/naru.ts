@@ -265,8 +265,9 @@ export interface Collection<T = Json> {
   ): Promise<void>;
 }
 
-/** The names SDK 1.0.0 gave the one collection handle. */
+/** @deprecated 1.0.0's name for a visitor's handle, kept so 1.0.0 code compiles: use `Collection`. */
 export type PublicCollection<T = Json> = Collection<T>;
+/** @deprecated 1.0.0's name for the owner's handle, kept so 1.0.0 code compiles: use `Collection`. */
 export type AdminCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
@@ -302,10 +303,7 @@ export interface Member {
   live(options: LiveOptions): Live;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(
-      id: string,
-      options?: { signal?: AbortSignal },
-    ): Promise<void>;
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -382,10 +380,7 @@ export interface Admin {
   >;
   media: {
     /** Deletes a stored upload by ID; members may delete only their own uploads. */
-    delete(
-      id: string,
-      options?: { signal?: AbortSignal },
-    ): Promise<void>;
+    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
@@ -823,11 +818,7 @@ function condition(
     : "?ifAbsent=1";
 }
 
-function documents<T>(
-  root: string,
-  name: string,
-  send: Send,
-): Collection<T> {
+function documents<T>(root: string, name: string, send: Send): Collection<T> {
   const path = `${root}/${segment(name)}`;
   const touches = [path];
   const list: Collection<T>["list"] = (options = {}) =>
@@ -1087,10 +1078,7 @@ function put(
 // handle sends them with.
 function media(root: string, send: Send): Admin["media"] {
   return Object.freeze({
-    async delete(
-      id: string,
-      { signal }: { signal?: AbortSignal } = {},
-    ) {
+    async delete(id: string, { signal }: { signal?: AbortSignal } = {}) {
       if (signal?.aborted)
         throw (
           signal.reason ??

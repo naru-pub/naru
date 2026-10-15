@@ -5,6 +5,7 @@ import {
   type Admin,
   type Document,
   type Collection,
+  type AdminCollection,
   type Member,
   type PublicCollection,
 } from "../public/sdk/1.1.0/naru.js";
@@ -20,15 +21,16 @@ async function members() {
   const id: string = member.id;
   // @ts-expect-error A member's id is the site's to read, not to change.
   member.id = "someone";
-  const profiles: Collection<Profile> =
-    member.collection<Profile>("profiles");
+  const profiles: Collection<Profile> = member.collection<Profile>("profiles");
   const mine: Document<Profile> = await profiles.set(id, { nick: "bob" });
   const author: string | null = mine.createdBy;
   await profiles.delete(id, { condition: { revision: mine.revision } });
   // @ts-expect-error Data keeps its type.
   await profiles.add({ nick: 1 });
-  // A member's handle is a visitor's handle, and more.
-  const visitor: PublicCollection<Profile> = profiles;
+  // A member's handle is a visitor's and the owner's: one Collection.
+  const visitor: Collection<Profile> = naru.collection<Profile>("profiles");
+  // 1.0.0's names for it still compile.
+  const legacy: PublicCollection<Profile> & AdminCollection<Profile> = profiles;
   const file = await member.media.upload(new Blob(["x"]), {
     onProgress: (progress) => progress.phase,
   });
@@ -36,7 +38,7 @@ async function members() {
   // @ts-expect-error Batches are the owner's.
   void member.batch;
   await member.signOut();
-  void [author, visitor, url];
+  void [author, visitor, legacy, url];
 }
 
 async function owner() {

@@ -1209,17 +1209,7 @@
     {
       "name": "PublicCollection",
       "kind": "type",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "The names SDK 1.0.0 gave the one collection handle."
-            }
-          ]
-        }
-      ],
+      "summary": [],
       "throws": [],
       "signature": "type PublicCollection<T = Json> = Collection<T>"
     },

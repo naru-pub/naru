@@ -215,8 +215,9 @@ export interface Collection<T = Json> {
   ): Promise<void>;
 }
 
-/** The names SDK 1.0.0 gave the one collection handle. */
+/** @deprecated 1.0.0's name for a visitor's handle, kept so 1.0.0 code compiles: use `Collection`. */
 export type PublicCollection<T = Json> = Collection<T>;
+/** @deprecated 1.0.0's name for the owner's handle, kept so 1.0.0 code compiles: use `Collection`. */
 export type AdminCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
