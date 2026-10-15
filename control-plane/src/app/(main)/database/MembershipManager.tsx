@@ -1,4 +1,5 @@
 "use client";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useState } from "react";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -125,12 +126,13 @@ export default function MembershipManager() {
               <option value="closed">신규 가입 중단</option>
             </Select>
           </label>
-          <label className="flex gap-3 items-center">
-            <input
-              type="checkbox"
+          <label className="flex cursor-pointer gap-3 items-center">
+            <Checkbox
               checked={page.verifiedEmail}
               disabled={busy}
-              onChange={(e) => change({ verifiedEmail: e.target.checked })}
+              onCheckedChange={(checked) =>
+                change({ verifiedEmail: checked === true })
+              }
             />
             이메일을 인증한 나루 계정만 회원으로 로그인
           </label>

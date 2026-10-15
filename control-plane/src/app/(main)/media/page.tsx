@@ -13,7 +13,7 @@ export default async function MediaPage() {
   if (!(await userHasFeature(user.id, "database"))) redirect("/supporter");
 
   return (
-    <div className="mx-auto h-full w-full max-w-7xl space-y-6 overflow-auto p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
         <div className="min-w-0 space-y-2">
           <p className="text-sm text-muted-foreground break-all">

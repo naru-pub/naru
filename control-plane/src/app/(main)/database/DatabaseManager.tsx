@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -134,7 +135,7 @@ export default function DatabaseManager({
   // A page on the site's own subdomain needs no site option; custom domains do.
   const snippet = `import { createNaru } from "${origin}/sdk/1/naru.js";\nconst naru = createNaru({ site: ${JSON.stringify(site)} });\nconst entries = naru.collection(${JSON.stringify(selected || "guestbook")});\nconst page = await entries.list();`;
   return (
-    <div className="mx-auto h-full w-full max-w-7xl overflow-auto p-4 space-y-6 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-7xl p-4 space-y-6 sm:p-6 lg:p-8">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
         <div className="space-y-2 min-w-0">
           <p className="text-sm text-muted-foreground break-all">
@@ -223,14 +224,19 @@ export default function DatabaseManager({
               </form>
               {collections.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <Checkbox
                       aria-label="모든 컬렉션 선택"
-                      checked={marked.length === collections.length}
-                      onChange={(e) =>
+                      checked={
+                        marked.length === 0
+                          ? false
+                          : marked.length === collections.length
+                            ? true
+                            : "indeterminate"
+                      }
+                      onCheckedChange={(checked) =>
                         setMarked(
-                          e.target.checked
+                          checked === true
                             ? collections.map((c) => c.name)
                             : [],
                         )
@@ -252,15 +258,13 @@ export default function DatabaseManager({
               )}
               <div className="flex flex-col gap-2" aria-label="컬렉션 목록">
                 {collections.map((c) => (
-                  <div key={c.name} className="flex items-stretch gap-2">
-                    <input
-                      type="checkbox"
-                      className="shrink-0"
+                  <div key={c.name} className="flex items-center gap-2">
+                    <Checkbox
                       aria-label={`${c.name} 선택`}
                       checked={marked.includes(c.name)}
-                      onChange={(e) =>
+                      onCheckedChange={(checked) =>
                         setMarked((current) =>
-                          e.target.checked
+                          checked === true
                             ? [...current, c.name]
                             : current.filter((name) => name !== c.name),
                         )
