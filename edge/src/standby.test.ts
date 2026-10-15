@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
-const { decide, FAIL_AFTER, HEARTBEAT_FRESH_MS, RETURN_AFTER } =
+const { decide, FAIL_AFTER, HEARTBEAT_FRESH_MS, RETURN_AFTER, STALE_AFTER_MS } =
   await import("./standby");
 
 const NOW = 1_800_000_000_000;
@@ -117,5 +117,20 @@ describe("the standby's health check", () => {
   test("a failed probe while failed over starts the healthy count again", () => {
     const four = run(failedOver, true, RETURN_AFTER - 1).at(-1)!.state;
     expect(decide(four, false, NOW).state.successes).toBe(0);
+  });
+
+  test("warns once when the mini answers but stops reporting in, and once when it is back", () => {
+    const quiet = { ...base, heartbeatAt: NOW - STALE_AFTER_MS };
+    const results = run(quiet, true, 3);
+    expect(results.every((r) => r.action === null)).toBe(true);
+    expect(results.filter((r) => r.warning).length).toBe(1);
+    expect(results[0].warning).toMatch(/standby-sync/);
+    const back = decide(
+      { ...results.at(-1)!.state, heartbeatAt: NOW },
+      true,
+      NOW + 60_000,
+    );
+    expect(back.note).toMatch(/reports in again/);
+    expect(back.state.staleWarned).toBe(false);
   });
 });

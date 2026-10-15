@@ -46,6 +46,8 @@ type State = {
   /** A warning already posted for the present spell, so it is not repeated. */
   warned: boolean;
   changedAt: number;
+  /** A warning posted that the mini stopped reporting in while it answers. */
+  staleWarned?: boolean;
   /** The last minute the health check ran, and what it found. */
   checkedAt?: number;
   healthy?: boolean;
@@ -54,6 +56,11 @@ type State = {
 export const FAIL_AFTER = 3;
 export const RETURN_AFTER = 5;
 export const HEARTBEAT_FRESH_MS = 3 * 60_000;
+/**
+ * The mini answers but has not reported in for this long: the copies here
+ * are going stale, so the standby would serve old data if it had to.
+ */
+export const STALE_AFTER_MS = 10 * 60_000;
 const PROBE_TIMEOUT_MS = 8_000;
 
 const INITIAL: State = {
@@ -77,6 +84,8 @@ export function decide(
   state: State;
   action: "failover" | "return" | null;
   warning: string | null;
+  /** Good news to post, such as copies being kept up to date again. */
+  note?: string | null;
 } {
   const next = { ...state };
   const heartbeatFresh = now - state.heartbeatAt < HEARTBEAT_FRESH_MS;
@@ -84,6 +93,25 @@ export function decide(
     if (healthy) {
       next.failures = 0;
       next.warned = false;
+      const stale =
+        state.heartbeatAt > 0 && now - state.heartbeatAt >= STALE_AFTER_MS;
+      if (stale && !state.staleWarned) {
+        next.staleWarned = true;
+        return {
+          state: next,
+          action: null,
+          warning: `sdk.naru.pub: the standby's copies are not being kept up to date: the mini answers but has not reported in for ${Math.round((now - state.heartbeatAt) / 60_000)} minutes. Check naru's standby-sync job.`,
+        };
+      }
+      if (!stale && state.staleWarned) {
+        next.staleWarned = false;
+        return {
+          state: next,
+          action: null,
+          warning: null,
+          note: "✅ sdk.naru.pub: the mini reports in again; the standby's copies are kept up to date.",
+        };
+      }
       return { state: next, action: null, warning: null };
     }
     next.failures++;
@@ -185,6 +213,7 @@ export class Standby extends DurableObject<StandbyEnv> {
       state: next,
       action,
       warning,
+      note,
     } = decide(state, healthy, Date.now(), standbyCounts);
     if (action) {
       // DNS first: if it cannot be changed, nothing else changes either.
@@ -196,6 +225,7 @@ export class Standby extends DurableObject<StandbyEnv> {
       );
     }
     if (warning) await this.notify(`⚠️ ${warning}`);
+    if (note) await this.notify(note);
     await this.save({ ...next, checkedAt: Date.now(), healthy });
     return { mode: next.mode, healthy, action };
   }
