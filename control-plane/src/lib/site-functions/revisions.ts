@@ -26,7 +26,8 @@ export interface RevisionBucket {
 }
 const MAX_FILES = 256,
   MAX_REVISION_BYTES = 4 * 1024 * 1024,
-  CACHE_BYTES = 8 * 1024 * 1024;
+  CACHE_BYTES = 32 * 1024 * 1024,
+  CACHE_ENTRIES = 2048;
 type Manifest = {
   version: 2;
   publication: string;
@@ -44,12 +45,31 @@ const conflict = () =>
     "Function files changed while publishing. Retry the update.",
     "CONFLICT",
   );
+/**
+ * What revisions were read, for every site in this isolate: each entry is
+ * named by the hash of what it holds (a manifest by its revision, a source
+ * by its digest), so sites cannot see each other's, and one site's object
+ * starting again finds them here instead of in the bucket. That matters
+ * where the bucket is far, as R2 is from the mini (edge/seoul/), and site
+ * objects are evicted when idle.
+ */
+const shared = {
+  manifests: new Map<string, Manifest>(),
+  sources: new Map<string, string>(),
+  dependencies: new Map<string, string[]>(),
+  bytes: 0,
+};
+
+/** Empties the shared cache, as a new isolate starts: for tests of cold loads. */
+export function forgetCachedRevisions() {
+  shared.manifests.clear();
+  shared.sources.clear();
+  shared.dependencies.clear();
+  shared.bytes = 0;
+}
+
 /** Immutable module snapshots. Mutable working files are never fetched during execution. */
 export class FunctionRevisions {
-  private manifests = new Map<string, Manifest>();
-  private sources = new Map<string, string>();
-  private dependencies = new Map<string, string[]>();
-  private bytes = 0;
   constructor(
     private bucket: RevisionBucket,
     private site: string,
@@ -157,15 +177,15 @@ export class FunctionRevisions {
     await this.bucket.put(this.key(revision, "manifest.json"), body, {
       onlyIf: { etagDoesNotMatch: "*" },
     });
-    this.manifests.set(revision, manifest);
-    if (this.manifests.size > 4)
-      this.manifests.delete(this.manifests.keys().next().value!);
+    shared.manifests.set(revision, manifest);
+    if (shared.manifests.size > 64)
+      shared.manifests.delete(shared.manifests.keys().next().value!);
     return revision;
   }
   private async manifest(revision: string): Promise<Manifest> {
     if (!/^[a-f0-9]{64}$/.test(revision))
       throw new DataError(503, "Invalid function revision.");
-    const cached = this.manifests.get(revision);
+    const cached = shared.manifests.get(revision);
     if (cached) return cached;
     const object = await this.bucket.get(this.key(revision, "manifest.json"));
     if (!object) throw new DataError(503, "Function revision is unavailable.");
@@ -198,9 +218,9 @@ export class FunctionRevisions {
         names.some((name) => typeof name !== "string")
       )
         throw new DataError(503, "Invalid function manifest.");
-    this.manifests.set(revision, manifest);
-    if (this.manifests.size > 4)
-      this.manifests.delete(this.manifests.keys().next().value!);
+    shared.manifests.set(revision, manifest);
+    if (shared.manifests.size > 64)
+      shared.manifests.delete(shared.manifests.keys().next().value!);
     return manifest;
   }
   /**
@@ -230,10 +250,10 @@ export class FunctionRevisions {
       async (filename) => {
         const digest = manifest.files[filename];
         if (!digest) return null;
-        const cached = this.sources.get(digest);
+        const cached = shared.sources.get(digest);
         if (cached !== undefined) {
-          this.sources.delete(digest);
-          this.sources.set(digest, cached);
+          shared.sources.delete(digest);
+          shared.sources.set(digest, cached);
           return cached;
         }
         const object = await this.bucket.get(this.key(revision, filename));
@@ -248,25 +268,30 @@ export class FunctionRevisions {
             "Function module failed integrity verification.",
           );
         const size = new TextEncoder().encode(source).byteLength;
-        this.sources.set(digest, source);
-        this.bytes += size;
-        while (this.bytes > CACHE_BYTES || this.sources.size > 256) {
-          const first = this.sources.keys().next().value!;
-          this.bytes -= new TextEncoder().encode(
-            this.sources.get(first)!,
+        shared.sources.set(digest, source);
+        shared.bytes += size;
+        while (
+          shared.bytes > CACHE_BYTES ||
+          shared.sources.size > CACHE_ENTRIES
+        ) {
+          const first = shared.sources.keys().next().value!;
+          shared.bytes -= new TextEncoder().encode(
+            shared.sources.get(first)!,
           ).byteLength;
-          this.sources.delete(first);
+          shared.sources.delete(first);
         }
         return source;
       },
       (source, filename) => {
         const key = `${filename}:${manifest.files[filename]}`;
-        let dependencies = this.dependencies.get(key);
+        let dependencies = shared.dependencies.get(key);
         if (!dependencies) {
           dependencies = moduleImports(source, filename);
-          this.dependencies.set(key, dependencies);
-          if (this.dependencies.size > 256)
-            this.dependencies.delete(this.dependencies.keys().next().value!);
+          shared.dependencies.set(key, dependencies);
+          if (shared.dependencies.size > CACHE_ENTRIES)
+            shared.dependencies.delete(
+              shared.dependencies.keys().next().value!,
+            );
         }
         return dependencies;
       },

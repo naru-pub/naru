@@ -1,1 +1,4 @@
-export { FunctionRevisions } from "../../control-plane/src/lib/site-functions/revisions";
+export {
+  FunctionRevisions,
+  forgetCachedRevisions,
+} from "../../control-plane/src/lib/site-functions/revisions";

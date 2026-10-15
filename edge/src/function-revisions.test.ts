@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { FunctionRevisions } from "./function-revisions";
+import { FunctionRevisions, forgetCachedRevisions } from "./function-revisions";
 
 function storage() {
   const objects = new Map<string, string>();
@@ -90,6 +90,7 @@ test("cold loads verify source integrity", async () => {
       key.endsWith("/functions/shop.js") && key.startsWith("_naru-runtime/"),
   )!;
   db.objects.set(blob, "export function buy() { return 2; }");
+  forgetCachedRevisions();
   await expect(
     new FunctionRevisions(db.bucket, "alice").graph(first, "functions/shop.js"),
   ).rejects.toThrow("integrity");
@@ -118,6 +119,7 @@ test("each publication owns all sources, so deleting an old revision preserves r
     if (key.startsWith(`_naru-runtime/alice/revisions/${first}/`))
       db.objects.delete(key);
   // A fresh loader proves success is independent of any warm source cache.
+  forgetCachedRevisions();
   const cold = new FunctionRevisions(db.bucket, "alice");
   expect(
     (await cold.graph(second, "functions/shop.js"))["modules/prices.js"],
