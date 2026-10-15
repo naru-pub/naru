@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { sdkAsset, serveSdk, type SdkEnv } from "./sdk";
+import { SDK_CACHE, sdkAsset, serveSdk, type SdkEnv } from "./sdk";
 
 // The Worker's assets binding, held in memory: it answers a matching
 // If-None-Match with a 304, as the real one does.
@@ -59,7 +59,7 @@ describe("serving", () => {
       "content-type": "text/javascript; charset=utf-8",
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff",
-      "cache-control": "no-cache",
+      "cache-control": SDK_CACHE,
       etag: '"/1.0.0/naru.js"',
     });
   });
@@ -76,7 +76,7 @@ describe("serving", () => {
       headers: { "If-None-Match": '"/1.0.0/naru.js"' },
     });
     expect(response.status).toBe(304);
-    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("cache-control")).toBe(SDK_CACHE);
   });
 
   test("is not found for a release it does not have", async () => {

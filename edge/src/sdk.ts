@@ -13,6 +13,7 @@ export interface SdkEnv {
 }
 
 const VERSION = /^\d+\.\d+\.\d+$/;
+export const SDK_CACHE = "public, max-age=300, stale-while-revalidate=86400";
 const CONTENT_TYPES: Record<string, string> = {
   "naru.js": "text/javascript; charset=utf-8",
   // Declarations are text an editor or a person reads.
@@ -53,7 +54,10 @@ export async function serveSdk(request: Request, env: SdkEnv) {
   response.headers.set("Content-Type", CONTENT_TYPES[asset.split("/")[2]]);
   response.headers.set("Access-Control-Allow-Origin", "*");
   response.headers.set("X-Content-Type-Options", "nosniff");
-  // Browsers revalidate, so a fix reaches /sdk/1/ on the next load.
-  response.headers.set("Cache-Control", "no-cache");
+  // A page loads it from the browser's cache for a day, checking for a newer
+  // one in the background once five minutes have passed: no round trip to
+  // the edge on a return visit (from Korea that can be Los Angeles), and a
+  // fix still reaches every browser within minutes.
+  response.headers.set("Cache-Control", SDK_CACHE);
   return response;
 }

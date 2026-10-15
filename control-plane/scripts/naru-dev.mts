@@ -561,9 +561,9 @@ const TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".ts": "text/plain; charset=utf-8",
 };
-// Pages import the SDK from sdk.naru.pub, or naru.pub as they used to; the map
-// sends both to this server, as one module, and the service worker serves
-// uploads from it.
+// Pages import the SDK from naru.pub (sdk.naru.pub serves the same files);
+// the map sends both to this server, as one module, and the service worker
+// serves uploads from it.
 const importMap = `<script>navigator.serviceWorker?.register("/_naru-dev/media-worker.js",{scope:"/"})</script><script type="importmap">${JSON.stringify(
   {
     imports: Object.fromEntries(
