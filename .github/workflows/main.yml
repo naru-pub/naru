@@ -123,6 +123,35 @@ jobs:
         env:
           NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
 
+  # The edge Worker as the mini runs it (edge/seoul/): built, served with
+  # workerd and checked (smoke.mjs), then packed with that workerd for
+  # `mise run deploy naru-sdk` in infra. macOS runners are Apple Silicon, like
+  # the mini.
+  build-sdk-seoul:
+    defaults:
+      run:
+        working-directory: edge
+    permissions:
+      contents: read
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@11.5.2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:seoul
+      - run: |
+          cp node_modules/.pnpm/@cloudflare+workerd-darwin-arm64@*/node_modules/@cloudflare/workerd-darwin-arm64/bin/workerd seoul/dist/workerd
+          rm -rf seoul/dist/site-objects
+          tar -czf naru-sdk-seoul-macos-arm64.tar.gz -C seoul/dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naru-sdk-seoul-macos-arm64
+          path: edge/naru-sdk-seoul-macos-arm64.tar.gz
+          retention-days: 30
+
   # Runs the images just pushed as a deploy would. A deploy takes only a
   # commit whose whole run succeeded, so a failure here keeps it off the server.
   smoke-test-control-plane:
