@@ -12,15 +12,16 @@ export const metadata: Metadata = {
 
 const sections = [
   ["start", "01 · 빠른 시작"],
-  ["php", "02 · PHP와 견주어 보기"],
-  ["collections", "03 · 컬렉션과 공개 범위"],
-  ["admin", "04 · 관리자 로그인"],
-  ["members", "05 · 회원과 서버 함수"],
-  ["write", "06 · 글 수정과 충돌 처리"],
-  ["read", "07 · 목록·검색·페이지"],
-  ["rules", "08 · 컬렉션 규칙"],
-  ["recipes", "09 · 사용 예"],
-  ["errors", "10 · 한도와 오류"],
+  ["ideas", "02 · 나루가 일하는 방식"],
+  ["php", "03 · PHP와 견주어 보기"],
+  ["collections", "04 · 컬렉션과 공개 범위"],
+  ["admin", "05 · 관리자 로그인"],
+  ["members", "06 · 회원과 서버 함수"],
+  ["write", "07 · 글 수정과 충돌 처리"],
+  ["read", "08 · 목록·검색·페이지"],
+  ["rules", "09 · 컬렉션 규칙"],
+  ["recipes", "10 · 사용 예"],
+  ["errors", "11 · 한도와 오류"],
 ];
 
 function Section({
@@ -161,7 +162,93 @@ export default function DatabaseDocs() {
 </script>`}</Code>
             </Section>
 
-            <Section id="php" title="02 · PHP와 견주어 보기">
+            <Section id="ideas" title="02 · 나루가 일하는 방식">
+              <p>
+                나루의 데이터베이스는 서버 없이 정적 웹사이트에 데이터를
+                더합니다. 그 대신 지켜야 할 생각이 몇 가지 있고, SDK의 모양은
+                모두 여기서 나왔습니다.
+              </p>
+              <h3 className="font-bold">페이지는 방문자의 것입니다</h3>
+              <p>
+                페이지의 스크립트는 방문자의 브라우저에서 돌고, 방문자는 그
+                코드를 마음대로 고칠 수 있습니다. 그래서 페이지가 정한 것은 믿을
+                수 없습니다. 페이지는 보여 주고 요청할 뿐이고, 누가 무엇을 할 수
+                있는지는 나루가 정합니다. 가격, 잔액, 권한, 주사위처럼 속이면 안
+                되는 것은 모두 나루에서 정하세요.
+              </p>
+              <h3 className="font-bold">세 사람, 하나의 손잡이</h3>
+              <p>
+                요청하는 사람은 셋입니다. 로그인하지 않은{" "}
+                <strong>방문자</strong>, 자기 나루 계정으로 로그인한{" "}
+                <strong>회원</strong>, 사이트의 <strong>소유자</strong>입니다.
+                셋 모두 같은 <code>collection(이름)</code>으로 같은 메서드를
+                부릅니다. 허락할지는 요청한 사람을 보고 나루가 정하므로, 페이지
+                코드가 역할마다 달라지지 않습니다.
+              </p>
+              <h3 className="font-bold">지키는 곳은 세 겹입니다</h3>
+              <p>필요한 만큼만 쓰세요. 위에서부터 가장 단순합니다.</p>
+              <Table
+                head={["필요한 것", "쓸 것", "예"]}
+                rows={[
+                  [
+                    "컬렉션 전체에 하나의 규칙",
+                    <a key="a" href="#collections">
+                      공개 범위
+                    </a>,
+                    "공지는 누구나 읽고 관리자만 쓴다",
+                  ],
+                  [
+                    "문서마다 다른 권한",
+                    <a key="a" href="#rules">
+                      컬렉션 규칙
+                    </a>,
+                    "비밀글은 글쓴이와 운영진만 읽는다",
+                  ],
+                  [
+                    "여러 문서를 함께 바꾸는 일",
+                    <a key="a" href="#members">
+                      서버 함수
+                    </a>,
+                    "물건을 사면 잔액과 재고와 인벤토리가 한꺼번에 바뀐다",
+                  ],
+                ]}
+              />
+              <p>
+                규칙은 페이지가 SDK로 바로 읽고 쓰는 길을 지키고, 서버 함수는
+                페이지가 할 수 없는 일을 대신합니다. 함수 한 번은 트랜잭션
+                하나라서, 다 되거나 아무것도 바뀌지 않습니다. 중간에 멈춘
+                구매처럼 반쯤 된 상태는 생기지 않습니다.
+              </p>
+              <h3 className="font-bold">사이트 파일이 곧 설정입니다</h3>
+              <p>
+                컬렉션, 함수, 규칙은 사이트의 <code>_naru/</code> 폴더에 둡니다.
+                사이트와 함께 GitHub에 올라가고, 템플릿을 설치하면 함께
+                복사되며, 파일을 올리면 바로 적용됩니다. 제어판에서 하나씩
+                누르지 않아도 사이트가 스스로 필요한 것을 갖춥니다. 다만 이미
+                있는 컬렉션을 바꾸는 내용은 소유자가 제어판에서 확인한 뒤에
+                적용됩니다. 이 파일들은 다른 사이트 파일처럼 누구나 볼 수 있으니
+                비밀값을 넣지 마세요.
+              </p>
+              <h3 className="font-bold">작고 빠르게, 정해진 한도 안에서</h3>
+              <p>
+                모든 사이트가 서버를 나눠 쓰므로 함수와 규칙에는 한도가
+                있습니다. 한 번에 데이터베이스 작업 100번, 수십 밀리초입니다.
+                한도는 실수를 일찍 드러냅니다. 끝없는 반복이나 한 번에 모든 글을
+                읽는 코드는 실패하고, 바꾼 것은 되돌려집니다. 많은 글을 다룰
+                때는 <code>where</code>로 필요한 것만 읽고 쪽을 나누세요.
+              </p>
+              <h3 className="font-bold">오류는 방문자에게 보여 줄 수 있게</h3>
+              <p>
+                실패하면 <code>error.message</code>를 그대로 화면에 띄워도
+                되도록, 나루의 오류는 한국어로, 함수와 규칙의{" "}
+                <code>ctx.fail</code>은 사이트가 쓴 말 그대로 옵니다. 무엇이 왜
+                실패했는지 개발자를 위한 설명은 <code>error.cause.message</code>
+                에, 처리를 나눌 값은 <code>error.code</code>와{" "}
+                <code>error.details</code>에 있습니다.
+              </p>
+            </Section>
+
+            <Section id="php" title="03 · PHP와 견주어 보기">
               <p>
                 그누보드나 PHP로 게시판을 만들어 봤다면, 나루에서도 하는 일은
                 같습니다. 다만 서버 파일 대신 페이지의 스크립트가 SDK를 부르고,
@@ -235,6 +322,49 @@ export default function DatabaseDocs() {
                 ]}
               />
               <p>
+                <code>_naru/</code>의 폴더도 PHP 사이트에 익숙한 자리가
+                있습니다.
+              </p>
+              <Table
+                head={["나루", "PHP 사이트에서", "다른 점"]}
+                rows={[
+                  [
+                    <code key="n">_naru/collections.json</code>,
+                    <>
+                      <code>install.sql</code>의 <code>CREATE TABLE</code>
+                    </>,
+                    "열(칼럼)은 정하지 않습니다. 문서마다 JSON을 담습니다.",
+                  ],
+                  [
+                    <code key="n">_naru/functions/</code>,
+                    <>
+                      폼이 보내는 <code>write_update.php</code> 같은 파일
+                    </>,
+                    <>
+                      주소 대신 이름으로 부릅니다:{" "}
+                      <code>member.call(&quot;shop:buy&quot;)</code>
+                    </>,
+                  ],
+                  [
+                    <code key="n">_naru/rules/</code>,
+                    <>
+                      페이지마다 맨 위에 쓰던{" "}
+                      <code>if ($member[&apos;mb_level&apos;] &lt; 2)</code>{" "}
+                      검사
+                    </>,
+                    "페이지가 아니라 데이터를 지킵니다. 한곳에 쓰면 모든 읽기와 쓰기에 적용됩니다.",
+                  ],
+                  [
+                    <code key="n">_naru/modules/</code>,
+                    <>
+                      <code>include &apos;lib/common.lib.php&apos;</code>로 불러
+                      쓰던 <code>lib/</code>
+                    </>,
+                    "함수와 규칙이 import합니다. 페이지에서 직접 부를 수는 없습니다.",
+                  ],
+                ]}
+              />
+              <p>
                 실제 커뮤니티 하나를 통째로 옮긴 예는{" "}
                 <a href="https://github.com/naru-pub/neo-avocado">
                   네오 아보카도
@@ -244,7 +374,7 @@ export default function DatabaseDocs() {
               </p>
             </Section>
 
-            <Section id="collections" title="03 · 컬렉션과 공개 범위">
+            <Section id="collections" title="04 · 컬렉션과 공개 범위">
               <p>
                 <strong>컬렉션</strong>은 문서를 모으는 곳이고,{" "}
                 <strong>문서</strong>는 ID 하나와 JSON 데이터 하나입니다. 이름과
@@ -326,7 +456,7 @@ export default function DatabaseDocs() {
               </p>
             </Section>
 
-            <Section id="admin" title="04 · 관리자 로그인">
+            <Section id="admin" title="05 · 관리자 로그인">
               <p>
                 나루 홈페이지의 소유자가 로그인하면 홈페이지에 로그인할 수
                 있습니다.
@@ -358,7 +488,7 @@ export default function DatabaseDocs() {
 </script>`}</Code>
             </Section>
 
-            <Section id="members" title="05 · 회원과 서버 함수">
+            <Section id="members" title="06 · 회원과 서버 함수">
               <p>
                 <strong>회원</strong>은 자기 나루 계정으로 이 사이트에 로그인한
                 방문자입니다. 나루 계정이 있으면 누구나 회원이 될 수 있고, 미리
@@ -448,17 +578,17 @@ const price = await member.call("shop/buy:quote");`}</Code>
               </p>
               <p>
                 <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
-                <code>get</code>·<code>getMany</code>·
-                <code>list</code>·<code>count</code>·<code>add</code>·
-                <code>set</code>·<code>delete</code>가 있습니다. 데이터베이스
-                메서드는 Promise를 돌려주므로 <code>await</code>하세요.{" "}
-                <code>await</code>하지 않은 호출이 있으면 함수 전체가 실패하고
-                되돌려집니다. 함수는 <code>async</code>여도 되고, 끝날 때까지 한
-                트랜잭션입니다. 네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때
-                데이터베이스 작업 100번(쓰기 25번), 수십 밀리초, 메모리
-                32MiB까지 씁니다. ID 100개를 한꺼번에 읽는 <code>getMany</code>
-                도 <code>list</code>처럼 한 번으로 셉니다. 글 20개의 글쓴이를
-                하나씩 <code>get</code>하지 말고 <code>getMany</code>로 한 번에
+                <code>get</code>·<code>getMany</code>·<code>list</code>·
+                <code>count</code>·<code>add</code>·<code>set</code>·
+                <code>delete</code>가 있습니다. 데이터베이스 메서드는 Promise를
+                돌려주므로 <code>await</code>하세요. <code>await</code>하지 않은
+                호출이 있으면 함수 전체가 실패하고 되돌려집니다. 함수는{" "}
+                <code>async</code>여도 되고, 끝날 때까지 한 트랜잭션입니다.
+                네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때 데이터베이스
+                작업 100번(쓰기 25번), 수십 밀리초, 메모리 32MiB까지 씁니다. ID
+                100개를 한꺼번에 읽는 <code>getMany</code>도 <code>list</code>
+                처럼 한 번으로 셉니다. 글 20개의 글쓴이를 하나씩{" "}
+                <code>get</code>하지 말고 <code>getMany</code>로 한 번에
                 읽으세요. 함수 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니
                 비밀값을 넣지 마세요.
               </p>
@@ -515,7 +645,7 @@ const live = member.live({
               </p>
             </Section>
 
-            <Section id="write" title="06 · 글 수정과 충돌 처리">
+            <Section id="write" title="07 · 글 수정과 충돌 처리">
               <Table
                 head={["호출", "동작"]}
                 rows={[
@@ -565,7 +695,7 @@ try {
 // saved.revision → 다음 저장의 condition`}</Code>
             </Section>
 
-            <Section id="read" title="07 · 목록·검색·페이지">
+            <Section id="read" title="08 · 목록·검색·페이지">
               <Code>{`const posts = naru.collection("posts");
 
 const post = await posts.get("hello");
@@ -682,7 +812,7 @@ const found = await posts.list({
               </p>
             </Section>
 
-            <Section id="rules" title="08 · 컬렉션 규칙">
+            <Section id="rules" title="09 · 컬렉션 규칙">
               <p>
                 공개 범위는 컬렉션 전체에 하나입니다. ‘레벨 2 이상만 읽는
                 게시판’, ‘비밀글은 글쓴이와 운영진만’처럼 문서마다 다른 권한이
@@ -753,7 +883,7 @@ export async function canWrite(ctx, { operation, before, after }) {
               </ul>
             </Section>
 
-            <Section id="recipes" title="09 · 사용 예">
+            <Section id="recipes" title="10 · 사용 예">
               <div className="grid gap-4 md:grid-cols-2">
                 {[
                   {
@@ -843,7 +973,7 @@ await posts.set(id, { ...post.data, cover: image.url },
               </p>
             </Section>
 
-            <Section id="errors" title="10 · 한도와 오류">
+            <Section id="errors" title="11 · 한도와 오류">
               <ul className="list-disc space-y-3 pl-6">
                 <li>
                   사이트당 컬렉션 100개, 문서 10,000개, 데이터 10 MiB. 요청
