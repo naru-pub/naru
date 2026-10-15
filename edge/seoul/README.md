@@ -40,6 +40,3 @@ How it differs from Cloudflare:
 Moving sites here from Cloudflare: with the control plane's `SITE_DATA_URL`
 pointing at this Worker, `node dist/cli/move-site-data.mjs` copies each site's
 database (`dump` there, `restore` here) and compares the copy table by table.
-Afterwards, setting the Cloudflare Worker's `DATA_API_ORIGIN` to
-`https://sdk.naru.pub` forwards `naru.pub/api/data/v1/*` here for pages that
-still hold an SDK aimed at naru.pub.

@@ -1,11 +1,11 @@
 // The Data SDK is served from Seoul at sdk.naru.pub (edge/seoul/), and pages
 // that load it from naru.pub/sdk/ cross the Pacific for it. Site files are
-// pointed at the new host: once by the point-sites-at-sdk-host CLI, and on
-// every GitHub deploy after, which publishes them rewritten. All of a file's
-// references change together, since a page that loaded both URLs would run
-// two copies of the SDK.
+// pointed at the new host once, by the point-sites-at-sdk-host CLI; the only
+// sites that deploy it from GitHub are naru's own, changed at their source.
+// All of a file's references change together, since a page that loaded both
+// URLs would run two copies of the SDK.
 //
-// Set SDK_ORIGIN (https://sdk.naru.pub) once it serves; unset, nothing is
+// SDK_ORIGIN is the host, such as https://sdk.naru.pub; unset, nothing is
 // rewritten.
 
 /** Files that can name the SDK's URL: pages, scripts and import maps. */

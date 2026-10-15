@@ -19,7 +19,6 @@ import {
   FILE_EXTENSION_MIMETYPE_MAP,
 } from "@/lib/const";
 import { s3Client } from "@/lib/s3";
-import { pointBytesAtSdkHost, SDK_REFERENCE_FILE } from "./sdk-host";
 import { getUserHomeDirectory, getUserObjectKey } from "@/lib/site-urls";
 import { GitHubActionsClaims } from "./githubOidc";
 
@@ -259,16 +258,6 @@ async function readObjectText(key: string) {
     }),
   );
   return response.Body?.transformToString() ?? "";
-}
-
-async function readObjectBytes(key: string) {
-  const response = await s3Client.send(
-    new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Key: key,
-    }),
-  );
-  return (await response.Body?.transformToByteArray()) ?? new Uint8Array();
 }
 
 async function sha256Object(key: string) {
@@ -631,25 +620,6 @@ async function publishDeployment(deployment: LoadedDeployment) {
       const targetPath = publicPath(deployment.target_prefix, file.path);
       const publicKey = getUserObjectKey(deployment.login_name, targetPath);
 
-      // Published pointed at the SDK's own host (sdk-host.ts). The manifest
-      // keeps the repository's checksum, so this file counts as unchanged
-      // until the repository changes it.
-      const rewritten =
-        process.env.SDK_ORIGIN && SDK_REFERENCE_FILE.test(file.path)
-          ? pointBytesAtSdkHost(await readObjectBytes(stagingKey))
-          : null;
-      if (rewritten !== null) {
-        await s3Client.send(
-          new PutObjectCommand({
-            Bucket: process.env.S3_BUCKET_NAME!,
-            Key: publicKey,
-            Body: rewritten,
-            ContentType: contentTypeFor(file),
-            Metadata: { sha256: file.sha256 },
-          }),
-        );
-        continue;
-      }
       await s3Client.send(
         new CopyObjectCommand({
           Bucket: process.env.S3_BUCKET_NAME!,

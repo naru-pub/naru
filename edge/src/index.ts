@@ -27,12 +27,6 @@ export interface Env extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv {
    * (control-plane/scripts/with-edge-worker.sh); production never does.
    */
   TEST_OPERATIONS?: string;
-  /**
-   * Where the data API lives once it has moved off Cloudflare, such as
-   * https://sdk.naru.pub: naru.pub/api/data/v1/* is then forwarded there, for
-   * pages that still hold an SDK aimed at naru.pub. Unset, it is served here.
-   */
-  DATA_API_ORIGIN?: string;
 }
 
 // Four surfaces. <login>.naru.pub, or a custom domain, is a hosted site
@@ -221,16 +215,6 @@ export default {
     if (!platformHost(hostname, env)) return hostedSite(request, env, ctx);
     if (pathname.startsWith("/sdk/")) return serveSdk(request, env);
     const route = /^\/api\/data\/v1\/([^/]+)(?:\/(.*))?$/.exec(pathname);
-    if (route && env.DATA_API_ORIGIN && hostname === env.PLATFORM_DOMAIN) {
-      // Body, headers and a WebSocket upgrade all go along as they came.
-      const url = new URL(request.url);
-      return fetch(
-        new Request(
-          new URL(url.pathname + url.search, env.DATA_API_ORIGIN),
-          request,
-        ),
-      );
-    }
     if (route)
       return website(
         request,

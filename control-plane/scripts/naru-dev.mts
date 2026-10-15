@@ -561,15 +561,18 @@ const TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".ts": "text/plain; charset=utf-8",
 };
-// Pages import the SDK from naru.pub; the map sends them to this server, and
-// the service worker serves uploads from it.
+// Pages import the SDK from sdk.naru.pub, or naru.pub as they used to; the map
+// sends both to this server, as one module, and the service worker serves
+// uploads from it.
 const importMap = `<script>navigator.serviceWorker?.register("/_naru-dev/media-worker.js",{scope:"/"})</script><script type="importmap">${JSON.stringify(
   {
     imports: Object.fromEntries(
-      ["1", "1.0.0", "1.1.0"].map((version) => [
-        `https://naru.pub/sdk/${version}/naru.js`,
-        `${origin}/sdk/${version}/naru.js`,
-      ]),
+      ["1", "1.0.0", "1.1.0"].flatMap((version) =>
+        ["https://sdk.naru.pub", "https://naru.pub"].map((host) => [
+          `${host}/sdk/${version}/naru.js`,
+          `${origin}/sdk/${version}/naru.js`,
+        ]),
+      ),
     ),
   },
 )}</script>`;
@@ -583,6 +586,7 @@ async function sdk(res: ServerResponse, path: string) {
   const source = (
     await readFile(join(root, "public/sdk", version, match[2]), "utf8")
   )
+    .replaceAll("https://sdk.naru.pub", origin)
     .replaceAll("https://naru.pub", origin)
     // Pages here are the site's own, as on <site>.naru.pub.
     .replace(

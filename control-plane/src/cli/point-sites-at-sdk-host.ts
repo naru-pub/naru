@@ -13,8 +13,7 @@ import { s3Client } from "@/lib/s3";
 // page, script or import map under <login>/ that loads naru.pub/sdk/ is
 // written back with SDK_ORIGIN instead, its content type and metadata kept,
 // and its cached copies purged. A file someone saves meanwhile is left for the
-// next run (the write is conditional on what was read). GitHub deploys do the
-// same from then on.
+// next run (the write is conditional on what was read).
 //
 //   node dist/cli/point-sites-at-sdk-host.mjs --site <login> [--site …] [--dry-run]
 
