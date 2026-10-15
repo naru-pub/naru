@@ -1,4 +1,4 @@
-import worker, { platformHost, type Env } from "./index";
+import worker, { type Env } from "./index";
 import { s3Bucket, type S3Env } from "./r2-s3";
 import { SiteData as EdgeSiteData } from "./site";
 
@@ -28,12 +28,19 @@ const SERVED = /^\/(?:sdk\/|api\/data\/v1\/|v1\/sites\/)/;
 
 export default {
   fetch(request, env, ctx) {
-    const { hostname, pathname } = new URL(request.url);
-    if (pathname === "/healthz") return new Response("ok");
-    if (!platformHost(hostname, env) || !SERVED.test(pathname))
+    const url = new URL(request.url);
+    if (url.pathname === "/healthz") return new Response("ok");
+    if (!SERVED.test(url.pathname))
       return new Response("Not found.", { status: 404 });
+    // Everything here is the platform's, however it was reached: Caddy sends
+    // sdk.naru.pub, and naru's containers call host.docker.internal. The
+    // shared router (index.ts) would take any other host for a hosted site.
+    url.hostname = `sdk.${env.PLATFORM_DOMAIN}`;
     return worker.fetch!(
-      request as Request<unknown, IncomingRequestCfProperties>,
+      new Request(url, request) as Request<
+        unknown,
+        IncomingRequestCfProperties
+      >,
       withBucket(env),
       ctx,
     );

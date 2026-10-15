@@ -69,14 +69,18 @@ async function stop() {
 
 /** One site operation, as the control plane calls it (edge/client.ts). */
 async function operate(site, operation, input) {
-  const response = await fetch(`${base}/v1/sites/${site}/${operation}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secret}`,
-      "Content-Type": "application/json",
+  // As naru's containers reach it, by a name that is not the platform's.
+  const response = await fetch(
+    `http://localhost:${port}/v1/sites/${site}/${operation}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
     },
-    body: JSON.stringify(input),
-  });
+  );
   const body = await response.json();
   return { status: response.status, ...body };
 }
@@ -107,6 +111,21 @@ try {
     (await fetch(`${base}/`, { headers: { Host: "alpha.naru.pub" } })).status,
     404,
     "hosted pages stay on Cloudflare",
+  );
+  assert.equal(
+    (
+      await fetch(`${base}/v1/sites/alpha/dump`, {
+        method: "POST",
+        headers: {
+          Host: "host.docker.internal",
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      })
+    ).status,
+    200,
+    "naru's containers reach it by host.docker.internal",
   );
   assert.equal(
     (await fetch(`${base}/v1/sites/alpha/dump`, { method: "POST", body: "{}" }))
