@@ -90,6 +90,10 @@ const worker = spawn(
     `PASSTHROUGH_ORIGIN:${origin}`,
     "--var",
     "TEST_OPERATIONS:1",
+    // Here the local Worker is every site's database, whatever production's
+    // config says has moved to the mini.
+    "--var",
+    "MOVED_SITES:",
     "--log-level",
     "warn",
   ],
