@@ -37,6 +37,11 @@ How it differs from Cloudflare:
   `X-Forwarded-For` to the client's address, replacing whatever the client
   sent: rate limits key on it here and in the control plane.
 
+Cloudflare keeps a read-only standby of every site, copied from here each
+minute by fingerprint, and fails `sdk.naru.pub` over to it when this host
+stops answering: see `docs/database.md`, "The read-only standby". Only the
+standby's copies can be overwritten (`replace`); this Worker refuses it.
+
 Moving sites here from Cloudflare: with the control plane's `SITE_DATA_URL`
 pointing at this Worker, `node dist/cli/move-site-data.mjs` copies each site's
 database (`dump` there, `restore` here) and compares the copy table by table.

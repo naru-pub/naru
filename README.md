@@ -35,8 +35,16 @@
 - **기술 스택**: Cloudflare Workers, R2, Durable Objects, TypeScript
 - **주요 기능**:
   - 서브도메인(`<login>.naru.pub`)과 커스텀 도메인 사이트를 R2에서 바로 서빙
-  - 사이트 데이터베이스(사이트마다 Durable Object 하나)
+  - 사이트 데이터베이스의 읽기 전용 대기본(standby): 맥 미니가 멈추면 `sdk.naru.pub`을 넘겨받아 방문자에게 읽기만 제공
   - 페이지뷰 기록(control plane이 매분 가져가 저장)
+
+### 3. 사이트 데이터베이스와 Data SDK (맥 미니, `sdk.naru.pub`)
+
+- **위치**: `edge/src/seoul.ts`, `edge/seoul/` (같은 Worker 코드를 workerd로 실행)
+- **주요 기능**:
+  - 사이트마다 SQLite 데이터베이스 하나(`SiteData`)
+  - 데이터 API, 사이트 함수, 실시간 연결
+  - 한국에서 한 번 왕복에 수십 ms (Cloudflare 경유 때는 약 1초)
 
 ## 📚 문서
 

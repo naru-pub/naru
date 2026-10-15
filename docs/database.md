@@ -366,14 +366,33 @@ cd control-plane
 pnpm test:data:db
 ```
 
-## Durable Objects backend
+## Where site data lives
 
-All site collections and documents live in the `naru-edge` Worker, in one
-SQLite-backed Durable Object per site, named by the site. The control plane's
-`lib/site-data/service.ts` checks account existence, paid status, and owner
-sign-in scope before calling private Worker operations over HTTPS with a
-shared secret. Configure `EDGE_WORKER_URL=https://edge.naru.pub`
-and `EDGE_WORKER_SECRET`; there is no PostgreSQL document fallback.
+Each site's collections and documents are one SQLite database, held by a
+`SiteData` object (`edge/src/site.ts`) named by the site. Since 2026-10-15
+those objects run on kr-seongsu-m4, the mini, under workerd: the same edge
+Worker code as on Cloudflare (`edge/src/seoul.ts`, `edge/seoul/`), with each
+site's database a file under `~/apps/naru-sdk/site-objects`. Its R2 bucket
+is reached through the S3 API (`edge/src/r2-s3.ts`), and there is no edge
+cache: a visitor's read is a local query.
+
+- `https://sdk.naru.pub` is the data API, the SDK files and live connections.
+  It is a DNS-only record for the mini's home line; the router forwards 443
+  to Caddy there (infra `apps/naru-sdk`), which sets the visitor's address in
+  `CF-Connecting-IP` and `X-Forwarded-For` for the rate limits. The Worker
+  answers visitors itself and sends requests with a sign-in to the control
+  plane on the same host (`PASSTHROUGH_ORIGIN`).
+- `naru.pub/sdk/<version>/naru.js` stays on Cloudflare: browsers keep it for
+  a day, checking after five minutes, and it sends data requests to
+  `sdk.naru.pub`; sign-in and saved sessions stay on naru.pub.
+- The control plane calls site objects at `SITE_DATA_URL`
+  (`http://host.docker.internal:40100` from its containers) with
+  `SITE_DATA_SECRET`, which also signs members' live tickets. Pageviews and
+  the custom domain table stay with the Worker on Cloudflare
+  (`EDGE_WORKER_URL`, `EDGE_WORKER_SECRET`).
+- On Cloudflare, `MOVED_SITES=*` marks every site's database as moved: a
+  request that still arrives at `naru.pub/api/data/v1` (an old SDK file in a
+  browser's cache) goes on to the control plane, which calls the mini.
 
 PostgreSQL retains accounts, entitlements, website registrations,
 authorization codes and tokens, and media metadata. Media bytes remain in R2.
@@ -382,11 +401,59 @@ operations in synchronous SQLite transactions. Public-write rate limits are
 counted in the object. Timestamps have millisecond precision, collection names
 are listed in byte order, and JSON object key order has no contract meaning.
 
+### The read-only standby
+
+Cloudflare keeps a copy of every site, in its own `SiteData` objects, for
+when the mini is away (`edge/src/standby.ts`,
+`control-plane/src/lib/edge/standby.ts`):
+
+- The control plane's `standby-sync` job, each minute, asks the mini for each
+  site's fingerprint (a hash of what it holds, without counters every read
+  moves), copies the sites whose fingerprint differs from the one the standby
+  last received (`replace`, allowed only on Cloudflare), and reports the mini
+  as up, with each site's counts.
+- The edge Worker's cron runs the `Standby` object each minute. It probes
+  `https://origin.sdk.naru.pub/healthz/deep`, the mini's own name, which never
+  fails over. After three failed minutes, and only if the mini has also not
+  reported in for three (and has ever), it turns on Cloudflare's proxy for
+  `sdk.naru.pub`: the Worker then serves visitors read-only from the copies,
+  runs only functions declared read-only, and refuses sign-ins, writes,
+  uploads and live connections as `UNAVAILABLE`. After five healthy minutes,
+  once the mini reports in holding at least the standby's collections and
+  documents for every site, it turns the proxy off again. While the mini is
+  up, what reaches Cloudflare for `sdk.naru.pub` (resolvers holding the
+  proxied record) is forwarded to the mini through the `Standby` object:
+  Cloudflare's Los Angeles location could not connect to the home line
+  directly in the first drill.
+- Each change of mode, and a mini that answers but has stopped reporting in
+  for ten minutes, is posted to Discord.
+
+Drills and status, with `EDGE_WORKER_SECRET`, on `https://edge.naru.pub`:
+`POST /v1/standby/status` reads the state; `POST /v1/standby/force` with
+`{"mode":"standby"}` fails over by hand. The check switches back on its own
+after five healthy minutes, or force `{"mode":"mini"}`. Every site is
+read-only meanwhile, and the mini's host-check reports `sdk.naru.pub` as
+failing while it points away. The first drill was on 2026-10-15.
+
+### Backups and moving sites
+
+The nightly `backup-postgres-r2.zsh` on the mini copies each site database
+with `sqlite3 .backup` into the backup set in B2. The Cloudflare copies from
+before the move are archived in B2 under `cutover/`.
+
+`node dist/cli/move-site-data.mjs [--site <login>]` copies sites from the
+objects on Cloudflare to the mini (`dump`, then `restore`, which refuses a
+site that has collections) and compares the copy table by table;
+`erase-cloudflare-site-data.mjs` erases Cloudflare's copies of sites the mini
+holds. `SITE_DATA_MAINTENANCE=1` makes the control plane refuse every data
+request while databases move, and `SITE_DATA_SITES` limits `SITE_DATA_URL` to
+the sites named.
+
 ### Answering visitors at the edge
 
-The configured `naru.pub/api/data/v1/*` Worker route covers every site.
-`edge/src/website.ts` answers anonymous document requests from
-that site's object using shared headers, caching and errors. It forwards
+`edge/src/website.ts`, on the mini at `sdk.naru.pub` (and on Cloudflare while
+it serves as the standby), answers anonymous document requests from that
+site's object using shared headers and errors. It forwards
 requests with owner tokens, `_files`, `_batch`, and requests the object cannot
 serve to the control plane. That fallback still uses the same Durable Object
 for documents; PostgreSQL handles authentication and media metadata.

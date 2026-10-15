@@ -60,9 +60,18 @@ openssl rand -base64 32 | tr -d '\n' | pnpm exec wrangler secret put EDGE_WORKER
 
 Set `EDGE_WORKER_URL=https://edge.naru.pub` and the same
 `EDGE_WORKER_SECRET` in the server's `.env`, then deploy the control
-plane so application and background processes read them. Without these
-settings, site database operations are unavailable. Change the secret in
-both places together; private `/v1/sites/*` operations require it.
+plane so application and background processes read them: pageviews, the
+custom domain table and the standby use them. Change the secret in both
+places together; private `/v1/*` operations require it.
+
+Site databases themselves run on the mini, not here: the same Worker under
+workerd, released with `mise run deploy naru-sdk` from infra once CI's
+`build-sdk-seoul` job has built it (`edge/seoul/README.md`), and reached by
+the control plane at `SITE_DATA_URL` with `SITE_DATA_SECRET`. This Worker
+keeps the read-only standby of every site, and its cron runs the standby's
+health check; it needs the secrets `CLOUDFLARE_DNS_TOKEN` (edits naru.pub's
+DNS: the proxy on `sdk.naru.pub`) and `DISCORD_WEBHOOK`. See
+[database.md](database.md#where-site-data-lives).
 
 `wrangler.jsonc` declares the `edge.naru.pub` custom domain, the
 public `naru.pub/api/data/v1/*` and `naru.pub/sdk/*` routes, and the
