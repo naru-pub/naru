@@ -135,14 +135,16 @@ so they exist before anyone signs in and sign-in stays a sign-in:
 {
   "collections": {
     "posts": { "read": "world", "write": "admin", "rules": "community-board" },
-    "profiles": { "unique": ["nick"] },
-    "wallets": {}
+    "profiles": { "read": "admin", "write": "admin", "unique": ["nick"] },
+    "wallets": { "read": "admin", "write": "admin" }
   }
 }
 ```
 
-Each entry takes the same `read`, `write`, `rules` and `unique` as `settings`;
-an empty one is admin-only. When the file arrives (a template applied, a GitHub
+Each entry takes the same `read`, `write`, `rules` and `unique` as `settings`.
+`read` and `write` are required, so the file states who can reach every
+collection; an entry without them fails the whole file. `rules` and `unique`
+may be left out. When the file arrives (a template applied, a GitHub
 deploy, a save in the editor) Naru creates the collections the site lacks with
 these settings. Changes to existing collections wait for the owner, who sees
 them on /database and applies them with one click. The file needs SDK 1.1.0

@@ -24,11 +24,13 @@ import { DataError, unreservedName } from "./validation";
 // collection (its access, rules or unique fields) waits for the owner on
 // /database, so nothing is widened without being seen.
 //
-//   { "collections": { "guestbook": { "read": "world", "write": "create" },
-//                      "settings": {} } }
+//   { "collections": {
+//       "guestbook": { "read": "world", "write": "create" },
+//       "settings": { "read": "admin", "write": "admin" } } }
 //
 // Each collection takes read, write, rules and unique as a sign-in's settings
-// do; one left empty is admin-only, like any new collection.
+// do. read and write are required, so the file says who can reach every
+// collection; rules and unique are optional (none when left out).
 
 export const DECLARATION_PATH = "_naru/collections.json";
 const MAX_BYTES = 64 * 1024;
@@ -67,6 +69,19 @@ export function parseDeclaration(
   if (!names.length || names.length > 100)
     throw new DataError(400, `${DECLARATION_PATH} declares 1–100 collections.`);
   names.forEach(unreservedName);
+  for (const name of names) {
+    const entry = (collections as Record<string, unknown>)[name];
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      (entry as { read?: unknown }).read === undefined ||
+      (entry as { write?: unknown }).write === undefined
+    )
+      throw new DataError(
+        400,
+        `${DECLARATION_PATH}: "${name}" needs both "read" and "write".`,
+      );
+  }
   return collectionRequests(collections, names);
 }
 

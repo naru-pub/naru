@@ -26,8 +26,13 @@ const owner = { id: "1", loginName: "alice" };
 const FILE = JSON.stringify({
   collections: {
     guestbook: { read: "world", write: "create" },
-    posts: { read: "member", rules: "board", unique: ["slug"] },
-    settings: {},
+    posts: {
+      read: "member",
+      write: "admin",
+      rules: "board",
+      unique: ["slug"],
+    },
+    settings: { read: "admin", write: "admin" },
   },
 });
 /** The bucket holds `text` at alice/_naru/collections.json, or nothing. */
@@ -62,7 +67,7 @@ beforeEach(() => {
 });
 
 describe("a site's declared collections", () => {
-  test("parse with the sign-in's settings, empty meaning admin only", () => {
+  test("parse with the sign-in's settings", () => {
     expect(declared.parseDeclaration(FILE)).toEqual({
       guestbook: { read: "world", write: "create" },
       posts: {
@@ -82,6 +87,9 @@ describe("a site's declared collections", () => {
       JSON.stringify({ collections: {} }),
       JSON.stringify({ collections: { a: { read: "everyone" } } }),
       JSON.stringify({ collections: { a: { colour: "red" } } }),
+      JSON.stringify({ collections: { a: {} } }),
+      JSON.stringify({ collections: { a: { read: "world" } } }),
+      JSON.stringify({ collections: { a: { write: "admin" } } }),
     ])
       expect(() => declared.parseDeclaration(text)).toThrow();
   });

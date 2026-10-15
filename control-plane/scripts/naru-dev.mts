@@ -210,8 +210,8 @@ async function installDeclaration() {
       | Record<
           string,
           {
-            read?: string;
-            write?: string;
+            read: string;
+            write: string;
             rules?: string | null;
             unique?: string[];
           }
@@ -220,6 +220,9 @@ async function installDeclaration() {
     if (!declared || typeof declared !== "object")
       throw new Error('it needs a "collections" object');
     const names = Object.keys(declared);
+    for (const name of names)
+      if (!declared[name]?.read || !declared[name]?.write)
+        throw new Error(`"${name}" needs both "read" and "write"`);
     const existing = await object<
       {
         name: string;
@@ -231,8 +234,8 @@ async function installDeclaration() {
     >("collections", { names });
     const wanted = names.map((name) => ({
       name,
-      read_access: declared[name].read ?? "admin",
-      write_access: declared[name].write ?? "admin",
+      read_access: declared[name].read,
+      write_access: declared[name].write,
       ...(declared[name].rules !== undefined
         ? { rules: declared[name].rules }
         : {}),
