@@ -1,4 +1,8 @@
 import { publishSiteFunctions } from "@/lib/site-functions/releases";
+import {
+  DECLARATION_PATH,
+  installDeclaredCollections,
+} from "@/lib/site-data/declared-collections";
 import * as Sentry from "@sentry/nextjs";
 import {
   edgeFileCacheUrl,
@@ -30,6 +34,20 @@ export async function purgeSiteObjects(keys: string[]) {
     }),
   );
   for (const site of sites) await publishSiteFunctions(site);
+  // After the functions, so the rules a declaration names are published.
+  const declaring = new Set(
+    keys.flatMap((key) => {
+      const slash = key.indexOf("/");
+      return key.slice(slash + 1) === DECLARATION_PATH
+        ? [key.slice(0, slash)]
+        : [];
+    }),
+  );
+  for (const site of declaring)
+    await installDeclaredCollections(site).catch((error) =>
+      // The file is saved either way; /database shows what it asks.
+      Sentry.captureException(error, { extra: { site } }),
+    );
   const domain = process.env.NEXT_PUBLIC_DOMAIN!;
   return purgeUrls(
     keys.flatMap((key) => [

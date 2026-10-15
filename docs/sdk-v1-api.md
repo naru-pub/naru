@@ -128,6 +128,27 @@ the page's registration and sign-ins. A unique field that documents already
 share fails the step with the field named. Only the owner's click on Naru
 applies settings; nothing in the request is trusted otherwise.
 
+A site can instead declare its collections in a file, `_naru/collections.json`,
+so they exist before anyone signs in and sign-in stays a sign-in:
+
+```json
+{
+  "collections": {
+    "posts": { "read": "world", "write": "admin", "rules": "community-board" },
+    "profiles": { "unique": ["nick"] },
+    "wallets": {}
+  }
+}
+```
+
+Each entry takes the same `read`, `write`, `rules` and `unique` as `settings`;
+an empty one is admin-only. When the file arrives (a template applied, a GitHub
+deploy, a save in the editor) Naru creates the collections the site lacks with
+these settings. Changes to existing collections wait for the owner, who sees
+them on /database and applies them with one click. The file needs SDK 1.1.0
+only for `rules`; it works with any SDK version, and sites without it are
+unaffected. `pnpm naru-dev` installs it too, changes included.
+
 The browser leaves the page during `signIn`, and a page that holds unsaved
 input should put it somewhere that survives, such as `sessionStorage`, before
 calling it, and restore it after the redirect back. The same applies when a

@@ -195,9 +195,79 @@ const everything = (
 ).flat();
 for (const [index, path] of everything.entries())
   await publish(path, index === everything.length - 1);
+
+/**
+ * `_naru/collections.json`, the collections the site declares, installed as
+ * Naru installs it when the file arrives (lib/site-data/declared-collections.ts):
+ * here every declared setting is applied at once, changes to existing
+ * collections included, since the one running naru-dev is the owner.
+ */
+async function installDeclaration() {
+  const path = join(folder, "_naru", "collections.json");
+  if (!existsSync(path)) return;
+  try {
+    const declared = JSON.parse(await readFile(path, "utf8")).collections as
+      | Record<
+          string,
+          {
+            read?: string;
+            write?: string;
+            rules?: string | null;
+            unique?: string[];
+          }
+        >
+      | undefined;
+    if (!declared || typeof declared !== "object")
+      throw new Error('it needs a "collections" object');
+    const names = Object.keys(declared);
+    const existing = await object<
+      {
+        name: string;
+        read_access: string;
+        write_access: string;
+        rules?: string;
+        unique?: string[];
+      }[]
+    >("collections", { names });
+    const wanted = names.map((name) => ({
+      name,
+      read_access: declared[name].read ?? "admin",
+      write_access: declared[name].write ?? "admin",
+      ...(declared[name].rules !== undefined
+        ? { rules: declared[name].rules }
+        : {}),
+      ...(declared[name].unique !== undefined
+        ? { unique: declared[name].unique }
+        : {}),
+    }));
+    const differing = wanted.filter((want) => {
+      const row = existing.find((r) => r.name === want.name);
+      return (
+        !row ||
+        row.read_access !== want.read_access ||
+        row.write_access !== want.write_access ||
+        ("rules" in want && (row.rules ?? null) !== want.rules) ||
+        ("unique" in want &&
+          (row.unique ?? []).join(",") !== (want.unique ?? []).join(","))
+      );
+    });
+    if (!differing.length) return;
+    const created = await object<string[] | null>("configureCollections", {
+      ownerId: OWNER,
+      collections: differing,
+    });
+    console.log(
+      `_naru/collections.json: ${created?.length ?? 0} created, ${differing.length - (created?.length ?? 0)} changed`,
+    );
+  } catch (error) {
+    console.error(`_naru/collections.json: ${(error as Error).message}`);
+  }
+}
+await installDeclaration();
 if (existsSync(join(folder, "_naru")))
   watch(join(folder, "_naru"), { recursive: true }, (_event, name) => {
-    if (name) void publish(join(folder, "_naru", name));
+    if (name === "collections.json") void installDeclaration();
+    else if (name) void publish(join(folder, "_naru", name));
   });
 
 /* -------------------------------------------------- sign-in, tokens --- */

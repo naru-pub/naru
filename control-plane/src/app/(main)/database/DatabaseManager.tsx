@@ -11,6 +11,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
 import MembershipManager from "./MembershipManager";
+import DeclaredCollections from "./DeclaredCollections";
 
 type Collection = {
   name: string;
@@ -155,6 +156,7 @@ export default function DatabaseManager({
           </Button>
         </div>
       </header>
+      <DeclaredCollections onApplied={() => void run(refresh)} />
       <Tabs value={view} onValueChange={setView} className="space-y-6">
         <TabsList aria-label="데이터베이스 메뉴">
           <TabsTrigger value="collections">컬렉션과 문서</TabsTrigger>

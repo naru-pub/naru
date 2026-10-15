@@ -37,6 +37,19 @@ Keep drafts in an admin-readable collection. A `published: false` field does not
 
 Public API calls deliberately ignore cookies. SDK requests always use `credentials: "omit"`. An explicit owner bearer token grants scoped document access after Naru login; invalid or expired credentials never fall back to public access. Control-plane requests use the existing same-origin admin session. Never embed an admin session, password or fixed token in a public site.
 
+### Declared collections
+
+A site's `_naru/collections.json` lists the collections it needs, with their
+access, rules and unique fields (format in [sdk-v1-api.md](sdk-v1-api.md)).
+`purgeSiteFiles` (lib/cache-purge.ts) installs it whenever the file is among the
+changed keys: `installDeclaredCollections` (lib/site-data/declared-collections.ts)
+reads it from R2 and, for owners with the database feature, creates the
+missing collections at once. Changes it would make to existing collections are
+never applied there; /database shows them (`GET /api/account/collection-declaration`)
+and the owner's "적용하기" applies them (`POST`), with widened access marked as
+on the sign-in page. A file that does not parse is reported to Sentry and shown
+on /database; nothing changes.
+
 ## Browser SDK
 
 Create a collection in the control plane, choose its permissions, then use this in a static page. The database and its collections are created in the control plane; a page only names them. Both the SDK and the public API support CORS.
