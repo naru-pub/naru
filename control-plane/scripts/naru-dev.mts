@@ -133,6 +133,7 @@ async function object<T>(operation: string, input: unknown): Promise<T> {
       message: string;
       code?: string;
       details?: unknown;
+      site?: boolean;
     };
   };
   if (answer.error)
@@ -141,6 +142,7 @@ async function object<T>(operation: string, input: unknown): Promise<T> {
       answer.error.message,
       answer.error.code as never,
       answer.error.details,
+      answer.error.site,
     );
   return answer.value as T;
 }
@@ -534,6 +536,7 @@ const failure = (res: ServerResponse, error: unknown) => {
         code: error.code,
         message: error.message,
         ...(error.details === undefined ? {} : { details: error.details }),
+        ...(error.site ? { site: true } : {}),
       },
     });
   console.error(error);
