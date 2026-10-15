@@ -28,7 +28,7 @@ const HOOKS: Record<string, string> = {
   __naruView: "queryable",
   __naruPresent: "present()",
 };
-import { hashPassword, verifyPassword } from "./passwords";
+import { hashPassword, phcFromEarlier, verifyPassword } from "./passwords";
 import type { ModuleSources } from "./modules";
 import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { quickjs } from "./quickjs";
@@ -271,6 +271,25 @@ export class SiteData extends DurableObject<Env> {
       )
     )
       this.sql.exec("ALTER TABLE documents ADD COLUMN secret_hash TEXT");
+    this.respellSecrets();
+  }
+  /**
+   * Secrets hashed before Naru wrote PHC strings, spelled as PHC once, as the
+   * object starts or takes a dump: only PHC strings are ever checked.
+   */
+  private respellSecrets() {
+    for (const row of this.rows(
+      "SELECT collection_id, id, secret_hash FROM documents WHERE secret_hash LIKE 'pbkdf2-sha256$%'",
+    )) {
+      const respelled = phcFromEarlier(String(row.secret_hash));
+      if (respelled)
+        this.sql.exec(
+          "UPDATE documents SET secret_hash = ? WHERE collection_id = ? AND id = ?",
+          respelled,
+          row.collection_id,
+          row.id,
+        );
+    }
   }
   private run<T>(work: () => T): Outcome<T> {
     try {
@@ -2199,6 +2218,7 @@ export class SiteData extends DurableObject<Env> {
     ))
       for (const field of JSON.parse(String(row.value)) as string[])
         this.sql.exec(this.uniqueIndex(String(row.key).slice(7), field).create);
+    this.respellSecrets();
     this.budget = undefined;
     return { rows };
   }
