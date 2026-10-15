@@ -41,7 +41,9 @@ import type {
   Served,
   Snapshot,
   Usage,
+  Dump,
 } from "./types";
+import { DUMP_TABLES } from "./types";
 
 // One site's collections and documents, stored in SQLite: the request rules
 // and storage. Its arguments and answers are in types.ts, its list query in
@@ -2028,6 +2030,66 @@ export class SiteData extends DurableObject<Env> {
           // Snapshots taken before members existed have no author.
           document.created_by ?? null,
         );
+    });
+  }
+
+  /**
+   * Every row of every table, to move the site to another runtime (its
+   * `restore`): collections, documents with their write secrets, managed
+   * media and its references, queued releases, limits and settings.
+   */
+  async dump(): Promise<Outcome<Dump>> {
+    return this.run(() => ({
+      tables: Object.fromEntries(
+        DUMP_TABLES.map((table) => [
+          table,
+          this.rows(`SELECT * FROM ${table}`) as Record<
+            string,
+            string | number | null
+          >[],
+        ]),
+      ) as Dump["tables"],
+    }));
+  }
+
+  /**
+   * Fills an empty site with another runtime's `dump`. Refused once the site
+   * has a collection, so a mistaken run cannot overwrite live data.
+   */
+  async restore(input: Dump): Promise<Outcome<{ rows: number }>> {
+    return this.run(() => {
+      if (this.rows("SELECT 1 FROM collections LIMIT 1").length)
+        throw new DataError(409, "The site already has collections.");
+      let rows = 0;
+      for (const table of DUMP_TABLES) {
+        const given = input?.tables?.[table];
+        if (!Array.isArray(given))
+          throw new DataError(400, `The dump has no ${table} table.`);
+        // Column names come from this object's own schema, never the input.
+        const columns = this.rows(`PRAGMA table_info(${table})`).map((column) =>
+          String(column.name),
+        );
+        this.sql.exec(`DELETE FROM ${table}`);
+        for (const row of given) {
+          const present = columns.filter((column) =>
+            Object.hasOwn(row, column),
+          );
+          this.sql.exec(
+            `INSERT INTO ${table} (${present.join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
+            ...present.map((column) => row[column] ?? null),
+          );
+          rows++;
+        }
+      }
+      for (const row of this.rows(
+        "SELECT key, value FROM meta WHERE key LIKE 'unique:%'",
+      ))
+        for (const field of JSON.parse(String(row.value)) as string[])
+          this.sql.exec(
+            this.uniqueIndex(String(row.key).slice(7), field).create,
+          );
+      this.budget = undefined;
+      return { rows };
     });
   }
 

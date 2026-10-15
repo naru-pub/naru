@@ -67,6 +67,24 @@ export type StoredDocument = {
   created_by: string | null;
 };
 
+/** Every table of a site's object, in the order `restore` fills them. */
+export const DUMP_TABLES = [
+  "meta",
+  "collections",
+  "documents",
+  "managed_media",
+  "media_refs",
+  "media_releases",
+  "rate_limits",
+] as const;
+/** A site's whole database, as `dump` answers and `restore` takes it. */
+export type Dump = {
+  tables: Record<
+    (typeof DUMP_TABLES)[number],
+    Record<string, string | number | null>[]
+  >;
+};
+
 export type Snapshot = {
   ownerId: string | null;
   collections: Collection[];
@@ -98,8 +116,7 @@ export type Outcome<T> =
 export type ServeInput = Omit<ExecuteInput, "ownerId" | "access">;
 /** Answered, or to be sent on to the control plane. */
 export type Served =
-  | { pass: true }
-  | { pass?: undefined; result: unknown; publicRead: boolean };
+  { pass: true } | { pass?: undefined; result: unknown; publicRead: boolean };
 
 /**
  * What the control plane keeps current in the object of each site with the

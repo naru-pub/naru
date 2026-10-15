@@ -35,8 +35,16 @@ export interface WebsiteEnv {
   SITES: DurableObjectNamespace<SiteData>;
   /** Shared with the control plane, which signs members' live tickets. */
   EDGE_WORKER_SECRET?: string;
-  /** Tests only: where requests are sent on, instead of the request's own URL. */
+  /**
+   * Where requests are sent on, instead of the request's own URL: the control
+   * plane beside workerd on the mini (seoul.ts), and in tests.
+   */
   PASSTHROUGH_ORIGIN?: string;
+  /**
+   * "off" where there is no edge cache (workerd on the mini): visitors' reads
+   * are then answered by the object each time, which is local there.
+   */
+  EDGE_CACHE?: string;
 }
 
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
@@ -182,8 +190,11 @@ export async function website(
 
   const url = new URL(request.url);
   const fresh = url.searchParams.get("fresh") === "1";
-  const cache = (caches as unknown as { default: Cache }).default;
-  if (request.method === "GET" && !fresh) {
+  const cache =
+    env.EDGE_CACHE === "off"
+      ? null
+      : (caches as unknown as { default: Cache }).default;
+  if (cache && request.method === "GET" && !fresh) {
     const hit = await cache.match(request);
     if (hit) {
       // Stored with a cacheable lifetime; sent with the public one.
@@ -235,7 +246,7 @@ export async function website(
         ...(cacheable ? { "Cache-Control": PUBLIC_READ_CACHE } : {}),
       },
     });
-    if (cacheable && request.method === "GET") {
+    if (cache && cacheable && request.method === "GET") {
       // The Cache API keeps a response for its max-age, which the public
       // header sets to 0 for browsers; store it with the shared lifetime.
       const stored = response.clone();

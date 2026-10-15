@@ -15,7 +15,7 @@ import { website, type WebsiteEnv } from "./website";
 export { PageviewLog } from "./pageview-log";
 export { SiteData } from "./site";
 
-interface Env extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv {
+export interface Env extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv {
   PAGEVIEWS: DurableObjectNamespace<PageviewLog>;
   SITES: DurableObjectNamespace<SiteData>;
   /** Shared with the control plane, the only caller of /v1/sites. */
@@ -27,6 +27,12 @@ interface Env extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv {
    * (control-plane/scripts/with-edge-worker.sh); production never does.
    */
   TEST_OPERATIONS?: string;
+  /**
+   * Where the data API lives once it has moved off Cloudflare, such as
+   * https://sdk.naru.pub: naru.pub/api/data/v1/* is then forwarded there, for
+   * pages that still hold an SDK aimed at naru.pub. Unset, it is served here.
+   */
+  DATA_API_ORIGIN?: string;
 }
 
 // Four surfaces. <login>.naru.pub, or a custom domain, is a hosted site
@@ -52,6 +58,9 @@ const OPERATIONS = [
   "mediaReleases",
   "releasedMedia",
   "disconnect",
+  // Moving a site's database to another runtime (sdk.naru.pub on the mini).
+  "dump",
+  "restore",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
@@ -100,6 +109,10 @@ function dispatch(
       return stub.releasedMedia(input);
     case "disconnect":
       return stub.disconnect(input);
+    case "dump":
+      return stub.dump();
+    case "restore":
+      return stub.restore(input);
     case "putFunctions":
       return stub.putFunctions(input);
   }
@@ -185,12 +198,13 @@ async function replaceDomains(request: Request, env: Env) {
 
 /**
  * Hosts that are not a hosted site: the platform domain (its SDK and data API
- * routes),
+ * routes), the SDK's own host where this runs on the mini (seoul.ts),
  * this Worker's custom domain, and the address `wrangler dev` answers on.
  */
-function platformHost(hostname: string, env: Env) {
+export function platformHost(hostname: string, env: Env) {
   return (
     hostname === env.PLATFORM_DOMAIN ||
+    hostname === `sdk.${env.PLATFORM_DOMAIN}` ||
     hostname === `edge.${env.PLATFORM_DOMAIN}` ||
     hostname === "localhost" ||
     /^[\d.]+$|^\[/.test(hostname)
@@ -207,6 +221,16 @@ export default {
     if (!platformHost(hostname, env)) return hostedSite(request, env, ctx);
     if (pathname.startsWith("/sdk/")) return serveSdk(request, env);
     const route = /^\/api\/data\/v1\/([^/]+)(?:\/(.*))?$/.exec(pathname);
+    if (route && env.DATA_API_ORIGIN && hostname === env.PLATFORM_DOMAIN) {
+      // Body, headers and a WebSocket upgrade all go along as they came.
+      const url = new URL(request.url);
+      return fetch(
+        new Request(
+          new URL(url.pathname + url.search, env.DATA_API_ORIGIN),
+          request,
+        ),
+      );
+    }
     if (route)
       return website(
         request,

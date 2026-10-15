@@ -1,0 +1,15 @@
+// The edge Worker as it runs on the mini under workerd (src/seoul.ts): only
+// bundled by wrangler (`pnpm build:seoul`), never deployed to Cloudflare.
+// seoul/build.mjs writes the workerd config that binds what is declared here.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "naru-sdk-seoul",
+  "main": "src/seoul.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": { "acorn": "./node_modules/acorn/dist/acorn.mjs" },
+  "durable_objects": {
+    "bindings": [{ "name": "SITES", "class_name": "SiteData" }],
+  },
+  "workers_dev": false,
+}

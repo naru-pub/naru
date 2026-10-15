@@ -1,7 +1,7 @@
 import { publishSiteFunctions } from "@/lib/site-functions/releases";
 import { db, requestDeadline } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
-import { callSiteObject } from "@/lib/edge/client";
+import { siteDataWorker, callSiteObject } from "@/lib/edge/client";
 import { MEMBER_TOKEN, memberScope } from "./member-auth";
 import { tokenScope } from "./owner-auth";
 import { DataError, name, functionReference } from "./validation";
@@ -274,7 +274,8 @@ export async function executeLiveTicket(command: DataCommand) {
       command.bearer ? 403 : 401,
       "Live tickets are for signed-in members; visitors connect without one.",
     );
-  const secret = process.env.EDGE_WORKER_SECRET;
+  // Checked by the Worker that holds the site's object (edge/client.ts).
+  const { secret } = siteDataWorker();
   if (!secret) throw new DataError(503, "Live connections are unavailable.");
   return { ticket: await signLiveTicket(secret, command.site, memberId) };
 }

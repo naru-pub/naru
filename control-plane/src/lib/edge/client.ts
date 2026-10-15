@@ -3,6 +3,11 @@ import { DataError, type ErrorCode } from "@/lib/site-data/validation";
 // The control plane's client for the edge Worker (edge/ at the repository
 // root), reached over HTTPS with a shared secret: operations on a site's
 // Durable Object, the pageview log, and the custom domain table.
+//
+// Site objects can run elsewhere than Cloudflare: the same Worker under
+// workerd beside this control plane (edge/src/seoul.ts), at SITE_DATA_URL.
+// Pageviews and custom domains belong to the hosted pages, which stay on
+// Cloudflare at EDGE_WORKER_URL.
 
 const WORKER_TIMEOUT_MS = 10_000;
 
@@ -24,11 +29,39 @@ export function callSiteObject<T>(
   input: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
+  return callSiteObjectAt<T>(siteDataWorker(), site, operation, input, signal);
+}
+
+/** A Worker that holds site objects, and the secret it takes. */
+export type WorkerTarget = { base?: string; secret?: string };
+/** Where the edge Worker runs on Cloudflare: hosted pages and their logs. */
+export const edgeWorker = (): WorkerTarget => ({
+  base: process.env.EDGE_WORKER_URL,
+  secret: process.env.EDGE_WORKER_SECRET,
+});
+/** Where site objects live: the mini's workerd when set, else Cloudflare. */
+export const siteDataWorker = (): WorkerTarget =>
+  process.env.SITE_DATA_URL
+    ? {
+        base: process.env.SITE_DATA_URL,
+        secret: process.env.SITE_DATA_SECRET ?? process.env.EDGE_WORKER_SECRET,
+      }
+    : edgeWorker();
+
+/** callSiteObject on a given Worker, for moving a site between two. */
+export function callSiteObjectAt<T>(
+  target: WorkerTarget,
+  site: string,
+  operation: string,
+  input: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   return callWorker<T>(
     `/v1/sites/${encodeURIComponent(site)}/${operation}`,
     `${operation} on ${site}`,
     input,
     signal,
+    target,
   );
 }
 
@@ -60,11 +93,10 @@ async function callWorker<T>(
   what: string,
   input: unknown,
   signal?: AbortSignal,
+  { base, secret }: WorkerTarget = edgeWorker(),
 ): Promise<T> {
-  const base = process.env.EDGE_WORKER_URL;
-  const secret = process.env.EDGE_WORKER_SECRET;
   if (!base || !secret) {
-    console.error("EDGE_WORKER_URL or EDGE_WORKER_SECRET is unset");
+    console.error(`No Worker URL or secret for ${what}`);
     throw unavailable();
   }
   const timeout = AbortSignal.timeout(WORKER_TIMEOUT_MS);

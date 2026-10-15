@@ -1,0 +1,202 @@
+// Serves seoul/dist (pnpm build:seoul) with workerd, as the mini does, and
+// checks what only that runtime can break: SQLite objects on local disk across
+// a restart, the SDK's files, visitors at sdk.naru.pub, and moving a site
+// between objects with `dump` and `restore`. Site functions are left out: their
+// sources need the real R2 bucket.
+//
+//   node seoul/smoke.mjs
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const edge = join(dirname(fileURLToPath(import.meta.url)), "..");
+const dist = join(edge, "seoul/dist");
+const workerd = join(edge, "node_modules/.bin/workerd");
+const objects = await mkdtemp(join(tmpdir(), "naru-seoul-"));
+const secret = "smoke-secret";
+const port = await new Promise((done) => {
+  const server = createServer().listen(0, "127.0.0.1", () => {
+    const { port } = server.address();
+    server.close(() => done(port));
+  });
+});
+const base = `http://127.0.0.1:${port}`;
+
+let running;
+async function start() {
+  running = spawn(
+    workerd,
+    [
+      "serve",
+      "config.capnp",
+      "--directory-path",
+      `site-objects=${objects}`,
+      "--socket-addr",
+      `http=127.0.0.1:${port}`,
+    ],
+    {
+      cwd: dist,
+      env: {
+        ...process.env,
+        EDGE_WORKER_SECRET: secret,
+        PASSTHROUGH_ORIGIN: "http://127.0.0.1:9",
+        R2_ACCOUNT_ID: "unused",
+        R2_ACCESS_KEY_ID: "unused",
+        R2_SECRET_ACCESS_KEY: "unused",
+        R2_BUCKET: "unused",
+      },
+      stdio: ["ignore", "inherit", "inherit"],
+    },
+  );
+  for (let tries = 0; ; tries++) {
+    try {
+      if ((await fetch(`${base}/healthz`)).ok) return;
+    } catch {
+      if (tries > 100) throw new Error("workerd did not start.");
+      await new Promise((done) => setTimeout(done, 100));
+    }
+  }
+}
+async function stop() {
+  const exited = new Promise((done) => running.once("exit", done));
+  running.kill();
+  await exited;
+}
+
+/** One site operation, as the control plane calls it (edge/client.ts). */
+async function operate(site, operation, input) {
+  const response = await fetch(`${base}/v1/sites/${site}/${operation}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  const body = await response.json();
+  return { status: response.status, ...body };
+}
+const visit = (path, init = {}) =>
+  fetch(`${base}/api/data/v1/${path}`, {
+    ...init,
+    headers: {
+      Host: "sdk.naru.pub",
+      Origin: "https://a.example",
+      ...init.headers,
+    },
+  });
+const owner = {
+  ownerId: "1",
+  access: { admin: true, allowedIds: null, anonymous: false },
+};
+
+try {
+  await start();
+  const sdk = await fetch(`${base}/sdk/1.1.0/naru.js`, {
+    headers: { Host: "sdk.naru.pub" },
+  });
+  assert.equal(sdk.status, 200);
+  assert.match(await sdk.text(), /createNaru/);
+  assert.equal(
+    (await fetch(`${base}/`, { headers: { Host: "alpha.naru.pub" } })).status,
+    404,
+    "hosted pages stay on Cloudflare",
+  );
+  assert.equal(
+    (await fetch(`${base}/v1/sites/alpha/dump`, { method: "POST", body: "{}" }))
+      .status,
+    401,
+    "site operations need the secret",
+  );
+
+  const configuration = {
+    ownerId: "1",
+    entitledUntil: null,
+    confirmedUntil: Date.now() + 86_400_000,
+  };
+  assert.equal(
+    (await operate("alpha", "configure", configuration)).status,
+    200,
+  );
+  const created = await operate("alpha", "configureCollections", {
+    ownerId: "1",
+    collections: [
+      {
+        name: "posts",
+        read_access: "world",
+        write_access: "admin",
+        unique: ["slug"],
+      },
+    ],
+  });
+  assert.equal(created.status, 200, JSON.stringify(created));
+  const written = await operate("alpha", "execute", {
+    ...owner,
+    site: "alpha",
+    path: ["posts", "one"],
+    method: "PUT",
+    body: { data: { title: "first", slug: "a" } },
+  });
+  assert.equal(written.status, 200, JSON.stringify(written));
+
+  const read = await visit("alpha/posts/one");
+  assert.equal(read.status, 200);
+  assert.equal((await read.json()).document.data.title, "first");
+
+  // A visitor's live connection, held by the object (hibernation API); its
+  // keepalive is answered without waking it.
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}/api/data/v1/alpha/_live?topics=posts`,
+  );
+  const pong = await new Promise((done, fail) => {
+    socket.onopen = () => socket.send("ping");
+    socket.onmessage = (event) => done(event.data);
+    socket.onerror = () => fail(new Error("The live connection failed."));
+    setTimeout(
+      () => fail(new Error("No answer on the live connection.")),
+      5000,
+    );
+  });
+  assert.equal(pong, "pong");
+  socket.close();
+
+  // Move alpha's database into beta, as the cutover moves each site.
+  const dump = await operate("alpha", "dump", {});
+  assert.equal(dump.status, 200);
+  const restored = await operate("beta", "restore", dump.value);
+  assert.equal(restored.status, 200, JSON.stringify(restored));
+  assert.ok(restored.value.rows >= 3);
+  assert.equal(
+    (await operate("beta", "restore", dump.value)).status,
+    409,
+    "a site with data is never overwritten",
+  );
+  const moved = await operate("beta", "dump", {});
+  assert.deepEqual(moved.value.tables.documents, dump.value.tables.documents);
+  assert.deepEqual(moved.value.tables.meta, dump.value.tables.meta);
+
+  // The unique field came along, index and all.
+  const duplicate = await operate("beta", "execute", {
+    ...owner,
+    site: "beta",
+    path: ["posts", "two"],
+    method: "PUT",
+    body: { data: { title: "second", slug: "a" } },
+  });
+  assert.equal(duplicate.status, 409, JSON.stringify(duplicate));
+
+  // Databases are files on disk: they outlive the process.
+  await stop();
+  await start();
+  const again = await visit("beta/posts/one");
+  assert.equal(again.status, 200);
+  assert.equal((await again.json()).document.data.title, "first");
+  console.log("seoul: workerd serves the SDK, keeps sites and moves them.");
+} finally {
+  if (running && running.exitCode === null) await stop();
+  await rm(objects, { recursive: true, force: true });
+}
