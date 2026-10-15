@@ -107,6 +107,8 @@ export type Outcome<T> =
         code?: ErrorCode;
         /** A site function's own JSON for its caller, from ctx.fail. */
         details?: unknown;
+        /** The message is a site function's own, from ctx.fail. */
+        site?: boolean;
         /** Set when the monthly budget is spent: when it resets, epoch ms. */
         resetsAt?: number;
       };

@@ -29,6 +29,11 @@ export class DataError extends Error {
     public code?: ErrorCode,
     /** A site function's own JSON for its caller, from ctx.fail. */
     public details?: unknown,
+    /**
+     * The message is a site function's own, from ctx.fail, written for the
+     * page's visitors; SDK 1.1.0 shows it as is and words Naru's own errors.
+     */
+    public site?: boolean,
   ) {
     super(message);
   }
@@ -50,6 +55,7 @@ export function protocolError(
   code?: ErrorCode,
   headers?: HeadersInit,
   details?: unknown,
+  site?: boolean,
 ) {
   return Response.json(
     {
@@ -57,6 +63,7 @@ export function protocolError(
         code: code ?? statusCode(status),
         message,
         ...(details === undefined ? {} : { details }),
+        ...(site ? { site: true } : {}),
       },
     },
     { status, headers },

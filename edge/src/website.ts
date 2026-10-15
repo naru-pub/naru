@@ -150,8 +150,8 @@ async function visit(
       { pass: true } | { pass?: undefined; result: unknown; written: string[] }
     >;
     if (!outcome.ok) {
-      const { status, message, code, details } = outcome.error;
-      return protocolError(status, message, code, headers, details);
+      const { status, message, code, details, site } = outcome.error;
+      return protocolError(status, message, code, headers, details, site);
     }
     if (outcome.value.pass) return passOn(original, env, headers);
     const { result, written } = outcome.value;
@@ -164,6 +164,7 @@ async function visit(
         error.code,
         headers,
         error.details,
+        error.site,
       );
     console.error("A visitor's function call failed", error);
     return protocolError(500, "Function call failed.", undefined, headers);

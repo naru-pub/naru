@@ -31,6 +31,13 @@ const saveSession = (storage, expiresAt = Date.now() + 3600000) =>
   );
 const emptyPage = () => Response.json({ documents: [], nextCursor: null });
 
+/**
+ * Naru's English account of a failure: 1.0.0's message; from 1.1.0 the cause,
+ * the message being worded for the page's visitors.
+ */
+const account = (error) =>
+  VERSION === "1.0.0" ? error.message : error.cause.message;
+
 test("a page on <site>.naru.pub needs no site; anywhere else must name one", async () => {
   await browser(async ({ calls, respond }) => {
     respond(emptyPage);
@@ -237,7 +244,12 @@ test("errors have semantic codes and transport details stay diagnostic", async (
         assert.equal("status" in error, false);
         assert.equal(error.code, "CONFLICT");
         assert.equal("retryable" in error, false);
-        assert.equal(error.message, "Document version does not match.");
+        assert.equal(account(error), "Document version does not match.");
+        if (VERSION !== "1.0.0")
+          assert.equal(
+            error.message,
+            "다른 곳에서 먼저 바뀌었습니다. 새로고침한 뒤 다시 해 주세요.",
+          );
         return true;
       },
     );
@@ -253,16 +265,21 @@ test("errors have semantic codes and transport details stay diagnostic", async (
     await assert.rejects(posts.set("one", {}), { code: "INVALID_REQUEST" });
     // A challenge or proxy page can answer 200; it is not an empty result.
     respond(() => new Response("<html>checking your browser</html>"));
-    await assert.rejects(posts.get("one"), {
-      code: "UNAVAILABLE",
-      message: "The data API did not answer with JSON (HTTP 200).",
+    await assert.rejects(posts.get("one"), (error) => {
+      assert.equal(error.code, "UNAVAILABLE");
+      assert.equal(
+        account(error),
+        "The data API did not answer with JSON (HTTP 200).",
+      );
+      return true;
     });
     respond(() => Response.json(null));
     await assert.rejects(posts.list(), { code: "UNAVAILABLE" });
     respond(() => new Response("<html>bad gateway</html>", { status: 502 }));
-    await assert.rejects(posts.get("one"), {
-      code: "UNAVAILABLE",
-      message: "Database request failed (HTTP 502).",
+    await assert.rejects(posts.get("one"), (error) => {
+      assert.equal(error.code, "UNAVAILABLE");
+      assert.equal(account(error), "Database request failed (HTTP 502).");
+      return true;
     });
     respond(() => {
       throw new TypeError("offline");
@@ -270,7 +287,10 @@ test("errors have semantic codes and transport details stay diagnostic", async (
     // The platform's own Error cause, for a developer reading the console.
     await assert.rejects(posts.get("one"), (error) => {
       assert.equal(error.code, "UNAVAILABLE");
-      assert.equal(error.cause.message, "offline");
+      assert.equal(
+        (VERSION === "1.0.0" ? error.cause : error.cause.cause).message,
+        "offline",
+      );
       return true;
     });
     // The caller's signal reaches the request (with the SDK's own timeout),
@@ -303,9 +323,10 @@ test("errors have semantic codes and transport details stay diagnostic", async (
         );
         const waiting = posts.list(options);
         expire();
-        await assert.rejects(waiting, {
-          code: "UNAVAILABLE",
-          message: "Naru did not answer in time.",
+        await assert.rejects(waiting, (error) => {
+          assert.equal(error.code, "UNAVAILABLE");
+          assert.equal(account(error), "Naru did not answer in time.");
+          return true;
         });
       }
     } finally {

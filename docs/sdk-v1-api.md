@@ -316,15 +316,17 @@ refuses the publication.
 with one of the v1 error codes and a nonblank message of at most 1,000
 characters, even if the function catches the exception and returns success.
 Writes made before it roll back. `details`, at most 4 KiB of JSON, reaches the
-browser as `error.details`, so a page can branch on its own reasons:
+browser as `error.details`, so a page can branch on its own reasons. The
+message reaches the browser as `error.message`, unchanged, so write it for the
+page's visitors:
 
 ```js
 try {
   await member.call("shop:buy", { item: "sword" });
 } catch (error) {
   if (error instanceof NaruError && error.details?.reason === "sold_out")
-    status.textContent = error.message;
-  else throw error;
+    showRestockButton();
+  status.textContent = error.message; // "품절입니다."
 }
 ```
 
@@ -681,8 +683,23 @@ Service failures are `NaruError` instances. Application logic should use the sta
 | `INVALID_REQUEST` | Input is malformed or outside documented limits.                |
 | `UNAVAILABLE`     | The service, network, or response is temporarily unusable.      |
 
-`error.message` is diagnostic and may change; a network failure's original
-error is the standard `error.cause`. Only the SDK creates `NaruError`s; check
+In 1.1.0 `error.message` is a short Korean sentence written for the page's
+visitors, so a page can show it as is:
+
+```js
+try {
+  await member.call("shop:buy", { item: "sword" });
+} catch (error) {
+  status.textContent = error.message; // "품절입니다.", "권한이 없습니다." …
+}
+```
+
+A site function's `ctx.fail` message is used as written; every other failure
+gets Naru's wording for its code (`AUTH_REQUIRED`: "로그인이 필요합니다. 다시
+로그인해 주세요."). The wording may change. Naru's English account of what went
+wrong, for developers, is `error.cause.message`, and a network failure's
+original error is `error.cause.cause`. In 1.0.0 `error.message` is that English
+account and a network failure's original error is `error.cause`. Only the SDK creates `NaruError`s; check
 them with `instanceof`. There is no `retryable` flag and no automatic retry:
 a lost response can mean a write succeeded, so retrying `add()` can duplicate
 it. Reconcile a failed write before trying again.

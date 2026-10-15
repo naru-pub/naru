@@ -209,9 +209,25 @@ describe("calling", () => {
         status: 409,
         code: "CONFLICT",
         message: "다른 곳에서 수정되었습니다.",
+        // Written for the page's visitors; SDK 1.1.0 shows it as is.
+        site: true,
       }),
     );
     expect(operations).toEqual([]);
+  });
+
+  test("a function that throws is Naru's failure, not a message of the site's", () => {
+    let thrown: unknown;
+    try {
+      run(
+        `export function reject() { throw new Error("sold out"); }`,
+        "reject",
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as { site?: boolean }).site).toBeUndefined();
   });
 
   test("a caught failure is terminal, including in read-only functions", () => {

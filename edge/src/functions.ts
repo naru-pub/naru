@@ -429,6 +429,7 @@ export function runFunction(
             message,
             code,
             details ?? undefined,
+            true,
           );
         }
         const values = JSON.parse(context.getString(args));

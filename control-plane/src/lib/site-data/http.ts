@@ -157,6 +157,7 @@ export async function dataRequest(
     let message = "Database request failed.";
     let code: ErrorCode | undefined;
     let details: unknown;
+    let site: boolean | undefined;
     // Media metadata still uses PostgreSQL; documents arrive as Worker DataErrors.
     if (
       path[0] === "_files" &&
@@ -168,7 +169,7 @@ export async function dataRequest(
       status = 400;
       message = "Data contains unsupported characters or numbers.";
     } else if (error instanceof DataError) {
-      ({ status, message, code, details } = error);
+      ({ status, message, code, details, site } = error);
     } else if (request.signal.aborted) {
       status = 503;
       message = "Request canceled.";
@@ -178,6 +179,6 @@ export async function dataRequest(
     // websites get the versioned protocol's coded error.
     return admin
       ? Response.json({ error: message }, { status, headers })
-      : protocolError(status, message, code, headers, details);
+      : protocolError(status, message, code, headers, details, site);
   }
 }

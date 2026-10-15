@@ -276,6 +276,7 @@ export class SiteData extends DurableObject<Env> {
             message: error.message,
             code: error.code,
             ...(error.details === undefined ? {} : { details: error.details }),
+            ...(error.site ? { site: true } : {}),
             ...(error instanceof BudgetSpent
               ? { resetsAt: error.resetsAt }
               : {}),

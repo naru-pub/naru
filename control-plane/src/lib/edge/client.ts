@@ -147,6 +147,7 @@ async function callWorker<T>(
       message: string;
       code?: ErrorCode;
       details?: unknown;
+      site?: boolean;
     };
   } | null;
   if (response.ok && body && "value" in body) return body.value as T;
@@ -156,6 +157,7 @@ async function callWorker<T>(
       body.error.message,
       body.error.code,
       body.error.details,
+      body.error.site,
     );
   console.error(`Edge Worker answered ${response.status} to ${what}`);
   throw unavailable();

@@ -4,13 +4,44 @@
  * @packageDocumentation
  */
 
-/** A Naru operation that could not be completed. Check it with `instanceof`. */
+/**
+ * A Naru operation that could not be completed. Check it with `instanceof`.
+ *
+ * `message` is a short Korean sentence a visitor can read, so a page may show
+ * it as is (`status.textContent = error.message`): a site function's own
+ * `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
+ * what went wrong, for developers, is `error.cause.message`.
+ */
 export class NaruError extends Error {
   constructor(message, code, cause) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = "NaruError";
     this.code = code;
   }
+}
+
+/** How a page's visitors read each failure. */
+const WORDS = {
+  CONFLICT: "다른 곳에서 먼저 바뀌었습니다. 새로고침한 뒤 다시 해 주세요.",
+  QUOTA_EXCEEDED: "사이트의 사용 한도에 도달했습니다.",
+  AUTH_REQUIRED: "로그인이 필요합니다. 다시 로그인해 주세요.",
+  ACCESS_DENIED: "권한이 없습니다.",
+  NOT_FOUND: "찾는 자료가 없습니다.",
+  RATE_LIMITED: "요청이 너무 많습니다. 잠시 뒤에 다시 해 주세요.",
+  INVALID_REQUEST: "요청을 처리할 수 없습니다.",
+  UNAVAILABLE: "나루에 연결하지 못했습니다. 잠시 뒤에 다시 해 주세요.",
+};
+
+/**
+ * A NaruError worded for visitors (`words`, or the code's), keeping Naru's
+ * English `account` of it, and what caused that, as the cause.
+ */
+function naruError(code, account, { words, cause } = {}) {
+  return new NaruError(
+    words ?? WORDS[code],
+    code,
+    new Error(account, cause === undefined ? undefined : { cause }),
+  );
 }
 
 // The server names the code. Only the codes this version knows are passed on,
@@ -155,12 +186,12 @@ async function request(
   } catch (cause) {
     // The caller's own abort; a timeout (TimeoutError) is Naru's silence.
     if (cause?.name === "AbortError") throw cause;
-    throw new NaruError(
+    throw naruError(
+      "UNAVAILABLE",
       cause?.name === "TimeoutError"
         ? "Naru did not answer in time."
         : "Naru is unavailable.",
-      "UNAVAILABLE",
-      cause,
+      { cause },
     );
   } finally {
     // Also when the response was lost: the write may still have landed.
@@ -174,12 +205,15 @@ async function request(
     renew(Date.now() + Number(renewed) * 1000);
   const result = await response.json().catch(() => null);
   if (!response.ok) {
-    const error = new NaruError(
+    const code = errorCode(response.status, result?.error?.code);
+    const account =
       typeof result?.error?.message === "string"
         ? result.error.message
-        : `Database request failed (HTTP ${response.status}).`,
-      errorCode(response.status, result?.error?.code),
-    );
+        : `Database request failed (HTTP ${response.status}).`;
+    // A site function's ctx.fail message is already written for visitors.
+    const error = naruError(code, account, {
+      words: result?.error?.site === true ? account : undefined,
+    });
     // What a site function passed to ctx.fail, for the page to branch on.
     if (result?.error?.details !== undefined)
       Object.defineProperty(error, "details", {
@@ -191,9 +225,9 @@ async function request(
   // A proxy or challenge page can answer 200 with HTML. Handing that back as
   // an empty result would make a missing document look like a present one.
   if (result === null || typeof result !== "object")
-    throw new NaruError(
-      `The data API did not answer with JSON (HTTP ${response.status}).`,
+    throw naruError(
       "UNAVAILABLE",
+      `The data API did not answer with JSON (HTTP ${response.status}).`,
     );
   return result;
 }
@@ -533,15 +567,19 @@ function media(root, send) {
         );
       } catch (cause) {
         if (cause?.name === "AbortError") throw cause;
-        throw new NaruError("File upload failed.", "UNAVAILABLE", cause);
+        throw naruError("UNAVAILABLE", "File upload failed.", {
+          words: "파일을 올리지 못했습니다. 다시 해 주세요.",
+          cause,
+        });
       }
       // An upload that never finishes is removed by the server within an
       // hour. Storage refusing the bytes (an expired authorization, say) is
       // fixed by uploading again, which authorizes afresh.
       if (!upload.ok)
-        throw new NaruError(
-          `File upload failed (HTTP ${upload.status}).`,
+        throw naruError(
           "UNAVAILABLE",
+          `File upload failed (HTTP ${upload.status}).`,
+          { words: "파일을 올리지 못했습니다. 다시 해 주세요." },
         );
       report({ phase: "finishing" });
       const finished = await send(
@@ -608,7 +646,7 @@ function credential(place, token, expiresAt) {
   const send = async (url, init) => {
     if (signedOut || Date.now() >= expiresAt) {
       forget(place, token);
-      throw new NaruError("Sign in again.", "AUTH_REQUIRED");
+      throw naruError("AUTH_REQUIRED", "Sign in again.");
     }
     try {
       return await request(url, { ...init, token, renew });
@@ -933,9 +971,13 @@ async function returned(context, place, exchange) {
   );
   sessionStorage.removeItem(`${place.key}:pending`);
   if (!(Date.now() - pending.startedAt < 10 * 60 * 1000))
-    throw new NaruError("Sign-in expired.", "AUTH_REQUIRED");
+    throw naruError("AUTH_REQUIRED", "Sign-in expired.", {
+      words: "로그인 시간이 지났습니다. 다시 로그인해 주세요.",
+    });
   if (denied !== null)
-    throw new NaruError("Sign-in was denied.", "ACCESS_DENIED");
+    throw naruError("ACCESS_DENIED", "Sign-in was denied.", {
+      words: "로그인하지 않았습니다.",
+    });
   const startedAt = Date.now();
   const token = await request(`${context.origin}${exchange}`, {
     method: "POST",

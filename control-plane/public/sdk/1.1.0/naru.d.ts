@@ -46,7 +46,14 @@ export type NaruErrorCode =
   | "INVALID_REQUEST"
   | "UNAVAILABLE";
 
-/** A Naru operation that could not be completed. Check it with `instanceof`. */
+/**
+ * A Naru operation that could not be completed. Check it with `instanceof`.
+ *
+ * `message` is a short Korean sentence a visitor can read, so a page may show
+ * it as is (`status.textContent = error.message`): a site function's own
+ * `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
+ * what went wrong, for developers, is `error.cause.message`.
+ */
 export declare class NaruError extends Error {
   private constructor();
   readonly code: NaruErrorCode;

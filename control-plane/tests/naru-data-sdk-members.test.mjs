@@ -397,10 +397,14 @@ test("a function's failure is a NaruError with the server's code", async () => {
         { status: 400 },
       ),
     );
-    await assert.rejects(member.call("shop:buy"), {
-      name: "NaruError",
-      code: "INVALID_REQUEST",
-      message: "Function failed: Error: sold out",
+    // A function that threw is Naru's failure, worded for visitors; the
+    // server's account stays for the developer.
+    await assert.rejects(member.call("shop:buy"), (error) => {
+      assert.equal(error.name, "NaruError");
+      assert.equal(error.code, "INVALID_REQUEST");
+      assert.equal(error.message, "요청을 처리할 수 없습니다.");
+      assert.equal(error.cause.message, "Function failed: Error: sold out");
+      return true;
     });
   });
 });
@@ -416,6 +420,7 @@ test("typed function failures keep their message and details without retrying", 
             code: "CONFLICT",
             message: "품절입니다.",
             details: { reason: "sold_out" },
+            site: true,
           },
         },
         { status: 409 },
