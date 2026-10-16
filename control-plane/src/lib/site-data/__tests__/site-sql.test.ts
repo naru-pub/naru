@@ -642,3 +642,54 @@ integration("SQLite's refusals", () => {
     });
   });
 });
+
+integration("AUTOINCREMENT", () => {
+  test("a deleted row's id is never handed out again, and dumps carry such tables", async () => {
+    await put(
+      "migrations",
+      "0005_tickets",
+      "CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, note TEXT NOT NULL);",
+      false,
+    );
+    await put(
+      "mutations",
+      "tickets",
+      `export async function add(ctx, { note }) {
+         return (await ctx.sql\`INSERT INTO tickets (note) VALUES (\${note}) RETURNING id\`).rows[0].id;
+       }
+       export async function remove(ctx, { id }) { await ctx.sql\`DELETE FROM tickets WHERE id = \${id}\`; }`,
+    );
+    const call = (name: string, args: unknown) =>
+      callSiteObject<{ result: unknown }>(site, "call", {
+        ownerId,
+        site,
+        member: "member-1",
+        kind: "mutation",
+        file: "tickets",
+        name,
+        args,
+      }).then((answer) => answer.result);
+    expect(await call("add", { note: "a" })).toBe(1);
+    expect(await call("add", { note: "b" })).toBe(2);
+    await call("remove", { id: 2 });
+    expect(await call("add", { note: "c" })).toBe(3);
+    const dump = await callSiteObject<{
+      site: { tables: Record<string, unknown[]> };
+    }>(site, "dump", {});
+    expect(dump.site.tables.tickets).toHaveLength(2);
+    expect(Object.keys(dump.site.tables)).not.toContain("sqlite_sequence");
+    const copy = "sqlsite-autoinc";
+    await callSiteObject(copy, "erase", {});
+    await callSiteObject(copy, "restore", dump);
+    expect(
+      (
+        await callSiteObject<{ site: { tables: Record<string, unknown[]> } }>(
+          copy,
+          "dump",
+          {},
+        )
+      ).site.tables.tickets,
+    ).toEqual(dump.site.tables.tickets);
+    await callSiteObject(copy, "erase", {});
+  });
+});
