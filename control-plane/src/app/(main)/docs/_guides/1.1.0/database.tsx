@@ -1050,7 +1050,7 @@ await posts.set(id, { ...post.data, cover: image.url },
             <Section id="errors" title="11 · 한도와 오류">
               <ul className="list-disc space-y-3 pl-6">
                 <li>
-                  사이트당 컬렉션 100개, 문서 10,000개, 데이터 10 MiB. 요청
+                  사이트당 컬렉션 100개, 문서 100,000개, 데이터 100 MiB. 요청
                   하나는 64 KiB까지입니다.
                 </li>
                 <li>

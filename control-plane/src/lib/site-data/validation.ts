@@ -1,7 +1,9 @@
 export const NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 export const MAX_DOCUMENT_BYTES = 64 * 1024;
-export const MAX_SITE_BYTES = 10 * 1024 * 1024;
-export const MAX_DOCUMENTS = 10000;
+export const MAX_SITE_BYTES = 100 * 1024 * 1024;
+// About 1 KiB a document at the byte limit; a search that reads every
+// document then takes about 0.1 s on the mini.
+export const MAX_DOCUMENTS = 100_000;
 export const MAX_COLLECTIONS = 100;
 
 /**

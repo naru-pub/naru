@@ -20,7 +20,11 @@ import {
   type DataCommand,
 } from "../service";
 import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
-import { MAX_DOCUMENT_BYTES } from "../validation";
+import {
+  MAX_DOCUMENT_BYTES,
+  MAX_DOCUMENTS,
+  MAX_SITE_BYTES,
+} from "../validation";
 import { setupTestDatabase, teardownTestDatabase } from "./test-database";
 
 // The Durable Objects backend, end to end: PostgreSQL admits each request,
@@ -437,14 +441,14 @@ integration("Durable Objects site database", () => {
       read_access: "admin",
       write_access: "world",
     };
-    const filler = JSON.stringify("x".repeat(65500));
+    // Room for one 4,000-byte write, not two: usage counts size_bytes.
     await seed(
       [bytes],
-      Array.from({ length: 160 }, (_, n) => ({
+      [65502, MAX_SITE_BYTES - 65502 - 5440].map((size, n) => ({
         collection_id: bytes.id,
         id: `seed${n + 1}`,
-        data: filler,
-        size_bytes: 65502,
+        data: "{}",
+        size_bytes: size,
         version: 1,
         created_at: at,
         updated_at: at,
@@ -470,7 +474,7 @@ integration("Durable Objects site database", () => {
     };
     await seed(
       [quota],
-      Array.from({ length: 9999 }, (_, n) => ({
+      Array.from({ length: MAX_DOCUMENTS - 1 }, (_, n) => ({
         collection_id: quota.id,
         id: `seed${n + 1}`,
         data: "{}",

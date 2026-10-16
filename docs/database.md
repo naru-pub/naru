@@ -249,7 +249,7 @@ There are at most 20 registrations per site, 20 pending codes and 50 live tokens
 
 ## Limits and consistency
 
-- 100 collections, 10,000 documents, and 10 MiB of serialized JSON per site, separate from the hosted-file quota.
+- 100 collections, 100,000 documents, and 100 MiB of serialized JSON per site, separate from the hosted-file quota.
 - Maximum request body: 64 KiB, including the `{ data }` envelope; enforced while streaming, even without Content-Length.
 - Collection names and document IDs: 1–64 ASCII letters, numbers, underscores or hyphens.
 - Pages: 1–100 documents (default 50), defaulting to ID ascending in byte order. See sorting below; pagination is not a snapshot across concurrent changes.

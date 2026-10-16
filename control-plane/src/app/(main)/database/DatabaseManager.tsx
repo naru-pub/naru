@@ -144,7 +144,7 @@ export default function DatabaseManager({
           </p>
           <h1 className="text-2xl font-bold tracking-tight">데이터베이스</h1>
           <p className="text-sm text-muted-foreground">
-            최대 10 MiB · 문서 10,000개 · 컬렉션 100개
+            최대 100 MiB · 문서 100,000개 · 컬렉션 100개
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
