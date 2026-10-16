@@ -125,7 +125,7 @@ export function SupporterMenu({
       enabled: customDomains,
     },
     {
-      href: "/deploys",
+      href: "/github",
       label: "GitHub 배포",
       icon: <Github size={16} />,
       enabled: githubDeploys,

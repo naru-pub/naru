@@ -21,7 +21,7 @@ import {
 } from "./githubApp";
 
 // Deploys through Naru's GitHub App (docs/github-app.md): an owner connects a
-// repository on /deploys, GitHub tells Naru of each push, and Naru publishes
+// repository on /github, GitHub tells Naru of each push, and Naru publishes
 // the pushed commit. A push only marks its target (pending_sha); the runner
 // deploys marked targets, in the request that marked them and every minute
 // after (cli/run-github-deploys.ts), so a deploy that died with its process

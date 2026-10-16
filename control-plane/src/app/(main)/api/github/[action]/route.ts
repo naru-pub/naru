@@ -20,7 +20,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Naru's GitHub App (docs/github-app.md):
-// - install: from /deploys, to GitHub's page that installs the App;
+// - install: from /github, to GitHub's page that installs the App;
 // - connect: the same, for an App already installed, through GitHub sign-in;
 // - callback: where GitHub returns either way, with the person's OAuth code;
 // - webhook: GitHub's deliveries, signed with the App's webhook secret.
@@ -30,7 +30,7 @@ const STATE_COOKIE = "naru_github_state";
 const naru = (request: Request, path: string) =>
   new URL(path, process.env.BASE_URL ?? request.url);
 const home = (request: Request, query: string) =>
-  NextResponse.redirect(naru(request, `/deploys?github=${query}`));
+  NextResponse.redirect(naru(request, `/github?github=${query}`));
 
 async function start(request: Request, action: "install" | "connect") {
   const config = githubAppConfig();

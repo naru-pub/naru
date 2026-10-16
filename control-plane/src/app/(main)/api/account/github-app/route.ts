@@ -15,7 +15,7 @@ import { deployInBackground } from "@/lib/deploy/deployInBackground";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// The /deploys page's side of Naru's GitHub App: the repositories the account
+// The /github page's side of Naru's GitHub App: the repositories the account
 // may connect (GET), connecting one (POST), and deploying one now (PUT).
 
 async function signedIn() {

@@ -1,6 +1,6 @@
 # GitHub App deploys
 
-An owner connects a GitHub repository to their site on `/deploys`, and every
+An owner connects a GitHub repository to their site on `/github`, and every
 push to its branch is published: no workflow file, no repository variables.
 This is the route for sites whose files are in the repository as they are
 served. A site that needs a build step keeps [GitHub CI deploys](github-ci.md),
@@ -23,7 +23,7 @@ always sends `installation` and `installation_repositories`).
 The control plane reads `GITHUB_APP_ID`, `GITHUB_APP_SLUG`,
 `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`
 (the `.pem`, base64-encoded on one line) and `GITHUB_APP_WEBHOOK_SECRET`, in
-infra's `apps/naru/secrets/naru.env`. Without all six, `/deploys` shows only
+infra's `apps/naru/secrets/naru.env`. Without all six, `/github` shows only
 the Actions card and the routes answer 404.
 
 ## Linking: who may publish what
@@ -85,11 +85,11 @@ target (`deploying_at`) for fifteen minutes. A deploy:
    does: checks, copies, deletes what the commit no longer has, updates the
    site title and size, purges the cache.
 
-A failure is kept as the target's `last_error`, shown on `/deploys`, and its
+A failure is kept as the target's `last_error`, shown on `/github`, and its
 mark cleared; the next push or "지금 배포" tries again. A push that arrives
 during a deploy keeps its mark and is deployed after it.
 
 Removing the App, or a repository from it, disables the targets it served and
 forgets the repositories (`installation` and `installation_repositories`
-deliveries). Disconnecting a target on `/deploys` disables it and leaves its
+deliveries). Disconnecting a target on `/github` disables it and leaves its
 files on the site.

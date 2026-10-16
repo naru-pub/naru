@@ -15,6 +15,10 @@ const nextConfig = {
       destination: `/sdk/${version}/:path*`,
     }));
   },
+  // The GitHub deploys page was /deploys; old links and bookmarks follow it.
+  async redirects() {
+    return [{ source: "/deploys", destination: "/github", permanent: true }];
+  },
   async headers() {
     return [
       {
