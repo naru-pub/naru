@@ -419,7 +419,8 @@ export class SiteData extends DurableObject<Env> {
     const me = socket.deserializeAttachment() as LiveSocket | null;
     if (me)
       this.sql.exec("DELETE FROM _naru_subscriptions WHERE socket = ?", me.id);
-    socket.close(code === 1005 ? 1000 : code);
+    // 1005 (no code) and 1006 (dropped) are only ever received, never sent.
+    socket.close(code === 1005 || code === 1006 ? 1000 : code);
   }
 
   /**
@@ -2364,6 +2365,15 @@ export class SiteData extends DurableObject<Env> {
       this.claim(input.ownerId);
       if (input.live === "refresh") return;
       if (visitor || input.member !== null) this.admitWork();
+      // A query or a route's page replaces a page's reads (1.1.0), so it is
+      // limited as reads are: 600 a minute per member or address.
+      if ((kind === "query" || kind === "route") && (visitor || input.member)) {
+        this.spend(visitor ? "visitor_query" : "member_query");
+        this.limitReader(
+          visitor ? callerKey(input.clientIp) : `member:${input.member}`,
+        );
+        return;
+      }
       if (visitor) {
         this.spend(readonly ? "visitor_read_call" : "visitor_call");
         this.limitVisitor(input.clientIp, readonly);

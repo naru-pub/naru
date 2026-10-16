@@ -693,3 +693,20 @@ integration("AUTOINCREMENT", () => {
     await callSiteObject(copy, "erase", {});
   });
 });
+
+integration("query limits", () => {
+  test("a member's queries are limited as reads are, not as function calls", async () => {
+    await put("queries", "ping", "export function ping() { return 1; }");
+    // More than the 120 read-only calls a minute functions allow.
+    for (let i = 0; i < 130; i++)
+      await callSiteObject(site, "call", {
+        ownerId,
+        site,
+        member: "member-9",
+        kind: "query",
+        file: "ping",
+        name: "ping",
+        args: null,
+      });
+  });
+});
