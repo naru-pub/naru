@@ -190,7 +190,7 @@ type Query = { sql: string; bindings: SqlValue[] };
 export function listQuery(
   collectionId: string,
   input: ListInput,
-  authorization?: { sql: string; bindings: SqlValue[]; fingerprint: string },
+  authorization?: { sql: string; bindings: SqlValue[] },
 ) {
   const filter = filters(input.filter);
   const { conditions, bindings } = filterConditions(filter);
@@ -200,10 +200,13 @@ export function listQuery(
     bindings.push(...where.bindings);
     filter.fingerprint = `${filter.fingerprint ?? ""}:w${where.fingerprint}`;
   }
+  // A rule's predicate narrows every page, but is not the cursor's: it is
+  // applied again on each page, and one that depends on data (the reader's
+  // own items, say) would otherwise turn every cursor stale as it changed.
+  // The cursor binds only to what the caller asked: filter, where and sort.
   if (authorization) {
     conditions.push(authorization.sql);
     bindings.push(...authorization.bindings);
-    filter.fingerprint = `${filter.fingerprint ?? ""}:${authorization.fingerprint}`;
   }
   const limit = input.size ?? 50;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)

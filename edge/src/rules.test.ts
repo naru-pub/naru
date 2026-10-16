@@ -3,9 +3,10 @@ import type { SQLInputValue } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { predicate, rulePredicate } from "./rules";
 import { SCHEMA, listQuery } from "./query";
+import { filters } from "../../control-plane/src/lib/site-data/filters";
 
 describe("rule predicates", () => {
-  it("filters secrets before pagination and totals; cursors bind to the authorization", () => {
+  it("filters secrets before pagination and totals; cursors outlive a changing authorization", () => {
     const db = new DatabaseSync(":memory:");
     db.exec(SCHEMA);
     const insert = db.prepare(
@@ -49,9 +50,36 @@ describe("rule predicates", () => {
         )
         .documents.map((d) => d.id),
     ).toEqual(["4", "5"]);
-    expect(() =>
-      listQuery("c", { after: first.nextCursor! }, rulePredicate(true)),
-    ).toThrow();
+    // The rule's predicate is not the cursor's: one that changes between
+    // pages (say, the reader's own items) leaves the cursor valid, and is
+    // applied afresh to the next page.
+    const changed = listQuery(
+      "c",
+      { size: 2, after: first.nextCursor! },
+      rulePredicate({ ne: ["secret", true] }),
+    );
+    expect(
+      changed
+        .page(
+          db
+            .prepare(changed.select.sql)
+            .all(...(changed.select.bindings as SQLInputValue[])) as never[],
+        )
+        .documents.map((d) => d.id),
+    ).toEqual(["4", "5"]);
+    // A guarded filter-only cursor binds to the filter alone, as 1.0.0's.
+    const guarded = listQuery("c", { size: 2, filter: { board: "a" } }, auth);
+    const cursor = guarded.page(
+      db
+        .prepare(guarded.select.sql)
+        .all(...(guarded.select.bindings as SQLInputValue[])) as never[],
+    ).nextCursor!;
+    expect(
+      listQuery("c", { size: 2, filter: { board: "a" }, after: cursor }),
+    ).toBeTruthy();
+    expect(
+      JSON.parse(Buffer.from(cursor.slice(3), "base64url").toString()).f,
+    ).toBe(filters({ board: "a" }).fingerprint);
     db.close();
   });
   it("rejects unsafe expressions and distinguishes missing from explicit null", () => {
