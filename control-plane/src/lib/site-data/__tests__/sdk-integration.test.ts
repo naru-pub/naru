@@ -303,7 +303,8 @@ integration("SDK and data API contract", () => {
       revision: "r1.1",
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
-      // Added with members, in SDK 1.1.0; a 1.0.0 page receives it as well.
+      // From when members wrote collections: null for every write now, and
+      // a 1.0.0 page receives it as well.
       createdBy: null,
     });
     // A write reports the very stamps the read comes back with, so a caller
@@ -574,31 +575,32 @@ integration("SDK and data API contract", () => {
     },
   );
 
-  test("SDK 1.1.0 visitors add to a create collection, and a REST secret is refused", async () => {
+  test("SDK 1.1.0 visitors add to a create collection, as in 1.0.0", async () => {
     const guests = createNaru110({ site: "alice" }).collection<{
       text: string;
     }>("guests");
     const added = await guests.add({ text: "hi" });
-    await expect(guests.set(added.id, { text: "x" })).rejects.toMatchObject({
-      code: "ACCESS_DENIED",
-    });
-    await expect(guests.delete(added.id)).rejects.toMatchObject({
-      code: "ACCESS_DENIED",
-    });
-    // A guest's password is a site function's (ctx.add's secret,
-    // ctx.secretMatches): the wire says so rather than ignore it.
+    expect(added).toMatchObject({ data: { text: "hi" }, revision: "r1.1" });
+    // A visitor's handle only reads and adds, as 1.0.0's does.
+    expect(guests).not.toHaveProperty("set");
+    expect(guests).not.toHaveProperty("getMany");
+    // The wire refuses the rest, and ignores what a body carries besides data.
+    const replaced = await nativeFetch(
+      `${origin}/api/data/v1/alice/guests/${added.id}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Origin: origin },
+        body: JSON.stringify({ data: { text: "x" } }),
+      },
+    );
+    expect(replaced.status).toBe(403);
     const response = await nativeFetch(`${origin}/api/data/v1/alice/guests`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: origin },
       body: JSON.stringify({ data: { text: "hi" }, secret: "pass1234" }),
     });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      error: {
-        code: "INVALID_REQUEST",
-        message: expect.stringContaining("secret is set by site functions"),
-      },
-    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ data: { text: "hi" } });
   });
 
   test("only anonymous reads of world collections are marked cacheable", async () => {
@@ -669,7 +671,7 @@ integration("SDK and data API contract", () => {
     expect(stored()).toBe(renewed);
   });
 
-  test("SDK 1.1.0 signs a member in, and the member writes as themselves", async () => {
+  test("SDK 1.1.0 signs a member in, whose queries and mutations run as them", async () => {
     const bob = (
       await sql<{
         id: string;
@@ -688,7 +690,7 @@ integration("SDK and data API contract", () => {
       adminUserId: alice,
       method: "POST",
       path: [],
-      body: { name: "board", read: "member", write: "member" },
+      body: { name: "board", read: "world", write: "world" },
     });
     const verifier = "w".repeat(43);
     const approval = await approveMemberSignIn(
@@ -725,28 +727,19 @@ integration("SDK and data API contract", () => {
       const member = (await members.members.session())!;
       expect(member.id).toMatch(/^[0-9a-f-]{36}$/);
       expect(location.href).toBe(`${origin}/board/?post=1`);
-      const board = member.collection("board");
-      const post = await board.add({ title: "hello" });
-      expect(post.createdBy).toBe(member.id);
-      // The owner sees who wrote it.
-      expect(
-        await executeData({
-          site: "alice",
-          adminUserId: alice,
-          method: "GET",
-          path: ["board", post.id],
-        }),
-      ).toMatchObject({ document: { createdBy: member.id } });
-      expect(await board.set(member.id, { nick: "bob" })).toMatchObject({
-        id: member.id,
-        createdBy: member.id,
+      // Collections are the owner's and visitors': a member's token is
+      // refused on them, and the member's handle has none.
+      expect(member).not.toHaveProperty("collection");
+      expect(member).not.toHaveProperty("call");
+      const refused = await nativeFetch(`${origin}/api/data/v1/alice/board`, {
+        headers: {
+          Origin: origin,
+          Authorization: `Bearer ${JSON.parse(local.get("naru:member:https://naru.pub:alice")!).accessToken}`,
+        },
       });
-      await expect(board.set("someone-else", {})).rejects.toMatchObject({
-        code: "ACCESS_DENIED",
-      });
-      // Visitors are not members.
-      await expect(naru.collection("board").list()).rejects.toMatchObject({
-        code: "ACCESS_DENIED",
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toMatchObject({
+        error: { code: "ACCESS_DENIED" },
       });
       const file = await member.media.upload(
         new Blob(["log"], { type: "text/plain" }),
@@ -759,63 +752,79 @@ integration("SDK and data API contract", () => {
           .where("object_key", "like", `%${file.url.split("/").pop()}`)
           .executeTakeFirstOrThrow(),
       ).toEqual({ member_id: member.id });
-      // A site function, called over HTTP (and through the edge Worker,
-      // which sends calls on to the control plane).
+      // The site's queries and mutations, over HTTP (and through the edge
+      // Worker, which sends a member's on to the control plane).
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
+        folder: "migrations",
+        file: "0001_counter",
+        source:
+          "CREATE TABLE counter (id INTEGER PRIMARY KEY, n INTEGER NOT NULL);",
+        publish: false,
+      });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "mutations",
         file: "counter",
-        source: `export const readOnly = ["peek", "sneak"];
-        export async function bump(ctx, { by }) {
-          const now = await ctx.get("crud", "count");
-          const n = (now ? now.data : 0) + by;
-          await ctx.set("crud", "count", n);
+        source: `export async function bump(ctx, { by }) {
+          const { rows } = await ctx.sql\`SELECT n FROM counter WHERE id = 1\`;
+          const n = (rows[0]?.n ?? 0) + by;
+          await ctx.sql\`INSERT INTO counter (id, n) VALUES (1, \${n}) ON CONFLICT (id) DO UPDATE SET n = excluded.n\`;
           return { n, version: "mine", member: ctx.member.id };
-        }
-        export async function sneak(ctx) { await ctx.set("crud", "count", 0); }
-        export async function peek(ctx) { return (await ctx.get("crud", "count")).data; }
+        }`,
+        publish: false,
+      });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "queries",
+        file: "counter",
+        source: `export async function sneak(ctx) { await ctx.sql\`DELETE FROM counter\`; }
+        export async function peek(ctx) { return (await ctx.sql\`SELECT n FROM counter WHERE id = 1\`).rows[0].n; }
         export function who(ctx) { return { owner: ctx.owner, member: ctx.member }; }`,
       });
-      expect(await member.call("counter:bump", { by: 2 })).toEqual({
+      expect(await member.mutate("counter:bump", { by: 2 })).toEqual({
         n: 2,
         version: "mine",
         member: member.id,
       });
-      expect(await member.call("counter:bump", { by: 3 })).toMatchObject({
+      expect(await member.mutate("counter:bump", { by: 3 })).toMatchObject({
         n: 5,
       });
-      // Declared read-only, so its write is refused whoever calls.
-      await expect(member.call("counter:sneak")).rejects.toMatchObject({
+      // A query only reads, whoever calls.
+      await expect(member.query("counter:sneak")).rejects.toMatchObject({
         code: "INVALID_REQUEST",
       });
-      // The same owner session, through 1.1.0, which can call functions: the
-      // owner's page keeps it, so the SDK is asked from that page.
+      // The same owner session, through 1.1.0: the owner's page keeps it, so
+      // the SDK is asked from that page.
       const memberPage = location.href;
       location.href = `${origin}/admin`;
       const owner = (await createNaru110({ site: "alice" }).auth.session())!;
       location.href = memberPage;
-      await expect(owner.call("counter:sneak")).rejects.toMatchObject({
+      await expect(owner.query("counter:sneak")).rejects.toMatchObject({
         code: "INVALID_REQUEST",
       });
-      expect(await member.call("counter:peek")).toBe(5);
-      // The owner calls too, as the owner.
-      expect(await owner.call("counter:who")).toEqual({
+      expect(await member.query("counter:peek")).toBe(5);
+      // The owner calls too, as the owner, and a visitor as a visitor.
+      expect(await owner.query("counter:who")).toEqual({
         owner: true,
         member: null,
       });
-      expect(await member.call("counter:who")).toEqual({
+      expect(await member.query("counter:who")).toEqual({
         owner: false,
         member: { id: member.id, roles: [] },
       });
+      expect(await members.query("counter:who")).toEqual({
+        owner: false,
+        member: null,
+      });
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
+        folder: "queries",
         file: "community/boards",
         source:
           "export function list(ctx) { return { member: ctx.member.id }; }",
       });
-      expect(await member.call("community/boards:list")).toEqual({
-        member: member.id,
-      });
-      expect(await member.call("community/boards:list")).toEqual({
+      expect(await member.query("community/boards:list")).toEqual({
         member: member.id,
       });
       await callSiteObject("alice", "putFunctions", {
@@ -826,18 +835,19 @@ integration("SDK and data API contract", () => {
       });
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
+        folder: "queries",
         file: "imports/nested",
         source:
           'import { value } from "../../modules/values.js"; export function read() { return value; }',
       });
-      expect(await member.call("imports/nested:read")).toBe(7);
+      expect(await member.query("imports/nested:read")).toBe(7);
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
         folder: "modules",
         file: "values",
         source: "export const value = 8;",
       });
-      expect(await member.call("imports/nested:read")).toBe(8);
+      expect(await member.query("imports/nested:read")).toBe(8);
       await expect(
         callSiteObject("alice", "putFunctions", {
           site: "alice",
@@ -846,7 +856,7 @@ integration("SDK and data API contract", () => {
           source: 'import "./missing.js";',
         }),
       ).rejects.toThrow("Missing import");
-      expect(await member.call("imports/nested:read")).toBe(8);
+      expect(await member.query("imports/nested:read")).toBe(8);
       // Restore the working copy after the refused revision.
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
@@ -854,7 +864,7 @@ integration("SDK and data API contract", () => {
         file: "values",
         source: "export const value = 8;",
       });
-      await expect(member.call("counter:missing")).rejects.toMatchObject({
+      await expect(member.query("counter:missing")).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
       // Every page of the site shares the sign-in.

@@ -1,6 +1,8 @@
 /**
- * Naru Data SDK 1.1.0: browser SDK for data owned by one Naru site, its
- * owner and its members. This release is still under active development.
+ * Naru Data SDK 1.1.0: browser SDK for data owned by one Naru site: 1.0.0's
+ * collections, with the site's own tables reached through its queries and
+ * mutations, live queries, and its members. This release is still under
+ * active development.
  * @packageDocumentation
  */
 
@@ -8,8 +10,8 @@
  * A Naru operation that could not be completed. Check it with `instanceof`.
  *
  * `message` is a short Korean sentence a visitor can read, so a page may show
- * it as is (`status.textContent = error.message`): a site function's own
- * `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
+ * it as is (`status.textContent = error.message`): a query's or mutation's
+ * own `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
  * what went wrong, for developers, is `error.cause.message`.
  */
 export class NaruError extends Error {
@@ -51,7 +53,7 @@ function failure(status, error) {
     typeof error?.message === "string"
       ? error.message
       : `Database request failed (HTTP ${status}).`;
-  // A site function's ctx.fail message is already written for visitors. A
+  // Site code's ctx.fail message is already written for visitors. A
   // value a unique field already holds is no concurrent change, as other
   // conflicts are: it is worded on its own.
   const unique = error?.details?.unique;
@@ -63,7 +65,7 @@ function failure(status, error) {
           ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
           : undefined,
   });
-  // What a site function passed to ctx.fail, for the page to branch on.
+  // What site code passed to ctx.fail, for the page to branch on.
   if (error?.details !== undefined)
     Object.defineProperty(failed, "details", {
       value: error.details,
@@ -128,8 +130,6 @@ function segment(value) {
 
 // Once this module writes a collection, its subsequent reads bypass caches.
 // No cache lifetime is baked into deployed SDKs; the server may change it.
-// A function call records the collections it changed, or "*" for any when its
-// answer was lost.
 const written = new Set();
 
 // Accept only JSON values, without silently dropping or converting input.
@@ -184,10 +184,7 @@ async function request(
   { method = "GET", body, token, signal, touches, renew },
 ) {
   const fresh =
-    token ||
-    method !== "GET" ||
-    written.has("*") ||
-    touches.some((path) => written.has(path));
+    token || method !== "GET" || touches.some((path) => written.has(path));
   // An explicit transport flag makes cache bypass enforceable by the server.
   if (fresh && method === "GET") {
     const target = new URL(url);
@@ -243,11 +240,10 @@ async function request(
   return result;
 }
 
-function query({ filter, where, sort, size, after, includeTotal } = {}) {
+function query({ filter, sort, size, after, includeTotal } = {}) {
   const parameters = new URLSearchParams();
   if (filter && Object.keys(filter).length)
     parameters.set("filter", JSON.stringify(filter));
-  if (where !== undefined) parameters.set("where", JSON.stringify(where));
   if (sort) parameters.set("sort", JSON.stringify(sort));
   if (size !== undefined) parameters.set("size", String(size));
   if (after) parameters.set("after", after);
@@ -297,23 +293,12 @@ function documents(root, name, send) {
       const result = await send(`${path}/${segment(id)}`, { signal, touches });
       return result.document;
     },
-    async getMany(ids, { signal } = {}) {
-      if (!Array.isArray(ids) || ids.length > 100)
-        throw new TypeError("getMany needs at most 100 IDs.");
-      for (const id of ids) segment(id);
-      const result = await send(
-        `${path}?ids=${encodeURIComponent(JSON.stringify(ids))}`,
-        { signal, touches },
-      );
-      return result.documents;
-    },
     list,
     // A total rides along with a one-document page; the list request is all
     // the server needs to support.
-    async count({ filter, where, signal } = {}) {
-      return (
-        await list({ filter, where, size: 1, includeTotal: true, signal })
-      ).totalCount;
+    async count({ filter, signal } = {}) {
+      return (await list({ filter, size: 1, includeTotal: true, signal }))
+        .totalCount;
     },
     // Each page as it arrives, following nextCursor. Like the pages it walks,
     // this is not a snapshot: writes in between can shift later pages.
@@ -357,13 +342,10 @@ function publicDocuments(root, name) {
   const collection = documents(root, name, request);
   return Object.freeze({
     get: collection.get,
-    getMany: collection.getMany,
     list: collection.list,
     count: collection.count,
     pages: collection.pages,
     add: collection.add,
-    set: collection.set,
-    delete: collection.delete,
   });
 }
 
@@ -645,7 +627,7 @@ function credential(place, token, expiresAt) {
       if (error.code === "AUTH_REQUIRED") forget(place, token);
       // Naru's read-only standby, answering while its server is away, cannot
       // check a sign-in: a read is asked again as a visitor, so what visitors
-      // may see still shows. Writes and members-only data wait.
+      // may see still shows. Writes wait.
       if (
         (init.method ?? "GET") === "GET" &&
         error.code === "UNAVAILABLE" &&
@@ -678,27 +660,19 @@ function guarded(fn, ...args) {
   }
 }
 
-function live(root, options, ticket, hooks) {
-  if (!options || typeof options.onMessage !== "function")
-    throw new TypeError("live() needs an onMessage function.");
-  const topics = [...(options.topics ?? [])];
-  if (topics.length > 8) throw new TypeError("Listen to at most 8 topics.");
-  topics.forEach(segment);
+function live(root, hooks, ticket) {
   let socket;
   let closed = false;
   let attempt = 0;
   let timer;
   let keepalive;
-  const status = (value) => guarded(options.onStatus, value);
   const stop = () => {
     closed = true;
     clearTimeout(timer);
     clearInterval(keepalive);
-    status("closed");
   };
   const retry = () => {
     if (closed) return;
-    status("reconnecting");
     const pause = Math.min(30_000, 1000 * 2 ** attempt++);
     timer = setTimeout(open, pause / 2 + (Math.random() * pause) / 2);
   };
@@ -706,7 +680,6 @@ function live(root, options, ticket, hooks) {
     if (closed) return;
     const url = new URL(`${root}/_live`);
     url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
-    if (topics.length) url.searchParams.set("topics", topics.join(","));
     if (ticket)
       try {
         url.searchParams.set("ticket", await ticket());
@@ -721,10 +694,9 @@ function live(root, options, ticket, hooks) {
     socket = current;
     current.onopen = () => {
       attempt = 0;
-      status("open");
       // Answered by the server without waking the site's object.
       keepalive = setInterval(() => current.send("ping"), 50_000);
-      hooks?.open((message) => current.send(JSON.stringify(message)));
+      hooks.open((message) => current.send(JSON.stringify(message)));
     };
     current.onmessage = (event) => {
       if (event.data === "pong") return;
@@ -734,19 +706,17 @@ function live(root, options, ticket, hooks) {
       } catch {
         return;
       }
-      if (hooks?.message(message)) return;
-      guarded(options.onMessage, message);
+      hooks.message(message);
     };
     current.onclose = (event) => {
       clearInterval(keepalive);
-      hooks?.closed();
+      hooks.closed();
       if (socket === current) socket = undefined;
       if (closed) return;
       if (event.code === 4003) stop();
       else retry();
     };
   }
-  status("connecting");
   void open();
   return Object.freeze({
     close() {
@@ -785,25 +755,27 @@ function subscriptions(root, ticket) {
       onResult: onResult,
       onError: options.onError,
     });
-    connection ??= live(root, { onMessage: () => {} }, ticket, {
-      open(sender) {
-        send = sender;
-        for (const id of active.keys()) ask(id);
+    connection ??= live(
+      root,
+      {
+        open(sender) {
+          send = sender;
+          for (const id of active.keys()) ask(id);
+        },
+        message(message) {
+          const { type, id, result, error } = message ?? {};
+          const subscription = id === undefined ? undefined : active.get(id);
+          if (type === "result" && subscription)
+            guarded(subscription.onResult, result);
+          else if (type === "error" && subscription)
+            guarded(subscription.onError, failure(error?.status ?? 400, error));
+        },
+        closed() {
+          send = undefined;
+        },
       },
-      message(message) {
-        const { type, id, result, error } = message ?? {};
-        const subscription = id === undefined ? undefined : active.get(id);
-        if (type === "result" && subscription)
-          guarded(subscription.onResult, result);
-        else if (type === "error" && subscription)
-          guarded(subscription.onError, failure(error?.status ?? 400, error));
-        else return false;
-        return true;
-      },
-      closed() {
-        send = undefined;
-      },
-    });
+      ticket,
+    );
     ask(id);
     return Object.freeze({
       close() {
@@ -818,38 +790,23 @@ function subscriptions(root, ticket) {
   };
 }
 
-// Calling a site function, as a member or the owner: the same request with the
-// handle's token. The server says which collections the call changed, so only
-// their later reads skip caches; a call whose answer was lost may have changed
-// any of them.
-function functions(root, send, path = "_call") {
+// Running a query or mutation, as a visitor, a member or the owner: the same
+// request with the handle's token, if it has one. Queries and mutations write
+// the site's tables, not collections, so no collection's cache is touched.
+function siteCode(root, send, path) {
   return async function call(name, args = null, { signal } = {}) {
     const parts = typeof name === "string" ? name.split(":") : [];
     if (parts.length !== 2)
-      throw new TypeError('Calls name "<module/path>:<function>".');
+      throw new TypeError('Calls name "<module/path>:<export>".');
     parts[0].split("/").forEach(segment);
     segment(parts[1]);
     jsonValue(args, undefined, "args");
-    let answer;
-    try {
-      answer = await send(`${root}/${path}/${parts[0]}:${parts[1]}`, {
-        method: "POST",
-        body: { args },
-        signal,
-        touches: [],
-      });
-    } catch (error) {
-      if (
-        path === "_call" &&
-        (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
-      )
-        written.add("*");
-      throw error;
-    }
-    // Queries and mutations write tables, not collections.
-    if (path !== "_call") return answer.result;
-    for (const collection of answer.written ?? ["*"])
-      written.add(collection === "*" ? "*" : `${root}/${collection}`);
+    const answer = await send(`${root}/${path}/${parts[0]}:${parts[1]}`, {
+      method: "POST",
+      body: { args },
+      signal,
+      touches: [],
+    });
     return answer.result;
   };
 }
@@ -897,9 +854,8 @@ function admin(context, token, expiresAt) {
           : null,
       );
     },
-    call: functions(root, send),
-    query: functions(root, send, "_query"),
-    mutate: functions(root, send, "_mutate"),
+    query: siteCode(root, send, "_query"),
+    mutate: siteCode(root, send, "_mutate"),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });
@@ -918,11 +874,8 @@ function member(context, token, expiresAt, id) {
   };
   return Object.freeze({
     id,
-    collection: (name) => documents(root, name, send),
-    call: functions(root, send),
-    query: functions(root, send, "_query"),
-    mutate: functions(root, send, "_mutate"),
-    live: (options) => live(root, options, liveTicket),
+    query: siteCode(root, send, "_query"),
+    mutate: siteCode(root, send, "_mutate"),
     subscribe: subscriptions(root, liveTicket),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
@@ -1132,11 +1085,9 @@ export function createNaru(options) {
   const context = target(options);
   return Object.freeze({
     collection: (name) => publicDocuments(context.root, name),
-    live: (options) => live(context.root, options),
     subscribe: subscriptions(context.root),
-    call: functions(context.root, request),
-    query: functions(context.root, request, "_query"),
-    mutate: functions(context.root, request, "_mutate"),
+    query: siteCode(context.root, request, "_query"),
+    mutate: siteCode(context.root, request, "_mutate"),
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({ collections = [], mediaDelete } = {}) =>

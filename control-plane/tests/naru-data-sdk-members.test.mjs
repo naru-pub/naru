@@ -167,42 +167,29 @@ test("a sign-in that did not complete is an ordinary signed-out visit", async ()
   });
 });
 
-test("a member writes with their token, and an ended sign-in is forgotten", async () => {
+test("a member queries and mutates with their token, and an ended sign-in is forgotten", async () => {
   await browser(async ({ calls, respond, local }) => {
     saveMember(local);
     const member = await createNaru().members.session();
-    const board = member.collection("board");
-    assert.deepEqual(Object.keys(board).sort(), [
-      "add",
-      "count",
-      "delete",
-      "get",
-      "getMany",
-      "list",
-      "pages",
-      "set",
+    // Members reach the site's data through its queries and mutations.
+    assert.deepEqual(Object.keys(member).sort(), [
+      "id",
+      "media",
+      "mutate",
+      "query",
+      "signOut",
+      "subscribe",
     ]);
-    respond(() =>
-      Response.json({
-        id: "m-1",
-        data: { nick: "bob" },
-        revision: "r1.1",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        createdBy: "m-1",
-      }),
-    );
-    const profile = await board.set(member.id, { nick: "bob" });
-    assert.equal(profile.createdBy, "m-1");
-    assert.equal(calls[0].method, "PUT");
+    respond(() => Response.json({ result: { id: 4 } }));
+    assert.deepEqual(await member.mutate("board:write", { title: "hi" }), {
+      id: 4,
+    });
+    assert.equal(calls[0].method, "POST");
     assert.equal(
       calls[0].url.href,
-      "https://sdk.naru.pub/api/data/v1/alice/board/m-1",
+      "https://sdk.naru.pub/api/data/v1/alice/_mutate/board:write",
     );
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
-    respond(emptyPage);
-    await board.list();
-    assert.equal(calls[1].url.searchParams.get("fresh"), "1");
     // The server ended it: forgotten, so the next visit is signed out.
     respond(() =>
       Response.json(
@@ -210,7 +197,9 @@ test("a member writes with their token, and an ended sign-in is forgotten", asyn
         { status: 401 },
       ),
     );
-    await assert.rejects(board.get("x"), { code: "AUTH_REQUIRED" });
+    await assert.rejects(member.query("board:recent"), {
+      code: "AUTH_REQUIRED",
+    });
     assert.equal(local.has(MEMBER), false);
     assert.equal(await createNaru().members.session(), null);
   });
@@ -231,11 +220,11 @@ test("a renewed member token is kept for the site", async () => {
     const member = await createNaru().members.session();
     respond(() =>
       Response.json(
-        { documents: [], nextCursor: null },
+        { result: [] },
         { headers: { "Naru-Owner-Expires-In": "86400" } },
       ),
     );
-    await member.collection("board").list();
+    await member.query("board:recent");
     assert.ok(JSON.parse(local.get(MEMBER)).expiresAt > Date.now() + 86000000);
   });
 });
@@ -252,7 +241,7 @@ test("signing out ends the sign-in on every page, and stops the handle", async (
       "https://naru.pub/api/data-auth/v1/member-revoke",
     );
     assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
-    await assert.rejects(member.collection("board").list(), (error) => {
+    await assert.rejects(member.query("board:recent"), (error) => {
       assert.ok(error instanceof NaruError);
       assert.equal(error.code, "AUTH_REQUIRED");
       return true;
@@ -338,36 +327,6 @@ test("blocked storage signs a member in on this page only", async () => {
   });
 });
 
-test("call posts its arguments to the function, and resolves with its result", async () => {
-  await browser(async ({ calls, respond, local }) => {
-    saveMember(local);
-    const naru = createNaru();
-    const member = await naru.members.session();
-    respond(() => Response.json({ result: { ok: true, version: 3 } }));
-    assert.deepEqual(await member.call("shop:buy", { item: "sword", qty: 1 }), {
-      ok: true,
-      version: 3,
-    });
-    assert.equal(calls[0].method, "POST");
-    assert.equal(
-      calls[0].url.href,
-      "https://sdk.naru.pub/api/data/v1/alice/_call/shop:buy",
-    );
-    assert.deepEqual(JSON.parse(calls[0].body), {
-      args: { item: "sword", qty: 1 },
-    });
-    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
-    respond(() => Response.json({ result: null }));
-    assert.equal(await member.call("shop:restock"), null);
-    assert.deepEqual(JSON.parse(calls[1].body), { args: null });
-    // A function may have written anything: this page's reads skip caches.
-    respond(emptyPage);
-    await naru.collection("anything").list();
-    assert.equal(calls[2].url.searchParams.get("fresh"), "1");
-    assert.equal(calls[2].cache, "no-store");
-  });
-});
-
 test("query and mutate post to the site's queries and mutations, signed in or not", async () => {
   await browser(async ({ calls, respond, local }) => {
     const naru = createNaru();
@@ -389,24 +348,35 @@ test("query and mutate post to the site's queries and mutations, signed in or no
       "https://sdk.naru.pub/api/data/v1/alice/_mutate/board:write",
     );
     assert.equal(calls[1].headers.Authorization, `Bearer ${TOKEN}`);
+    assert.deepEqual(JSON.parse(calls[1].body), { args: { title: "넷째" } });
+    // No arguments are sent as null, which the code receives as undefined.
+    respond(() => Response.json({ result: null }));
+    assert.equal(await member.mutate("board:tidy"), null);
+    assert.deepEqual(JSON.parse(calls[2].body), { args: null });
+    // Tables are not collections: a page's collection reads keep caches.
+    respond(emptyPage);
+    await naru.collection("posts").list();
+    assert.equal(calls[3].url.searchParams.get("fresh"), null);
   });
 });
 
-test("call refuses a malformed name or non-JSON arguments before sending", async () => {
+test("query and mutate refuse a malformed name or non-JSON arguments before sending", async () => {
   await browser(async ({ calls, local }) => {
     saveMember(local);
     const member = await createNaru().members.session();
-    for (const name of ["buy", "a/b/c", "../buy", "shop/", "/buy", 7])
-      await assert.rejects(member.call(name), TypeError);
-    await assert.rejects(
-      member.call("shop:buy", { at: new Date() }),
-      TypeError,
-    );
+    for (const method of ["query", "mutate"]) {
+      for (const name of ["buy", "a/b/c", "../buy", "shop/", "/buy", 7])
+        await assert.rejects(member[method](name), TypeError);
+      await assert.rejects(
+        member[method]("shop:buy", { at: new Date() }),
+        TypeError,
+      );
+    }
     assert.equal(calls.length, 0);
   });
 });
 
-test("a function's failure is a NaruError with the server's code", async () => {
+test("site code's failure is a NaruError with the server's code", async () => {
   await browser(async ({ respond, local }) => {
     saveMember(local);
     const member = await createNaru().members.session();
@@ -421,9 +391,9 @@ test("a function's failure is a NaruError with the server's code", async () => {
         { status: 400 },
       ),
     );
-    // A function that threw is Naru's failure, worded for visitors; the
-    // server's account stays for the developer.
-    await assert.rejects(member.call("shop:buy"), (error) => {
+    // Code that threw is Naru's failure, worded for visitors; the server's
+    // account stays for the developer.
+    await assert.rejects(member.mutate("shop:buy"), (error) => {
       assert.equal(error.name, "NaruError");
       assert.equal(error.code, "INVALID_REQUEST");
       assert.equal(error.message, "요청을 처리할 수 없습니다.");
@@ -433,7 +403,7 @@ test("a function's failure is a NaruError with the server's code", async () => {
   });
 });
 
-test("typed function failures keep their message and details without retrying", async () => {
+test("ctx.fail's failures keep their message and details without retrying", async () => {
   await browser(async ({ respond, local, calls }) => {
     saveMember(local);
     const member = await createNaru().members.session();
@@ -450,7 +420,7 @@ test("typed function failures keep their message and details without retrying", 
         { status: 409 },
       ),
     );
-    await assert.rejects(member.call("shop:buy"), (error) => {
+    await assert.rejects(member.mutate("shop:buy"), (error) => {
       assert.ok(error instanceof NaruError);
       assert.equal(error.code, "CONFLICT");
       assert.equal(error.message, "품절입니다.");
@@ -464,7 +434,7 @@ test("typed function failures keep their message and details without retrying", 
         { status: 409 },
       ),
     );
-    await assert.rejects(member.call("shop:buy"), (error) => {
+    await assert.rejects(member.query("shop:catalog"), (error) => {
       assert.equal(error.details, undefined);
       assert.ok(!("details" in error));
       return true;
@@ -472,10 +442,16 @@ test("typed function failures keep their message and details without retrying", 
   });
 });
 
-test("on Naru's standby a member's read is asked again as a visitor; writes wait", async () => {
-  await browser(async ({ calls, respond, local }) => {
-    saveMember(local);
-    const member = await createNaru().members.session();
+test("on Naru's standby an owner's read is asked again as a visitor; writes wait", async () => {
+  await browser(async ({ calls, respond, storage }) => {
+    storage.set(
+      OWNER,
+      JSON.stringify({
+        accessToken: "o".repeat(43),
+        expiresAt: Date.now() + 3600000,
+      }),
+    );
+    const admin = await createNaru().auth.session();
     const standby = () =>
       Response.json(
         {
@@ -492,18 +468,18 @@ test("on Naru's standby a member's read is asked again as a visitor; writes wait
         ? standby()
         : Response.json({ documents: [], nextCursor: null }),
     );
-    const page = await member.collection("board").list();
+    const page = await admin.collection("board").list();
     assert.deepEqual(page.documents, []);
     assert.equal(calls.length, 2);
-    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
+    assert.equal(calls[0].headers.Authorization, `Bearer ${"o".repeat(43)}`);
     assert.equal(calls[1].headers.Authorization, undefined);
     // A write is not retried, and the session stays for when the server is back.
     respond(standby);
-    await assert.rejects(member.collection("board").add({ text: "hi" }), {
+    await assert.rejects(admin.collection("board").add({ text: "hi" }), {
       code: "UNAVAILABLE",
     });
     assert.equal(calls.length, 3);
-    assert.ok(local.has(MEMBER));
+    assert.ok(storage.has(OWNER));
   });
 });
 
@@ -523,7 +499,7 @@ test("a member the site has not approved learns so from the refusal", async () =
         { status: 403 },
       ),
     );
-    await assert.rejects(member.collection("board").list(), (error) => {
+    await assert.rejects(member.query("board:recent"), (error) => {
       assert.equal(error.code, "ACCESS_DENIED");
       assert.deepEqual(error.details, { membership: "pending" });
       return true;
@@ -533,70 +509,7 @@ test("a member the site has not approved learns so from the refusal", async () =
   });
 });
 
-test("a call posts with member credentials, and only what it wrote skips caches", async () => {
-  await browser(async ({ calls, respond, local }) => {
-    saveMember(local);
-    // A module of its own: which collections were written is the module's.
-    const { createNaru: isolated } =
-      await import("../public/sdk/1.1.0/naru.js?written");
-    const naru = isolated();
-    const member = await naru.members.session();
-    respond(() => Response.json({ result: { value: 1 }, written: ["shop"] }));
-    assert.deepEqual(await member.call("shop:catalog", { page: 1 }), {
-      value: 1,
-    });
-    assert.equal(
-      calls[0].url.href,
-      "https://sdk.naru.pub/api/data/v1/alice/_call/shop:catalog",
-    );
-    assert.equal(calls[0].method, "POST");
-    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
-    assert.deepEqual(JSON.parse(calls[0].body), { args: { page: 1 } });
-    respond(emptyPage);
-    await naru.collection("shop").list();
-    assert.equal(calls.at(-1).url.searchParams.get("fresh"), "1");
-    await naru.collection("posts").list();
-    assert.equal(calls.at(-1).url.searchParams.get("fresh"), null);
-    // An answer that never arrived may have written anything.
-    respond(() => {
-      throw new TypeError("offline");
-    });
-    await assert.rejects(member.call("shop:catalog"), { code: "UNAVAILABLE" });
-    respond(emptyPage);
-    await naru.collection("posts").list();
-    assert.equal(calls.at(-1).url.searchParams.get("fresh"), "1");
-    await assert.rejects(member.call("bad"), TypeError);
-    await assert.rejects(
-      member.call("shop:catalog", { date: new Date() }),
-      TypeError,
-    );
-  });
-});
-
-test("visitors call functions without credentials", async () => {
-  await browser(async ({ calls, respond }) => {
-    respond(() => Response.json({ result: ["entry"], written: [] }));
-    assert.deepEqual(await createNaru().call("guest:list"), ["entry"]);
-    assert.equal(
-      calls[0].url.href,
-      "https://sdk.naru.pub/api/data/v1/alice/_call/guest:list",
-    );
-    assert.equal(calls[0].method, "POST");
-    assert.equal(calls[0].credentials, "omit");
-    assert.equal(calls[0].headers.Authorization, undefined);
-    respond(() =>
-      Response.json(
-        { error: { code: "AUTH_REQUIRED", message: "Sign in." } },
-        { status: 401 },
-      ),
-    );
-    await assert.rejects(createNaru().call("guest:membersOnly"), {
-      code: "AUTH_REQUIRED",
-    });
-  });
-});
-
-test("live connections reconnect with fresh tickets and stop when access ends", async () => {
+test("a member's live queries reconnect with fresh tickets and stop when access ends", async () => {
   const sockets = [];
   class FakeSocket {
     constructor(url) {
@@ -621,23 +534,22 @@ test("live connections reconnect with fresh tickets and stop when access ends", 
       const member = await naru.members.session();
       let tickets = 0;
       respond(() => Response.json({ ticket: `ticket-${++tickets}` }));
-      const heard = [];
-      const statuses = [];
-      const live = member.live({
-        topics: ["board"],
-        onMessage: (message) => heard.push(message),
-        onStatus: (status) => statuses.push(status),
-      });
+      const results = [];
+      const live = member.subscribe("board:mine", null, (result) =>
+        results.push(result),
+      );
       await new Promise((done) => setTimeout(done, 0));
       assert.equal(calls[0].url.pathname, "/api/data/v1/alice/_live");
       assert.equal(calls[0].method, "POST");
       assert.equal(
         sockets[0].url.href,
-        "wss://sdk.naru.pub/api/data/v1/alice/_live?topics=board&ticket=ticket-1",
+        "wss://sdk.naru.pub/api/data/v1/alice/_live?ticket=ticket-1",
       );
-      sockets[0].onmessage({ data: '{"type":"notice","data":{"unread":1}}' });
+      sockets[0].onmessage({ data: '{"type":"result","id":"1","result":2}' });
       sockets[0].onmessage({ data: "pong" });
-      assert.deepEqual(heard, [{ type: "notice", data: { unread: 1 } }]);
+      // Anything else a connection hears is no live query's.
+      sockets[0].onmessage({ data: '{"type":"notice","data":{"unread":1}}' });
+      assert.deepEqual(results, [2]);
       // A dropped connection comes back with a new ticket.
       sockets[0].onclose({ code: 1006 });
       await new Promise((done) => setTimeout(done, 1100));
@@ -647,28 +559,17 @@ test("live connections reconnect with fresh tickets and stop when access ends", 
       sockets[1].onclose({ code: 4003 });
       await new Promise((done) => setTimeout(done, 1100));
       assert.equal(sockets.length, 2);
-      assert.deepEqual(statuses, [
-        "connecting",
-        "open",
-        "reconnecting",
-        "open",
-        "closed",
-      ]);
       live.close();
-      // Visitors listen without a ticket.
-      const visitor = naru.live({ topics: ["board"], onMessage() {} });
+      // Visitors connect without a ticket; there are no topics to hear.
+      const visitor = naru.subscribe("board:recent", null, () => {});
       await new Promise((done) => setTimeout(done, 0));
       assert.equal(
         sockets[2].url.href,
-        "wss://sdk.naru.pub/api/data/v1/alice/_live?topics=board",
+        "wss://sdk.naru.pub/api/data/v1/alice/_live",
       );
       visitor.close();
       assert.equal(sockets[2].closedWith, 1000);
-      assert.throws(
-        () => naru.live({ topics: ["a b"], onMessage() {} }),
-        TypeError,
-      );
-      assert.throws(() => naru.live({}), TypeError);
+      assert.equal(naru.live, undefined);
     });
   } finally {
     globalThis.WebSocket = saved;
@@ -721,37 +622,12 @@ test("owners explicitly request media deletion at sign-in", async () => {
   });
 });
 
-test("getMany sends one bounded read and preserves missing slots", async () => {
-  await browser(async ({ calls, respond, local }) => {
-    saveMember(local);
-    const member = await createNaru().members.session();
-    respond(() =>
-      Response.json({ documents: [{ id: "a" }, null, { id: "a" }] }),
-    );
-    assert.deepEqual(
-      await member.collection("profiles").getMany(["a", "missing", "a"]),
-      [{ id: "a" }, null, { id: "a" }],
-    );
-    assert.deepEqual(JSON.parse(calls[0].url.searchParams.get("ids")), [
-      "a",
-      "missing",
-      "a",
-    ]);
-    assert.equal(calls.length, 1);
-    await assert.rejects(
-      member.collection("profiles").getMany(Array(101).fill("a")),
-      TypeError,
-    );
-    assert.equal(calls.length, 1);
-  });
-});
-
 test("nested module references use colon endpoints and reject ambiguous paths", async () => {
   await browser(async ({ calls, respond, local }) => {
     saveMember(local);
     const member = await createNaru().members.session();
     respond(() => Response.json({ result: true }));
-    for (const method of ["call"]) {
+    for (const method of ["query", "mutate"]) {
       assert.equal(await member[method]("community/boards:list"), true);
       assert.equal(
         calls.at(-1).url.pathname,
@@ -771,7 +647,7 @@ test("nested module references use colon endpoints and reject ambiguous paths", 
       ])
         await assert.rejects(member[method](value), TypeError);
     }
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
   });
 });
 

@@ -1,17 +1,17 @@
-// What 1.1.0 adds to 1.0.0's types (naru-data-sdk.types.ts): members, and
-// the author every document carries.
+// What 1.1.0 adds to 1.0.0's types (naru-data-sdk.types.ts): the site's
+// queries and mutations, live queries, and members.
 import {
   createNaru,
   type Admin,
-  type Document,
-  type Collection,
   type AdminCollection,
+  type Live,
   type Member,
+  type NaruError,
   type PublicCollection,
 } from "../public/sdk/1.1.0/naru.js";
 
-interface Profile {
-  nick: string;
+interface Post {
+  title: string;
 }
 const naru = createNaru({ site: "alice" });
 
@@ -21,31 +21,60 @@ async function members() {
   const id: string = member.id;
   // @ts-expect-error A member's id is the site's to read, not to change.
   member.id = "someone";
-  const profiles: Collection<Profile> = member.collection<Profile>("profiles");
-  const mine: Document<Profile> = await profiles.set(id, { nick: "bob" });
-  const author: string | null = mine.createdBy;
-  await profiles.delete(id, { condition: { revision: mine.revision } });
-  // @ts-expect-error Data keeps its type.
-  await profiles.add({ nick: 1 });
-  // A member's handle is a visitor's and the owner's: one Collection.
-  const visitor: Collection<Profile> = naru.collection<Profile>("profiles");
-  // 1.0.0's names for it still compile.
-  const legacy: PublicCollection<Profile> & AdminCollection<Profile> = profiles;
+  // Members reach the site's data through its queries and mutations.
+  // @ts-expect-error Collections are the owner's and visitors', as in 1.0.0.
+  void member.collection;
+  const posts = await member.query<Post[]>("community/posts:list", {
+    board: "free",
+  });
+  const written: number = await member.mutate<number>("community/posts:add", {
+    title: "hi",
+  });
+  const live: Live = member.subscribe<Post[]>(
+    "community/posts:list",
+    { board: "free" },
+    (result) => void result[0]?.title,
+    { onError: (error: NaruError) => void error.code },
+  );
+  live.close();
   const file = await member.media.upload(new Blob(["x"]), {
     onProgress: (progress) => progress.phase,
   });
   const url: string = file.url;
   // @ts-expect-error Batches are the owner's.
   void member.batch;
+  // @ts-expect-error Site functions and live messages are gone.
+  void member.call;
   await member.signOut();
-  void [author, visitor, legacy, url];
+  void [id, posts, written, url];
+}
+
+async function visitors() {
+  // A visitor's handle is 1.0.0's: reading and adding.
+  const posts: PublicCollection<Post> = naru.collection<Post>("posts");
+  await posts.add({ title: "hi" });
+  // @ts-expect-error Replacing is the owner's.
+  void posts.set;
+  // @ts-expect-error Batch reads are gone.
+  void posts.getMany;
+  // @ts-expect-error As are predicates.
+  await posts.list({ where: { eq: ["title", "hi"] } });
+  // @ts-expect-error And live topics.
+  void naru.live;
+  await naru.query("community/posts:list");
 }
 
 async function owner() {
   const admin: Admin | null = await naru.auth.session();
+  if (!admin) return naru.auth.signIn();
+  const posts: AdminCollection<Post> = admin.collection<Post>("posts");
+  const added = await posts.add({ title: "hi" });
+  await posts.set(added.id, { title: "bye" });
+  // @ts-expect-error Documents carry no author in 1.1.0's types, as in 1.0.0.
+  void added.createdBy;
+  await admin.mutate("community/posts:add", { title: "owner" });
   // Sign-in for members takes no collections.
   // @ts-expect-error
   await naru.members.signIn({ collections: ["posts"] });
-  void admin;
 }
-void [members, owner];
+void [members, visitors, owner];

@@ -1,6 +1,8 @@
 /**
- * Naru Data SDK 1.1.0: browser SDK for data owned by one Naru site, its
- * owner and its members. This release is still under active development.
+ * Naru Data SDK 1.1.0: browser SDK for data owned by one Naru site: 1.0.0's
+ * collections, with the site's own tables reached through its queries and
+ * mutations, live queries, and its members. This release is still under
+ * active development.
  * @packageDocumentation
  */
 
@@ -26,14 +28,6 @@ export interface Document<T = Json> {
   createdAt: string;
   updatedAt: string;
   revision: Revision;
-  /**
-   * The member who created the document, by their member ID, which a
-   * replacement keeps. Null for one the site's owner, a visitor or a site
-   * function created. Where the collection's rule exports `present` (1.1.0),
-   * a member sees only their own: anyone else's reads as null, and `where`
-   * may ask about it only as `{ eq: [{ metadata: "createdBy" }, member.id] }`.
-   */
-  createdBy: string | null;
 }
 
 export interface Page<T = Json> {
@@ -60,8 +54,8 @@ export type NaruErrorCode =
  * A Naru operation that could not be completed. Check it with `instanceof`.
  *
  * `message` is a short Korean sentence a visitor can read, so a page may show
- * it as is (`status.textContent = error.message`): a site function's own
- * `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
+ * it as is (`status.textContent = error.message`): a query's or mutation's
+ * own `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
  * what went wrong, for developers, is `error.cause.message`.
  */
 export class NaruError extends Error {
@@ -72,7 +66,7 @@ export class NaruError extends Error {
   }
   declare readonly code: NaruErrorCode;
   /**
-   * The JSON a site function passed as `ctx.fail(code, message, details)`,
+   * The JSON a query or mutation passed as `ctx.fail(code, message, details)`,
    * such as `{ reason: "sold_out" }`; or, when a member's request is refused
    * because the site has not approved them, `{ membership: "pending" }` or
    * `{ membership: "banned" }`; or, for a `CONFLICT` because another
@@ -133,7 +127,7 @@ function failure(
     typeof error?.message === "string"
       ? error.message
       : `Database request failed (HTTP ${status}).`;
-  // A site function's ctx.fail message is already written for visitors. A
+  // Site code's ctx.fail message is already written for visitors. A
   // value a unique field already holds is no concurrent change, as other
   // conflicts are: it is worded on its own.
   const unique = (error?.details as { unique?: unknown } | undefined)?.unique;
@@ -145,7 +139,7 @@ function failure(
           ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
           : undefined,
   });
-  // What a site function passed to ctx.fail, for the page to branch on.
+  // What site code passed to ctx.fail, for the page to branch on.
   if (error?.details !== undefined)
     Object.defineProperty(failed, "details", {
       value: error.details,
@@ -169,49 +163,6 @@ export type Filter = Record<
     }
 >;
 
-/**
- * A top-level user field by name, or document metadata. `createdAt` and
- * `updatedAt` (1.1.0) compare as UTC times written as documents show them,
- * such as `"2026-10-16T09:00:00.000Z"`.
- */
-export type PredicateField =
-  string | { metadata: "id" | "createdBy" | "createdAt" | "updatedAt" };
-
-/**
- * A condition on documents, as a collection rule's `readable` returns: `true`,
- * `false`, `all` or `any` of conditions, or one comparison. Values match only
- * their own JSON type; a missing field matches no comparison except `ne`.
- * At most 100 nodes, ten levels deep.
- */
-export type Predicate =
-  | boolean
-  | { all: readonly Predicate[] }
-  | { any: readonly Predicate[] }
-  | { eq: readonly [PredicateField, string | number | boolean | null] }
-  | { ne: readonly [PredicateField, string | number | boolean | null] }
-  | { gt: readonly [PredicateField, string | number] }
-  | { gte: readonly [PredicateField, string | number] }
-  | { lt: readonly [PredicateField, string | number] }
-  | { lte: readonly [PredicateField, string | number] }
-  | {
-      /** Equal to any of 1–100 values. */
-      in: readonly [
-        PredicateField,
-        readonly (string | number | boolean | null)[],
-      ];
-    }
-  | {
-      /** An array field holding the value (1.1.0). */
-      has: readonly [string, string | number | boolean | null];
-    }
-  | {
-      /**
-       * A string field with this text in it, 1–100 characters; A–Z match
-       * in either case (1.1.0).
-       */
-      contains: readonly [string, string];
-    };
-
 /** One or two keys: a user field by name, or document metadata. */
 export type Sort =
   | readonly [
@@ -233,8 +184,6 @@ export type Sort =
 
 export interface ListOptions {
   filter?: Filter;
-  /** Combined with `filter`: documents must match both. */
-  where?: Predicate;
   sort?: Sort;
   /** Default 50; maximum 100. */
   size?: number;
@@ -247,91 +196,40 @@ export interface ListOptions {
 /** Write only at this revision, or only if the document does not exist yet. */
 export type WriteCondition = { revision: Revision } | { absent: true };
 
-/**
- * A handle on one collection, the same for a visitor, a member and the owner:
- * what each may do, the collection's permissions and rules decide on Naru.
- */
-export interface Collection<T = Json> {
+export interface PublicCollection<T = Json> {
   get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>;
-  /** One bounded read, in input order; missing or unreadable rows are null. */
-  getMany(
-    ids: readonly string[],
-    options?: { signal?: AbortSignal },
-  ): Promise<(Document<T> | null)[]>;
   list(options?: ListOptions): Promise<Page<T>>;
-  /** How many documents match `filter` and `where`, or the whole collection. */
-  count(options?: {
-    filter?: Filter;
-    where?: Predicate;
-    signal?: AbortSignal;
-  }): Promise<number>;
+  /** How many documents match `filter`, or the whole collection. */
+  count(options?: { filter?: Filter; signal?: AbortSignal }): Promise<number>;
   /**
    * Every page of a query in turn, following `nextCursor` from `after` (or
    * the start). Not a snapshot: writes in between can shift later pages.
    */
   pages(options?: ListOptions): AsyncIterable<Page<T>>;
-  /**
-   * Adds a document under a new ID. A guest's post that its writer may edit
-   * later with a password is a site function's: `ctx.add(collection, data,
-   * { secret })` keeps the password's hash, `ctx.secretMatches` checks it.
-   */
   add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>;
-  /**
-   * Replaces the whole document, or creates it, when the collection or its
-   * rule allows: the owner always; a member, a document they created or the
-   * one named by their own `member.id`.
-   */
+}
+
+export interface AdminCollection<T = Json> extends PublicCollection<T> {
+  /** Replaces the whole document or creates it. */
   set(
     id: string,
     data: T,
     options?: { condition?: WriteCondition; signal?: AbortSignal },
   ): Promise<Document<T>>;
-  /**
-   * Deletes a document, as `set` may replace it. Deleting a missing document
-   * succeeds unless a condition was supplied.
-   */
+  /** Deleting a missing document succeeds unless a condition was supplied. */
   delete(
     id: string,
     options?: { condition?: { revision: Revision }; signal?: AbortSignal },
   ): Promise<void>;
 }
 
-/** @deprecated 1.0.0's name for a visitor's handle, kept so 1.0.0 code compiles: use `Collection`. */
-export type PublicCollection<T = Json> = Collection<T>;
-/** @deprecated 1.0.0's name for the owner's handle, kept so 1.0.0 code compiles: use `Collection`. */
-export type AdminCollection<T = Json> = Collection<T>;
-
 /** A visitor signed in to this site with their Naru account. */
 export interface Member extends SiteCode, LiveQueries {
   /**
-   * This member's ID on this site, the same on every visit. Documents they
-   * create carry it as `createdBy`. It is not their Naru account name.
+   * This member's ID on this site, the same on every visit: `ctx.member.id`
+   * in the site's queries and mutations. It is not their Naru account name.
    */
   readonly id: string;
-  collection<T = Json>(name: string): Collection<T>;
-  /**
-   * Calls one of the site's functions, `"<module/path>:<function>"`: an export of
-   * the site's `_naru/functions/<module/path>.js`. It runs on Naru, in one
-   * transaction, with the site owner's access to its collections, and
-   * resolves with what it returned. A function that throws, or exceeds its
-   * limits, changes nothing. Exports the module lists in
-   * `export const readOnly = [...]` cannot write, and count against the
-   * member's read budget instead of their calls. Static relative JavaScript
-   * imports and re-exports may share code in `_naru/modules/`; imports stay
-   * within `_naru/functions/` and `_naru/modules/`. Include `.js`; dynamic
-   * imports and top-level await are unsupported. File updates activate an
-   * immutable source revision.
-   */
-  call<R = Json>(
-    name: string,
-    args?: Json,
-    options?: { signal?: AbortSignal },
-  ): Promise<R>;
-  /**
-   * Hears what the site's functions send this member (`ctx.notify`), and
-   * broadcasts to `topics`, until closed or until their access ends.
-   */
-  live(options: LiveOptions): Live;
   media: {
     /** Deletes one of this member's own uploads by ID. */
     delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
@@ -368,8 +266,7 @@ export interface Member extends SiteCode, LiveQueries {
 }
 
 /**
- * The site's queries and mutations (1.1.0's new design): its own code over
- * its own tables, which its `_naru/migrations/` create. Anyone may call them,
+ * The site's queries and mutations: its own code over its own tables, which its `_naru/migrations/` create. Anyone may call them,
  * signed in or not; the code decides what each caller may see and do from
  * `ctx.member`, `ctx.owner` and `ctx.visitor`.
  */
@@ -397,19 +294,13 @@ export interface SiteCode {
   ): Promise<R>;
 }
 
+/**
+ * The owner signed in on this page. Its queries and mutations see
+ * `ctx.member` null and `ctx.owner` true, whatever collections this sign-in
+ * approved, and are not counted against the site's budget.
+ */
 export interface Admin extends SiteCode {
-  collection<T = Json>(name: string): Collection<T>;
-  /**
-   * Calls one of the site's functions as the owner, as `Member.call` does
-   * for a member: the function sees `ctx.member` null and `ctx.owner` true,
-   * whatever collections this sign-in approved. Owner calls are not counted
-   * against the site's budget.
-   */
-  call<R = Json>(
-    name: string,
-    args?: Json,
-    options?: { signal?: AbortSignal },
-  ): Promise<R>;
+  collection<T = Json>(name: string): AdminCollection<T>;
   /**
    * Commits every write or none. Conditions guard individual documents. Does
    * not retry. Resolves, in the order written, with what each `set` stored and
@@ -481,27 +372,7 @@ export interface Admin extends SiteCode {
   signOut(): Promise<void>;
 }
 
-/** What a live connection hears from the site's functions. */
-export type LiveMessage =
-  /** `ctx.notify(memberId, data)` to the member this connection signed in as. */
-  | { type: "notice"; data: Json }
-  /** `ctx.broadcast(topic, data)` to every listener of the topic. */
-  | { type: "topic"; topic: string; data: Json };
-
-export interface LiveOptions {
-  /** Up to eight topic names whose broadcasts to hear. */
-  topics?: readonly string[];
-  onMessage(message: LiveMessage): void;
-  /**
-   * Called as the connection opens, drops and reconnects, and once it is
-   * closed for good: by `close()`, or because the member's access ended.
-   * Messages sent while it was down are not delivered later, so read again
-   * on `open` if they matter.
-   */
-  onStatus?(status: "connecting" | "open" | "reconnecting" | "closed"): void;
-}
-
-/** A live connection, reconnecting by itself until closed. */
+/** A live query, kept current until closed. */
 export interface Live {
   close(): void;
 }
@@ -524,26 +395,14 @@ export interface LiveQueries {
   ): Live;
 }
 
+/**
+ * A page's client. Its queries and mutations run as a visitor, signed in to
+ * nothing: they see `ctx.visitor` true and `ctx.member` null, are limited per
+ * visitor address, and count against the site's budget.
+ */
 export interface NaruClient extends SiteCode, LiveQueries {
   /** Visitor access, even when signed in. */
-  collection<T = Json>(name: string): Collection<T>;
-  /**
-   * Hears what the site's functions broadcast to `topics`, as anyone may:
-   * broadcasts are public. Connecting counts against the site's budget.
-   */
-  live(options: LiveOptions): Live;
-  /**
-   * Calls a site function as a visitor, signed in to nothing: only exports
-   * the module lists in `export const visitors = [...]`; others fail with
-   * `AUTH_REQUIRED`. The function sees `ctx.visitor` true and `ctx.member`
-   * null. Calls are limited per visitor address and count against the
-   * site's budget.
-   */
-  call<R = Json>(
-    name: string,
-    args?: Json,
-    options?: { signal?: AbortSignal },
-  ): Promise<R>;
+  collection<T = Json>(name: string): PublicCollection<T>;
   auth: {
     /**
      * The admin client for this page, or null. A sign-in that was denied,
@@ -702,8 +561,6 @@ function segment(value: unknown): string {
 
 // Once this module writes a collection, its subsequent reads bypass caches.
 // No cache lifetime is baked into deployed SDKs; the server may change it.
-// A function call records the collections it changed, or "*" for any when its
-// answer was lost.
 const written = new Set<string>();
 
 // Accept only JSON values, without silently dropping or converting input.
@@ -765,10 +622,7 @@ async function request<Result>(
   { method = "GET", body, token, signal, touches, renew }: Transport,
 ): Promise<Result> {
   const fresh =
-    token ||
-    method !== "GET" ||
-    written.has("*") ||
-    touches.some((path) => written.has(path));
+    token || method !== "GET" || touches.some((path) => written.has(path));
   // An explicit transport flag makes cache bypass enforceable by the server.
   if (fresh && method === "GET") {
     const target = new URL(url);
@@ -826,7 +680,6 @@ async function request<Result>(
 
 function query({
   filter,
-  where,
   sort,
   size,
   after,
@@ -835,7 +688,6 @@ function query({
   const parameters = new URLSearchParams();
   if (filter && Object.keys(filter).length)
     parameters.set("filter", JSON.stringify(filter));
-  if (where !== undefined) parameters.set("where", JSON.stringify(where));
   if (sort) parameters.set("sort", JSON.stringify(sort));
   if (size !== undefined) parameters.set("size", String(size));
   if (after) parameters.set("after", after);
@@ -882,10 +734,14 @@ function condition(
     : "?ifAbsent=1";
 }
 
-function documents<T>(root: string, name: string, send: Send): Collection<T> {
+function documents<T>(
+  root: string,
+  name: string,
+  send: Send,
+): AdminCollection<T> {
   const path = `${root}/${segment(name)}`;
   const touches = [path];
-  const list: Collection<T>["list"] = (options = {}) =>
+  const list: AdminCollection<T>["list"] = (options = {}) =>
     send(`${path}${query(options)}`, { signal: options.signal, touches });
   return Object.freeze({
     async get(id: string, { signal }: { signal?: AbortSignal } = {}) {
@@ -895,30 +751,15 @@ function documents<T>(root: string, name: string, send: Send): Collection<T> {
       );
       return result.document;
     },
-    async getMany(
-      ids: readonly string[],
-      { signal }: { signal?: AbortSignal } = {},
-    ) {
-      if (!Array.isArray(ids) || ids.length > 100)
-        throw new TypeError("getMany needs at most 100 IDs.");
-      for (const id of ids) segment(id);
-      const result = await send<{ documents: (Document<T> | null)[] }>(
-        `${path}?ids=${encodeURIComponent(JSON.stringify(ids))}`,
-        { signal, touches },
-      );
-      return result.documents;
-    },
     list,
     // A total rides along with a one-document page; the list request is all
     // the server needs to support.
     async count({
       filter,
-      where,
       signal,
-    }: { filter?: Filter; where?: Predicate; signal?: AbortSignal } = {}) {
-      return (
-        await list({ filter, where, size: 1, includeTotal: true, signal })
-      ).totalCount as number;
+    }: { filter?: Filter; signal?: AbortSignal } = {}) {
+      return (await list({ filter, size: 1, includeTotal: true, signal }))
+        .totalCount as number;
     },
     // Each page as it arrives, following nextCursor. Like the pages it walks,
     // this is not a snapshot: writes in between can shift later pages.
@@ -971,17 +812,14 @@ function documents<T>(root: string, name: string, send: Send): Collection<T> {
 }
 
 /** A collection of the site this page belongs to. Nothing is requested yet. */
-function publicDocuments<T>(root: string, name: string): Collection<T> {
+function publicDocuments<T>(root: string, name: string): PublicCollection<T> {
   const collection = documents<T>(root, name, request);
   return Object.freeze({
     get: collection.get,
-    getMany: collection.getMany,
     list: collection.list,
     count: collection.count,
     pages: collection.pages,
     add: collection.add,
-    set: collection.set,
-    delete: collection.delete,
   });
 }
 
@@ -1298,7 +1136,7 @@ function credential(place: Place, token: string, expiresAt: number) {
       if ((error as NaruError).code === "AUTH_REQUIRED") forget(place, token);
       // Naru's read-only standby, answering while its server is away, cannot
       // check a sign-in: a read is asked again as a visitor, so what visitors
-      // may see still shows. Writes and members-only data wait.
+      // may see still shows. Writes wait.
       if (
         (init.method ?? "GET") === "GET" &&
         (error as NaruError).code === "UNAVAILABLE" &&
@@ -1335,44 +1173,34 @@ function guarded<A extends unknown[]>(
   }
 }
 
-// A live connection to the site's object, through the edge. It reconnects
-// with growing pauses while the network or the site is away, and stops for
-// good when closed, or when the server ends the member's access (4003). A
-// member's connection opens with a fresh ticket each time (`ticket`).
-/** What live queries hook into a live connection (`subscriptions`). */
+// A live connection to the site's object, through the edge, which carries a
+// handle's live queries (`subscriptions`). It reconnects with growing pauses
+// while the network or the site is away, and stops for good when closed, or
+// when the server ends the member's access (4003). A member's connection
+// opens with a fresh ticket each time (`ticket`).
 type LiveHooks = {
   open(send: (message: unknown) => void): void;
-  message(message: unknown): boolean;
+  message(message: unknown): void;
   closed(): void;
 };
 
 function live(
   root: string,
-  options: LiveOptions,
+  hooks: LiveHooks,
   ticket?: () => Promise<string>,
-  hooks?: LiveHooks,
 ): Live {
-  if (!options || typeof options.onMessage !== "function")
-    throw new TypeError("live() needs an onMessage function.");
-  const topics = [...(options.topics ?? [])];
-  if (topics.length > 8) throw new TypeError("Listen to at most 8 topics.");
-  topics.forEach(segment);
   let socket: WebSocket | undefined;
   let closed = false;
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let keepalive: ReturnType<typeof setInterval> | undefined;
-  const status = (value: Parameters<NonNullable<LiveOptions["onStatus"]>>[0]) =>
-    guarded(options.onStatus, value);
   const stop = () => {
     closed = true;
     clearTimeout(timer);
     clearInterval(keepalive);
-    status("closed");
   };
   const retry = () => {
     if (closed) return;
-    status("reconnecting");
     const pause = Math.min(30_000, 1000 * 2 ** attempt++);
     timer = setTimeout(open, pause / 2 + (Math.random() * pause) / 2);
   };
@@ -1380,7 +1208,6 @@ function live(
     if (closed) return;
     const url = new URL(`${root}/_live`);
     url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
-    if (topics.length) url.searchParams.set("topics", topics.join(","));
     if (ticket)
       try {
         url.searchParams.set("ticket", await ticket());
@@ -1395,32 +1222,29 @@ function live(
     socket = current;
     current.onopen = () => {
       attempt = 0;
-      status("open");
       // Answered by the server without waking the site's object.
       keepalive = setInterval(() => current.send("ping"), 50_000);
-      hooks?.open((message) => current.send(JSON.stringify(message)));
+      hooks.open((message) => current.send(JSON.stringify(message)));
     };
     current.onmessage = (event) => {
       if (event.data === "pong") return;
-      let message: LiveMessage;
+      let message: unknown;
       try {
         message = JSON.parse(String(event.data));
       } catch {
         return;
       }
-      if (hooks?.message(message)) return;
-      guarded(options.onMessage, message);
+      hooks.message(message);
     };
     current.onclose = (event) => {
       clearInterval(keepalive);
-      hooks?.closed();
+      hooks.closed();
       if (socket === current) socket = undefined;
       if (closed) return;
       if (event.code === 4003) stop();
       else retry();
     };
   }
-  status("connecting");
   void open();
   return Object.freeze({
     close() {
@@ -1472,36 +1296,38 @@ function subscriptions(root: string, ticket?: () => Promise<string>) {
       onResult: onResult as (result: never) => void,
       onError: options.onError,
     });
-    connection ??= live(root, { onMessage: () => {} }, ticket, {
-      open(sender) {
-        send = sender;
-        for (const id of active.keys()) ask(id);
-      },
-      message(message) {
-        const { type, id, result, error } = (message ?? {}) as {
-          type?: string;
-          id?: string;
-          result?: never;
-          error?: {
-            status: number;
-            code?: string;
-            message?: string;
-            details?: Json;
-            site?: boolean;
+    connection ??= live(
+      root,
+      {
+        open(sender) {
+          send = sender;
+          for (const id of active.keys()) ask(id);
+        },
+        message(message) {
+          const { type, id, result, error } = (message ?? {}) as {
+            type?: string;
+            id?: string;
+            result?: never;
+            error?: {
+              status: number;
+              code?: string;
+              message?: string;
+              details?: Json;
+              site?: boolean;
+            };
           };
-        };
-        const subscription = id === undefined ? undefined : active.get(id);
-        if (type === "result" && subscription)
-          guarded(subscription.onResult, result!);
-        else if (type === "error" && subscription)
-          guarded(subscription.onError, failure(error?.status ?? 400, error));
-        else return false;
-        return true;
+          const subscription = id === undefined ? undefined : active.get(id);
+          if (type === "result" && subscription)
+            guarded(subscription.onResult, result!);
+          else if (type === "error" && subscription)
+            guarded(subscription.onError, failure(error?.status ?? 400, error));
+        },
+        closed() {
+          send = undefined;
+        },
       },
-      closed() {
-        send = undefined;
-      },
-    });
+      ticket,
+    );
     ask(id);
     return Object.freeze({
       close() {
@@ -1516,11 +1342,10 @@ function subscriptions(root: string, ticket?: () => Promise<string>) {
   };
 }
 
-// Calling a site function, as a member or the owner: the same request with the
-// handle's token. The server says which collections the call changed, so only
-// their later reads skip caches; a call whose answer was lost may have changed
-// any of them.
-function functions(root: string, send: Send, path = "_call") {
+// Running a query or mutation, as a visitor, a member or the owner: the same
+// request with the handle's token, if it has one. Queries and mutations write
+// the site's tables, not collections, so no collection's cache is touched.
+function siteCode(root: string, send: Send, path: "_query" | "_mutate") {
   return async function call<R = Json>(
     name: string,
     args: Json = null,
@@ -1528,28 +1353,14 @@ function functions(root: string, send: Send, path = "_call") {
   ): Promise<R> {
     const parts = typeof name === "string" ? name.split(":") : [];
     if (parts.length !== 2)
-      throw new TypeError('Calls name "<module/path>:<function>".');
+      throw new TypeError('Calls name "<module/path>:<export>".');
     parts[0].split("/").forEach(segment);
     segment(parts[1]);
     jsonValue(args, undefined, "args");
-    let answer;
-    try {
-      answer = await send<{ result: R; written?: string[] }>(
-        `${root}/${path}/${parts[0]}:${parts[1]}`,
-        { method: "POST", body: { args }, signal, touches: [] },
-      );
-    } catch (error) {
-      if (
-        path === "_call" &&
-        (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
-      )
-        written.add("*");
-      throw error;
-    }
-    // Queries and mutations write tables, not collections.
-    if (path !== "_call") return answer.result;
-    for (const collection of answer.written ?? ["*"])
-      written.add(collection === "*" ? "*" : `${root}/${collection}`);
+    const answer = await send<{ result: R }>(
+      `${root}/${path}/${parts[0]}:${parts[1]}`,
+      { method: "POST", body: { args }, signal, touches: [] },
+    );
     return answer.result;
   };
 }
@@ -1603,9 +1414,8 @@ function admin(context: Context, token: string, expiresAt: number): Admin {
           : null,
       );
     },
-    call: functions(root, send),
-    query: functions(root, send, "_query"),
-    mutate: functions(root, send, "_mutate"),
+    query: siteCode(root, send, "_query"),
+    mutate: siteCode(root, send, "_mutate"),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });
@@ -1629,12 +1439,8 @@ function member(
   };
   return Object.freeze({
     id,
-    collection: <T = Json>(name: string): Collection<T> =>
-      documents<T>(root, name, send),
-    call: functions(root, send),
-    query: functions(root, send, "_query"),
-    mutate: functions(root, send, "_mutate"),
-    live: (options: LiveOptions) => live(root, options, liveTicket),
+    query: siteCode(root, send, "_query"),
+    mutate: siteCode(root, send, "_mutate"),
     subscribe: subscriptions(root, liveTicket),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
@@ -1858,11 +1664,9 @@ export function createNaru(options?: { site?: string }): NaruClient {
   return Object.freeze({
     collection: <T = Json>(name: string) =>
       publicDocuments<T>(context.root, name),
-    live: (options: LiveOptions) => live(context.root, options),
     subscribe: subscriptions(context.root),
-    call: functions(context.root, request),
-    query: functions(context.root, request, "_query"),
-    mutate: functions(context.root, request, "_mutate"),
+    query: siteCode(context.root, request, "_query"),
+    mutate: siteCode(context.root, request, "_mutate"),
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({
