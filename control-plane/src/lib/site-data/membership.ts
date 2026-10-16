@@ -7,7 +7,13 @@ import type { AdmissionMode, MembershipStatus } from "./member-auth";
 type MemberPage = {
   admission: AdmissionMode;
   verifiedEmail: boolean;
-  members: { id: string; status: MembershipStatus; createdAt: Date }[];
+  members: {
+    id: string;
+    status: MembershipStatus;
+    createdAt: Date;
+    /** The names the site gave the member, kept in its database. */
+    roles: string[];
+  }[];
   nextCursor: string | null;
 };
 export function manageMembership(
@@ -26,6 +32,7 @@ export function manageMembership(
   | { admission: AdmissionMode }
   | { verifiedEmail: boolean }
   | { id: string; status: MembershipStatus }
+  | { id: string; roles: string[] }
 >;
 export async function manageMembership(
   ownerId: string,
@@ -38,7 +45,11 @@ export async function manageMembership(
   if (method === "GET") {
     const settings = await db
       .selectFrom("users")
-      .select(["site_member_admission", "site_member_verified_email"])
+      .select([
+        "login_name",
+        "site_member_admission",
+        "site_member_verified_email",
+      ])
       .where("id", "=", ownerId)
       .executeTakeFirstOrThrow();
     let query = db
@@ -49,10 +60,19 @@ export async function manageMembership(
       .limit(101);
     if (after) query = query.where("id", ">", uuidId(after));
     const rows = await query.execute();
-    const members = rows.slice(0, 100).map((row) => ({
+    const page = rows.slice(0, 100);
+    const roles = page.length
+      ? await callSiteObject<Record<string, string[]>>(
+          settings.login_name,
+          "rolesOfMembers",
+          { ids: page.map((row) => row.id) },
+        )
+      : {};
+    const members = page.map((row) => ({
       id: row.id,
       status: row.status,
       createdAt: row.created_at,
+      roles: roles[row.id] ?? [],
     }));
     return {
       admission: settings.site_member_admission,
@@ -90,6 +110,23 @@ export async function manageMembership(
       .execute();
     return { verifiedEmail };
   }
+  if (keys.length === 2 && keys.includes("id") && keys.includes("roles")) {
+    const id = uuidId(body.id);
+    const owner = await db
+      .selectFrom("site_members")
+      .innerJoin("users", "users.id", "site_members.site_user_id")
+      .select("users.login_name")
+      .where("site_members.site_user_id", "=", ownerId)
+      .where("site_members.id", "=", id)
+      .executeTakeFirst();
+    if (!owner) throw new DataError(404, "Member not found.");
+    const roles = await callSiteObject<string[]>(
+      owner.login_name,
+      "setMemberRoles",
+      { member: id, roles: body.roles },
+    );
+    return { id, roles };
+  }
   if (
     keys.length !== 2 ||
     !keys.includes("id") ||
@@ -99,7 +136,7 @@ export async function manageMembership(
   )
     throw new DataError(
       400,
-      "Provide admission, verifiedEmail, or a member id and status.",
+      "Provide admission, verifiedEmail, or a member id and status or roles.",
     );
   const id = uuidId(body.id);
   const status = body.status as MembershipStatus;

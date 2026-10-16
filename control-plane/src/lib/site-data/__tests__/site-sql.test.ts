@@ -263,3 +263,89 @@ integration("queries and mutations", () => {
     expect(mutation.status).toBe(401);
   });
 });
+
+integration("member roles", () => {
+  const code = (
+    kind: "query" | "mutation",
+    name: string,
+    args: unknown,
+    member: string | null,
+  ) =>
+    callSiteObject<{ result: unknown }>(site, "call", {
+      ownerId,
+      site,
+      member,
+      ...(member === null ? { visitor: true } : {}),
+      kind,
+      file: "roles",
+      name,
+      args,
+    }).then((answer) => answer.result);
+
+  test("a mutation grants roles, every call reads its caller's, and the owner sets them", async () => {
+    await put(
+      "queries",
+      "roles",
+      `export async function me(ctx) { return ctx.member; }
+       export async function of(ctx, { ids }) { return ctx.rolesOf(ids); }`,
+      false,
+    );
+    await put(
+      "mutations",
+      "roles",
+      `export async function promote(ctx, { member }) {
+         if (!ctx.member?.roles.includes("staff")) ctx.fail("ACCESS_DENIED", "운영진만 할 수 있어요.");
+         const now = (await ctx.rolesOf([member]))[member];
+         await ctx.setRoles(member, [...now, "writer"]);
+       }`,
+    );
+    expect(await code("query", "me", null, "member-3")).toEqual({
+      id: "member-3",
+      roles: [],
+    });
+    await expect(
+      code("mutation", "promote", { member: "member-3" }, "member-3"),
+    ).rejects.toMatchObject({ status: 403 });
+    // The owner, on the control panel.
+    expect(
+      await callSiteObject(site, "setMemberRoles", {
+        member: "member-1",
+        roles: ["staff", "staff", "admin"],
+      }),
+    ).toEqual(["admin", "staff"]);
+    await code("mutation", "promote", { member: "member-3" }, "member-1");
+    expect(await code("query", "me", null, "member-3")).toEqual({
+      id: "member-3",
+      roles: ["writer"],
+    });
+    expect(
+      await code(
+        "query",
+        "of",
+        { ids: ["member-1", "member-3", "nobody"] },
+        null,
+      ),
+    ).toEqual({
+      "member-1": ["admin", "staff"],
+      "member-3": ["writer"],
+      nobody: [],
+    });
+    expect(
+      await callSiteObject(site, "rolesOfMembers", { ids: ["member-3"] }),
+    ).toEqual({ "member-3": ["writer"] });
+    await expect(
+      callSiteObject(site, "setMemberRoles", {
+        member: "member-3",
+        roles: Array.from({ length: 17 }, (_, i) => `r${i}`),
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    // Dumps carry them.
+    const dump = await callSiteObject<{
+      site: { roles: { member: string }[] };
+    }>(site, "dump", {});
+    expect(dump.site.roles.map((row) => row.member).sort()).toEqual([
+      "member-1",
+      "member-3",
+    ]);
+  });
+});

@@ -1627,6 +1627,57 @@ export class SiteData extends DurableObject<Env> {
     this.checkDatabaseSize();
   }
 
+  /**
+   * Members' roles (1.1.0): names the site gives its members, kept with its
+   * data so its code reads them in every call (`ctx.member.roles`,
+   * `ctx.rolesOf`) and grants them (`ctx.setRoles`), and the owner edits them
+   * on the control panel. A member without any has none on record.
+   */
+  private memberRoles(ids: unknown): Record<string, string[]> {
+    if (!Array.isArray(ids) || ids.length > 100)
+      throw new DataError(400, "rolesOf takes at most 100 member IDs.");
+    const members = [...new Set(ids.map(name))];
+    if (!members.length) return {};
+    const found = new Map(
+      this.rows(
+        `SELECT member, roles FROM _naru_roles WHERE member IN (${members.map(() => "?").join(",")})`,
+        ...members,
+      ).map((row) => [String(row.member), JSON.parse(String(row.roles))]),
+    );
+    return Object.fromEntries(
+      members.map((member) => [member, found.get(member) ?? []]),
+    );
+  }
+
+  /** Replaces a member's roles: at most 16 distinct names, none to clear. */
+  private setRoles(member: unknown, roles: unknown) {
+    const id = name(member);
+    if (!Array.isArray(roles) || roles.length > 16)
+      throw new DataError(400, "A member has at most 16 roles.");
+    const names = [...new Set(roles.map(name))].sort();
+    if (names.length)
+      this.sql.exec(
+        "INSERT INTO _naru_roles (member, roles, updated_at) VALUES (?, ?, ?) ON CONFLICT (member) DO UPDATE SET roles = excluded.roles, updated_at = excluded.updated_at",
+        id,
+        JSON.stringify(names),
+        Date.now(),
+      );
+    else this.sql.exec("DELETE FROM _naru_roles WHERE member = ?", id);
+  }
+
+  /** The control panel's view of members' roles. */
+  async rolesOfMembers(input: { ids: unknown }) {
+    return this.run(() => this.memberRoles(input.ids));
+  }
+
+  /** The owner sets a member's roles on the control panel. */
+  async setMemberRoles(input: { member: unknown; roles: unknown }) {
+    return this.run(() => {
+      this.setRoles(input.member, input.roles);
+      return this.memberRoles([input.member])[String(input.member)];
+    });
+  }
+
   /** The site's own tables and views with their columns, for naru-dev's types. */
   async siteTables() {
     return this.run(() =>
@@ -1791,6 +1842,11 @@ export class SiteData extends DurableObject<Env> {
       switch (operation) {
         case "random":
           return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+        case "rolesOf":
+          return this.memberRoles(args[0]);
+        case "setRoles":
+          this.setRoles(args[0], args[1]);
+          return null;
         case "sql":
           // [text, values, read-only], the last from the call, not the code.
           return this.siteSql(args[0], args[1], args[2] === true, sqlBudget);
@@ -2022,6 +2078,10 @@ export class SiteData extends DurableObject<Env> {
               now: Date.now(),
               readonly,
               kind,
+              roles:
+                input.member === null
+                  ? []
+                  : (this.memberRoles([input.member])[input.member] ?? []),
               // A query's rows, a page of them, can be larger than a
               // function's answer.
               ...(kind !== "function" ? { maxResultBytes: MAX_ROW_BYTES } : {}),
@@ -2659,6 +2719,7 @@ export class SiteData extends DurableObject<Env> {
               ]),
           ),
           migrations: this.rows("SELECT * FROM _naru_migrations").map(dumpRow),
+          roles: this.rows("SELECT * FROM _naru_roles").map(dumpRow),
         },
       };
     });
@@ -2724,6 +2785,7 @@ export class SiteData extends DurableObject<Env> {
         `DROP ${object.type.toUpperCase()} IF EXISTS "${object.name.replaceAll('"', '""')}"`,
       );
     this.sql.exec("DELETE FROM _naru_migrations");
+    this.sql.exec("DELETE FROM _naru_roles");
     if (!site) return 0;
     let rows = 0;
     for (const sql of site.schema) {
@@ -2755,6 +2817,7 @@ export class SiteData extends DurableObject<Env> {
       insert(table, given);
     }
     insert("_naru_migrations", site.migrations ?? []);
+    insert("_naru_roles", site.roles ?? []);
     return rows;
   }
 

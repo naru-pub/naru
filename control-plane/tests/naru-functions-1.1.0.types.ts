@@ -82,6 +82,8 @@ export const posts: Query<{ board: string }, { id: number }[]> = async (
 ) => {
   // @ts-expect-error Queries reach tables through sql only.
   await ctx.get("posts", "1");
+  // @ts-expect-error Only a mutation grants roles.
+  await ctx.setRoles("m-1", []);
   const { rows } = await ctx.sql<{
     id: number;
   }>`SELECT id FROM posts WHERE board = ${board}`;
@@ -91,7 +93,9 @@ export const write: Mutation<{ title: string }, number> = async (
   ctx,
   { title },
 ) => {
-  if (!ctx.member) ctx.fail("AUTH_REQUIRED", "로그인해 주세요.");
+  if (!ctx.member) return ctx.fail("AUTH_REQUIRED", "로그인해 주세요.");
+  if (!ctx.member.roles.includes("writer"))
+    await ctx.setRoles(ctx.member.id, [...ctx.member.roles, "writer"]);
   return (await ctx.sql("INSERT INTO posts (title) VALUES (?)", [title]))
     .changes;
 };

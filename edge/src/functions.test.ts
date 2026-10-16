@@ -125,7 +125,7 @@ describe("calling", () => {
   test("ctx.owner says the site's owner called", () => {
     const source =
       "export function who(ctx) { return [ctx.owner, ctx.member]; }";
-    expect(run(source, "who")).toEqual([false, { id: "m-1" }]);
+    expect(run(source, "who")).toEqual([false, { id: "m-1", roles: [] }]);
     expect(
       runFunction(
         module,
@@ -424,7 +424,46 @@ describe("calling", () => {
         "query",
         true,
       ),
-    ).toEqual(["member", "owner", "visitor", "now", "fail", "sql"]);
+    ).toEqual(["member", "owner", "visitor", "now", "fail", "sql", "rolesOf"]);
+    // A mutation may grant roles too.
+    expect(
+      call("export function f(ctx) { return Object.keys(ctx); }", "mutation"),
+    ).toEqual([
+      "member",
+      "owner",
+      "visitor",
+      "now",
+      "fail",
+      "sql",
+      "rolesOf",
+      "setRoles",
+    ]);
+    // The caller's roles ride on ctx.member, frozen.
+    expect(
+      runFunction(
+        module,
+        {
+          source:
+            "export function f(ctx) { try { ctx.member.roles.push('owner'); } catch {} return ctx.member; }",
+          name: "f",
+          args: null,
+          member: "m-1",
+          now: 1,
+          kind: "query",
+          readonly: true,
+          roles: ["staff"],
+        } as Invocation,
+        host,
+      ),
+    ).toEqual({ id: "m-1", roles: ["staff"] });
+    // A query cannot grant roles, even through the host entry point.
+    expect(() =>
+      call(
+        "export function f() { return __call('setRoles', 'm-2', ['staff']); }",
+        "query",
+        true,
+      ),
+    ).toThrow(/a query has no ctx.setRoles/);
     // Nor through the host entry point the ctx methods use.
     expect(() =>
       call(

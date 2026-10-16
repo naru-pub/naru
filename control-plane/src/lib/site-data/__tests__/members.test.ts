@@ -386,6 +386,49 @@ integration("site members", () => {
     }
   });
 
+  test("the owner gives members roles, which a member's query reads", async () => {
+    users.rolf = await insertUser("rolf");
+    await sql`insert into sessions values ('rolf-session', ${users.rolf}, now() + interval '60 days')`.execute(
+      db,
+    );
+    const member = await signIn("rolf");
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "queries",
+      file: "roles",
+      source: "export function me(ctx) { return ctx.member; }",
+    });
+    expect(
+      await manageMembership(owner, "PATCH", {
+        id: member.memberId,
+        roles: ["staff", "writer"],
+      }),
+    ).toEqual({ id: member.memberId, roles: ["staff", "writer"] });
+    const page = await manageMembership(owner, "GET");
+    expect(
+      page.members.find((row) => row.id === member.memberId)?.roles,
+    ).toEqual(["staff", "writer"]);
+    expect(
+      await executeCall({
+        site: "alice",
+        method: "POST",
+        path: ["roles:me"],
+        kind: "query",
+        bearer: { token: member.accessToken, origin },
+      }),
+    ).toMatchObject({
+      result: { id: member.memberId, roles: ["staff", "writer"] },
+    });
+    // Only the owner's own members.
+    await expect(
+      manageMembership(owner, "PATCH", {
+        id: crypto.randomUUID(),
+        roles: ["staff"],
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    await manageMembership(owner, "PATCH", { id: member.memberId, roles: [] });
+  });
+
   test("approval and bans govern existing tokens across data, functions and uploads", async () => {
     const member = await signIn("erin");
     const bearer = { token: member.accessToken, origin };
@@ -529,7 +572,8 @@ integration("site members", () => {
       expect(list.admission).toBe("open");
       expect(
         list.members!.every(
-          (m) => Object.keys(m).sort().join(",") === "createdAt,id,status",
+          (m) =>
+            Object.keys(m).sort().join(",") === "createdAt,id,roles,status",
         ),
       ).toBe(true);
     } finally {

@@ -804,7 +804,7 @@ integration("SDK and data API contract", () => {
       });
       expect(await member.call("counter:who")).toEqual({
         owner: false,
-        member: { id: member.id },
+        member: { id: member.id, roles: [] },
       });
       await callSiteObject("alice", "putFunctions", {
         site: "alice",

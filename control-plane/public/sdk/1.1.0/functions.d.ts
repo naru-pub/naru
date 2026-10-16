@@ -132,9 +132,18 @@ export type ErrorCode =
  * What a rule may use of `ctx`: who is asking, and reads. A rule cannot
  * write or send messages.
  */
+/**
+ * The member who called, and the roles the site gave them (names such as
+ * `staff`, set on the control panel or by `setRoles`); in a rule, none.
+ */
+export interface CallingMember {
+  readonly id: string;
+  readonly roles: readonly string[];
+}
+
 export interface ReadCtx {
   /** The signed-in member, or null for the owner and visitors. */
-  readonly member: { readonly id: string } | null;
+  readonly member: CallingMember | null;
   /** The site's owner called (`admin.call`). Rules never run for the owner. */
   readonly owner: boolean;
   /** No one is signed in: a visitor's call, or a visitor's read in a rule. */
@@ -235,6 +244,8 @@ export interface Ctx extends ReadCtx {
     text: string,
     values?: SqlValue[],
   ): Promise<SqlResult<Row>>;
+  rolesOf: QueryCtx["rolesOf"];
+  setRoles: MutationCtx["setRoles"];
   /** Sends `data` to a member's live connections once the call commits. */
   notify(member: string, data?: Json): void;
   /** Sends `data` to every live listener of `topic` once the call commits. */
@@ -258,7 +269,7 @@ export interface SqlResult<Row> {
  */
 export interface QueryCtx {
   /** The signed-in member, or null for the owner and visitors. */
-  readonly member: { readonly id: string } | null;
+  readonly member: CallingMember | null;
   /** The site's owner called. */
   readonly owner: boolean;
   /** No one is signed in. */
@@ -268,6 +279,17 @@ export interface QueryCtx {
   /** Refuses the request, as `ReadCtx.fail` does: nothing written is kept. */
   fail(code: ErrorCode, message: string, details?: Json): never;
   sql: Ctx["sql"];
+  /** Members' roles, by ID: at most 100 IDs a call; a member without any has []. */
+  rolesOf(members: string[]): Promise<Record<string, string[]>>;
+}
+
+/** A mutation's `ctx`: a query's, and granting roles. */
+export interface MutationCtx extends QueryCtx {
+  /**
+   * Replaces a member's roles with these (at most 16 names); [] clears
+   * them. Kept only if the mutation returns.
+   */
+  setRoles(member: string, roles: string[]): Promise<null>;
 }
 
 /** `export async function name(ctx, args)` in `_naru/queries/` or `_naru/mutations/`. */
@@ -275,7 +297,10 @@ export type Query<Args = Json, Result = Json> = (
   ctx: QueryCtx,
   args: Args,
 ) => Result | Promise<Result>;
-export type Mutation<Args = Json, Result = Json> = Query<Args, Result>;
+export type Mutation<Args = Json, Result = Json> = (
+  ctx: MutationCtx,
+  args: Args,
+) => Result | Promise<Result>;
 
 /** A site function: `export async function name(ctx, args)`. */
 export type SiteFunction<Args = Json, Result = Json> = (

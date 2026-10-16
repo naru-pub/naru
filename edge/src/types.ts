@@ -92,6 +92,8 @@ export type Dump = {
     schema: string[];
     tables: Record<string, DumpRow[]>;
     migrations: DumpRow[];
+    /** Members' roles; a dump from before them has none. */
+    roles?: DumpRow[];
   };
 };
 

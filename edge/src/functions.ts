@@ -92,7 +92,7 @@ const URL_PARTS = [
   "hash",
 ] as const;
 const URL_SETTERS = new Set(URL_PARTS.slice(2));
-export const WRITES = new Set(["add", "set", "delete"]);
+export const WRITES = new Set(["add", "set", "delete", "setRoles"]);
 
 /** What a function may do: one call per ctx method, given its arguments. */
 export type Host = (operation: string, args: unknown[]) => unknown;
@@ -117,6 +117,8 @@ export type Invocation = {
    * design, a query or mutation, whose ctx holds only who calls and `sql`.
    */
   kind?: "function" | "query" | "mutation";
+  /** The calling member's roles (`ctx.member.roles`). */
+  roles?: string[];
 };
 
 const failed = (message: string) =>
@@ -268,20 +270,25 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, visitor, now, args, kind) => {
+globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) => {
+  const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
+  const rolesOf = __operation("rolesOf");
+  const setRoles = __operation("setRoles");
   const sql = (text, ...values) =>
     Array.isArray(text) && Object.hasOwn(text, "raw")
       ? __operation("sql")(text.join("?"), values)
       : __operation("sql")(String(text), values[0] ?? []);
   const ctx = kind !== "function" ? Object.freeze({
-    member: member === null ? null : Object.freeze({ id: member }),
+    member: who,
     owner,
     visitor,
     now,
     fail: (...args) => __call("fail", ...args),
     sql,
+    rolesOf,
+    ...(kind === "mutation" ? { setRoles } : {}),
   }) : Object.freeze({
-    member: member === null ? null : Object.freeze({ id: member }),
+    member: who,
     owner,
     visitor,
     now,
@@ -299,6 +306,8 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind) => {
     // ctx.sql\`SELECT ... WHERE id = \${id}\` binds each value as a parameter;
     // ctx.sql(text, values) takes a builder's compiled statement.
     sql,
+    rolesOf,
+    setRoles,
     notify: (member, data) => __call("notify", member, data ?? null),
     broadcast: (topic, data) => __call("broadcast", topic, data ?? null),
   });
@@ -451,7 +460,11 @@ export function runFunction(
         const values = JSON.parse(context.getString(args));
         // A query or mutation reaches the site's tables through sql alone.
         const kind = invocation.kind ?? "function";
-        if (kind !== "function" && name !== "sql" && name !== "random")
+        if (
+          kind !== "function" &&
+          !["sql", "random", "rolesOf"].includes(name) &&
+          !(kind === "mutation" && name === "setRoles")
+        )
           throw failed(`a ${kind} has no ctx.${name}.`);
         if (MESSAGES.has(name)) {
           if (invocation.readonly)
@@ -540,6 +553,7 @@ export function runFunction(
         invocation.now,
         JSON.stringify(invocation.args ?? null),
         invocation.kind ?? "function",
+        invocation.roles ?? [],
       ]
         .map((value) => JSON.stringify(value))
         .join(", ")})`,
