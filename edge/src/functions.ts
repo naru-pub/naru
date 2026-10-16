@@ -1,3 +1,4 @@
+import { fuel } from "./engine";
 import { resolveModule, type ModuleSources } from "./modules";
 import type {
   QuickJSContext,
@@ -22,8 +23,11 @@ import {
 // still settles within the one transaction.
 //
 // The limits are the spike's findings (spikes/quickjs-functions/README.md):
-// - CPU is bounded by counting QuickJS's interrupt checks, not by a clock,
-//   which Workers stop while code runs;
+// - CPU is bounded by fuel, not by a clock, which Workers stop while code
+//   runs: the metered engine (engine.ts) charges every function entry and
+//   loop iteration, built-ins included, and traps when a call's FUEL is
+//   spent. QuickJS's interrupt checks still end plain JavaScript loops
+//   gently, but they miss work done in built-ins;
 // - memory is bounded by the WebAssembly memory itself (the module is built
 //   with that cap, see quickjs.ts), since QuickJS's own limit misses most
 //   allocations in this build;
@@ -41,6 +45,12 @@ import {
 
 /** About 70 ms of interpreting on Cloudflare's hardware (the spike's). */
 export const INTERRUPT_BUDGET = 2000;
+/**
+ * The fuel a call may spend, setup included. A plain loop spends about 780
+ * million in INTERRUPT_BUDGET's checks, so the interrupt still ends one first;
+ * this catches the rest, a few hundred milliseconds at worst.
+ */
+export const FUEL = 1_000_000_000n;
 export const STACK_BYTES = 128 * 1024;
 /**
  * Database operations a call may make, writes included. Host time is what
@@ -294,6 +304,9 @@ export function runFunction(
 ): unknown {
   if (retired.has(module))
     throw new Error("A retired QuickJS instance was asked to run a call.");
+  const counter = fuel.get(module);
+  if (!counter) throw new Error("QuickJS instances for calls are metered.");
+  counter.value = FUEL;
   const runtime = module.newRuntime();
   let context: QuickJSContext | undefined;
   const owned: QuickJSHandle[] = [];
@@ -309,9 +322,16 @@ export function runFunction(
     clean = true;
     return result;
   } catch (error) {
+    // The meter trapped: the instance stopped mid-instruction and is retired.
+    if (error instanceof WebAssembly.RuntimeError && counter.value < 0n) {
+      spent.cpu = true;
+      throw failed("it ran too long.");
+    }
     clean = error instanceof DataError;
     throw error;
   } finally {
+    // Freeing runs on fuel too, which the call may have spent.
+    counter.value = FUEL;
     if (clean && !spent.cpu && !spent.memory)
       try {
         for (const handle of owned) if (handle.alive) handle.dispose();

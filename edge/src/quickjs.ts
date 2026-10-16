@@ -1,16 +1,11 @@
-import {
-  newQuickJSWASMModuleFromVariant,
-  newVariant,
-  type QuickJSWASMModule,
-} from "quickjs-emscripten-core";
-import variant from "@jitl/quickjs-ng-wasmfile-release-sync";
+import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 // Bundled by wrangler as a compiled WebAssembly.Module.
-import wasmModule from "../node_modules/@jitl/quickjs-ng-wasmfile-release-sync/dist/emscripten-module.wasm";
+import wasmModule from "../quickjs/metered.wasm";
+import { newEngine } from "./engine";
 import { retired } from "./functions";
 
-// The QuickJS instance site functions run in (functions.ts). Its memory is a
-// WebAssembly.Memory of at most 32 MiB, which the engine enforces where
-// QuickJS's own memory limit does not; the module needs 16 MiB to start.
+// The QuickJS instance site functions run in (functions.ts), metered and
+// memory-capped (engine.ts).
 //
 // One instance serves every call in this isolate, whichever site's object
 // makes it: a call runs synchronously from its runtime's creation to its
@@ -19,19 +14,13 @@ import { retired } from "./functions";
 // isolate rather than one per busy site. An instance a call retired is
 // replaced, and so is one that has served CALLS_PER_INSTANCE calls, so that
 // whatever freeing leaves behind in its memory cannot accumulate for long.
-const PAGES = { initial: 256, maximum: 512 };
 const CALLS_PER_INSTANCE = 1000;
 
 let current: Promise<QuickJSWASMModule> | undefined;
 let calls = 0;
 
 function create() {
-  return newQuickJSWASMModuleFromVariant(
-    newVariant(variant, {
-      wasmModule,
-      wasmMemory: () => Promise.resolve(new WebAssembly.Memory(PAGES)),
-    }),
-  );
+  return newEngine(wasmModule);
 }
 
 /** The instance to run the next call in: run it before awaiting anything else. */

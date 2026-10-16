@@ -2,13 +2,9 @@ import { readFileSync } from "node:fs";
 import { URL } from "node:url";
 import { ruleEntry, rulePredicate } from "./rules";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  newQuickJSWASMModuleFromVariant,
-  newVariant,
-  type QuickJSWASMModule,
-} from "quickjs-emscripten-core";
-import variant from "@jitl/quickjs-ng-wasmfile-release-sync";
+import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
+import { newEngine } from "./engine";
 import {
   MAX_OPERATIONS,
   retired,
@@ -17,15 +13,15 @@ import {
   type Invocation,
 } from "./functions";
 
-// The engine in plain Node, with the same QuickJS build and memory cap as the
-// Worker (quickjs.ts) and an in-memory host standing in for the site's object.
-const engine = () =>
-  newQuickJSWASMModuleFromVariant(
-    newVariant(variant, {
-      wasmMemory: () =>
-        Promise.resolve(new WebAssembly.Memory({ initial: 256, maximum: 512 })),
-    }),
-  );
+// The engine in plain Node: the Worker's metered QuickJS build (engine.ts),
+// with an in-memory host standing in for the site's object.
+// (Workers' types declare no WebAssembly.Module constructor; Node has one.)
+const metered = new (WebAssembly.Module as unknown as new (
+  bytes: Uint8Array,
+) => WebAssembly.Module)(
+  readFileSync(new URL("../quickjs/metered.wasm", import.meta.url)),
+);
+const engine = () => newEngine(metered);
 
 let module: QuickJSWASMModule;
 let documents: Map<string, unknown>;
@@ -357,6 +353,23 @@ describe("calling", () => {
         /^Function failed: it ran too long\.$/,
         true,
       ],
+      // Work inside built-ins never reaches an interrupt check; the fuel
+      // meter stops it all the same.
+      [
+        "export function f() { for (;;) JSON.parse('[1,2,3]'); }",
+        /^Function failed: it ran too long\.$/,
+        true,
+      ],
+      [
+        "export function f() { const x = 'a'.repeat(1 << 17); for (;;) x.split('').reverse().join(''); }",
+        /^Function failed: it ran too long\.$/,
+        true,
+      ],
+      [
+        "export function f() { return /(a+)+$/.test('a'.repeat(40) + 'b'); }",
+        /^Function failed: it ran too long\.$/,
+        true,
+      ],
       ["export function f( {", /does not load/, false],
       ["export function f() { return 'x'.repeat(70000); }", /64 KiB/, false],
     ];
@@ -372,6 +385,19 @@ describe("calling", () => {
       expect(error!.message).toMatch(message);
       expect([source, retired.has(module)]).toEqual([source, retires]);
     }
+  });
+
+  test("a call spends fuel only within its budget, and a fresh instance runs after one is spent", async () => {
+    const started = performance.now();
+    expect(() =>
+      run("export function f() { for (;;) JSON.parse('[1,2,3]'); }", "f"),
+    ).toThrow(/it ran too long/);
+    // A billion units is a few hundred milliseconds at most.
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(retired.has(module)).toBe(true);
+    module = await engine();
+    expect(run("export function f() { return 1 + 1; }", "f")).toBe(2);
+    expect(retired.has(module)).toBe(false);
   });
 
   test("a function can catch its own stack overflow and carry on", () => {

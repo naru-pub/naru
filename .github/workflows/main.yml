@@ -116,6 +116,10 @@ jobs:
       # The object's list query against SQLite, without a Worker.
       - run: pnpm test
         working-directory: edge
+      # The committed metered QuickJS is what quickjs/meter makes of the
+      # installed variant's WebAssembly.
+      - run: pnpm check:meter
+        working-directory: edge
       - run: pnpm test:board
         env:
           NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
