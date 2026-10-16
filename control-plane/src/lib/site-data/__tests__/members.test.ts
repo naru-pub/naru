@@ -2159,7 +2159,7 @@ integration("site members", () => {
       for (const [name, message] of [
         ["shop:buyThenFail", "Function failed: Error: changed my mind"],
         ["shop:spin", "Function failed: it ran too long."],
-        ["shop:flood", "Function failed: more than 25 writes."],
+        ["shop:flood", "Function failed: more than 100 database operations."],
       ])
         await expect(
           call(carol.accessToken, name, { item: "shield" }),

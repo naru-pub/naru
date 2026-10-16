@@ -610,7 +610,7 @@ const price = await member.call("shop/buy:quote");`}</Code>
                 호출이 있으면 함수 전체가 실패하고 되돌려집니다. 함수는{" "}
                 <code>async</code>여도 되고, 끝날 때까지 한 트랜잭션입니다.
                 네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때 데이터베이스
-                작업 100번(쓰기 25번), 수십 밀리초, 메모리 32MiB까지 씁니다. ID
+                작업 100번(쓰기 포함), 수십 밀리초, 메모리 32MiB까지 씁니다. ID
                 100개를 한꺼번에 읽는 <code>getMany</code>도 <code>list</code>
                 처럼 한 번으로 셉니다. 글 20개의 글쓴이를 하나씩{" "}
                 <code>get</code>하지 말고 <code>getMany</code>로 한 번에

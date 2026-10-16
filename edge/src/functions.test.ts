@@ -11,7 +11,6 @@ import variant from "@jitl/quickjs-ng-wasmfile-release-sync";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
 import {
   MAX_OPERATIONS,
-  MAX_WRITES,
   retired,
   runFunction,
   type Host,
@@ -495,7 +494,7 @@ describe("the host", () => {
     ).toEqual([true, true]);
   });
 
-  test("operations and writes are counted, since the interrupt checks cannot see them", () => {
+  test("operations, writes among them, are counted, since the interrupt checks cannot see them", () => {
     expect(() =>
       run(
         `export async function f(ctx) { for (let i = 0; ; i++) await ctx.get("c", "x"); }`,
@@ -509,13 +508,13 @@ describe("the host", () => {
         `export async function f(ctx) { for (let i = 0; ; i++) await ctx.set("c", "x" + i, i); }`,
         "f",
       ),
-    ).toThrow(`more than ${MAX_WRITES} writes`);
-    expect(operations.length).toBe(MAX_WRITES);
+    ).toThrow(`more than ${MAX_OPERATIONS} database operations`);
+    expect(operations.length).toBe(MAX_OPERATIONS);
     // Within the limits, everything goes through.
     expect(
       run(
         `export async function f(ctx) {
-          for (let i = 0; i < ${MAX_WRITES}; i++) await ctx.set("c", "x" + i, i);
+          for (let i = 0; i < ${MAX_OPERATIONS - 1}; i++) await ctx.set("c", "x" + i, i);
           return (await ctx.list("c", { size: 1 })).documents.length;
         }`,
         "f",

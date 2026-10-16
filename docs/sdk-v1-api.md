@@ -352,7 +352,7 @@ since a mistake like `if (!ctx.get(...))` would otherwise go unnoticed.
 Functions have no network or timers, and awaiting anything other than `ctx` (a
 promise that never resolves) fails the call.
 
-**Limits.** A call may make 100 database operations, 25 of them writes, send
+**Limits.** A call may make 100 database operations, writes included, send
 50 live messages of at most 4 KiB each, parse 1,000 URLs, run for tens of
 milliseconds and use 32 MiB of memory; its result is at most 64 KiB. A member
 may make 30 calls and 120 read-only calls a minute, and members' calls count

@@ -42,8 +42,14 @@ import {
 /** About 70 ms of interpreting on Cloudflare's hardware (the spike's). */
 export const INTERRUPT_BUDGET = 2000;
 export const STACK_BYTES = 128 * 1024;
+/**
+ * Database operations a call may make, writes included. Host time is what
+ * the cap bounds: a write is a fraction of a millisecond (about 0.2 ms in
+ * the spike), no more than a read of a page, and the owner's batches commit
+ * 100 writes in one transaction too, so writes have no smaller cap of their
+ * own.
+ */
 export const MAX_OPERATIONS = 100;
-export const MAX_WRITES = 25;
 export const MAX_RESULT_BYTES = 64 * 1024;
 export const MAX_FAILURE_DETAILS_BYTES = 4 * 1024;
 /** URL parses a call may make: each is host time the interrupt checks miss. */
@@ -338,7 +344,6 @@ export function runFunction(
     const context = runtime.newContext();
     setContext(context);
     let operations = 0;
-    let writes = 0;
     let parses = 0;
     let messages = 0;
     let passwords = 0;
@@ -433,8 +438,6 @@ export function runFunction(
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
         if (invocation.readonly && WRITES.has(name))
           throw failed("read-only functions cannot write.");
-        if (WRITES.has(name) && ++writes > MAX_WRITES)
-          throw failed(`more than ${MAX_WRITES} writes.`);
         const out = host(name, values);
         return out === undefined
           ? context.undefined
