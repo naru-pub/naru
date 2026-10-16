@@ -490,6 +490,18 @@ describe("calling", () => {
     ).toThrow(expect.objectContaining({ status: 404, message: "no" }));
   });
 
+  test("a call with no arguments gets undefined, so default parameters apply", () => {
+    expect(
+      run(
+        "export function f(ctx, { board = 'free' } = {}) { return board; }",
+        "f",
+      ),
+    ).toBe("free");
+    expect(
+      run("export function f(ctx, args) { return args; }", "f", { a: 1 }),
+    ).toEqual({ a: 1 });
+  });
+
   test("a function can catch its own stack overflow and carry on", () => {
     expect(
       run(

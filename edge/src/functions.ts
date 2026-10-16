@@ -322,7 +322,10 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
     : undefined;
   if (typeof fn !== "function")
     throw Object.assign(new Error(name), { name: "__Missing" });
-  return JSON.stringify((await fn(ctx, JSON.parse(args))) ?? null);
+  // No arguments arrive as undefined, so default parameters apply:
+  // \`function f(ctx, { board } = {})\` works when the page sends none.
+  const input = JSON.parse(args);
+  return JSON.stringify((await fn(ctx, input === null ? undefined : input)) ?? null);
 };
 `;
 
