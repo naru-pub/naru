@@ -6,6 +6,7 @@ import { userHasFeature } from "@/lib/entitlements";
 import { sql } from "kysely";
 import GitHubDeployTargetsCard from "../account/GitHubDeployTargetsCard";
 import GitHubAppCard, { type AppTarget } from "./GitHubAppCard";
+import GitHubDeploymentsCard from "./GitHubDeploymentsCard";
 
 function arrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
@@ -133,32 +134,54 @@ export default async function DeploysPage({
     finalizedAt: deployment.finalized_at?.toISOString() ?? null,
   }));
 
+  // An account that deploys with an Actions workflow sees that first, with
+  // the App connection collapsed under it; otherwise workflow deploys are
+  // kept out of the way, for sites with a build step. Either way the
+  // deployment log, which covers both, follows the one in use.
+  const usesWorkflow = githubDeployTargets.length > 0;
+  const appCard = (
+    <GitHubAppCard
+      loginName={user.loginName}
+      targets={appTargets}
+      notice={typeof github === "string" ? github : null}
+      collapsed={usesWorkflow}
+    />
+  );
+  const workflowCard = (
+    <GitHubDeployTargetsCard
+      loginName={user.loginName}
+      targets={githubDeployTargets}
+    />
+  );
+  const deploymentsCard = (
+    <GitHubDeploymentsCard deployments={githubDeployments} />
+  );
+
   return (
     <div className="bg-background min-h-screen">
       <div className="mx-auto max-w-4xl space-y-8 p-6">
-        <GitHubAppCard
-          loginName={user.loginName}
-          targets={appTargets}
-          notice={typeof github === "string" ? github : null}
-        />
-        {/* Workflow deploys are for sites with a build step: kept out of the
-            way, unless the account already deploys that way. */}
-        <details className="group" open={githubDeployTargets.length > 0}>
-          <summary className="text-muted-foreground cursor-pointer text-sm select-none">
-            고급: GitHub Actions 워크플로로 배포하기
-          </summary>
-          <p className="text-muted-foreground mt-2 text-sm">
-            빌드가 필요한 사이트처럼, 저장소의 파일을 그대로 올리지 않고
-            워크플로에서 만든 결과를 배포할 때 씁니다.
-          </p>
-          <div className="mt-4">
-            <GitHubDeployTargetsCard
-              loginName={user.loginName}
-              targets={githubDeployTargets}
-              deployments={githubDeployments}
-            />
-          </div>
-        </details>
+        {usesWorkflow ? (
+          <>
+            {workflowCard}
+            {appCard}
+            {deploymentsCard}
+          </>
+        ) : (
+          <>
+            {appCard}
+            {deploymentsCard}
+            <details className="group">
+              <summary className="text-muted-foreground cursor-pointer text-sm select-none">
+                고급: GitHub Actions 워크플로로 배포하기
+              </summary>
+              <p className="text-muted-foreground mt-2 text-sm">
+                빌드가 필요한 사이트처럼, 저장소의 파일을 그대로 올리지 않고
+                워크플로에서 만든 결과를 배포할 때 씁니다.
+              </p>
+              <div className="mt-4">{workflowCard}</div>
+            </details>
+          </>
+        )}
       </div>
     </div>
   );

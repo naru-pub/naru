@@ -26,21 +26,6 @@ type GitHubDeployTarget = {
   lastDeployedAt: string | null;
 };
 
-type GitHubDeployment = {
-  id: string;
-  status: string;
-  githubRepository: string;
-  githubRef: string;
-  githubSha: string;
-  targetPrefix: string;
-  fileCount: number;
-  uploadedFileCount: number;
-  deletedFileCount: number;
-  errorMessage: string | null;
-  createdAt: string;
-  finalizedAt: string | null;
-};
-
 function refFromBranch(branch: string) {
   const trimmed = branch.trim();
   if (trimmed.startsWith("refs/heads/") || trimmed.startsWith("refs/tags/")) {
@@ -49,21 +34,12 @@ function refFromBranch(branch: string) {
   return `refs/heads/${trimmed || "main"}`;
 }
 
-function statusLabel(status: string) {
-  if (status === "finalized") return "성공";
-  if (status === "failed") return "실패";
-  if (status === "expired") return "만료";
-  return "진행 중";
-}
-
 export default function GitHubDeployTargetsCard({
   loginName,
   targets,
-  deployments,
 }: {
   loginName: string;
   targets: GitHubDeployTarget[];
-  deployments: GitHubDeployment[];
 }) {
   const [githubRepository, setGithubRepository] = useState("");
   const [branch, setBranch] = useState("main");
@@ -270,70 +246,6 @@ export default function GitHubDeployTargetsCard({
           )}
         </div>
 
-        <div className="space-y-3 border-t border-border pt-5">
-          <div>
-            <h3 className="font-semibold text-foreground">최근 배포</h3>
-            <p className="text-sm text-muted-foreground">
-              최근 20개의 GitHub 배포 시도와 오류를 확인할 수 있습니다.
-            </p>
-          </div>
-          {deployments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              아직 기록된 배포가 없습니다.
-            </p>
-          ) : (
-            <div className="divide-y divide-border rounded border border-border">
-              {deployments.map((deployment) => (
-                <div key={deployment.id} className="space-y-2 p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
-                      <Badge
-                        variant={
-                          deployment.status === "failed" ||
-                          deployment.status === "expired"
-                            ? "destructive"
-                            : deployment.status === "finalized"
-                              ? "default"
-                              : "secondary"
-                        }
-                      >
-                        {statusLabel(deployment.status)}
-                      </Badge>
-                      <span className="font-medium break-all">
-                        {deployment.githubRepository}
-                      </span>
-                      <code title={deployment.githubSha}>
-                        {deployment.githubSha.slice(0, 7)}
-                      </code>
-                    </div>
-                    <time
-                      className="text-muted-foreground"
-                      dateTime={deployment.createdAt}
-                    >
-                      {new Date(deployment.createdAt).toLocaleString()}
-                    </time>
-                  </div>
-                  <p className="text-muted-foreground">
-                    {displayRef(deployment.githubRef)} →{" "}
-                    {normalizeWorkflowTargetPrefix(deployment.targetPrefix)} ·{" "}
-                    {deployment.fileCount}개 파일
-                    {deployment.uploadedFileCount < deployment.fileCount
-                      ? ` · ${deployment.uploadedFileCount}개 변경`
-                      : ""}
-                    {deployment.deletedFileCount > 0
-                      ? ` · ${deployment.deletedFileCount}개 삭제`
-                      : ""}
-                  </p>
-                  {deployment.errorMessage ? (
-                    <p className="rounded bg-destructive/10 px-2 py-1 text-destructive break-words">
-                      {deployment.errorMessage}
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </CardContent>
     </Card>
   );

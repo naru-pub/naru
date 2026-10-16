@@ -17,7 +17,8 @@ import { useConfirm } from "@/components/ui/confirm";
 // Connecting a repository through Naru's GitHub App: install the App (or sign
 // in to GitHub, when it is installed already), pick a repository, and every
 // push to its branch is published. No workflow file and no repository
-// settings. Repositories built by a workflow keep the Actions card below.
+// settings. Repositories built by a workflow use the Actions card instead;
+// for an account that deploys that way, this card is collapsed under it.
 
 export type AppTarget = {
   id: string;
@@ -57,10 +58,12 @@ export default function GitHubAppCard({
   loginName,
   targets,
   notice,
+  collapsed = false,
 }: {
   loginName: string;
   targets: AppTarget[];
   notice: string | null;
+  collapsed?: boolean;
 }) {
   const router = useRouter();
   const confirm = useConfirm();
@@ -167,7 +170,7 @@ export default function GitHubAppCard({
 
   if (!configured) return null;
 
-  return (
+  const card = (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -356,5 +359,15 @@ export default function GitHubAppCard({
         )}
       </CardContent>
     </Card>
+  );
+
+  if (!collapsed) return card;
+  return (
+    <details className="group" open={targets.length > 0}>
+      <summary className="text-muted-foreground cursor-pointer text-sm select-none">
+        GitHub 저장소 연결
+      </summary>
+      <div className="mt-4">{card}</div>
+    </details>
   );
 }
