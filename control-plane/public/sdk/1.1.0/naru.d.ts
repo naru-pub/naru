@@ -64,7 +64,9 @@ export declare class NaruError extends Error {
    * The JSON a site function passed as `ctx.fail(code, message, details)`,
    * such as `{ reason: "sold_out" }`; or, when a member's request is refused
    * because the site has not approved them, `{ membership: "pending" }` or
-   * `{ membership: "banned" }`. Undefined for every other failure.
+   * `{ membership: "banned" }`; or, for a `CONFLICT` because another
+   * document already holds a value of one of the collection's unique
+   * fields, `{ unique: "<field>" }`. Undefined for every other failure.
    */
   readonly details?: Json;
 }

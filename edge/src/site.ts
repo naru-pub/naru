@@ -1314,7 +1314,11 @@ export class SiteData extends DurableObject<Env> {
     this.checkQuota(existing?.size_bytes, size);
     // Never overwrite on create, even in the event of an ID collision.
     if (creating && existing)
-      throw new DataError(409, "Document ID collision. Retry creation.");
+      throw new DataError(
+        409,
+        "Document ID collision. Retry creation.",
+        "CONFLICT",
+      );
     this.checkUnique(collection, id, body.data);
     const before = this.ruleDocument(collection.id, id);
     checkWrite(

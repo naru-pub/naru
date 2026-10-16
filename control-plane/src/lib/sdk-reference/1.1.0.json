@@ -1086,6 +1086,22 @@
                 },
                 {
                   "type": "text",
+                  "value": "; or, for a "
+                },
+                {
+                  "type": "code",
+                  "value": "CONFLICT"
+                },
+                {
+                  "type": "text",
+                  "value": " because another document already holds a value of one of the collection's unique fields, "
+                },
+                {
+                  "type": "code",
+                  "value": "{ unique: \"<field>\" }"
+                },
+                {
+                  "type": "text",
                   "value": ". Undefined for every other failure."
                 }
               ]

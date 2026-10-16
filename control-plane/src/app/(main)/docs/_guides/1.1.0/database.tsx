@@ -455,7 +455,9 @@ export default function DatabaseDocs() {
                 <code>create</code>(누구나 생성만)를 더한 넷 중 하나이며 둘 다
                 꼭 적어야 합니다. <code>unique</code>는 겹치면 안 되는 필드,{" "}
                 <code>rules</code>는 <a href="#rules">컬렉션 규칙</a> 파일
-                이름입니다.
+                이름입니다. 다른 문서가 이미 가진 값을 쓰면{" "}
+                <code>CONFLICT</code>로 실패하고,{" "}
+                <code>error.details.unique</code>에 그 필드 이름이 담깁니다.
               </p>
               <p>
                 <code>indexes</code>에는 자주 거르는 필드를 5개까지 적습니다.
@@ -1112,7 +1114,10 @@ await posts.set(id, { ...post.data, cover: image.url },
                     "AUTH_REQUIRED",
                     "관리자 권한이 만료되었습니다. 다시 로그인하세요.",
                   ],
-                  ["CONFLICT", "condition이 맞지 않습니다."],
+                  [
+                    "CONFLICT",
+                    "condition이 맞지 않거나, unique 필드의 값이 이미 쓰이고 있습니다(error.details.unique).",
+                  ],
                   [
                     "QUOTA_EXCEEDED",
                     "데이터나 미디어 저장 공간이 가득 찼습니다.",

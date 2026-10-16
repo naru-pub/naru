@@ -120,7 +120,9 @@ before anyone signs in and sign-in stays a sign-in:
 
 `read` is `admin`, `member` or `world`; `write` also takes `create`; `rules`
 names a `_naru/rules/` module and `unique` up to three fields no two documents
-may share. `read` and `write` are required, so the file states who can reach every
+may share: a write that would repeat one's string or number value fails with
+`CONFLICT` and `details: { unique: "<field>" }`, which SDK 1.1.0 words as a
+value already in use rather than a concurrent change. `read` and `write` are required, so the file states who can reach every
 collection; an entry without them fails the whole file. `rules`, `unique`
 and `indexes` may be left out. `indexes` names up to five top-level fields
 reads filter on often (`"indexes": ["board", "owner"]`): a list that filters

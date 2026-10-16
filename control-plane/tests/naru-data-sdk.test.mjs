@@ -253,6 +253,30 @@ test("errors have semantic codes and transport details stay diagnostic", async (
         return true;
       },
     );
+    // A unique field's conflict is no concurrent change, and says so.
+    if (VERSION !== "1.0.0") {
+      respond(() =>
+        Response.json(
+          {
+            error: {
+              code: "CONFLICT",
+              message: "Another document in posts already has this nick.",
+              details: { unique: "nick" },
+            },
+          },
+          { status: 409 },
+        ),
+      );
+      await assert.rejects(posts.set("one", {}), (error) => {
+        assert.equal(error.code, "CONFLICT");
+        assert.deepEqual(error.details, { unique: "nick" });
+        assert.equal(
+          error.message,
+          "이미 쓰이고 있는 값입니다(nick). 다른 값으로 해 주세요.",
+        );
+        return true;
+      });
+    }
     // The same status can mean a different thing; the server's code decides.
     failure(409, "QUOTA_EXCEEDED");
     await assert.rejects(posts.set("one", {}), { code: "QUOTA_EXCEEDED" });

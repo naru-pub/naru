@@ -75,7 +75,9 @@ export class NaruError extends Error {
    * The JSON a site function passed as `ctx.fail(code, message, details)`,
    * such as `{ reason: "sold_out" }`; or, when a member's request is refused
    * because the site has not approved them, `{ membership: "pending" }` or
-   * `{ membership: "banned" }`. Undefined for every other failure.
+   * `{ membership: "banned" }`; or, for a `CONFLICT` because another
+   * document already holds a value of one of the collection's unique
+   * fields, `{ unique: "<field>" }`. Undefined for every other failure.
    */
   declare readonly details?: Json;
 }
@@ -732,9 +734,17 @@ async function request<Result>(
       typeof result?.error?.message === "string"
         ? result.error.message
         : `Database request failed (HTTP ${response.status}).`;
-    // A site function's ctx.fail message is already written for visitors.
+    // A site function's ctx.fail message is already written for visitors. A
+    // value a unique field already holds is no concurrent change, as other
+    // conflicts are: it is worded on its own.
+    const unique = result?.error?.details?.unique;
     const error = naruError(code, account, {
-      words: result?.error?.site === true ? account : undefined,
+      words:
+        result?.error?.site === true
+          ? account
+          : code === "CONFLICT" && typeof unique === "string"
+            ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
+            : undefined,
     });
     // What a site function passed to ctx.fail, for the page to branch on.
     if (result?.error?.details !== undefined)
