@@ -334,40 +334,21 @@ function redirectWithCode(
   res.writeHead(302, { location: back.href }).end();
 }
 
-/** The owner's sign-in: collections are made, with any settings asked for. */
+/**
+ * The owner's sign-in: collections it asks for that are missing are made
+ * private, as Naru's sign-in page makes them; _naru/collections.json says
+ * what they should be.
+ */
 async function ownerSignIn(res: ServerResponse, query: URLSearchParams) {
   const names = (query.get("collections") ?? "").split(",").filter(Boolean);
-  const settings = query.has("settings")
-    ? (JSON.parse(query.get("settings")!) as Record<
-        string,
-        {
-          read?: string;
-          write?: string;
-          rules?: string | null;
-          unique?: string[];
-        }
-      >)
-    : {};
   const existing = await object<{ name: string }[]>("collections", {
     names,
   });
   const created = await object<string[] | null>("configureCollections", {
     ownerId: OWNER,
     collections: names
-      .filter(
-        (name) => settings[name] || !existing.some((row) => row.name === name),
-      )
-      .map((name) => ({
-        name,
-        read_access: settings[name]?.read ?? "admin",
-        write_access: settings[name]?.write ?? "admin",
-        ...(settings[name]?.rules !== undefined
-          ? { rules: settings[name].rules }
-          : {}),
-        ...(settings[name]?.unique !== undefined
-          ? { unique: settings[name].unique }
-          : {}),
-      })),
+      .filter((name) => !existing.some((row) => row.name === name))
+      .map((name) => ({ name, read_access: "admin", write_access: "admin" })),
   });
   console.log(
     `owner signed in: ${names.length} collections, ${created?.length ?? 0} created`,
