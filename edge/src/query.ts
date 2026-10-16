@@ -11,6 +11,7 @@ import {
   sortings,
   type Sort,
 } from "../../control-plane/src/lib/site-data/pagination";
+import { createHash } from "node:crypto";
 import type { ListInput } from "./types";
 import { predicate } from "./rules";
 
@@ -64,6 +65,23 @@ export const SCHEMA = `
     count INTEGER NOT NULL
   );
 `;
+
+/**
+ * The index a collection's `indexes` field gets: the field's value, then
+ * creation order, so a list that filters on the field, newest or oldest
+ * first, reads only its own page. Partial, so only that collection's writes
+ * keep it. Collection IDs are UUIDs and fields passed NAME, so both are
+ * inlined safely.
+ */
+export function fieldIndex(collectionId: string, field: string) {
+  if (!/^[0-9a-f-]{36}$/.test(collectionId))
+    throw new Error("Unexpected collection ID.");
+  const index = `documents_index_${createHash("sha256").update(`${collectionId}\u0000${field}`).digest("hex").slice(0, 24)}`;
+  return {
+    index,
+    create: `CREATE INDEX IF NOT EXISTS ${index} ON documents (json_extract(data, '$."${field}"'), created_at, id) WHERE collection_id = '${collectionId}'`,
+  };
+}
 
 /** Preserve the existing six-digit timestamp cursor format; storage is ms. */
 export const cursorTime = (ms: number) =>

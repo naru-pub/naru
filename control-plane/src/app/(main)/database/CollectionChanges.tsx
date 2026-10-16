@@ -20,6 +20,7 @@ const LABELS: Record<string, string> = {
   write: "쓰기",
   rules: "규칙",
   unique: "중복 금지 필드",
+  indexes: "색인 필드",
 };
 const shown = (key: string, value: string) =>
   key === "read" || key === "write"
@@ -61,6 +62,7 @@ export default function CollectionChanges({
                   <TableHead>쓰기</TableHead>
                   <TableHead>규칙</TableHead>
                   <TableHead>중복 금지 필드</TableHead>
+                  <TableHead>색인 필드</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -76,6 +78,9 @@ export default function CollectionChanges({
                       </TableCell>
                       <TableCell className="font-mono">
                         {wanted?.unique?.join(", ") || "—"}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {wanted?.indexes?.join(", ") || "—"}
                       </TableCell>
                     </TableRow>
                   );

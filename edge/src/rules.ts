@@ -95,7 +95,7 @@ export function predicate(value: unknown, what = "Rule predicate") {
     if (operator === "in") {
       if (!Array.isArray(bound) || !bound.length || bound.length > 100)
         throw invalid("in takes [field, [1 to 100 values]].");
-      return `coalesce((${bound.map((item) => `(${comparison(field, "eq", item)})`).join(" OR ")}), 0)`;
+      return `(${bound.map((item) => `(${comparison(field, "eq", item)})`).join(" OR ")})`;
     }
     if (operator === "ne")
       return `NOT coalesce((${comparison(field, "eq", bound)}), 0)`;
@@ -113,7 +113,7 @@ export function predicate(value: unknown, what = "Rule predicate") {
         bindings.push(item);
         match = `type ${typeof item === "string" ? "= 'text'" : "IN ('integer', 'real')"} AND value = ?`;
       }
-      return `coalesce((json_type(data, ${path}) = 'array' AND EXISTS (SELECT 1 FROM json_each(data, ${path}) WHERE ${match})), 0)`;
+      return `(json_type(data, ${path}) = 'array' AND EXISTS (SELECT 1 FROM json_each(data, ${path}) WHERE ${match}))`;
     }
     if (operator === "contains") {
       // Text within a string field: a board's search, say. instr, not LIKE,
@@ -130,11 +130,14 @@ export function predicate(value: unknown, what = "Rule predicate") {
         throw invalid("contains takes [field, text of 1–100 characters].");
       const path = `'$."${name(field)}"'`;
       bindings.push(bound);
-      return `coalesce((json_type(data, ${path}) = 'text' AND instr(lower(json_extract(data, ${path})), lower(?)) > 0), 0)`;
+      return `(json_type(data, ${path}) = 'text' AND instr(lower(json_extract(data, ${path})), lower(?)) > 0)`;
     }
     if (operator !== "eq" && !Object.hasOwn(COMPARE, operator))
       throw invalid(`unknown operator ${operator}.`);
-    return `coalesce((${comparison(field, operator, bound)}), 0)`;
+    // Bare, so SQLite can match the field to a declared index; a missing
+    // field makes it NULL, which a WHERE treats as false. Only ne's NOT needs
+    // NULL turned into false first.
+    return `(${comparison(field, operator, bound)})`;
   }
   const sql = compile(value);
   return {

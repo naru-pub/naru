@@ -34,6 +34,7 @@ import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { quickjs } from "./quickjs";
 import {
   documentOf,
+  fieldIndex,
   listQuery,
   SCHEMA,
   type Row,
@@ -324,12 +325,14 @@ export class SiteData extends DurableObject<Env> {
   private collection(id: string, row: Row) {
     const rules = this.meta(`rules:${id}`);
     const unique = this.uniqueFields(id);
+    const indexes = this.indexFields(id);
     return {
       id,
       user_id: this.meta("owner_id"),
       ...row,
       ...(rules ? { rules } : {}),
       ...(unique.length ? { unique } : {}),
+      ...(indexes.length ? { indexes } : {}),
     };
   }
 
@@ -348,6 +351,34 @@ export class SiteData extends DurableObject<Env> {
       // safely; the query below repeats the indexed expression exactly.
       create: `CREATE INDEX IF NOT EXISTS ${index} ON documents (json_extract(data, '$."${field}"')) WHERE collection_id = '${collectionId}'`,
     };
+  }
+  /** The top-level fields a collection's reads filter on, each indexed. */
+  private indexFields(collectionId: string): string[] {
+    const value = this.meta(`indexes:${collectionId}`);
+    return value ? (JSON.parse(value) as string[]) : [];
+  }
+  /** Sets a collection's indexed fields: at most five top-level fields. */
+  private setIndexes(collection: Collection, value: unknown) {
+    const fields =
+      value === null
+        ? []
+        : Array.isArray(value) && value.length <= 5
+          ? [...new Set(value.map(name))]
+          : (() => {
+              throw new DataError(400, "indexes takes at most 5 field names.");
+            })();
+    const before = this.indexFields(collection.id);
+    for (const field of before)
+      if (!fields.includes(field))
+        this.sql.exec(
+          `DROP INDEX IF EXISTS ${fieldIndex(collection.id, field).index}`,
+        );
+    for (const field of fields)
+      this.sql.exec(fieldIndex(collection.id, field).create);
+    this.setMeta(
+      `indexes:${collection.id}`,
+      fields.length ? JSON.stringify(fields) : null,
+    );
   }
   /**
    * Sets a collection's unique fields: at most three top-level fields whose
@@ -751,6 +782,8 @@ export class SiteData extends DurableObject<Env> {
       }
       if (Object.hasOwn(body, "unique"))
         this.setUnique(collection, body.unique);
+      if (Object.hasOwn(body, "indexes"))
+        this.setIndexes(collection, body.indexes);
       if (Object.hasOwn(body, "rules")) {
         this.setMeta(
           `rules:${collection.id}`,
@@ -1613,6 +1646,7 @@ export class SiteData extends DurableObject<Env> {
   /** Deletes a collection with its documents, rules, unique fields and upload references. */
   private deleteCollection(collection: Collection) {
     this.setUnique(collection, null);
+    this.setIndexes(collection, null);
     // Uploads only this collection used go with it.
     const used = this.rows(
       "SELECT DISTINCT upload_id FROM media_refs WHERE collection_id = ?",
@@ -1894,10 +1928,12 @@ export class SiteData extends DurableObject<Env> {
       ).map((row) => {
         const rules = this.meta(`rules:${row.id}`);
         const unique = this.uniqueFields(row.id);
+        const indexes = this.indexFields(row.id);
         return {
           ...row,
           ...(rules ? { rules } : {}),
           ...(unique.length ? { unique } : {}),
+          ...(indexes.length ? { indexes } : {}),
         };
       });
     });
@@ -1945,6 +1981,7 @@ export class SiteData extends DurableObject<Env> {
     collections: (Omit<Collection, "id"> & {
       rules?: string | null;
       unique?: string[];
+      indexes?: string[];
     })[];
   }) {
     return this.run(() => {
@@ -1983,6 +2020,7 @@ export class SiteData extends DurableObject<Env> {
         if (wanted.rules !== undefined)
           this.setMeta(`rules:${row.id}`, wanted.rules);
         if (wanted.unique !== undefined) this.setUnique(row, wanted.unique);
+        if (wanted.indexes !== undefined) this.setIndexes(row, wanted.indexes);
       }
       return missing.map((c) => c.name);
     });
@@ -1999,6 +2037,11 @@ export class SiteData extends DurableObject<Env> {
       unique: Object.fromEntries(
         this.rows("SELECT key, value FROM meta WHERE key LIKE 'unique:%'").map(
           (row) => [String(row.key).slice(7), JSON.parse(String(row.value))],
+        ),
+      ),
+      indexes: Object.fromEntries(
+        this.rows("SELECT key, value FROM meta WHERE key LIKE 'indexes:%'").map(
+          (row) => [String(row.key).slice(8), JSON.parse(String(row.value))],
         ),
       ),
       ...(this.meta("functions_revision")
@@ -2046,6 +2089,10 @@ export class SiteData extends DurableObject<Env> {
         this.setMeta(`unique:${id}`, JSON.stringify(fields));
         for (const field of fields)
           this.sql.exec(this.uniqueIndex(id, field).create);
+      }
+      for (const [id, fields] of Object.entries(snapshot.indexes ?? {})) {
+        this.setMeta(`indexes:${id}`, JSON.stringify(fields));
+        for (const field of fields) this.sql.exec(fieldIndex(id, field).create);
       }
       if (snapshot.functions) {
         this.setMeta("functions_revision", snapshot.functions.revision);
@@ -2199,6 +2246,11 @@ export class SiteData extends DurableObject<Env> {
     ))
       for (const field of JSON.parse(String(row.value)) as string[])
         this.sql.exec(this.uniqueIndex(String(row.key).slice(7), field).create);
+    for (const row of this.rows(
+      "SELECT key, value FROM meta WHERE key LIKE 'indexes:%'",
+    ))
+      for (const field of JSON.parse(String(row.value)) as string[])
+        this.sql.exec(fieldIndex(String(row.key).slice(8), field).create);
     this.budget = undefined;
     return { rows };
   }

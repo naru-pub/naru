@@ -121,10 +121,17 @@ before anyone signs in and sign-in stays a sign-in:
 `read` is `admin`, `member` or `world`; `write` also takes `create`; `rules`
 names a `_naru/rules/` module and `unique` up to three fields no two documents
 may share. `read` and `write` are required, so the file states who can reach every
-collection; an entry without them fails the whole file. `rules` and `unique`
-may be left out. When the file arrives (a template applied, a GitHub
-deploy, a save in the editor) Naru creates the collections the site lacks with
-these settings. Changes to existing collections wait for the owner, who sees
+collection; an entry without them fails the whole file. `rules`, `unique`
+and `indexes` may be left out. `indexes` names up to five top-level fields
+reads filter on often (`"indexes": ["board", "owner"]`): a list that filters
+on one with `filter` or `where` (a rule's `readable` included), newest or
+oldest first, reads only its page instead of every document. Each adds a
+little to every write in its collection, and an index does not help
+`contains`, `in`, or sorting on another field. When the file arrives (a
+template applied, a GitHub deploy, a save in the editor) Naru creates the
+collections the site lacks with these settings, and applies a change to
+existing collections' indexes alone at once, since an index opens nothing to
+anyone. Other changes to existing collections wait for the owner, who sees
 them on /database and applies them with one click. The file needs SDK 1.1.0
 only for `rules`; it works with any SDK version, and sites without it are
 unaffected. `pnpm naru-dev` installs it too, changes included.

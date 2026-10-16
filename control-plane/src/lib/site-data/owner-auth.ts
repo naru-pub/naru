@@ -66,6 +66,8 @@ export type CollectionRequest = {
   write: "admin" | "create" | "member" | "world";
   rules?: string | null;
   unique?: string[];
+  /** Fields reads filter on often, each given an index (up to five). */
+  indexes?: string[];
 };
 /**
  * The settings a sign-in asks for, by collection name: only for collections
@@ -90,7 +92,7 @@ export function collectionRequests(
       throw new DataError(400, `Invalid settings for ${collection}.`);
     const entry = raw as Record<string, unknown>;
     for (const key of Object.keys(entry))
-      if (!["read", "write", "rules", "unique"].includes(key))
+      if (!["read", "write", "rules", "unique", "indexes"].includes(key))
         throw new DataError(400, `Unknown setting ${key} for ${collection}.`);
     const unique = entry.unique;
     if (
@@ -107,9 +109,22 @@ export function collectionRequests(
         ? {}
         : { rules: entry.rules === null ? null : name(entry.rules) }),
       ...(unique === undefined ? {} : { unique: unique.map(name) }),
+      ...(entry.indexes === undefined
+        ? {}
+        : { indexes: indexFields(entry.indexes) }),
     };
   }
   return result;
+}
+/** Up to five distinct top-level field names to index. */
+function indexFields(value: unknown) {
+  if (
+    !Array.isArray(value) ||
+    value.length > 5 ||
+    new Set(value).size !== value.length
+  )
+    throw new DataError(400, "indexes takes at most 5 distinct field names.");
+  return value.map(name);
 }
 /** How a collection differs from what the page asked, as [now, asked] pairs. */
 export function settingChanges(row: Collection, wanted: CollectionRequest) {
@@ -125,6 +140,14 @@ export function settingChanges(row: Collection, wanted: CollectionRequest) {
     (row.unique ?? []).join(",") !== wanted.unique.join(",")
   )
     changes.unique = [(row.unique ?? []).join(", "), wanted.unique.join(", ")];
+  if (
+    wanted.indexes !== undefined &&
+    (row.indexes ?? []).join(",") !== wanted.indexes.join(",")
+  )
+    changes.indexes = [
+      (row.indexes ?? []).join(", "),
+      wanted.indexes.join(", "),
+    ];
   return changes;
 }
 export function callbackUrl(value: unknown): URL {
@@ -543,13 +566,11 @@ export async function prepareAuthorization(
       // start private; _naru/collections.json is how a site asks for more.
       const created = await configureCollections(
         await siteOwner(tx, userId),
-        setup.create.map(
-          (collection): CollectionSetup => ({
-            name: unreservedName(collection),
-            read_access: "admin",
-            write_access: "admin",
-          }),
-        ),
+        setup.create.map((collection): CollectionSetup => ({
+          name: unreservedName(collection),
+          read_access: "admin",
+          write_access: "admin",
+        })),
       );
       if (created === null)
         throw new DataError(409, "Collection limit reached.", "QUOTA_EXCEEDED");

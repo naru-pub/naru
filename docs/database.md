@@ -40,11 +40,14 @@ Public API calls deliberately ignore cookies. SDK requests always use `credentia
 ### Declared collections
 
 A site's `_naru/collections.json` lists the collections it needs, with their
-access, rules and unique fields (format in [sdk-v1-api.md](sdk-v1-api.md)).
+access, rules, unique fields and indexed fields (format in [sdk-v1-api.md](sdk-v1-api.md)).
 `purgeSiteFiles` (lib/cache-purge.ts) installs it whenever the file is among the
 changed keys: `installDeclaredCollections` (lib/site-data/declared-collections.ts)
 reads it from R2 and, for owners with the database feature, creates the
-missing collections at once. Changes it would make to existing collections are
+missing collections at once, with changes to existing collections' indexes
+alone (an index is `query.ts`'s `fieldIndex`: the field, then `created_at` and
+`id`, partial on the collection's ID, kept in meta as `indexes:<id>` and rebuilt
+by `import` and `restore`). Other changes it would make to existing collections are
 never applied there; /database shows them (`GET /api/account/collection-declaration`)
 and the owner's "적용하기" applies them (`POST`), with widened access marked as
 on the sign-in page. A file that does not parse is reported to Sentry and shown

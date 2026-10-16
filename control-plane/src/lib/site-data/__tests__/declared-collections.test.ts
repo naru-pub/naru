@@ -31,6 +31,7 @@ const FILE = JSON.stringify({
       write: "admin",
       rules: "board",
       unique: ["slug"],
+      indexes: ["board", "owner"],
     },
     settings: { read: "admin", write: "admin" },
   },
@@ -75,6 +76,7 @@ describe("a site's declared collections", () => {
         write: "admin",
         rules: "board",
         unique: ["slug"],
+        indexes: ["board", "owner"],
       },
       settings: { read: "admin", write: "admin" },
     });
@@ -90,20 +92,41 @@ describe("a site's declared collections", () => {
       JSON.stringify({ collections: { a: {} } }),
       JSON.stringify({ collections: { a: { read: "world" } } }),
       JSON.stringify({ collections: { a: { write: "admin" } } }),
+      JSON.stringify({
+        collections: {
+          a: {
+            read: "admin",
+            write: "admin",
+            indexes: ["a", "b", "c", "d", "e", "f"],
+          },
+        },
+      }),
+      JSON.stringify({
+        collections: {
+          a: { read: "admin", write: "admin", indexes: ["a", "a"] },
+        },
+      }),
     ])
       expect(() => declared.parseDeclaration(text)).toThrow();
   });
 
   test("plan the collections to create apart from changes to existing ones", async () => {
     service.listCollections.mockResolvedValue([
-      row("posts", "member", "admin", { rules: "board", unique: ["slug"] }),
+      row("posts", "member", "admin", {
+        rules: "board",
+        unique: ["slug"],
+        indexes: ["board"],
+      }),
       row("settings", "world"),
     ]);
     expect(
       await declared.declaredPlan(owner, declared.parseDeclaration(FILE)),
     ).toEqual({
       create: ["guestbook"],
-      configure: [{ name: "settings", changes: { read: ["world", "admin"] } }],
+      configure: [
+        { name: "posts", changes: { indexes: ["board", "board, owner"] } },
+        { name: "settings", changes: { read: ["world", "admin"] } },
+      ],
     });
   });
 
@@ -120,6 +143,7 @@ describe("a site's declared collections", () => {
         write_access: "admin",
         rules: "board",
         unique: ["slug"],
+        indexes: ["board", "owner"],
       },
     ]);
     expect(result).toEqual({
@@ -128,11 +152,39 @@ describe("a site's declared collections", () => {
     });
   });
 
-  test("the owner's approval applies the changes too", async () => {
+  test("a change to indexes alone applies as the file arrives", async () => {
     bucket(FILE);
     service.listCollections.mockResolvedValue([
       row("guestbook", "world", "create"),
       row("posts", "member", "admin", { rules: "board", unique: ["slug"] }),
+      row("settings", "world"),
+    ]);
+    const result = await declared.installDeclaredCollections("alice");
+    expect(service.configureCollections).toHaveBeenCalledWith(owner, [
+      {
+        name: "posts",
+        read_access: "member",
+        write_access: "admin",
+        rules: "board",
+        unique: ["slug"],
+        indexes: ["board", "owner"],
+      },
+    ]);
+    expect(result).toEqual({
+      created: [],
+      pending: [{ name: "settings", changes: { read: ["world", "admin"] } }],
+    });
+  });
+
+  test("the owner's approval applies the changes too", async () => {
+    bucket(FILE);
+    service.listCollections.mockResolvedValue([
+      row("guestbook", "world", "create"),
+      row("posts", "member", "admin", {
+        rules: "board",
+        unique: ["slug"],
+        indexes: ["board", "owner"],
+      }),
       row("settings", "world"),
     ]);
     await declared.applyDeclaration(owner);

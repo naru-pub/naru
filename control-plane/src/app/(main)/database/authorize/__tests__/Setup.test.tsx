@@ -21,9 +21,9 @@ test("collections to create are a table, and start private", () => {
   );
   const rows = within(screen.getByRole("table")).getAllByRole("row");
   expect(rows.map((row) => row.textContent)).toEqual([
-    "컬렉션읽기쓰기규칙중복 금지 필드",
-    "profiles관리자만관리자만——",
-    "wallets관리자만관리자만——",
+    "컬렉션읽기쓰기규칙중복 금지 필드색인 필드",
+    "profiles관리자만관리자만———",
+    "wallets관리자만관리자만———",
   ]);
   expect(
     screen.getByText(/요청한 컬렉션 3개를 허용합니다/),

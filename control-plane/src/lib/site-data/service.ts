@@ -61,11 +61,13 @@ export type Collection = CollectionSettings & {
   id: string;
   rules?: string;
   unique?: string[];
+  indexes?: string[];
 };
-/** Settings a page may ask for at owner sign-in, applied on the owner's click. */
+/** Settings _naru/collections.json asks for, applied on the owner's click. */
 export type CollectionSetup = CollectionSettings & {
   rules?: string | null;
   unique?: string[];
+  indexes?: string[];
 };
 
 export const noSite = (site: string) =>

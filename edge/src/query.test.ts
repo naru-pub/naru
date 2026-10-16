@@ -1,6 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, test } from "vitest";
-import { cursorMs, cursorTime, listQuery, SCHEMA, type Row } from "./query";
+import {
+  cursorMs,
+  cursorTime,
+  fieldIndex,
+  listQuery,
+  SCHEMA,
+  type Row,
+} from "./query";
 import type { ListInput } from "./types";
 
 // The list query against SQLite in plain Node, with the object's own schema:
@@ -204,6 +211,57 @@ describe("array membership", () => {
     expect(() =>
       listQuery(COLLECTION, { where: { has: ["t", ["a"]] } }),
     ).toThrow();
+  });
+});
+
+describe("declared indexes", () => {
+  test("serve a filter or where on the field, newest first, without a scan", () => {
+    const insert = db.prepare(
+      "INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
+    );
+    for (let n = 0; n < 50; n++)
+      insert.run(
+        COLLECTION,
+        `p${n}`,
+        JSON.stringify({ board: `b${n % 5}` }),
+        BASE + n,
+        BASE + n,
+      );
+    db.exec(fieldIndex(COLLECTION, "board").create);
+    const newest = sort([createdAt, "desc"]);
+    const plan = (input: ListInput) => {
+      const { select } = listQuery(COLLECTION, input);
+      return (
+        db
+          .prepare(`EXPLAIN QUERY PLAN ${select.sql}`)
+          .all(...(select.bindings as (string | number | null)[])) as Row[]
+      )
+        .map((row) => String(row.detail))
+        .join(" | ");
+    };
+    const { index } = fieldIndex(COLLECTION, "board");
+    for (const input of [
+      { filter: { board: "b3" }, sort: newest, size: 5 },
+      { where: { eq: ["board", "b3"] as const }, sort: newest, size: 5 },
+      // A rule's condition beside the reader's own.
+      {
+        where: {
+          all: [
+            { eq: ["board", "b3"] as const },
+            { ne: ["secret", true] as const },
+          ],
+        },
+        sort: newest,
+        size: 5,
+      },
+    ]) {
+      expect(plan(input)).toContain(`USING INDEX ${index}`);
+      expect(plan(input)).not.toContain("TEMP B-TREE");
+    }
+    // The same rows as without it, in the same order.
+    expect(readAll({ filter: { board: "b3" }, sort: newest, size: 3 })).toEqual(
+      ["p48", "p43", "p38", "p33", "p28", "p23", "p18", "p13", "p8", "p3"],
+    );
   });
 });
 

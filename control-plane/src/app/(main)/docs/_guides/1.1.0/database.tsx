@@ -443,7 +443,10 @@ export default function DatabaseDocs() {
     "posts": { "read": "world", "write": "admin" },
     "guestbook": { "read": "world", "write": "create" },
     "profiles": { "read": "member", "write": "member", "unique": ["nick"] },
-    "logs": { "read": "world", "write": "admin", "rules": "board" }
+    "logs": {
+      "read": "world", "write": "admin", "rules": "board",
+      "indexes": ["board", "owner"]
+    }
   }
 }`}</Code>
               <p>
@@ -453,6 +456,17 @@ export default function DatabaseDocs() {
                 꼭 적어야 합니다. <code>unique</code>는 겹치면 안 되는 필드,{" "}
                 <code>rules</code>는 <a href="#rules">컬렉션 규칙</a> 파일
                 이름입니다.
+              </p>
+              <p>
+                <code>indexes</code>에는 자주 거르는 필드를 5개까지 적습니다.
+                게시판별 목록(<code>board</code>)이나 내가 쓴 글(
+                <code>owner</code>)처럼 그 필드로 거른 목록을
+                최신순·오래된순으로 읽을 때, 문서가 많아도 모든 문서를 살피지
+                않고 필요한 쪽만 읽습니다. 10만 개 중 스무 개를 찾는 데 수십
+                밀리초 걸리던 것이 0.1밀리초 안쪽이 됩니다. 대신 그 컬렉션의
+                쓰기가 조금 느려지고, <code>contains</code> 검색이나 다른 필드로
+                정렬하는 데는 쓰이지 않습니다. 색인만 바꾸는 내용은 누구에게도
+                무엇을 열지 않으므로 파일을 올리면 바로 적용됩니다.
               </p>
             </Section>
 

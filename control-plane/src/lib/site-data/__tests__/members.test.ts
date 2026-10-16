@@ -16,6 +16,7 @@ import {
   executeCall,
   executeData,
   executeLiveTicket,
+  listCollections,
 } from "../service";
 import { manageMembership } from "../membership";
 import { digest } from "../owner-auth";
@@ -938,6 +939,66 @@ integration("site members", () => {
     });
     await owned("DELETE", ["rule_posts"]);
     await owned("DELETE", ["rule_roles"]);
+  });
+
+  test("a collection's indexed fields are kept, listed, changed and dropped", async () => {
+    await owned("POST", [], { name: "indexed", read: "admin", write: "admin" });
+    try {
+      for (const [id, board] of [
+        ["a", "free"],
+        ["b", "notice"],
+        ["c", "free"],
+      ])
+        await owned("PUT", ["indexed", id], { data: { board } });
+      const settings = () =>
+        listCollections({ id: owner, loginName: "alice" }, ["indexed"]);
+      await owned("PATCH", ["indexed"], {
+        read: "admin",
+        write: "admin",
+        indexes: ["board", "owner"],
+      });
+      expect(await settings()).toMatchObject([
+        { name: "indexed", indexes: ["board", "owner"] },
+      ]);
+      // Reads find the same documents through it.
+      const page = (await owned("GET", ["indexed"], undefined)) as any;
+      expect(page.documents).toHaveLength(3);
+      expect(
+        (
+          (await executeData({
+            site: "alice",
+            path: ["indexed"],
+            method: "GET",
+            adminUserId: owner,
+            filter: { board: "free" },
+          })) as any
+        ).documents.map((d: any) => d.id),
+      ).toEqual(["a", "c"]);
+      // A snapshot carries them, and a copy rebuilds them.
+      const snapshot = await callSiteObject<any>("alice", "export", {});
+      expect(Object.values(snapshot.indexes)).toContainEqual([
+        "board",
+        "owner",
+      ]);
+      await owned("PATCH", ["indexed"], {
+        read: "admin",
+        write: "admin",
+        indexes: ["owner", "a", "b", "c", "d", "e"],
+      }).then(
+        () => {
+          throw new Error("six indexes were accepted");
+        },
+        (error) => expect(error).toMatchObject({ status: 400 }),
+      );
+      await owned("PATCH", ["indexed"], {
+        read: "admin",
+        write: "admin",
+        indexes: [],
+      });
+      expect((await settings())[0]).not.toHaveProperty("indexes");
+    } finally {
+      await owned("DELETE", ["indexed"]);
+    }
   });
 
   test("a rule's refusals and mistakes name the rule, and ctx.fail speaks for it", async () => {

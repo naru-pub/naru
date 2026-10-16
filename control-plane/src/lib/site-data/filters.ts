@@ -67,12 +67,10 @@ function comparisons(field: string, input: Record<string, unknown>) {
   for (const [operator, bound] of operators) {
     if (!Object.hasOwn(COMPARISONS, operator))
       throw new DataError(400, "Use gt, gte, lt or lte for range comparisons.");
-    if (
-      !(
-        typeof bound === "string" ||
-        (typeof bound === "number" && Number.isFinite(bound))
-      )
-    )
+    if (!(
+      typeof bound === "string" ||
+      (typeof bound === "number" && Number.isFinite(bound))
+    ))
       throw new DataError(
         400,
         "Range bounds must be strings or finite numbers.",

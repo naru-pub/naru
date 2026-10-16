@@ -19,6 +19,7 @@ type Collection = {
   write_access: string;
   rules?: string;
   unique?: string[];
+  indexes?: string[];
 };
 type Document = { id: string; data: unknown };
 async function api(path = "", method = "GET", body?: unknown) {
@@ -58,6 +59,7 @@ export default function DatabaseManager({
   const [write, setWrite] = useState("admin");
   const [rules, setRules] = useState("");
   const [unique, setUnique] = useState("");
+  const [indexes, setIndexes] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -283,6 +285,7 @@ export default function DatabaseManager({
                           setWrite(c.write_access);
                           setRules(c.rules ?? "");
                           setUnique((c.unique ?? []).join(", "));
+                          setIndexes((c.indexes ?? []).join(", "));
                           setId("");
                           setDocuments([]);
                           setTotal(null);
@@ -388,6 +391,18 @@ export default function DatabaseManager({
                           없습니다. 이미 겹치는 문서가 있으면 저장되지 않습니다.
                         </p>
                       </label>
+                      <label className="space-y-1">
+                        <span className="text-sm">색인 필드</span>
+                        <Input
+                          value={indexes}
+                          onChange={(event) => setIndexes(event.target.value)}
+                          placeholder="예: board, owner (쉼표로 최대 5개)"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          자주 거르는 필드를 적으면 문서가 많아도 그 필드로 거른
+                          목록을 빨리 읽습니다. 쓰기는 조금 느려집니다.
+                        </p>
+                      </label>
                       <Button
                         onClick={async () => {
                           if (
@@ -406,6 +421,10 @@ export default function DatabaseManager({
                               write,
                               rules: rules.trim() || null,
                               unique: unique
+                                .split(",")
+                                .map((field) => field.trim())
+                                .filter(Boolean),
+                              indexes: indexes
                                 .split(",")
                                 .map((field) => field.trim())
                                 .filter(Boolean),

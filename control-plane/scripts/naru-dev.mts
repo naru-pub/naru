@@ -216,6 +216,7 @@ async function installDeclaration() {
             write: string;
             rules?: string | null;
             unique?: string[];
+            indexes?: string[];
           }
         >
       | undefined;
@@ -232,6 +233,7 @@ async function installDeclaration() {
         write_access: string;
         rules?: string;
         unique?: string[];
+        indexes?: string[];
       }[]
     >("collections", { names });
     const wanted = names.map((name) => ({
@@ -244,6 +246,9 @@ async function installDeclaration() {
       ...(declared[name].unique !== undefined
         ? { unique: declared[name].unique }
         : {}),
+      ...(declared[name].indexes !== undefined
+        ? { indexes: declared[name].indexes }
+        : {}),
     }));
     const differing = wanted.filter((want) => {
       const row = existing.find((r) => r.name === want.name);
@@ -253,7 +258,9 @@ async function installDeclaration() {
         row.write_access !== want.write_access ||
         ("rules" in want && (row.rules ?? null) !== want.rules) ||
         ("unique" in want &&
-          (row.unique ?? []).join(",") !== (want.unique ?? []).join(","))
+          (row.unique ?? []).join(",") !== (want.unique ?? []).join(",")) ||
+        ("indexes" in want &&
+          (row.indexes ?? []).join(",") !== (want.indexes ?? []).join(","))
       );
     });
     if (!differing.length) return;

@@ -28,7 +28,7 @@ import { DataError, unreservedName } from "./validation";
 //       "guestbook": { "read": "world", "write": "create" },
 //       "settings": { "read": "admin", "write": "admin" } } }
 //
-// Each collection takes read, write, rules and unique as a sign-in's settings
+// Each collection takes read, write, rules, unique and indexes as a sign-in's settings
 // do. read and write are required, so the file says who can reach every
 // collection; rules and unique are optional (none when left out).
 
@@ -132,6 +132,7 @@ const setup = (name: string, wanted: CollectionRequest): CollectionSetup => ({
   write_access: wanted.write,
   ...(wanted.rules !== undefined ? { rules: wanted.rules } : {}),
   ...(wanted.unique !== undefined ? { unique: wanted.unique } : {}),
+  ...(wanted.indexes !== undefined ? { indexes: wanted.indexes } : {}),
 });
 
 async function apply(
@@ -161,7 +162,8 @@ async function ownerOf(loginName: string): Promise<SiteOwner | null> {
 
 /**
  * As the declaration arrives: creates the collections the site lacks, with
- * their settings, and leaves changes to existing ones for the owner. Sites
+ * their settings, and changes existing ones whose indexes alone differ, since
+ * an index opens nothing to anyone. Other changes wait for the owner. Sites
  * without the database feature are skipped.
  */
 export async function installDeclaredCollections(loginName: string) {
@@ -170,8 +172,16 @@ export async function installDeclaredCollections(loginName: string) {
   const declared = await readDeclaration(loginName);
   if (!declared) return null;
   const plan = await declaredPlan(owner, declared);
-  const created = await apply(owner, declared, plan.create);
-  return { created, pending: plan.configure };
+  const indexOnly = (changes: Record<string, unknown>) =>
+    Object.keys(changes).every((key) => key === "indexes");
+  const created = await apply(owner, declared, [
+    ...plan.create,
+    ...plan.configure.filter((c) => indexOnly(c.changes)).map((c) => c.name),
+  ]);
+  return {
+    created: created.filter((name) => plan.create.includes(name)),
+    pending: plan.configure.filter((c) => !indexOnly(c.changes)),
+  };
 }
 
 /** The declaration's plan for the owner's /database page. */

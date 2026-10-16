@@ -92,6 +92,7 @@ export type Snapshot = {
   rules?: Record<string, string>;
   /** Each collection's unique fields, by collection ID. */
   unique?: Record<string, string[]>;
+  indexes?: Record<string, string[]>;
   /** The active function revision and its generation, when published. */
   functions?: { revision: string; generation: string | null };
 };
