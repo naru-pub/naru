@@ -23,6 +23,7 @@ const files = env({
   "/1.0.0/naru.d.ts": "export declare const createNaru: number;",
   "/1.1.0/naru.js": "export const createNaru = 1;",
   "/1.1.0/naru.d.ts": "export declare const createNaru: number;",
+  "/1.1.0/functions.d.ts": "export interface Ctx {}",
 });
 const get = (path: string, init?: RequestInit) =>
   serveSdk(new Request(`https://naru.pub${path}`, init), files);
@@ -65,10 +66,15 @@ describe("serving", () => {
   });
 
   test("serves declarations as text", async () => {
-    const response = await get("/sdk/1.0.0/naru.d.ts");
-    expect(response.headers.get("content-type")).toBe(
-      "text/plain; charset=utf-8",
-    );
+    for (const path of ["/sdk/1.0.0/naru.d.ts", "/sdk/1.1.0/functions.d.ts"]) {
+      const response = await get(path);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe(
+        "text/plain; charset=utf-8",
+      );
+    }
+    // 1.0.0 has no functions to describe.
+    expect((await get("/sdk/1.0.0/functions.d.ts")).status).toBe(404);
   });
 
   test("answers a revalidation with 304", async () => {

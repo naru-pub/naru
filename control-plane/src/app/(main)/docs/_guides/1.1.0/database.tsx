@@ -602,15 +602,27 @@ const price = await member.call("shop/buy:quote");`}</Code>
                 가져온 코드도 데이터를 쓸 수 없습니다.
               </p>
               <p>
-                <code>ctx</code>에는 <code>member.id</code>, <code>now</code>,{" "}
-                <code>get</code>·<code>getMany</code>·<code>list</code>·
-                <code>count</code>·<code>add</code>·<code>set</code>·
-                <code>delete</code>가 있습니다. 데이터베이스 메서드는 Promise를
-                돌려주므로 <code>await</code>하세요. <code>await</code>하지 않은
-                호출이 있으면 함수 전체가 실패하고 되돌려집니다. 함수는{" "}
-                <code>async</code>여도 되고, 끝날 때까지 한 트랜잭션입니다.
+                <code>ctx</code>에는 부른 사람(<code>member</code>,{" "}
+                <code>owner</code>, <code>visitor</code>), 호출 시각{" "}
+                <code>now</code>, 읽기 <code>get</code>·<code>getMany</code>·
+                <code>list</code>·<code>count</code>, 쓰기 <code>add</code>·
+                <code>set</code>·<code>delete</code>, 비밀번호 확인{" "}
+                <code>secretMatches</code>, 거절하는 <code>fail</code>, 실시간
+                알림 <code>notify</code>·<code>broadcast</code>가 있습니다.
+                타입은 <a href="/sdk/1.1.0/functions.d.ts">functions.d.ts</a>에
+                모두 적혀 있으니 내려받아 함수와 규칙 파일에서 쓰세요.
+                데이터베이스 메서드는 Promise를 돌려주므로 <code>await</code>
+                하세요. <code>await</code>하지 않은 호출이 있으면 함수 전체가
+                실패하고 되돌려집니다. 함수는 <code>async</code>여도 되고, 끝날
+                때까지 한 트랜잭션입니다. 함수가 쓴 문서에는 글쓴이가 남지 않아{" "}
+                <code>createdBy</code>가 null이니, 누구의 것인지는{" "}
+                <code>owner: ctx.member.id</code>처럼 데이터에 적으세요.
+              </p>
+              <p>
                 네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때 데이터베이스
-                작업 100번(쓰기 포함), 수십 밀리초, 메모리 32MiB까지 씁니다. ID
+                작업 100번(쓰기 포함), 비밀번호 확인 3번, 실시간 메시지 50개(각
+                4 KiB), 수십 밀리초, 메모리 32MiB까지 쓰고, 돌려주는 값은 64
+                KiB까지입니다. <code>fail</code>의 세부는 4 KiB까지입니다. ID
                 100개를 한꺼번에 읽는 <code>getMany</code>도 <code>list</code>
                 처럼 한 번으로 셉니다. 글 20개의 글쓴이를 하나씩{" "}
                 <code>get</code>하지 말고 <code>getMany</code>로 한 번에
@@ -827,6 +839,12 @@ for await (const { documents } of posts.pages({ ...query, size: 100 })) {
                   <code>pages()</code>를 쓰세요. 누구나 쓸 수 있는 컬렉션은
                   끝까지 읽지 말고 필요한 만큼만 받으세요.
                 </li>
+                <li>
+                  <strong>쪽 번호</strong>: 몇 번째부터 건너뛰는 offset은
+                  없습니다. 3쪽을 보이려면 1쪽부터 <code>nextCursor</code>를
+                  따라가고, 받은 커서를 쪽 번호와 함께 저장해 두면 앞뒤로 오갈
+                  때 다시 읽지 않습니다.
+                </li>
               </ul>
               <h3 className="font-bold">검색과 여러 조건</h3>
               <p>
@@ -889,11 +907,13 @@ const found = await posts.list({
                 ]}
               />
               <p>
-                <code>count()</code>와 서버 함수의 <code>ctx.list</code>·
-                <code>ctx.count</code>도 같은 <code>where</code>를 받습니다.
-                검색은 조건에 맞는 문서를 모두 살피므로, 문서가 아주 많은
-                컬렉션에서는 <code>filter</code>로 게시판 같은 범위를 함께
-                좁히세요.
+                filter와 where는 요청 주소에 실리므로 filter는 JSON으로 2 KiB,
+                where는 4 KiB까지입니다. where는 비교 100개, 열 단계까지 중첩할
+                수 있습니다. <code>count()</code>와 서버 함수의{" "}
+                <code>ctx.list</code>·<code>ctx.count</code>도 같은{" "}
+                <code>where</code>를 받습니다. 검색은 조건에 맞는 문서를 모두
+                살피므로, 문서가 아주 많은 컬렉션에서는 <code>filter</code>로
+                게시판 같은 범위를 함께 좁히세요.
               </p>
               <h3 className="font-bold">요청 취소하기</h3>
               <p>
@@ -967,12 +987,27 @@ export async function canWrite(ctx, { operation, before, after }) {
                   조건을 회원의 filter와 합쳐서 읽으므로, 숨긴 글 때문에 쪽이
                   짧아지거나 개수가 틀리지 않습니다. <code>false</code>는 오류가
                   아니라 빈 목록이 되니, 왜 안 보이는지 알려야 하면{" "}
-                  <code>ctx.fail</code>을 쓰세요.
+                  <code>ctx.fail</code>을 쓰세요. 조건은 쪽마다 다시 묻고,
+                  커서는 읽는 사람이 준 filter·where·sort에만 묶이니 조건이
+                  바뀌어도 다음 쪽을 이어 읽습니다.
+                </li>
+                <li>
+                  <code>readable</code>이 받는 값은 <code>collection</code>,{" "}
+                  <code>operation</code>, 읽는 사람의 <code>filter</code>(없으면{" "}
+                  <code>{"{}"}</code>)와 <code>where</code>(없으면 null)입니다.{" "}
+                  <code>operation</code>은 글 하나(<code>get</code>, 그 글의{" "}
+                  <code>id</code>), 여러 글(<code>getMany</code>, 요청한{" "}
+                  <code>ids</code>), 목록(<code>list</code>) 중 하나입니다.
+                  로그인하지 않은 방문자가 읽으면 <code>ctx.visitor</code>가
+                  true, <code>ctx.member</code>가 null입니다.
                 </li>
                 <li>
                   <code>canWrite</code>는 <code>create</code>·
-                  <code>update</code>·<code>delete</code>마다 불리고, 정확히{" "}
-                  <code>true</code>를 돌려줄 때만 허락합니다.{" "}
+                  <code>update</code>·<code>delete</code>마다{" "}
+                  <code>{"{ collection, operation, before, after }"}</code>로
+                  불리고, 정확히 <code>true</code>를 돌려줄 때만 허락합니다.{" "}
+                  <code>before</code>는 저장된 문서(만들 때는 null),{" "}
+                  <code>after</code>는 쓰려는 문서(지울 때는 null)입니다.{" "}
                   <code>return</code>을 빠뜨리면 거절됩니다. 그때 오류의 원인(
                   <code>error.cause.message</code>)에{" "}
                   <code>canWrite returned undefined</code>처럼 규칙 파일과 받은
@@ -985,9 +1020,23 @@ export async function canWrite(ctx, { operation, before, after }) {
                   방문자의 요청은 거절됩니다.
                 </li>
                 <li>
-                  일부 필드만 숨기려면 <code>present</code>와{" "}
-                  <code>queryable</code>도 내보냅니다. 자세한 내용은{" "}
-                  <a href="/docs/sdk/1.1.0">SDK 레퍼런스</a>를 보세요.
+                  일부 필드만 숨기려면{" "}
+                  <code>present(ctx, {"{ collection, document }"})</code>로 읽는
+                  사람에게 보일 데이터를 돌려주고, 거르고 정렬해도 되는 필드를{" "}
+                  <code>queryable</code>에 적습니다. 이때 글쓴이(
+                  <code>createdBy</code>)는 자기 글에서만 보이고 남의 글에서는
+                  null이며, where로는{" "}
+                  <code>
+                    {'{ eq: [{ metadata: "createdBy" }, member.id] }'}
+                  </code>
+                  처럼 ‘내 글’만 물을 수 있습니다. 익명 글의 글쓴이를 조건으로
+                  알아낼 수 없게 하려는 것입니다.
+                </li>
+                <li>
+                  받는 값과 <code>ctx</code>의 타입은{" "}
+                  <a href="/sdk/1.1.0/functions.d.ts">functions.d.ts</a>의{" "}
+                  <code>Readable</code>·<code>CanWrite</code>·
+                  <code>Present</code>를 보세요.
                 </li>
               </ul>
             </Section>

@@ -19,7 +19,9 @@ member collections. Owners bypass rules; owner-authorized site functions and
 batches retain their existing authority and must still check business rules.
 No PostgreSQL migration or change to frozen SDK 1.0.0 is required.
 
-A module exports two functions, which may be `async`:
+A module exports two functions, which may be `async`. Their argument and
+`ctx` types are `Readable`, `CanWrite` and `Present` in SDK 1.1.0's
+hand-written `functions.d.ts` (`/sdk/1.1.0/functions.d.ts`):
 
 - `readable(ctx, { collection, operation, id, filter, where })`: which
   documents this reader may read, as a condition, not a yes or no for one

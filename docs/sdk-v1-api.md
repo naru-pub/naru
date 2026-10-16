@@ -321,8 +321,11 @@ Returning `{ ok: false }` remains valid, but is an ordinary successful return
 and does **not** roll back writes. Messages and details reach the browser, so
 do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 
-**ctx.** `ctx` has `member` (`{ id }`, or null for the owner), `owner`, `now`
-(milliseconds), `fail()`, and these
+**ctx.** Its types, and the rule hooks', are in
+`https://naru.pub/sdk/1.1.0/functions.d.ts`, written by hand beside the
+generated `naru.d.ts` (`Ctx`, `ReadCtx`, `Readable`, `CanWrite`, `Present`).
+`ctx` has `member` (`{ id }`, or null for the owner and visitors), `owner`,
+`visitor`, `now` (milliseconds), `fail()`, and these
 database methods, which return promises of what the SDK would, so `await` them:
 
 - `get(collection, id)`, `getMany(collection, ids)` (at most 100, in input
@@ -539,8 +542,11 @@ can be stored but are not meaningfully ordered. String ranges use the same
 code-point comparison. Prefer one consistent scalar type per sortable field.
 
 `nextCursor` is opaque and bound to its original site, collection, filter,
-`where`, and sort. Pass it unchanged as `after`. Pagination is not a snapshot across
-separate requests, so concurrent writes can change later pages.
+`where`, and sort (not to a collection rule's `readable`, which applies afresh
+to every page). Pass it unchanged as `after`. There is no offset: a numbered
+page is reached by following cursors from the first, so keep the cursors a
+page has seen. Pagination is not a snapshot across separate requests, so
+concurrent writes can change later pages.
 
 Two helpers are built on `list`. `count({ filter })` resolves with how many
 documents match, from a one-document page with its total. `pages(options)` is

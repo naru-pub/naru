@@ -198,6 +198,11 @@ export default async function SdkReference(props: {
             <a href={`/docs/${version}/database`}>데이터베이스 사용 안내 →</a>
             <a href={`/sdk/${version}/naru.js`}>naru.js 보기 ↗</a>
             <a href={`/sdk/${version}/naru.d.ts`}>naru.d.ts 보기 ↗</a>
+            {version !== "1.0.0" && (
+              <a href={`/sdk/${version}/functions.d.ts`}>
+                서버 함수·규칙 타입(functions.d.ts) 보기 ↗
+              </a>
+            )}
           </div>
         </header>
 

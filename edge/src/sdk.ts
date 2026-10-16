@@ -1,7 +1,8 @@
 import aliases from "../../control-plane/sdk/aliases.json";
 
-// The Data SDK, naru.pub/sdk/<version>/naru.js and naru.d.ts, answered at the
-// edge so sites that import it keep working while the control plane is down.
+// The Data SDK, naru.pub/sdk/<version>/naru.js, naru.d.ts and (1.1.0)
+// functions.d.ts, answered at the edge so sites that import it keep working
+// while the control plane is down.
 // The files are the committed control-plane/public/sdk/, deployed with the
 // Worker as its static assets; /sdk/1/ stays on stable 1.0.0 as configured
 // in control-plane/sdk/aliases.json, matching the control
@@ -16,8 +17,10 @@ const VERSION = /^\d+\.\d+\.\d+$/;
 export const SDK_CACHE = "public, max-age=300, stale-while-revalidate=86400";
 const CONTENT_TYPES: Record<string, string> = {
   "naru.js": "text/javascript; charset=utf-8",
-  // Declarations are text an editor or a person reads.
+  // Declarations are text an editor or a person reads: the SDK's, and from
+  // 1.1.0 what site functions and collection rules are handed.
   "naru.d.ts": "text/plain; charset=utf-8",
+  "functions.d.ts": "text/plain; charset=utf-8",
 };
 
 const ALIASES: Record<string, string> = aliases;

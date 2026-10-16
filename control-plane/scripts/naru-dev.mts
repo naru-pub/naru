@@ -628,14 +628,16 @@ const importMap = `<script>navigator.serviceWorker?.register("/_naru-dev/media-w
 )}</script>`;
 
 async function sdk(res: ServerResponse, path: string) {
-  const match = /^\/sdk\/(1|1\.0\.0|1\.1\.0)\/(naru\.js|naru\.d\.ts)$/.exec(
-    path,
-  );
+  const match =
+    /^\/sdk\/(1|1\.0\.0|1\.1\.0)\/(naru\.js|naru\.d\.ts|functions\.d\.ts)$/.exec(
+      path,
+    );
   if (!match) return res.writeHead(404).end();
   const version = match[1] === "1" ? "1.0.0" : match[1];
-  const source = (
-    await readFile(join(root, "public/sdk", version, match[2]), "utf8")
-  )
+  const file = join(root, "public/sdk", version, match[2]);
+  // 1.0.0 has no functions.d.ts.
+  if (!existsSync(file)) return res.writeHead(404).end();
+  const source = (await readFile(file, "utf8"))
     .replaceAll("https://sdk.naru.pub", origin)
     .replaceAll("https://naru.pub", origin)
     // Pages here are the site's own, as on <site>.naru.pub.
