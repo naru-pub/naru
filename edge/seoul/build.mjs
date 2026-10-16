@@ -88,7 +88,7 @@ ${modules.join("\n")}
     (name = "SITES", durableObjectNamespace = "SiteData"),
     (name = "SDK_FILES", service = "sdk-files"),
     (name = "PLATFORM_DOMAIN", text = "naru.pub"),
-    (name = "SITE_MONTHLY_REQUESTS", text = "500000"),
+    (name = "SITE_MONTHLY_REQUESTS", text = "5000000"),
     # No edge cache here: each visitor's read is a local SQLite query.
     (name = "EDGE_CACHE", text = "off"),
 ${fromEnvironment.join("\n")}

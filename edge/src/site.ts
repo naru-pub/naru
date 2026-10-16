@@ -82,7 +82,7 @@ const outsideScope = (collection: string) =>
 const unsupported = () =>
   new DataError(400, "Data contains unsupported characters or numbers.");
 /** Anonymous requests a site may make each calendar month (UTC). */
-const DEFAULT_MONTHLY_REQUESTS = 500_000;
+const DEFAULT_MONTHLY_REQUESTS = 5_000_000;
 /** The count is kept in memory and written every this many requests. */
 const BUDGET_SAVE_EVERY = 25;
 
@@ -186,6 +186,20 @@ export class SiteData extends DurableObject<Env> {
   private sql: SqlStorage;
   /** This month's anonymous requests, ahead of what is saved in `meta`. */
   private budget?: { month: string; used: number; unsaved: number };
+  /**
+   * The month's requests by kind, and the rows they read, kept for sizing
+   * the budget from what sites do: saved with the budget, as
+   * meta `stats:<YYYY-MM>`.
+   */
+  private stats?: { month: string; counts: Record<string, number> };
+  private tally(kind: string, amount = 1) {
+    const month = new Date().toISOString().slice(0, 7);
+    if (!this.stats || this.stats.month !== month) {
+      const saved = this.meta(`stats:${month}`);
+      this.stats = { month, counts: saved ? JSON.parse(saved) : {} };
+    }
+    this.stats.counts[kind] = (this.stats.counts[kind] ?? 0) + amount;
+  }
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -218,7 +232,7 @@ export class SiteData extends DurableObject<Env> {
       });
     if (this.ctx.getWebSockets().length >= MAX_LIVE_CONNECTIONS)
       return new Response("Too many live connections.", { status: 503 });
-    const spent = this.run(() => this.spend());
+    const spent = this.run(() => this.spend("live"));
     if (!spent.ok)
       return new Response(spent.error.message, { status: spent.error.status });
     const member = request.headers.get("X-Naru-Member") || null;
@@ -366,7 +380,9 @@ export class SiteData extends DurableObject<Env> {
     try {
       return work();
     } finally {
-      this.thisMinute().rows += this.rowsRead - before;
+      const rows = this.rowsRead - before;
+      this.thisMinute().rows += rows;
+      this.tally("rows", rows);
     }
   }
 
@@ -668,7 +684,19 @@ export class SiteData extends DurableObject<Env> {
         : this.meta("budget_month") === month
           ? Number(this.meta("budget_used"))
           : 0;
-    return { used, limit: this.monthlyLimit(), resetsAt: nextMonth(now) };
+    const saved = this.meta(`stats:${month}`);
+    const kinds =
+      this.stats?.month === month
+        ? this.stats.counts
+        : saved
+          ? (JSON.parse(saved) as Record<string, number>)
+          : {};
+    return {
+      used,
+      limit: this.monthlyLimit(),
+      resetsAt: nextMonth(now),
+      kinds,
+    };
   }
 
   /**
@@ -678,7 +706,8 @@ export class SiteData extends DurableObject<Env> {
    * Losing up to BUDGET_SAVE_EVERY counts when the object is evicted is the
    * price of not writing on every read.
    */
-  private spend() {
+  private spend(kind: string) {
+    this.tally(kind);
     const now = new Date();
     const month = now.toISOString().slice(0, 7);
     if (!this.budget || this.budget.month !== month)
@@ -697,6 +726,11 @@ export class SiteData extends DurableObject<Env> {
     if (this.budget.unsaved >= BUDGET_SAVE_EVERY) {
       this.setMeta("budget_month", month);
       this.setMeta("budget_used", String(this.budget.used));
+      if (this.stats)
+        this.setMeta(
+          `stats:${this.stats.month}`,
+          JSON.stringify(this.stats.counts),
+        );
       this.budget.unsaved = 0;
     }
   }
@@ -718,7 +752,9 @@ export class SiteData extends DurableObject<Env> {
               ? `member:${input.access.member}`
               : callerKey(input.clientIp),
           );
-        this.spend();
+        this.spend(
+          `${input.access.member ? "member" : "visitor"}_${input.method === "GET" ? "read" : "write"}`,
+        );
       });
       if (!spent.ok) return spent;
     }
@@ -759,7 +795,7 @@ export class SiteData extends DurableObject<Env> {
     const spent = this.run(() => {
       this.admitWork();
       if (input.method === "GET") this.limitReader(callerKey(input.clientIp));
-      this.spend();
+      this.spend(input.method === "GET" ? "visitor_read" : "visitor_write");
     });
     if (!spent.ok) return spent;
     const command: ExecuteInput = {
@@ -1657,12 +1693,12 @@ export class SiteData extends DurableObject<Env> {
       this.claim(input.ownerId);
       if (visitor || input.member !== null) this.admitWork();
       if (visitor) {
-        this.spend();
+        this.spend(readonly ? "visitor_read_call" : "visitor_call");
         this.limitVisitor(input.clientIp, readonly);
         return;
       }
       if (input.member === null) return;
-      this.spend();
+      this.spend(readonly ? "member_read_call" : "member_call");
       this.limitMember(input.member, readonly ? "read" : "call");
     });
     if (!admitted.ok) return admitted;

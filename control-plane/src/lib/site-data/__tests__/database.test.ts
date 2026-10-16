@@ -726,8 +726,13 @@ integration("answering visitors at the edge", () => {
 
     // The owner's listing shows what the site holds and the month's requests.
     const before = (await owned("GET", [])) as any;
-    expect(before.usage.requests).toMatchObject({ limit: 500_000 });
+    expect(before.usage.requests).toMatchObject({ limit: 5_000_000 });
     expect(before.usage.requests.used).toBeGreaterThanOrEqual(601);
+    // By kind, with the rows they read, for sizing the budget later.
+    expect(before.usage.requests.kinds.visitor_read).toBeGreaterThanOrEqual(
+      601,
+    );
+    expect(before.usage.requests.kinds.rows).toBeGreaterThan(0);
     await owned("PUT", ["posts", "counted"], { data: { title: "x" } });
     const after = (await owned("GET", [])) as any;
     expect(after.usage.documents).toBe(before.usage.documents + 1);

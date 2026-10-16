@@ -496,12 +496,17 @@ never cached. The zone's cache rule does not apply to Worker responses.
 
 ### Monthly request budget
 
-Each site answers at most 500,000 anonymous and member requests per calendar
+Each site answers at most 5,000,000 anonymous and member requests per calendar
 month (UTC) by default. Owner requests and requests answered from the edge
 cache do not count. After the budget is spent, visitors receive 429 `RATE_LIMITED` until
 the next month. `SITE_MONTHLY_REQUESTS` sets the default; `monthlyRequests`
 in `configure` overrides it for a site. Counts are persisted every 25 requests,
-so an evicted object can forget up to 24 requests.
+so an evicted object can forget up to 24 requests. Each month's requests are also counted by
+kind, with the rows SQLite read for them (meta `stats:<YYYY-MM>`: `visitor_read`,
+`visitor_write`, `member_read`, `member_write`, `visitor_call`,
+`visitor_read_call`, `member_call`, `member_read_call`, `live`, `rows`), saved
+with the budget and shown in the owner's listing as `usage.requests.kinds`, so
+the budget can be sized from what sites do.
 
 Three guards keep one caller, or one site, from spending what others need
 (`site.ts`):
