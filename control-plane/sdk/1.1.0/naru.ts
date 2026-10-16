@@ -390,10 +390,10 @@ export interface Admin {
       options?: {
         signal?: AbortSignal;
         /**
-         * A managed upload (1.1.0) lives as long as the site's documents use
-         * it: any document whose JSON contains its URL, HTML included, keeps
-         * it, and Naru deletes it once none does (or if none has used it an
-         * hour after the upload). Other uploads stay until deleted.
+         * A managed upload (1.1.0): Naru tracks which of the site's
+         * documents use it (any whose JSON contains its URL, HTML included),
+         * and the media library marks it when none does. Like every upload,
+         * it stays until deleted: media may be linked from anywhere.
          */
         managed?: boolean;
         /**

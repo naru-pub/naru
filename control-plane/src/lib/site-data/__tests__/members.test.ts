@@ -1629,7 +1629,7 @@ integration("site members", () => {
     });
     const file = { name: "log.png", contentType: "image/png", size: 3 };
 
-    test("a managed upload lives while documents use it, in any field or HTML", async () => {
+    test("a managed upload's references are tracked, in any field or HTML, and nothing is deleted", async () => {
       const bob = await signIn("bob");
       const upload = async () => {
         const authorized = await media(bob.accessToken, "POST", [], {
@@ -1646,8 +1646,12 @@ integration("site members", () => {
           (await media(bob.accessToken, "POST", [], file)).id,
         ])
       ).file;
-      const released = async () =>
-        (await callSiteObject<string[]>("alice", "mediaReleases", {})).sort();
+      const referenced = async () =>
+        (
+          await callSiteObject<string[]>("alice", "mediaReferences", {
+            ids: [kept.id, swapped.id, unused.id],
+          })
+        ).sort();
       await owned("POST", [], {
         name: "posts_m",
         read: "world",
@@ -1660,29 +1664,20 @@ integration("site members", () => {
         await owned("PUT", ["posts_m", "b"], {
           data: { html: `<img src="${kept.url}">`, other: plain.url },
         });
-        expect(await released()).toEqual([]);
-        // Editing out an upload releases it; another document still keeps one.
+        expect(await referenced()).toEqual([kept.id, swapped.id].sort());
+        // Editing out an upload, or deleting what named it, only unmarks it:
+        // media may be linked from anywhere, so nothing is released.
         await owned("PUT", ["posts_m", "a"], { data: { image: kept.url } });
-        expect(await released()).toEqual([swapped.id]);
+        expect(await referenced()).toEqual([kept.id]);
         await owned("DELETE", ["posts_m", "a"]);
-        expect(await released()).toEqual([swapped.id]);
         await owned("DELETE", ["posts_m", "b"]);
-        expect(await released()).toEqual([kept.id, swapped.id].sort());
-        // Never used: not deleted, but marked as no document's.
-        expect(
-          await callSiteObject<string[]>("alice", "mediaReferences", {
-            ids: [unused.id],
-          }),
-        ).toEqual([]);
+        expect(await referenced()).toEqual([]);
         await owned("PUT", ["posts_m", "c"], { data: { image: unused.url } });
+        await owned("DELETE", ["posts_m"]);
+        expect(await referenced()).toEqual([]);
         expect(
-          await callSiteObject<string[]>("alice", "mediaReferences", {
-            ids: [unused.id],
-          }),
-        ).toEqual([unused.id]);
-        await owned("DELETE", ["posts_m", "c"]);
-        // An unmanaged upload is never released by references.
-        expect(await released()).not.toContain(plain.id);
+          await callSiteObject<string[]>("alice", "mediaReleases", {}),
+        ).toEqual([]);
         await runMediaRelease({ site: "alice" }, {
           step: (_name: string, work: () => Promise<unknown>) => work(),
         } as never);
@@ -1691,18 +1686,10 @@ integration("site members", () => {
           .select(["id", "deleted_at"])
           .where("id", "in", [kept.id, swapped.id, unused.id, plain.id])
           .execute();
-        expect(
-          Object.fromEntries(
-            rows.map((row) => [row.id, Boolean(row.deleted_at)]),
-          ),
-        ).toEqual({
-          [kept.id]: true,
-          [swapped.id]: true,
-          [unused.id]: true,
-          [plain.id]: false,
-        });
+        expect(rows.every((row) => row.deleted_at === null)).toBe(true);
+        expect(rows).toHaveLength(4);
       } finally {
-        await owned("DELETE", ["posts_m"]);
+        await owned("DELETE", ["posts_m"]).catch(() => {});
       }
     });
 

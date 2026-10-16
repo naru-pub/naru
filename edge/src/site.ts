@@ -1817,20 +1817,17 @@ export class SiteData extends DurableObject<Env> {
     }
   }
 
-  /** Deletes a collection with its documents, rules, unique fields and upload references. */
+  /**
+   * Deletes a collection with its documents, rules, unique fields and upload
+   * references. Its uploads stay: media may be linked from anywhere.
+   */
   private deleteCollection(collection: Collection) {
     this.setUnique(collection, null);
     this.setIndexes(collection, null);
-    // Uploads only this collection used go with it.
-    const used = this.rows(
-      "SELECT DISTINCT upload_id FROM media_refs WHERE collection_id = ?",
-      collection.id,
-    ).map((row) => row.upload_id as string);
     this.sql.exec(
       "DELETE FROM media_refs WHERE collection_id = ?",
       collection.id,
     );
-    for (const upload of used) this.releaseIfUnused(upload);
     this.sql.exec(
       "DELETE FROM documents WHERE collection_id = ?",
       collection.id,
@@ -1839,7 +1836,7 @@ export class SiteData extends DurableObject<Env> {
     this.setMeta(`rules:${collection.id}`, null);
   }
 
-  /** Deletes a document, releasing managed uploads only it used. */
+  /** Deletes a document and its upload references. */
   private removeDocument(collectionId: string, id: string) {
     this.trackMedia(collectionId, id, null);
     this.sql.exec(
@@ -1877,7 +1874,11 @@ export class SiteData extends DurableObject<Env> {
     ).map((row) => row.id as string);
   }
 
-  /** Moves a document's upload references to what `encoded` names (null: none). */
+  /**
+   * Moves a document's upload references to what `encoded` names (null:
+   * none). References only mark uploads in the media library: an upload no
+   * document names stays, since media may be linked from anywhere.
+   */
   private trackMedia(collectionId: string, id: string, encoded: string | null) {
     const before = this.rows(
       "SELECT upload_id FROM media_refs WHERE collection_id = ? AND document_id = ?",
@@ -1894,33 +1895,16 @@ export class SiteData extends DurableObject<Env> {
           id,
         );
     for (const upload of before)
-      if (!after.includes(upload)) {
+      if (!after.includes(upload))
         this.sql.exec(
           "DELETE FROM media_refs WHERE upload_id = ? AND collection_id = ? AND document_id = ?",
           upload,
           collectionId,
           id,
         );
-        this.releaseIfUnused(upload);
-      }
   }
 
-  /** Queues a managed upload for deletion once no document references it. */
-  private releaseIfUnused(upload: string) {
-    if (
-      this.rows("SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1", upload)
-        .length
-    )
-      return;
-    this.sql.exec("DELETE FROM managed_media WHERE id = ?", upload);
-    this.sql.exec(
-      "INSERT INTO media_releases (id, queued_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
-      upload,
-      Date.now(),
-    );
-  }
-
-  /** Registers a finished upload as managed (1.1.0): references keep it. */
+  /** Registers a finished upload as managed (1.1.0): its references are tracked. */
   async manageMedia(input: { ownerId: string; id: string }) {
     return this.run(() => {
       this.claim(input.ownerId);
