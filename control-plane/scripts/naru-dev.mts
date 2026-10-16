@@ -408,7 +408,6 @@ type Upload = {
   name: string;
   contentType: string;
   size: number;
-  managed: boolean;
   file: string;
   member: string | null;
 };
@@ -433,20 +432,6 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch("/media" + url.pathname));
 });`;
 
-/** Deletes uploads the site's object let go of (references, ctx.media.delete). */
-async function drainMedia() {
-  const ids = await object<string[]>("mediaReleases", { limit: 100 });
-  if (!ids.length) return;
-  for (const id of ids) {
-    const upload = uploads.get(id);
-    if (upload) await rm(join(mediaDir, upload.file), { force: true });
-    uploads.delete(id);
-  }
-  await saveUploads();
-  await object("releasedMedia", { ids });
-  console.log(`deleted ${ids.length} released upload(s)`);
-}
-
 async function executeMedia(
   method: string,
   path: string[],
@@ -469,7 +454,6 @@ async function executeMedia(
       name,
       contentType: String(body?.contentType ?? "application/octet-stream"),
       size: Number(body?.size ?? 0),
-      managed: body?.managed === true,
       file: `${id}${extension ? `.${extension}` : ""}`,
       member: who.member,
     });
@@ -483,8 +467,6 @@ async function executeMedia(
   if (!upload || (who.member && upload.member !== who.member))
     throw new DataError(404, "File not found.");
   if (method === "PUT") {
-    if (upload.managed)
-      await object("manageMedia", { ownerId: OWNER, id: upload.id });
     await saveUploads();
     return {
       file: {
@@ -568,25 +550,22 @@ async function signed(
       allowedIds: null,
       operations: body?.operations,
     });
-    await drainMedia();
     return json(res, 201, publicResult(result));
   }
   if (path[0] === "_call") {
     const { file, fn } = functionReference(path.slice(1).join("/"));
-    const { mediaReleases, ...answer } = await object<{
-      result: unknown;
-      written: string[];
-      mediaReleases?: number;
-    }>("call", {
-      ownerId: OWNER,
-      site,
-      member,
-      ...(owner || member ? {} : { visitor: true }),
-      file,
-      name: fn,
-      args: body?.args ?? null,
-    });
-    if (mediaReleases) await drainMedia();
+    const answer = await object<{ result: unknown; written: string[] }>(
+      "call",
+      {
+        ownerId: OWNER,
+        site,
+        member,
+        ...(owner || member ? {} : { visitor: true }),
+        file,
+        name: fn,
+        args: body?.args ?? null,
+      },
+    );
     return json(res, 200, answer);
   }
   if (path[0] === "_live") {
@@ -613,7 +592,6 @@ async function signed(
     ids: url.searchParams.get("ids") ?? undefined,
     ifVersion: websiteCondition(url),
   });
-  if (method !== "GET") await drainMedia();
   return json(res, method === "POST" ? 201 : 200, publicResult(result));
 }
 

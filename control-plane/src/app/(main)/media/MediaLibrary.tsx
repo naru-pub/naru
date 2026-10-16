@@ -27,9 +27,7 @@ type MediaFile = {
   url: string;
   createdAt: string;
   updatedAt: string;
-  /** Uploaded with `managed: true`: kept while documents name it. */
-  managed?: boolean;
-  /** For a managed upload: whether any of the site's documents names it. */
+  /** For a finished upload: whether any of the site's documents names it. */
   referenced?: boolean;
   /** An upload that was started but never finished. */
   unfinished?: boolean;
@@ -477,10 +475,10 @@ export default function MediaLibrary() {
                   </p>
                 )}
                 {/* Not deleted automatically: the owner decides. */}
-                {file.managed && file.referenced === false && (
+                {file.referenced === false && (
                   <p
                     className="mt-2 inline-block border border-warning px-1.5 py-0.5 text-xs text-warning"
-                    title="managed로 올렸지만 어떤 데이터베이스 문서도 이 파일의 URL을 담고 있지 않습니다. 필요 없으면 삭제하세요."
+                    title="어떤 데이터베이스 문서도 이 파일의 URL을 담고 있지 않습니다. 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
                   >
                     참조 없음
                   </p>

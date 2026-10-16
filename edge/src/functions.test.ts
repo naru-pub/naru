@@ -142,7 +142,7 @@ describe("calling", () => {
     ).toEqual([true, null]);
   });
 
-  test("a visitor's call says so, and cannot delete uploads", () => {
+  test("a visitor's call says so", () => {
     const visit = (source: string) =>
       runFunction(
         module,
@@ -157,11 +157,10 @@ describe("calling", () => {
     expect(run("export function f(ctx) { return ctx.visitor; }", "f")).toBe(
       false,
     );
-    expect(() =>
-      visit(
-        `export async function f(ctx) { await ctx.media.delete("0190f1a2-0000-7000-8000-000000000001"); }`,
-      ),
-    ).toThrow(/cannot delete uploads/);
+    // Uploads are deleted by their owner or member, never by a function.
+    expect(visit("export function f(ctx) { return ctx.media ?? null; }")).toBe(
+      null,
+    );
   });
 
   test("ctx.fail carries the function's details to the caller", () => {

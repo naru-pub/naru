@@ -31,7 +31,6 @@ import {
   revokeMemberToken,
 } from "../member-auth";
 import { executeMedia, MEMBER_UPLOADS_PER_HOUR, mediaStorage } from "../media";
-import { runMediaRelease } from "../media-releases";
 import { mediaDeletionStorage, cleanupDeletedMedia } from "../media-deletion";
 import { setupTestDatabase, teardownTestDatabase } from "./test-database";
 
@@ -1194,7 +1193,7 @@ integration("site members", () => {
   });
 
   test("a rule's present shows each reader only their own authorship", async () => {
-    const bob = await signIn("bob");
+    const carol = await signIn("carol");
     const dave = await signIn("dave");
     await owned("POST", [], { name: "masks", read: "member", write: "member" });
     await callSiteObject("alice", "putFunctions", {
@@ -1212,10 +1211,10 @@ integration("site members", () => {
       rules: "masks",
     });
     try {
-      const mine = (await as(bob.accessToken, "POST", ["masks"], {
-        data: { text: "bob's" },
+      const mine = (await as(carol.accessToken, "POST", ["masks"], {
+        data: { text: "carol's" },
       })) as any;
-      expect(mine.createdBy).toBe(bob.memberId);
+      expect(mine.createdBy).toBe(carol.memberId);
       const theirs = (await as(dave.accessToken, "POST", ["masks"], {
         data: { text: "dave's" },
       })) as any;
@@ -1223,7 +1222,7 @@ integration("site members", () => {
         Object.fromEntries(
           (
             (await as(
-              bob.accessToken,
+              carol.accessToken,
               "GET",
               ["masks"],
               undefined,
@@ -1232,43 +1231,43 @@ integration("site members", () => {
           ).documents.map((d: any) => [d.id, d.createdBy]),
         );
       expect(await authors()).toEqual({
-        [mine.id]: bob.memberId,
+        [mine.id]: carol.memberId,
         [theirs.id]: null,
       });
       expect(
-        ((await as(bob.accessToken, "GET", ["masks", theirs.id])) as any)
+        ((await as(carol.accessToken, "GET", ["masks", theirs.id])) as any)
           .document.createdBy,
       ).toBeNull();
       expect(
         (
-          (await as(bob.accessToken, "GET", ["masks"], undefined, {
+          (await as(carol.accessToken, "GET", ["masks"], undefined, {
             ids: JSON.stringify([theirs.id, mine.id]),
           })) as any
         ).documents.map((d: any) => d.createdBy),
-      ).toEqual([null, bob.memberId]);
+      ).toEqual([null, carol.memberId]);
       // "Mine" may be asked; anyone else's authorship may not.
       expect(
         await authors({
-          where: { eq: [{ metadata: "createdBy" }, bob.memberId] },
+          where: { eq: [{ metadata: "createdBy" }, carol.memberId] },
         }),
-      ).toEqual({ [mine.id]: bob.memberId });
+      ).toEqual({ [mine.id]: carol.memberId });
       for (const where of [
         { eq: [{ metadata: "createdBy" }, dave.memberId] },
-        { ne: [{ metadata: "createdBy" }, bob.memberId] },
-        { in: [{ metadata: "createdBy" }, [bob.memberId]] },
+        { ne: [{ metadata: "createdBy" }, carol.memberId] },
+        { in: [{ metadata: "createdBy" }, [carol.memberId]] },
         { eq: [{ metadata: "createdBy" }, null] },
         {
           any: [{ eq: ["text", "x"] }, { gt: [{ metadata: "createdBy" }, ""] }],
         },
       ])
         await expect(
-          as(bob.accessToken, "GET", ["masks"], undefined, { where }),
+          as(carol.accessToken, "GET", ["masks"], undefined, { where }),
         ).rejects.toMatchObject({
           status: 400,
           message: expect.stringContaining("createdBy only as"),
         });
       await expect(
-        as(bob.accessToken, "GET", ["masks"], undefined, {
+        as(carol.accessToken, "GET", ["masks"], undefined, {
           sort: JSON.stringify([[{ metadata: "createdBy" }, "asc"]]),
         }),
       ).rejects.toMatchObject({ status: 400 });
@@ -1282,7 +1281,7 @@ integration("site members", () => {
   });
 
   test("a rule's readable sees a batch read's IDs, and whether a visitor reads", async () => {
-    const bob = await signIn("bob");
+    const fern = await signIn("fern");
     await owned("POST", [], { name: "seen", read: "world", write: "admin" });
     for (const id of ["open", "closed", "other"])
       await owned("PUT", ["seen", id], { data: {} });
@@ -1310,7 +1309,7 @@ integration("site members", () => {
         as(token, "GET", ["seen"], undefined, {
           ids: JSON.stringify(list),
         }).then((page: any) => page.documents.map((d: any) => d?.id ?? null));
-      expect(await ids(bob.accessToken, ["closed", "open", "open"])).toEqual([
+      expect(await ids(fern.accessToken, ["closed", "open", "open"])).toEqual([
         null,
         "open",
         "open",
@@ -1324,7 +1323,7 @@ integration("site members", () => {
           (d: any) => d.id,
         );
       expect(await listed()).toEqual(["open"]);
-      expect(await listed(bob.accessToken)).toEqual([
+      expect(await listed(fern.accessToken)).toEqual([
         "closed",
         "open",
         "other",
@@ -1765,27 +1764,24 @@ integration("site members", () => {
     });
     const file = { name: "log.png", contentType: "image/png", size: 3 };
 
-    test("a managed upload's references are tracked, in any field or HTML, and nothing is deleted", async () => {
+    test("every upload's references are tracked, in any field or HTML, and nothing is deleted", async () => {
       const bob = await signIn("bob");
-      const upload = async () => {
+      const upload = async (extra = {}) => {
         const authorized = await media(bob.accessToken, "POST", [], {
           ...file,
-          managed: true,
+          ...extra,
         });
         return (await media(bob.accessToken, "PUT", [authorized.id])).file;
       };
       const kept = await upload();
       const swapped = await upload();
       const unused = await upload();
-      const plain = (
-        await media(bob.accessToken, "PUT", [
-          (await media(bob.accessToken, "POST", [], file)).id,
-        ])
-      ).file;
+      // An early 1.1.0 page's option, accepted and of no consequence.
+      const legacy = await upload({ managed: true });
       const referenced = async () =>
         (
           await callSiteObject<string[]>("alice", "mediaReferences", {
-            ids: [kept.id, swapped.id, unused.id],
+            ids: [kept.id, swapped.id, unused.id, legacy.id],
           })
         ).sort();
       await owned("POST", [], {
@@ -1798,9 +1794,11 @@ integration("site members", () => {
           data: { image: kept.url, body: `<p><img src="${swapped.url}"></p>` },
         });
         await owned("PUT", ["posts_m", "b"], {
-          data: { html: `<img src="${kept.url}">`, other: plain.url },
+          data: { html: `<img src="${kept.url}">`, other: legacy.url },
         });
-        expect(await referenced()).toEqual([kept.id, swapped.id].sort());
+        expect(await referenced()).toEqual(
+          [kept.id, swapped.id, legacy.id].sort(),
+        );
         // The owner's library marks what no document names, and lists
         // uploads never finished, which stay until deleted.
         const started = await media(bob.accessToken, "POST", [], file);
@@ -1815,42 +1813,71 @@ integration("site members", () => {
           })) as { files: Record<string, unknown>[] }
         ).files;
         const shown = (id: string) => listed.find((entry) => entry.id === id);
-        expect(shown(kept.id)).toMatchObject({
-          managed: true,
-          referenced: true,
-        });
-        expect(shown(unused.id)).toMatchObject({
-          managed: true,
-          referenced: false,
-        });
-        expect(shown(plain.id)).toMatchObject({ managed: false });
-        expect(shown(plain.id)).not.toHaveProperty("referenced");
+        expect(shown(kept.id)).toMatchObject({ referenced: true });
+        expect(shown(unused.id)).toMatchObject({ referenced: false });
+        expect(shown(unused.id)).not.toHaveProperty("managed");
         expect(shown(started.id)).toMatchObject({ unfinished: true });
+        expect(shown(started.id)).not.toHaveProperty("referenced");
         // Editing out an upload, or deleting what named it, only unmarks it:
         // media may be linked from anywhere, so nothing is released.
         await owned("PUT", ["posts_m", "a"], { data: { image: kept.url } });
-        expect(await referenced()).toEqual([kept.id]);
+        expect(await referenced()).toEqual([kept.id, legacy.id].sort());
         await owned("DELETE", ["posts_m", "a"]);
         await owned("DELETE", ["posts_m", "b"]);
         expect(await referenced()).toEqual([]);
         await owned("PUT", ["posts_m", "c"], { data: { image: unused.url } });
         await owned("DELETE", ["posts_m"]);
         expect(await referenced()).toEqual([]);
-        expect(
-          await callSiteObject<string[]>("alice", "mediaReleases", {}),
-        ).toEqual([]);
-        await runMediaRelease({ site: "alice" }, {
-          step: (_name: string, work: () => Promise<unknown>) => work(),
-        } as never);
         const rows = await db
           .selectFrom("site_data_files")
           .select(["id", "deleted_at"])
-          .where("id", "in", [kept.id, swapped.id, unused.id, plain.id])
+          .where("id", "in", [kept.id, swapped.id, unused.id, legacy.id])
           .execute();
         expect(rows.every((row) => row.deleted_at === null)).toBe(true);
         expect(rows).toHaveLength(4);
       } finally {
         await owned("DELETE", ["posts_m"]).catch(() => {});
+      }
+    });
+
+    test("a site's first media listing records the references its documents already had", async () => {
+      // Documents written while only managed uploads were tracked: an
+      // imported site has documents and no references at all.
+      const ownerId = "0190f1a2-0000-7000-8000-00000000000a";
+      const upload = "0190f1a2-0000-7000-8000-0000000000b1";
+      try {
+        await callSiteObject("media-backfill", "import", {
+          ownerId,
+          collections: [
+            {
+              id: "0190f1a2-0000-7000-8000-0000000000c1",
+              name: "posts",
+              read_access: "world",
+              write_access: "admin",
+            },
+          ],
+          documents: [
+            {
+              collection_id: "0190f1a2-0000-7000-8000-0000000000c1",
+              id: "old",
+              data: JSON.stringify({
+                html: `<img src="https://media.naru.pub/${ownerId}/${upload}.png">`,
+              }),
+              size_bytes: 80,
+              version: 1,
+              created_at: 0,
+              updated_at: 0,
+              created_by: null,
+            },
+          ],
+        });
+        expect(
+          await callSiteObject<string[]>("media-backfill", "mediaReferences", {
+            ids: [upload, "0190f1a2-0000-7000-8000-0000000000b2"],
+          }),
+        ).toEqual([upload]);
+      } finally {
+        await eraseSiteData("media-backfill");
       }
     });
 
@@ -1883,69 +1910,6 @@ integration("site members", () => {
       await expect(
         media(bob.accessToken, "PUT", [authorized.id]),
       ).rejects.toMatchObject({ status: 404 });
-    });
-
-    test("a function's ctx.media.delete takes effect only if its call commits", async () => {
-      const bob = await signIn("bob");
-      const upload = async () => {
-        const { id } = await media(bob.accessToken, "POST", [], file);
-        await media(bob.accessToken, "PUT", [id]);
-        return id as string;
-      };
-      const kept = await upload();
-      const released = await upload();
-      await callSiteObject("alice", "putFunctions", {
-        site: "alice",
-        file: "media",
-        source: `export async function drop(ctx, { id, fail }) {
-          await ctx.media.delete(id);
-          if (fail) throw new Error("changed my mind");
-          return "queued";
-        }`,
-      });
-      const call = (args: unknown) =>
-        executeCall({
-          site: "alice",
-          path: ["media:drop"],
-          method: "POST",
-          body: { args },
-          bearer: { token: bob.accessToken, origin },
-        });
-      await expect(call({ id: kept, fail: true })).rejects.toMatchObject({
-        status: 400,
-      });
-      // The queue is the object's own and leaves no trace in the answer.
-      expect(await call({ id: released })).toEqual({
-        result: "queued",
-        written: [],
-      });
-      expect(await callSiteObject("alice", "mediaReleases", {})).toEqual([
-        released,
-      ]);
-      // Its deletion was handed to the durable queue.
-      expect(
-        (
-          await sql<{
-            n: number;
-          }>`select count(*)::int as n from absurd.t_maintenance where task_name = 'site-media-release-v1' and params->>'site' = 'alice'`.execute(
-            db,
-          )
-        ).rows[0].n,
-      ).toBe(1);
-      await runMediaRelease({ site: "alice" }, {
-        step: (_name: string, work: () => Promise<unknown>) => work(),
-      } as never);
-      expect(await callSiteObject("alice", "mediaReleases", {})).toEqual([]);
-      const rows = await db
-        .selectFrom("site_data_files")
-        .select(["id", "deleted_at"])
-        .where("id", "in", [kept, released])
-        .execute();
-      expect(
-        Object.fromEntries(
-          rows.map((row) => [row.id, Boolean(row.deleted_at)]),
-        ),
-      ).toEqual({ [kept]: false, [released]: true });
     });
 
     test("failed deletions remain durable; retries free bytes and stale upload URLs cannot revive finalized media", async () => {

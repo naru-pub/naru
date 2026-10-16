@@ -133,14 +133,9 @@ function uploadInput(body: Record<string, unknown>) {
     Number(size) > MAX_MEDIA_FILE_BYTES
   )
     throw new DataError(413, "File must be between 1 byte and 25 MiB.");
-  if (body.managed !== undefined && typeof body.managed !== "boolean")
-    throw new DataError(400, "managed must be a boolean.");
-  return {
-    filename,
-    contentType,
-    size: Number(size),
-    managed: body.managed === true,
-  };
+  // `managed` (an early 1.1.0 option) is ignored: every upload's references
+  // are tracked.
+  return { filename, contentType, size: Number(size) };
 }
 
 export async function executeMedia(command: MediaCommand) {
@@ -229,25 +224,22 @@ export async function executeMedia(command: MediaCommand) {
     const rows = await query.execute();
     const page = rows.slice(0, limit);
     const last = page.at(-1);
-    // A managed upload no document names is marked, not deleted: the owner
+    // An upload no document names is marked, not deleted: the owner
     // decides (the control panel's media library shows it).
-    const managed = page
-      .filter((file) => file.managed && file.status === "ready")
+    const ready = page
+      .filter((file) => file.status === "ready")
       .map((file) => file.id);
     const used = new Set(
-      managed.length
+      ready.length
         ? await callSiteObject<string[]>(command.site, "mediaReferences", {
-            ids: managed,
+            ids: ready,
           })
         : [],
     );
     return {
       files: page.map((file) => ({
         ...output(file),
-        managed: file.managed,
-        ...(file.managed && file.status === "ready"
-          ? { referenced: used.has(file.id) }
-          : {}),
+        ...(file.status === "ready" ? { referenced: used.has(file.id) } : {}),
         ...(file.status === "pending"
           ? {
               unfinished: true,
@@ -338,7 +330,6 @@ export async function executeMedia(command: MediaCommand) {
           content_type: input.contentType,
           size_bytes: input.size,
           member_id: memberId ?? null,
-          managed: input.managed,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -399,13 +390,6 @@ export async function executeMedia(command: MediaCommand) {
         "Uploaded file does not match its authorization.",
       );
     }
-    // A managed upload is registered with the site's object first, so that a
-    // finished file is never left unmanaged; a failure here is retried.
-    if (file.managed)
-      await callSiteObject(command.site, "manageMedia", {
-        ownerId: String(owner.id),
-        id,
-      });
     const ready = await db
       .updateTable("site_data_files")
       .where("id", "=", id)

@@ -311,6 +311,10 @@ export class SiteData extends DurableObject<Env> {
       )
     )
       this.sql.exec("ALTER TABLE documents ADD COLUMN secret_hash TEXT");
+    // Every upload's references are tracked now, and functions no longer
+    // delete uploads (ctx.media.delete): the tables for both go.
+    this.sql.exec("DROP TABLE IF EXISTS managed_media");
+    this.sql.exec("DROP TABLE IF EXISTS media_releases");
     // The site's document count and bytes, kept by triggers on every write
     // path, so a write's quota check reads one row instead of every document.
     this.sql.exec(`
@@ -1636,28 +1640,6 @@ export class SiteData extends DurableObject<Env> {
           );
           return null;
         }
-        case "mediaDelete": {
-          // Queued with the call's writes; the control plane deletes the
-          // file once they commit (releasedMedia).
-          if (
-            typeof args[0] !== "string" ||
-            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-              args[0],
-            )
-          )
-            throw new DataError(400, "ctx.media.delete() needs an upload ID.");
-          // Deleted on purpose: no longer kept by references either.
-          this.sql.exec(
-            "DELETE FROM managed_media WHERE id = ?",
-            args[0].toLowerCase(),
-          );
-          this.sql.exec(
-            "INSERT INTO media_releases (id, queued_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
-            args[0].toLowerCase(),
-            Date.now(),
-          );
-          return null;
-        }
         case "delete": {
           const target = collection(args[0]);
           const id = name(args[1]);
@@ -1710,9 +1692,7 @@ export class SiteData extends DurableObject<Env> {
     file: string;
     name: string;
     args: unknown;
-  }): Promise<
-    Outcome<{ result: unknown; written: string[]; mediaReleases?: number }>
-  > {
+  }): Promise<Outcome<{ result: unknown; written: string[] }>> {
     const visitor = input.member === null && input.visitor === true;
     let filename: string, sources, readonly;
     try {
@@ -1783,7 +1763,6 @@ export class SiteData extends DurableObject<Env> {
           ),
         ),
         written: [...written].sort(),
-        ...this.pendingMedia(),
       }));
       if (outcome.ok) this.deliver(messages);
       return outcome;
@@ -1901,9 +1880,9 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * Managed uploads (1.1.0) a document's JSON names by address: the site's
-   * media URLs end in `/<owner id>/<upload id>.<ext>`, in plain fields or
-   * inside HTML alike. Only uploads registered as managed count.
+   * The uploads a document's JSON names by address: the site's media URLs
+   * end in `/<owner id>/<upload id>.<ext>`, in plain fields or inside HTML
+   * alike. Every upload counts; an ID no upload has only marks nothing.
    */
   private referencedMedia(encoded: string | null) {
     const owner = this.meta("owner_id");
@@ -1920,12 +1899,7 @@ export class SiteData extends DurableObject<Env> {
       `https?://[^"\\\\\\s]+?/${owner}/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`,
       "g",
     );
-    const ids = [...new Set([...encoded.matchAll(pattern)].map((m) => m[1]))];
-    if (!ids.length) return [];
-    return this.rows(
-      `SELECT id FROM managed_media WHERE id IN (${ids.map(() => "?").join(",")})`,
-      ...ids,
-    ).map((row) => row.id as string);
+    return [...new Set([...encoded.matchAll(pattern)].map((m) => m[1]))];
   }
 
   /**
@@ -1958,85 +1932,36 @@ export class SiteData extends DurableObject<Env> {
         );
   }
 
-  /** Registers a finished upload as managed (1.1.0): its references are tracked. */
-  async manageMedia(input: { ownerId: string; id: string }) {
-    return this.run(() => {
-      this.claim(input.ownerId);
-      if (
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-          input.id,
-        )
-      )
-        throw new DataError(400, "Invalid upload ID.");
-      this.sql.exec(
-        "INSERT INTO managed_media (id, registered_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING",
-        input.id,
-        Date.now(),
-      );
-      return true;
-    });
-  }
-
   /**
-   * Which of `ids` (managed uploads) a document uses. Unreferenced uploads
-   * stay until deleted (the control panel's media library marks them).
-   * A document may name one without a reference on record (uploads made
-   * while UUID owners went unmatched): those are recorded first.
+   * Which of `ids` (uploads) a document uses, for the media library to mark
+   * the others. Unreferenced uploads stay until deleted. References were
+   * once kept only for uploads marked managed, and documents may name
+   * uploads from before that (or from when UUID owners went unmatched): the
+   * first answer records every document's references once.
    */
   async mediaReferences(input: { ids?: unknown }) {
     return this.run(() => {
+      if (this.meta("media_refs") !== "all") {
+        for (const document of this.rows(
+          "SELECT collection_id, id, data FROM documents",
+        ))
+          this.trackMedia(
+            document.collection_id as string,
+            document.id as string,
+            document.data as string,
+          );
+        this.setMeta("media_refs", "all");
+      }
       const ids = Array.isArray(input.ids)
         ? input.ids
             .filter((id): id is string => typeof id === "string")
             .slice(0, 100)
         : [];
-      const referenced = (id: string) =>
-        this.rows("SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1", id)
-          .length > 0;
-      const used: string[] = [];
-      for (const id of ids) {
-        if (!referenced(id))
-          for (const document of this.rows(
-            "SELECT collection_id, id, data FROM documents WHERE instr(data, ?) > 0",
-            id,
-          ))
-            this.trackMedia(
-              document.collection_id as string,
-              document.id as string,
-              document.data as string,
-            );
-        if (referenced(id)) used.push(id);
-      }
-      return used;
-    });
-  }
-
-  /** How many uploads functions queued for deletion, when any wait. */
-  private pendingMedia() {
-    const pending = Number(
-      this.rows("SELECT count(*) AS n FROM media_releases")[0].n,
-    );
-    return pending ? { mediaReleases: pending } : {};
-  }
-
-  /** The uploads functions queued for deletion, oldest first. */
-  async mediaReleases(input: { limit?: number }) {
-    return this.run(() =>
-      this.rows(
-        "SELECT id FROM media_releases ORDER BY queued_at, id LIMIT ?",
-        Math.min(Math.max(Number(input.limit) || 100, 1), 100),
-      ).map((row) => row.id as string),
-    );
-  }
-
-  /** Forgets queued uploads the control plane has deleted. */
-  async releasedMedia(input: { ids: string[] }) {
-    return this.run(() => {
-      if (!Array.isArray(input.ids) || input.ids.length > 100)
-        throw new DataError(400, "Release at most 100 uploads.");
-      for (const id of input.ids)
-        this.sql.exec("DELETE FROM media_releases WHERE id = ?", String(id));
-      return this.pendingMedia().mediaReleases ?? 0;
+      return ids.filter(
+        (id) =>
+          this.rows("SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1", id)
+            .length > 0,
+      );
     });
   }
 
@@ -2428,8 +2353,8 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * Every row of every table, to move the site to another runtime (its
-   * `restore`): collections, documents with their write secrets, managed
-   * media and its references, queued releases, limits and settings.
+   * `restore`): collections, documents with their write secrets, upload
+   * references, limits and settings.
    */
   async dump(): Promise<Outcome<Dump>> {
     return this.run(() => ({

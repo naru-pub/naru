@@ -44,14 +44,6 @@ export const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS documents_created ON documents (collection_id, created_at, id);
   CREATE INDEX IF NOT EXISTS documents_updated ON documents (collection_id, updated_at, id);
-  CREATE TABLE IF NOT EXISTS media_releases (
-    id TEXT PRIMARY KEY,
-    queued_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS managed_media (
-    id TEXT PRIMARY KEY,
-    registered_at INTEGER NOT NULL
-  );
   CREATE TABLE IF NOT EXISTS media_refs (
     upload_id TEXT NOT NULL,
     collection_id TEXT NOT NULL,

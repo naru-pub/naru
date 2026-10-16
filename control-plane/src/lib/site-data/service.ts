@@ -5,7 +5,6 @@ import { siteDataWorker, callSiteObject } from "@/lib/edge/client";
 import { MEMBER_TOKEN, memberScope } from "./member-auth";
 import { tokenScope } from "./owner-auth";
 import { DataError, name, functionReference } from "./validation";
-import { queueMediaRelease } from "./media-releases";
 import { signLiveTicket } from "./live-ticket";
 
 // Site databases live in Durable Objects, one per site, in the site-data
@@ -231,12 +230,8 @@ export async function executeCall(command: DataCommand) {
       "Site functions are called by signed-in members or the site's owner.",
     );
   const visitor = memberId === undefined && allowedIds === undefined;
-  const invoke = () =>
-    callSiteObject<{
-      result: unknown;
-      written: string[];
-      mediaReleases?: number;
-    }>(
+  return withRevision(command.site, () =>
+    callSiteObject<{ result: unknown; written: string[] }>(
       command.site,
       "call",
       {
@@ -249,18 +244,8 @@ export async function executeCall(command: DataCommand) {
         args: command.body?.args ?? null,
       },
       command.signal,
-    );
-  const { mediaReleases, ...answer } = await withRevision(command.site, invoke);
-  // The call has committed; a failure here leaves the uploads queued for the
-  // next call on the site to start their deletion.
-  if (mediaReleases)
-    await queueMediaRelease(command.site).catch((error) =>
-      console.error(
-        `Queueing media deletion for ${command.site} failed`,
-        error,
-      ),
-    );
-  return answer;
+    ),
+  );
 }
 
 /**

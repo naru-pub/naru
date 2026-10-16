@@ -248,7 +248,7 @@ export interface Member {
    */
   live(options: LiveOptions): Live;
   media: {
-    /** Deletes a stored upload by ID; members may delete only their own uploads. */
+    /** Deletes one of this member's own uploads by ID. */
     delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
@@ -259,8 +259,6 @@ export interface Member {
       file: File | Blob,
       options?: {
         signal?: AbortSignal;
-        /** As for an owner's upload. */
-        managed?: boolean;
         /** As for an owner's upload. */
         onProgress?: (
           progress:
@@ -323,23 +321,23 @@ export interface Admin {
     } | null)[]
   >;
   media: {
-    /** Deletes a stored upload by ID; members may delete only their own uploads. */
+    /**
+     * Deletes any of the site's uploads by ID. Needs a sign-in that asked for
+     * it: `auth.signIn({ collections, mediaDelete: true })`.
+     */
     delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
+     * Like every upload, it stays until deleted, since media may be linked
+     * from anywhere; Naru notes which of the site's documents name its URL
+     * (in any field, HTML included), and the media library marks it when
+     * none does.
      */
     upload(
       file: File | Blob,
       options?: {
         signal?: AbortSignal;
-        /**
-         * A managed upload (1.1.0): Naru tracks which of the site's
-         * documents use it (any whose JSON contains its URL, HTML included),
-         * and the media library marks it when none does. Like every upload,
-         * it stays until deleted: media may be linked from anywhere.
-         */
-        managed?: boolean;
         /**
          * Called as the upload moves along: `preparing` while a photo is
          * shrunk and the upload authorized, `uploading` with the bytes sent

@@ -13,8 +13,9 @@ is historical; these gaps have since been addressed:
   run without writes on a separate budget; there is one `call()`. The owner
   calls functions too (`admin.call`, `ctx.owner`).
 - SDK 1.1.0 uploads return IDs and media deletion supports explicit owner grants
-  and an optional uploader guard. Functions delete uploads transactionally with
-  `ctx.media.delete(id)`, carried out once the call commits.
+  and an optional uploader guard. Naru records which documents name every
+  upload, and the media library marks those none does; functions do not
+  delete uploads.
 - `ctx.fail(code, message, details)` aborts functions transactionally and reaches
   callers as a `NaruError` whose `details` carries the app's own reason.
 - `ctx.getMany` batches up to 100 lookups; `ctx.count` counts without reading

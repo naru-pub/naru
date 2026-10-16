@@ -162,7 +162,7 @@ Member tokens are `m.` followed by 43 base64url characters, sent as `Authorizati
 
 Members need a supporter plan (comp, paid, or within the payment grace), except on sites Naru's operators exempt (`users.site_members_free`, toggled on the operator's account page at `/admin/users/<site>`): the sign-in page asks others to become supporters, approval and exchange refuse them, and every member request checks it, so a member whose plan ends, or whose site loses its exemption, is refused with 403 `ACCESS_DENIED` until that changes back, without signing in again.
 
-Member requests always go through the control plane, which resolves the token and tells the site's object the member ID (`access.member`). The object applies the permissions above, counts a member's writes in fixed-minute buckets of 30 per member (visitors' IP buckets do not apply to them), and counts their requests against the site's monthly budget like visitors'. Members cannot use `_batch`, manage collections, or list or delete media.
+Member requests always go through the control plane, which resolves the token and tells the site's object the member ID (`access.member`). The object applies the permissions above, counts a member's writes in fixed-minute buckets of 30 per member (visitors' IP buckets do not apply to them), and counts their requests against the site's monthly budget like visitors'. Members cannot use `_batch`, manage collections, list media, or delete uploads but their own.
 
 Members upload into the site's media through the owner's routes (`POST /_files`, then `PUT /_files/:id`). `site_data_files.member_id` records who uploaded what; a member finalizes only their own uploads and may authorize 30 files an hour. The site's quota applies as it does to the owner.
 
@@ -170,7 +170,7 @@ Members upload into the site's media through the owner's routes (`POST /_files`,
 
 `member.call("<module/path>:<function>", args)` and `admin.call(...)` (SDK 1.1.0) are `POST /api/data/v1/:site/_call/<module/path>:<function>` with `{ args }`, answered with `{ result, written }` (200: the function's own JSON, not translated like documents, and the names of the collections it changed, which the SDK reads past caches afterwards). It needs a member token or an owner token; the edge sends it on to the control plane, which resolves the caller and calls the site's object (`call`, with `member` null for the owner). Without a token it is a visitor's call, answered at the edge like a visitor's read (`SiteData.visit`, falling back to the control plane): only exports the revision's manifest lists from `export const visitors = [...]`, others 401 `AUTH_REQUIRED`, limited per address (`limitVisitor`: 20 writing and 60 read-only calls a minute, 300 and 900 per site) and counted against the month. `ctx.secretMatches` checks a document's secret with PBKDF2-SHA256 (20,000 iterations, three checks a call) on the host; the object stores secrets as PHC strings (`$pbkdf2-sha256$i=20000$<salt>$<hash>`, `edge/src/passwords.ts`); `Math.random` is the host's. The object loads `functions/<module/path>.js` (or `.mjs`) and its imports from the site's active function revision (`edge/FUNCTION-IMPORTS.md`), counts a member's call against the month and their 30 calls a minute, or 120 reads for an export the module declares in `export const readOnly = [...]` (read from the revision's manifest; those run with writes forbidden), and runs the export in QuickJS-ng compiled to WebAssembly (`edge/src/functions.ts`), synchronously inside one SQLite transaction. The owner's calls are never counted. `ctx`'s database methods return promises, but the object answers each at once and drains the interpreter's job queue before the transaction ends, so an `async` function settles inside it. A throw, a limit, or a failed `ctx` operation (even one the function caught) rolls the whole call back. `ctx.fail(code, message, details)` sends `details` as `error.details` and marks the error `site: true`: its message is the site's own, written for visitors, which SDK 1.1.0 shows as is where it words Naru's other errors in Korean. Empty path segments, `.`/`..`, backslashes and extra colons are rejected.
 
-`ctx.media.delete(id)` inserts the upload into the object's `media_releases` table within the call's transaction. When a call commits with uploads queued, the control plane spawns the durable `site-media-release-v1` task (`src/lib/site-data/media-releases.ts`), which deletes each one as an owner deletion does (`media-deletion.ts`) and then removes it from the queue (`releasedMedia`). A queue whose task never started is drained after the next call on the site that queues anything.
+Every finished upload's references are tracked in the site's object (`media_refs`): each write records which upload IDs its document's JSON names by URL (`/<owner id>/<upload id>`), and the owner's media library asks the object (`mediaReferences`) which of a page of uploads any document names, to mark the rest. The first such question records every existing document's references once (meta `media_refs`), since references were once kept only for uploads made with `managed: true`. Nothing is deleted on a reference's account, and site functions cannot delete uploads.
 
 ### Live connections
 
@@ -278,12 +278,13 @@ await admin.collection("posts").set("hello", {
 });
 ```
 
-Naru does not record which documents use a file: a page that uses a file stores
-its URL. SDK 1.0.0 exposes upload only. SDK 1.1.0 also returns a media ID and
-supports `media.delete(id)`: members delete their own uploads, and owner website
-sessions need explicit deletion consent. See [media deletion](media-deletion.md)
-for cleanup, quota and retry behavior. Unreferenced files are not automatically
-inferred from documents; the app or owner must request deletion.
+A page that uses a file stores its URL. SDK 1.0.0 exposes upload only. SDK
+1.1.0 also returns a media ID and supports `media.delete(id)`: members delete
+their own uploads, and owner website sessions need explicit deletion consent.
+See [media deletion](media-deletion.md) for cleanup, quota and retry behavior.
+Naru records which documents name each upload's URL and the media library
+marks those none does, but it never deletes one on that account; the app or
+owner must request deletion.
 
 사이트 소유자는 **미디어 라이브러리**(`/media`)에서 파일을 끌어
 놓아 업로드하고, 저장 공간을 확인하고, 이름·형식으로 검색하거나 정렬하고, 공개

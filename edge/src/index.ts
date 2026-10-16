@@ -48,14 +48,11 @@ const OPERATIONS = [
   "collections",
   "createCollections",
   "configureCollections",
-  "manageMedia",
   "mediaReferences",
   "erase",
   "configure",
   "call",
   "activateFunctions",
-  "mediaReleases",
-  "releasedMedia",
   "disconnect",
   // Moving a site's database to another runtime (sdk.naru.pub on the mini).
   "dump",
@@ -91,8 +88,6 @@ function dispatch(
       return stub.createCollections(input);
     case "configureCollections":
       return stub.configureCollections(input);
-    case "manageMedia":
-      return stub.manageMedia(input);
     case "mediaReferences":
       return stub.mediaReferences(input);
     case "export":
@@ -107,10 +102,6 @@ function dispatch(
       return stub.call(input);
     case "activateFunctions":
       return stub.activateFunctions(input);
-    case "mediaReleases":
-      return stub.mediaReleases(input);
-    case "releasedMedia":
-      return stub.releasedMedia(input);
     case "disconnect":
       return stub.disconnect(input);
     case "dump":

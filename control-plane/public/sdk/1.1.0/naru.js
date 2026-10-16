@@ -497,11 +497,9 @@ function media(root, send) {
         touches: [],
       });
     },
-    async upload(source, { signal, managed, onProgress } = {}) {
+    async upload(source, { signal, onProgress } = {}) {
       if (onProgress !== undefined && typeof onProgress !== "function")
         throw new TypeError("onProgress must be a function.");
-      if (managed !== undefined && typeof managed !== "boolean")
-        throw new TypeError("managed must be a boolean.");
       // A caller's mistake in its progress handler is reported, never
       // allowed to fail an upload partway through.
       const report = (progress) => {
@@ -532,7 +530,6 @@ function media(root, send) {
           name: file.name || "upload",
           contentType: file.type,
           size: file.size,
-          ...(managed ? { managed: true } : {}),
         },
         signal,
         touches: [],

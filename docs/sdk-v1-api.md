@@ -331,8 +331,6 @@ database methods, which return promises of what the SDK would, so `await` them:
   `delete(collection, id, { condition })`, where `condition` is
   `{ revision }` or (for `set`) `{ absent: true }`, as for the SDK's own
   writes: a mismatch fails the call with `CONFLICT`;
-- `media.delete(uploadId)`: deletes one of the site's uploads once the call
-  commits (see below);
 - `add` and `set` take `{ secret }` (1.1.0), a guest's password, which Naru
   keeps beside the document as a hash (a `set` without one keeps the
   document's), and `secretMatches(collection, id, secret)` resolves whether a
@@ -362,12 +360,6 @@ like any other file of the site, so do not put secrets in it.
 **Caching.** The answer names the collections the call changed; the SDK then
 reads only those past shared caches, as after its own writes. A call whose
 answer was lost may have changed any of them.
-
-**Deleting uploads.** Uploads live outside the site's database, so
-`ctx.media.delete(id)` queues the deletion with the call's other writes: it
-happens only if the call commits, shortly after, as an owner's deletion would.
-Use it where a document that referenced an upload goes away. The function must
-check that the caller may delete the upload; Naru does not.
 
 ## Visitor calls (1.1.0)
 
@@ -416,24 +408,24 @@ PBKDF2-SHA256 hash beside the document, never in its data, and
 
 A visitor's calls are limited by their address: 20 a minute that may write and
 60 read-only ones, and 300 and 900 a minute for all of a site's visitors. They
-count against the site's monthly budget. A visitor's call cannot delete uploads
-(`ctx.media.delete`). Everything else, limits included, is as for members.
+count against the site's monthly budget. Everything else, limits included, is
+as for members.
 
 A document's secret is set and checked only by site functions: a REST write
 whose body has `secret` is refused with `INVALID_REQUEST`. In a `create`
 collection visitors add documents and only the owner changes them; a guest
 edits their own through a visitor function, as above.
 
-## Managed uploads (1.1.0)
+## Upload references (1.1.0)
 
-`media.upload(file, { managed: true })` makes an upload the site's documents
-keep alive: any document whose JSON contains the upload's URL, in a plain
-field or inside HTML, holds a reference, from any write path (pages,
-functions, batches). When the last reference goes, by an edit, a deletion or
-a deleted collection, Naru deletes the upload, within about fifteen minutes;
-an upload no document has used an hour after it was made is deleted too.
-`ctx.media.delete(id)` still deletes one at once. Uploads made without
-`managed` are unchanged: they stay until deleted.
+Naru records which of the site's documents name each upload: any document
+whose JSON contains the upload's URL, in a plain field or inside HTML, from any
+write path (pages, functions, batches). References only mark uploads: the
+owner's media library shows those no document names, and nothing is deleted
+on Naru's judgement, since media may be linked from anywhere (site files,
+other sites). Uploads are deleted by the owner, or by the member who made
+them (`media.delete(id)`); functions cannot delete them. An upload request's
+`managed` field, from an early 1.1.0, is accepted and ignored.
 
 ## Live connections (1.1.0)
 

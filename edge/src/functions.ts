@@ -76,7 +76,7 @@ const URL_PARTS = [
   "hash",
 ] as const;
 const URL_SETTERS = new Set(URL_PARTS.slice(2));
-export const WRITES = new Set(["add", "set", "delete", "mediaDelete"]);
+export const WRITES = new Set(["add", "set", "delete"]);
 
 /** What a function may do: one call per ctx method, given its arguments. */
 export type Host = (operation: string, args: unknown[]) => unknown;
@@ -264,7 +264,6 @@ globalThis.__run = async (name, member, owner, visitor, now, args) => {
     set: __operation("set"),
     secretMatches: __operation("secretMatches"),
     delete: __operation("delete"),
-    media: Object.freeze({ delete: __operation("mediaDelete") }),
     notify: (member, data) => __call("notify", member, data ?? null),
     broadcast: (topic, data) => __call("broadcast", topic, data ?? null),
   });
@@ -424,10 +423,7 @@ export function runFunction(
             `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
           );
         // A document secret is checked with a slow hash, on the host.
-        if (
-          name === "secretMatches" &&
-          ++passwords > MAX_PASSWORD_OPERATIONS
-        )
+        if (name === "secretMatches" && ++passwords > MAX_PASSWORD_OPERATIONS)
           throw failed(
             `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
           );
@@ -437,10 +433,6 @@ export function runFunction(
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
         if (invocation.readonly && WRITES.has(name))
           throw failed("read-only functions cannot write.");
-        // The control plane deletes queued uploads after a call, and a
-        // visitor's call may be answered without it.
-        if (invocation.visitor && name === "mediaDelete")
-          throw failed("a visitor's call cannot delete uploads.");
         if (WRITES.has(name) && ++writes > MAX_WRITES)
           throw failed(`more than ${MAX_WRITES} writes.`);
         const out = host(name, values);
@@ -505,7 +497,7 @@ export function runFunction(
     own(call.value);
     // Every ctx operation has already been answered, so draining the queue
     // settles the call unless it awaits something no one will ever resolve.
-    for (let ran = 0; ; ) {
+    for (let ran = 0; ;) {
       const jobs = runtime.executePendingJobs(1000);
       if (jobs.error) throw outcome(jobs.error);
       if (jobs.value === 0) break;

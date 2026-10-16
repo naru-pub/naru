@@ -72,9 +72,7 @@ export const DUMP_TABLES = [
   "meta",
   "collections",
   "documents",
-  "managed_media",
   "media_refs",
-  "media_releases",
   "rate_limits",
 ] as const;
 /** A site's whole database, as `dump` answers and `restore` takes it. */
