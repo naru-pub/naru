@@ -132,6 +132,8 @@ const READS_PER_MINUTE = 600;
 const MAX_LIVE_CONNECTIONS = 1000;
 /** A message a function sends, as JSON. */
 const MAX_MESSAGE_BYTES = 4 * 1024;
+/** Wrong write secrets one document accepts an hour (checkSecret). */
+const SECRET_FAILURES_PER_HOUR = 10;
 type Message =
   | { to: "member"; member: string; data: unknown }
   | { to: "topic"; topic: string; data: unknown };
@@ -559,6 +561,38 @@ export class SiteData extends DurableObject<Env> {
         "RATE_LIMITED",
       );
     this.readers.counts.set(key, count);
+  }
+
+  /**
+   * Wrong write secrets a document allows an hour, counted in memory: a
+   * failed write rolls its transaction back, so a stored count would be
+   * undone by the very guess it counts. A four-digit PIN then takes about
+   * a thousand hours to guess, whichever way the guesses come (REST writes
+   * or a function's ctx.secretMatches).
+   */
+  private secretFailures = new Map<string, { hour: number; count: number }>();
+  private checkSecret(
+    collectionId: string,
+    id: string,
+    secret: string,
+    hash: string,
+  ) {
+    const hour = Math.floor(Date.now() / 3600000);
+    if (this.secretFailures.size > 10000)
+      for (const [key, entry] of this.secretFailures)
+        if (entry.hour !== hour) this.secretFailures.delete(key);
+    const key = `${collectionId}/${id}`;
+    const entry = this.secretFailures.get(key);
+    const failures = entry?.hour === hour ? entry.count : 0;
+    if (failures >= SECRET_FAILURES_PER_HOUR)
+      throw new DataError(
+        429,
+        "Too many wrong secrets for this document. Try again later.",
+        "RATE_LIMITED",
+      );
+    const matches = verifyPassword(secret, hash) === true;
+    if (!matches) this.secretFailures.set(key, { hour, count: failures + 1 });
+    return matches;
   }
 
   /** Fixed-minute buckets: 60 public writes per site, 20 per caller. */
@@ -1180,7 +1214,7 @@ export class SiteData extends DurableObject<Env> {
     // true or false when a secret was given for a document that has one.
     const secretMatches =
       typeof secret === "string" && stored
-        ? verifyPassword(secret, stored) === true
+        ? this.checkSecret(collection.id, path[1], secret, stored)
         : null;
     // Adding is open to anyone in `create` and to members in `member`.
     // Replacing and deleting there is the owner's, and in `member` also the
@@ -1558,15 +1592,17 @@ export class SiteData extends DurableObject<Env> {
           );
         case "secretMatches": {
           const secret = secretOption({ secret: args[2] });
+          const target = collection(args[0]);
+          const id = name(args[1]);
           const row = this.rows(
             "SELECT secret_hash FROM documents WHERE collection_id = ? AND id = ?",
-            collection(args[0]).id,
-            name(args[1]),
+            target.id,
+            id,
           )[0];
           return Boolean(
             secret &&
             row?.secret_hash &&
-            verifyPassword(secret, row.secret_hash) === true,
+            this.checkSecret(target.id, id, secret, String(row.secret_hash)),
           );
         }
         case "notify":

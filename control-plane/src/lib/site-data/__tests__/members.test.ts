@@ -1233,6 +1233,21 @@ integration("site members", () => {
       await expect(
         as(undefined, "POST", ["guests"], { data: {}, secret: "" }),
       ).rejects.toMatchObject({ status: 400 });
+      // Ten wrong secrets an hour: then even the right one waits, so a
+      // short password cannot be guessed by trying them all.
+      const guarded = (await as(undefined, "POST", ["guests"], {
+        data: { name: "PIN" },
+        secret: "4821",
+      })) as any;
+      for (let guess = 0; guess < 10; guess++)
+        await expect(
+          as(undefined, "DELETE", ["guests", guarded.id], {
+            secret: String(guess).padStart(4, "0"),
+          }),
+        ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        as(undefined, "DELETE", ["guests", guarded.id], { secret: "4821" }),
+      ).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED" });
       // A rule sees whether the secret matched, and decides.
       await callSiteObject("alice", "putFunctions", {
         site: "alice",

@@ -48,7 +48,9 @@ const allowedTypes = new Set([
 
 /** The external object-store boundary, kept narrow so API contracts can run locally. */
 export const mediaStorage = {
-  authorizeUpload(objectKey: string, contentType: string) {
+  // The type and length are signed: the URL takes only the declared file,
+  // so it cannot store more than the quota counted or serve, say, HTML.
+  authorizeUpload(objectKey: string, contentType: string, size: number) {
     return getSignedUrl(
       // Smithy package versions differ between the S3 client and presigner.
       s3Client as never,
@@ -56,8 +58,12 @@ export const mediaStorage = {
         Bucket: mediaBucket(),
         Key: objectKey,
         ContentType: contentType,
+        ContentLength: size,
       }) as never,
-      { expiresIn: 10 * 60 },
+      {
+        expiresIn: 10 * 60,
+        signableHeaders: new Set(["content-type", "content-length"]),
+      },
     );
   },
   headObject(objectKey: string) {
@@ -341,6 +347,7 @@ export async function executeMedia(command: MediaCommand) {
       const uploadUrl = await mediaStorage.authorizeUpload(
         objectKey,
         input.contentType,
+        input.size,
       );
       // Record after signing, with a clock-skew margin. Do not free the
       // reservation while a signed URL could recreate deleted bytes.
