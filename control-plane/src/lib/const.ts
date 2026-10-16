@@ -37,6 +37,8 @@ export const EDITABLE_FILE_EXTENSION_MAP: Record<string, string | null> = {
   js: "javascript",
   mjs: "javascript",
   json: "json",
+  // A site's migrations (_naru/migrations/*.sql, 1.1.0).
+  sql: "sql",
 };
 
 export const FILE_EXTENSION_MIMETYPE_MAP: Record<
@@ -59,6 +61,7 @@ export const FILE_EXTENSION_MIMETYPE_MAP: Record<
   js: "application/javascript",
   mjs: "application/javascript",
   json: "application/json",
+  sql: "application/sql",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
