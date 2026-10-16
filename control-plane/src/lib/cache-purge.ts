@@ -30,14 +30,14 @@ export async function purgeSiteObjects(keys: string[]) {
   const sites = new Set(
     keys.flatMap((key) => {
       const match =
-        /^([^/]+)\/_naru\/(?:functions|modules|rules|migrations|queries|mutations|routes)\//.exec(
+        /^([^/]+)\/_naru\/(?:modules|migrations|queries|mutations|routes)\//.exec(
           key,
         );
       return match ? [match[1]] : [];
     }),
   );
   for (const site of sites) await publishSiteFunctions(site);
-  // After the functions, so the rules a declaration names are published.
+  // After the site's code, as before: a declaration installs on its own.
   const declaring = new Set(
     keys.flatMap((key) => {
       const slash = key.indexOf("/");

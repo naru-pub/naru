@@ -64,11 +64,10 @@ export function collectionNames(value: unknown): string[] {
     throw new DataError(400, "Duplicate collections.");
   return names;
 }
-/** What a page asks one collection to be: access, rules module, unique fields. */
+/** What a site asks one collection to be: access, unique and indexed fields. */
 export type CollectionRequest = {
-  read: "admin" | "member" | "world";
-  write: "admin" | "create" | "member" | "world";
-  rules?: string | null;
+  read: "admin" | "world";
+  write: "admin" | "create" | "world";
   unique?: string[];
   /** Fields reads filter on often, each given an index (up to five). */
   indexes?: string[];
@@ -96,7 +95,7 @@ export function collectionRequests(
       throw new DataError(400, `Invalid settings for ${collection}.`);
     const entry = raw as Record<string, unknown>;
     for (const key of Object.keys(entry))
-      if (!["read", "write", "rules", "unique", "indexes"].includes(key))
+      if (!["read", "write", "unique", "indexes"].includes(key))
         throw new DataError(400, `Unknown setting ${key} for ${collection}.`);
     const unique = entry.unique;
     if (
@@ -109,9 +108,6 @@ export function collectionRequests(
     result[collection] = {
       read: permission(entry.read ?? "admin"),
       write: writePermission(entry.write ?? "admin"),
-      ...(entry.rules === undefined
-        ? {}
-        : { rules: entry.rules === null ? null : name(entry.rules) }),
       ...(unique === undefined ? {} : { unique: unique.map(name) }),
       ...(entry.indexes === undefined
         ? {}
@@ -137,8 +133,6 @@ export function settingChanges(row: Collection, wanted: CollectionRequest) {
     changes.read = [row.read_access, wanted.read];
   if (row.write_access !== wanted.write)
     changes.write = [row.write_access, wanted.write];
-  if (wanted.rules !== undefined && (row.rules ?? null) !== wanted.rules)
-    changes.rules = [row.rules ?? "", wanted.rules ?? ""];
   if (
     wanted.unique !== undefined &&
     (row.unique ?? []).join(",") !== wanted.unique.join(",")

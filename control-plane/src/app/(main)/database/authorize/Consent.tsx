@@ -13,7 +13,6 @@ import {
 
 const ACCESS: Record<string, string> = {
   admin: "관리자만",
-  member: "회원",
   create: "누구나 새 글만",
   world: "누구나",
 };
@@ -28,7 +27,6 @@ export default function Consent({
     name: string;
     read: string;
     write: string;
-    rules: string | null;
   }[];
   tokenLifetimeSeconds: number;
 }) {
@@ -86,7 +84,6 @@ export default function Consent({
                     <TableHead>컬렉션</TableHead>
                     <TableHead>지금 읽기</TableHead>
                     <TableHead>지금 쓰기</TableHead>
-                    <TableHead>규칙</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -100,9 +97,6 @@ export default function Consent({
                       </TableCell>
                       <TableCell>
                         {ACCESS[collection.write] ?? collection.write}
-                      </TableCell>
-                      <TableCell className="font-mono">
-                        {collection.rules || "—"}
                       </TableCell>
                     </TableRow>
                   ))}

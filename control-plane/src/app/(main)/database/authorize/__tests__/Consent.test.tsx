@@ -16,17 +16,17 @@ test("the collections to allow are a table with their current access", () => {
         collections: ["logs", "wallets"],
       }}
       collections={[
-        { name: "logs", read: "world", write: "admin", rules: "board" },
-        { name: "wallets", read: "admin", write: "admin", rules: null },
+        { name: "logs", read: "world", write: "admin" },
+        { name: "wallets", read: "admin", write: "admin" },
       ]}
       tokenLifetimeSeconds={3600}
     />,
   );
   const rows = within(screen.getByRole("table")).getAllByRole("row");
   expect(rows.map((row) => row.textContent)).toEqual([
-    "컬렉션지금 읽기지금 쓰기규칙",
-    "logs누구나관리자만board",
-    "wallets관리자만관리자만—",
+    "컬렉션지금 읽기지금 쓰기",
+    "logs누구나관리자만",
+    "wallets관리자만관리자만",
   ]);
   expect(
     screen.getByText(/나루 미디어 라이브러리에 파일을/),

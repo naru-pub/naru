@@ -12,7 +12,7 @@ import {
   sameOrigin,
   type ErrorCode,
 } from "./validation";
-import { parseFilterQuery, parseWhereQuery } from "./filters";
+import { parseFilterQuery } from "./filters";
 import { isIP } from "node:net";
 import { executeMedia } from "./media";
 import {
@@ -96,8 +96,6 @@ export async function dataRequest(
       clientIp: forwardedIp && isIP(forwardedIp) ? forwardedIp : undefined,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
-      where: parseWhereQuery(url.searchParams.get("where")),
-      ids: url.searchParams.get("ids") ?? undefined,
       includeTotal: url.searchParams.get("includeTotal") === "1",
       cacheability,
       // The control panel's quota readout; the media service ignores it for
@@ -128,8 +126,8 @@ export async function dataRequest(
             : path[0] === "_live" && !admin
               ? await executeLiveTicket(command)
               : await executeData(command);
-    // A function's result is its own JSON, not documents to translate; the
-    // documents its ctx returned were translated as they were read.
+    // A query's or mutation's result is its own JSON, not documents to
+    // translate.
     const calling =
       (Object.hasOwn(CALLS, path[0]) || path[0] === "_live") && !admin;
     return Response.json(admin || calling ? result : publicResult(result), {

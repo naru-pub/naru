@@ -1,6 +1,6 @@
 import { pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 
-// Documents' write secrets, as salted PBKDF2-SHA256 in the PHC string format
+// Guests' passwords (ctx.passwords), as salted PBKDF2-SHA256 in the PHC string format
 // that password libraries share: $pbkdf2-sha256$i=<iterations>$<salt>$<hash>,
 // salt and hash in standard base64 without padding. The method is in the
 // string, so a stronger one can be added beside it later.

@@ -32,29 +32,29 @@ function storage() {
 test("revisions pin every dependency and warm immutable sources need no reads", async () => {
   const db = storage();
   db.objects.set(
-    "alice/_naru/functions/shop.js",
+    "alice/_naru/mutations/shop.js",
     'import { price } from "../modules/prices.js"; export function buy() { return price; }',
   );
   db.objects.set("alice/_naru/modules/prices.js", "export const price = 1;");
   const revisions = new FunctionRevisions(db.bucket, "alice");
   const first = await revisions.publish();
   expect(
-    (await revisions.graph(first, "functions/shop.js"))["modules/prices.js"],
+    (await revisions.graph(first, "mutations/shop.js"))["modules/prices.js"],
   ).toContain("1");
   const reads = db.reads();
-  await revisions.graph(first, "functions/shop.js");
+  await revisions.graph(first, "mutations/shop.js");
   expect(db.reads()).toBe(reads);
   db.objects.set("alice/_naru/modules/prices.js", "export const price = 2;");
   const second = await revisions.publish();
   expect(second).not.toBe(first);
   expect(
-    (await revisions.graph(first, "functions/shop.js"))["modules/prices.js"],
+    (await revisions.graph(first, "mutations/shop.js"))["modules/prices.js"],
   ).toContain("1");
   expect(
     (
       await new FunctionRevisions(db.bucket, "alice").graph(
         second,
-        "functions/shop.js",
+        "mutations/shop.js",
       )
     )["modules/prices.js"],
   ).toContain("2");
@@ -63,36 +63,36 @@ test("revisions pin every dependency and warm immutable sources need no reads", 
 test("failed publication cannot replace an existing immutable snapshot", async () => {
   const db = storage();
   db.objects.set(
-    "alice/_naru/functions/shop.js",
+    "alice/_naru/mutations/shop.js",
     "export function buy() { return 1; }",
   );
   const revisions = new FunctionRevisions(db.bucket, "alice");
   const first = await revisions.publish();
   db.objects.set(
-    "alice/_naru/functions/shop.js",
+    "alice/_naru/mutations/shop.js",
     'import "../modules/missing.js";',
   );
   await expect(revisions.publish()).rejects.toThrow("Missing import");
   expect(
-    (await revisions.graph(first, "functions/shop.js"))["functions/shop.js"],
+    (await revisions.graph(first, "mutations/shop.js"))["mutations/shop.js"],
   ).toContain("return 1");
 });
 
 test("cold loads verify source integrity", async () => {
   const db = storage();
   db.objects.set(
-    "alice/_naru/functions/shop.js",
+    "alice/_naru/mutations/shop.js",
     "export function buy() { return 1; }",
   );
   const first = await new FunctionRevisions(db.bucket, "alice").publish();
   const blob = [...db.objects.keys()].find(
     (key) =>
-      key.endsWith("/functions/shop.js") && key.startsWith("_naru-runtime/"),
+      key.endsWith("/mutations/shop.js") && key.startsWith("_naru-runtime/"),
   )!;
   db.objects.set(blob, "export function buy() { return 2; }");
   forgetCachedRevisions();
   await expect(
-    new FunctionRevisions(db.bucket, "alice").graph(first, "functions/shop.js"),
+    new FunctionRevisions(db.bucket, "alice").graph(first, "mutations/shop.js"),
   ).rejects.toThrow("integrity");
 });
 
@@ -100,7 +100,7 @@ test("each publication owns all sources, so deleting an old revision preserves r
   const db = storage();
   const entry =
     'import { price } from "../modules/prices.js"; export function buy() { return price; }';
-  db.objects.set("alice/_naru/functions/shop.js", entry);
+  db.objects.set("alice/_naru/mutations/shop.js", entry);
   db.objects.set("alice/_naru/modules/prices.js", "export const price = 1;");
   const revisions = new FunctionRevisions(db.bucket, "alice");
   const first = await revisions.publish();
@@ -109,7 +109,7 @@ test("each publication owns all sources, so deleting an old revision preserves r
   expect(second).not.toBe(first);
   for (const revision of [first, second]) {
     const prefix = `_naru-runtime/alice/revisions/${revision}/`;
-    expect(db.objects.get(`${prefix}functions/shop.js`)).toBe(entry);
+    expect(db.objects.get(`${prefix}mutations/shop.js`)).toBe(entry);
     expect(db.objects.get(`${prefix}modules/prices.js`)).toBe(
       "export const price = 1;",
     );
@@ -122,9 +122,9 @@ test("each publication owns all sources, so deleting an old revision preserves r
   forgetCachedRevisions();
   const cold = new FunctionRevisions(db.bucket, "alice");
   expect(
-    (await cold.graph(second, "functions/shop.js"))["modules/prices.js"],
+    (await cold.graph(second, "mutations/shop.js"))["modules/prices.js"],
   ).toContain("1");
-  await expect(cold.graph(first, "functions/shop.js")).rejects.toThrow(
+  await expect(cold.graph(first, "mutations/shop.js")).rejects.toThrow(
     "unavailable",
   );
   expect([...db.objects.keys()].some((key) => key.includes("/blobs/"))).toBe(
@@ -135,7 +135,7 @@ test("each publication owns all sources, so deleting an old revision preserves r
 test("a failed source upload never writes a completed revision manifest", async () => {
   const db = storage();
   db.objects.set(
-    "alice/_naru/functions/shop.js",
+    "alice/_naru/mutations/shop.js",
     "export function buy() { return 1; }",
   );
   db.bucket.put = (async () => {

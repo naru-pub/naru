@@ -11,16 +11,16 @@ import {
   type ErrorCode,
 } from "../../control-plane/src/lib/site-data/validation";
 
-// Site functions: the owner's modules in _naru/functions/, run by QuickJS (compiled to
-// WebAssembly) inside the site's object, synchronously, so a call's reads and
-// writes are one SQLite transaction (site.ts). Nothing here touches storage:
-// what a function may do arrives as `host`, so functions.test.ts runs this in
-// plain Node.
+// Site code: the owner's queries, mutations and routes (_naru/queries/,
+// _naru/mutations/, _naru/routes/), run by QuickJS (compiled to WebAssembly)
+// inside the site's object, synchronously, so a call's statements are one
+// SQLite transaction (site.ts). Nothing here touches storage: what the code
+// may do arrives as `host`, so functions.test.ts runs this in plain Node.
 //
-// ctx's database methods return promises, so functions are written as they
-// would be against any asynchronous store. Here the host answers at once and
-// the call drains QuickJS's job queue before returning, so an async function
-// still settles within the one transaction.
+// ctx's methods return promises, so code is written as it would be against
+// any asynchronous store. Here the host answers at once and the call drains
+// QuickJS's job queue before returning, so an async export still settles
+// within the one transaction.
 //
 // The limits are the spike's findings (spikes/quickjs-functions/README.md):
 // - CPU is bounded by fuel, not by a clock, which Workers stop while code
@@ -60,7 +60,8 @@ export const STACK_BYTES = 128 * 1024;
  * own.
  */
 export const MAX_OPERATIONS = 100;
-export const MAX_RESULT_BYTES = 64 * 1024;
+/** What a call may return, as JSON: a page of rows (sql.ts's MAX_ROW_BYTES). */
+export const MAX_RESULT_BYTES = 1024 * 1024;
 export const MAX_FAILURE_DETAILS_BYTES = 4 * 1024;
 /** URL parses a call may make: each is host time the interrupt checks miss. */
 export const MAX_URL_PARSES = 1000;
@@ -71,13 +72,10 @@ export const MAX_URL_PARSES = 1000;
  */
 export const MAX_JOBS = 10_000;
 /**
- * Secret checks a call may make (ctx.secretMatches): each is a few
+ * Password hashes and checks a call may make (ctx.passwords): each is a few
  * milliseconds of host time the interrupt checks cannot see.
  */
 export const MAX_PASSWORD_OPERATIONS = 3;
-/** Live messages a call may send (ctx.notify, ctx.broadcast). */
-export const MAX_MESSAGES = 50;
-const MESSAGES = new Set(["notify", "broadcast"]);
 const URL_PARTS = [
   "href",
   "origin",
@@ -92,9 +90,7 @@ const URL_PARTS = [
   "hash",
 ] as const;
 const URL_SETTERS = new Set(URL_PARTS.slice(2));
-export const WRITES = new Set(["add", "set", "delete", "setRoles"]);
-
-/** What a function may do: one call per ctx method, given its arguments. */
+/** What site code may do: one call per ctx method, given its arguments. */
 export type Host = (operation: string, args: unknown[]) => unknown;
 
 export type Invocation = {
@@ -106,17 +102,16 @@ export type Invocation = {
   member: string | null;
   /** The site's owner called, rather than a member or the site itself. */
   owner?: boolean;
-  /** A visitor called, signed in to nothing (`export const visitors`). */
+  /** A visitor called, signed in to nothing. */
   visitor?: boolean;
   now: number;
+  /** Site SQL may only read: a query's or a route's. */
   readonly?: boolean;
-  /** A larger result cap, for rules presenting a page of documents. */
-  maxResultBytes?: number;
   /**
-   * What is called: a site function (the default) or, from 1.1.0's new
-   * design, a query or mutation, whose ctx holds only who calls and `sql`.
+   * What is called: a query or a route, which only read, or a mutation,
+   * which may also grant roles and hash passwords.
    */
-  kind?: "function" | "query" | "mutation" | "route";
+  kind: "query" | "mutation" | "route";
   /** The calling member's roles (`ctx.member.roles`). */
   roles?: string[];
 };
@@ -129,13 +124,13 @@ export const retired = new WeakSet<QuickJSWASMModule>();
 
 // Guest side: one host entry point, JSON across the boundary. A failing ctx
 // operation fails the whole call (the host keeps the error and rethrows it
-// afterwards), so a function cannot carry on past one. The database methods
-// are async: the operation runs when called, and its promise is how the
-// function gets the answer.
+// afterwards), so site code cannot carry on past one. The methods are async:
+// the operation runs when called, and its promise is how the code gets the
+// answer.
 //
 // Each of those promises must be used (awaited, chained or passed to
-// Promise.all), or the call fails: `if (!ctx.get(...))` is always false, a
-// mistake no error would otherwise reveal. A native promise cannot tell when
+// Promise.all), or the call fails: `if (!ctx.passwords.verify(...))` is
+// always false, a mistake no error would otherwise reveal. A native promise cannot tell when
 // it is awaited, so these are a subclass whose then() is observable; what
 // then() returns is a plain promise.
 const PRELUDE = `
@@ -274,7 +269,7 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
   const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
   const rolesOf = __operation("rolesOf");
   const setRoles = __operation("setRoles");
-  // A guest's password, kept by the site as a hash (1.1.0's new kinds).
+  // A guest's password, kept by the site as a hash.
   const passwords = Object.freeze({
     hash: __operation("passwordHash"),
     verify: __operation("passwordVerify"),
@@ -283,7 +278,9 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
     Array.isArray(text) && Object.hasOwn(text, "raw")
       ? __operation("sql")(text.join("?"), values)
       : __operation("sql")(String(text), values[0] ?? []);
-  const ctx = kind !== "function" ? Object.freeze({
+  // ctx.sql\`SELECT ... WHERE id = \${id}\` binds each value as a parameter;
+  // ctx.sql(text, values) takes a builder's compiled statement.
+  const ctx = Object.freeze({
     member: who,
     owner,
     visitor,
@@ -293,29 +290,6 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
     rolesOf,
     passwords: kind === "mutation" ? passwords : Object.freeze({ verify: passwords.verify }),
     ...(kind === "mutation" ? { setRoles } : {}),
-  }) : Object.freeze({
-    member: who,
-    owner,
-    visitor,
-    now,
-    fail: (...args) => __call("fail", ...args),
-    get: __operation("get"),
-    getMany: __operation("getMany"),
-    count: (collection, options) =>
-      __operation("count")(collection, options ?? {}),
-    list: (collection, options) =>
-      __operation("list")(collection, options ?? {}),
-    add: __operation("add"),
-    set: __operation("set"),
-    secretMatches: __operation("secretMatches"),
-    delete: __operation("delete"),
-    // ctx.sql\`SELECT ... WHERE id = \${id}\` binds each value as a parameter;
-    // ctx.sql(text, values) takes a builder's compiled statement.
-    sql,
-    rolesOf,
-    setRoles,
-    notify: (member, data) => __call("notify", member, data ?? null),
-    broadcast: (topic, data) => __call("broadcast", topic, data ?? null),
   });
   const fn = Object.hasOwn(globalThis.__exports, name)
     ? globalThis.__exports[name]
@@ -402,7 +376,6 @@ export function runFunction(
     setContext(context);
     let operations = 0;
     let parses = 0;
-    let messages = 0;
     let passwords = 0;
     let hostError: DataError | undefined;
     const entry = context.newFunction("__host", (operation, args) => {
@@ -467,10 +440,9 @@ export function runFunction(
           );
         }
         const values = JSON.parse(context.getString(args));
-        // A query or mutation reaches the site's tables through sql alone.
-        const kind = invocation.kind ?? "function";
+        // Site code reaches the site's tables through sql alone.
+        const kind = invocation.kind;
         if (
-          kind !== "function" &&
           !["sql", "random", "rolesOf", "passwordVerify"].includes(name) &&
           !(
             kind === "mutation" &&
@@ -478,37 +450,17 @@ export function runFunction(
           )
         )
           throw failed(`a ${kind} has no ctx.${name}.`);
-        if (MESSAGES.has(name)) {
-          if (invocation.readonly)
-            throw failed("read-only functions cannot send messages.");
-          if (++messages > MAX_MESSAGES)
-            throw failed(`more than ${MAX_MESSAGES} live messages.`);
-          const out = host(name, values);
-          return out === undefined
-            ? context.undefined
-            : context.newString(JSON.stringify(out));
-        }
+        // A password is checked with a slow hash, on the host.
         if (
-          name === "getMany" &&
-          (!Array.isArray(values[1]) || values[1].length > MAX_OPERATIONS)
-        )
-          throw failed(
-            `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
-          );
-        // A document secret is checked with a slow hash, on the host.
-        if (
-          ["secretMatches", "passwordHash", "passwordVerify"].includes(name) &&
+          ["passwordHash", "passwordVerify"].includes(name) &&
           ++passwords > MAX_PASSWORD_OPERATIONS
         )
           throw failed(
             `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
           );
-        // One query, like a list: getMany of 100 IDs is one operation.
         operations += 1;
         if (operations > MAX_OPERATIONS)
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
-        if (invocation.readonly && WRITES.has(name))
-          throw failed("read-only functions cannot write.");
         // Whether site SQL may write is the call's to say, not the code's.
         const out = host(
           name,
@@ -523,7 +475,7 @@ export function runFunction(
         hostError ??=
           error instanceof DataError
             ? error
-            : new DataError(500, "Function storage failed.");
+            : new DataError(500, "Site storage failed.");
         return { error: context.newError(hostError.message) };
       }
     });
@@ -535,7 +487,7 @@ export function runFunction(
       exports = evaluate(
         context,
         invocation.source,
-        invocation.filename ?? "functions.js",
+        invocation.filename ?? "site.js",
         "module",
         own,
       );
@@ -567,7 +519,7 @@ export function runFunction(
         invocation.visitor === true,
         invocation.now,
         JSON.stringify(invocation.args ?? null),
-        invocation.kind ?? "function",
+        invocation.kind,
         invocation.roles ?? [],
       ]
         .map((value) => JSON.stringify(value))
@@ -601,11 +553,8 @@ export function runFunction(
     if (unawaited !== undefined)
       throw failed(`it did not await ctx.${unawaited}.`);
     const json = context.getString(state.value);
-    if (
-      new TextEncoder().encode(json).byteLength >
-      (invocation.maxResultBytes ?? MAX_RESULT_BYTES)
-    )
-      throw failed("its result is larger than 64 KiB.");
+    if (new TextEncoder().encode(json).byteLength > MAX_RESULT_BYTES)
+      throw failed("its result is larger than 1 MiB.");
     return JSON.parse(json);
   }
 

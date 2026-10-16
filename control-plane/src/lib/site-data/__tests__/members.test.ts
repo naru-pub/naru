@@ -99,6 +99,16 @@ integration("site members", () => {
       ...(token ? { bearer: { token, origin } } : {}),
       ...extra,
     }) as Promise<Record<string, any>>;
+  /** A member's query of who they are: what a token reaches, on a site. */
+  const probe = (token: string | undefined, extra = {}) =>
+    executeCall({
+      site: "alice",
+      path: ["whoami:me"],
+      method: "POST",
+      kind: "query",
+      ...(token ? { bearer: { token, origin } } : {}),
+      ...extra,
+    }) as Promise<{ result: any }>;
   const owned = (method: string, path: string[], body?: object) =>
     executeData({
       site: "alice",
@@ -126,13 +136,17 @@ integration("site members", () => {
       db,
     );
     for (const [name, read, write] of [
-      ["board", "member", "member"],
       ["guestbook", "world", "create"],
       ["wall", "world", "world"],
       ["notes", "admin", "admin"],
-      ["public", "world", "member"],
     ])
       await owned("POST", [], { name, read, write });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "queries",
+      file: "whoami",
+      source: "export function me(ctx) { return ctx.member; }",
+    });
   });
   afterAll(async () => {
     if (ready) await teardownTestDatabase();
@@ -217,42 +231,34 @@ integration("site members", () => {
   });
 
   test("a token works only from its page's origin, until it is revoked or its Naru session ends", async () => {
-    const { accessToken } = await signIn("bob");
-    await expect(as(accessToken, "GET", ["board"])).resolves.toMatchObject({
-      documents: [],
+    const { accessToken, memberId } = await signIn("bob");
+    await expect(probe(accessToken)).resolves.toMatchObject({
+      result: { id: memberId },
     });
     await expect(
-      executeData({
-        site: "alice",
-        path: ["board"],
-        method: "GET",
+      probe(undefined, {
         bearer: { token: accessToken, origin: "https://evil.example" },
       }),
     ).rejects.toMatchObject({ status: 401, code: "AUTH_REQUIRED" });
     // Another site does not know it.
     await expect(
-      executeData({
-        site: "bob",
-        path: ["board"],
-        method: "GET",
-        bearer: { token: accessToken, origin },
-      }),
+      probe(undefined, { site: "bob", bearer: { token: accessToken, origin } }),
     ).rejects.toMatchObject({ status: 401 });
     await expect(
       revokeMemberToken(accessToken, "https://evil.example"),
     ).rejects.toMatchObject({ status: 401 });
     await revokeMemberToken(accessToken, origin);
     await revokeMemberToken(accessToken, origin);
-    await expect(as(accessToken, "GET", ["board"])).rejects.toMatchObject({
+    await expect(probe(accessToken)).rejects.toMatchObject({
       status: 401,
     });
     const second = await signIn("bob");
     await sql`update sessions set expires_at = now() - interval '1 second' where id = 'bob-session'`.execute(
       db,
     );
-    await expect(
-      as(second.accessToken, "GET", ["board"]),
-    ).rejects.toMatchObject({ status: 401 });
+    await expect(probe(second.accessToken)).rejects.toMatchObject({
+      status: 401,
+    });
     await sql`update sessions set expires_at = now() + interval '60 days' where id = 'bob-session'`.execute(
       db,
     );
@@ -261,9 +267,9 @@ integration("site members", () => {
     await sql`update users set deleted_at = now() where id = ${users.dave}`.execute(
       db,
     );
-    await expect(as(third.accessToken, "GET", ["board"])).rejects.toMatchObject(
-      { status: 401 },
-    );
+    await expect(probe(third.accessToken)).rejects.toMatchObject({
+      status: 401,
+    });
     await sql`update users set deleted_at = null where id = ${users.dave}`.execute(
       db,
     );
@@ -286,24 +292,14 @@ integration("site members", () => {
       origin: string;
       expiresAt?: number;
     };
-    await executeData({
-      site: "alice",
-      path: ["board"],
-      method: "GET",
-      bearer,
-    });
+    await probe(undefined, { bearer });
     expect(bearer.expiresAt).toBeUndefined();
     expect(await expiry()).toBe(before);
     // Past the halfway mark: pushed out a full window.
     await sql`update site_member_tokens set expires_at = now() + interval '1 day' where hash = ${hash}`.execute(
       db,
     );
-    await executeData({
-      site: "alice",
-      path: ["board"],
-      method: "GET",
-      bearer,
-    });
+    await probe(undefined, { bearer });
     expect(bearer.expiresAt).toBeGreaterThan(
       Date.now() + (MEMBER_TOKEN_SECONDS - 60) * 1000,
     );
@@ -313,12 +309,7 @@ integration("site members", () => {
       db,
     );
     delete bearer.expiresAt;
-    await executeData({
-      site: "alice",
-      path: ["board"],
-      method: "GET",
-      bearer,
-    });
+    await probe(undefined, { bearer });
     expect(bearer.expiresAt).toBeLessThan(Date.now() + 2 * 86400 * 1000 + 5000);
     expect(bearer.expiresAt).toBeGreaterThan(
       Date.now() + 2 * 86400 * 1000 - 5000,
@@ -336,25 +327,22 @@ integration("site members", () => {
     // A member whose support ends loses access on the next request, and
     // gets it back when it resumes.
     const member = await signIn("erin");
-    await expect(
-      as(member.accessToken, "GET", ["board"]),
-    ).resolves.toBeDefined();
+    await expect(probe(member.accessToken)).resolves.toBeDefined();
     await sql`update users set supporter_comp = false where id = ${users.erin}`.execute(
       db,
     );
     try {
-      await expect(
-        as(member.accessToken, "GET", ["board"]),
-      ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+      await expect(probe(member.accessToken)).rejects.toMatchObject({
+        status: 403,
+        code: "ACCESS_DENIED",
+      });
       await expect(code("erin")).rejects.toMatchObject({ status: 403 });
     } finally {
       await sql`update users set supporter_comp = true where id = ${users.erin}`.execute(
         db,
       );
     }
-    await expect(
-      as(member.accessToken, "GET", ["board"]),
-    ).resolves.toBeDefined();
+    await expect(probe(member.accessToken)).resolves.toBeDefined();
   });
 
   test("operators can exempt a site, letting accounts without a plan be members", async () => {
@@ -366,16 +354,12 @@ integration("site members", () => {
         mayJoin: true,
       });
       const free = await signIn("ivy");
-      await expect(
-        as(free.accessToken, "GET", ["board"]),
-      ).resolves.toBeDefined();
+      await expect(probe(free.accessToken)).resolves.toBeDefined();
       // Withdrawing the exemption reaches members already signed in.
       await sql`update users set site_members_free = false where id = ${owner}`.execute(
         db,
       );
-      await expect(
-        as(free.accessToken, "GET", ["board"]),
-      ).rejects.toMatchObject({
+      await expect(probe(free.accessToken)).rejects.toMatchObject({
         status: 403,
         code: "ACCESS_DENIED",
       });
@@ -429,11 +413,12 @@ integration("site members", () => {
     await manageMembership(owner, "PATCH", { id: member.memberId, roles: [] });
   });
 
-  test("approval and bans govern existing tokens across data, functions and uploads", async () => {
+  test("approval and bans govern existing tokens across data, queries, mutations and uploads", async () => {
     const member = await signIn("erin");
     const bearer = { token: member.accessToken, origin };
     await callSiteObject("alice", "putFunctions", {
       site: "alice",
+      folder: "mutations",
       file: "membership",
       source: "export function ping() { return true; }",
     });
@@ -441,12 +426,11 @@ integration("site members", () => {
       for (const status of ["pending", "banned"] as const) {
         await manageMembership(owner, "PATCH", { id: member.memberId, status });
         for (const [method, path, body] of [
-          ["GET", ["board"], undefined],
-          ["GET", ["board", "anything"], undefined],
-          ["POST", ["board"], { data: "denied" }],
-          ["PUT", ["board", member.memberId], { data: "denied" }],
-          ["DELETE", ["board", member.memberId], undefined],
           ["GET", ["wall"], undefined],
+          ["GET", ["wall", "anything"], undefined],
+          ["POST", ["guestbook"], { data: "denied" }],
+          ["PUT", ["wall", member.memberId], { data: "denied" }],
+          ["DELETE", ["wall", member.memberId], undefined],
         ] as const) {
           await expect(
             as(member.accessToken, method, [...path], body),
@@ -457,18 +441,21 @@ integration("site members", () => {
             details: { membership: status },
           });
         }
-        await expect(
+        for (const call of [
+          probe(member.accessToken),
           executeCall({
             site: "alice",
             method: "POST",
             path: ["membership:ping"],
+            kind: "mutation",
             bearer,
           }),
-        ).rejects.toMatchObject({
-          status: 403,
-          code: "ACCESS_DENIED",
-          details: { membership: status },
-        });
+        ])
+          await expect(call).rejects.toMatchObject({
+            status: 403,
+            code: "ACCESS_DENIED",
+            details: { membership: status },
+          });
         for (const [method, path] of [
           ["POST", []],
           ["PUT", [crypto.randomUUID()]],
@@ -483,24 +470,23 @@ integration("site members", () => {
             }),
           ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
         await expect(as(undefined, "GET", ["wall"])).resolves.toBeDefined();
-        await expect(owned("GET", ["board"])).resolves.toBeDefined();
+        await expect(owned("GET", ["notes"])).resolves.toBeDefined();
       }
       await expect(code("erin")).rejects.toMatchObject({ status: 403 });
       await manageMembership(owner, "PATCH", {
         id: member.memberId,
         status: "approved",
       });
-      await expect(
-        as(member.accessToken, "GET", ["board"]),
-      ).resolves.toBeDefined();
+      await expect(probe(member.accessToken)).resolves.toBeDefined();
       await expect(
         executeCall({
           site: "alice",
           method: "POST",
           path: ["membership:ping"],
+          kind: "mutation",
           bearer,
         }),
-      ).resolves.toEqual({ result: true, written: [] });
+      ).resolves.toEqual({ result: true });
       const issued = await code("erin");
       await manageMembership(owner, "PATCH", {
         id: member.memberId,
@@ -550,24 +536,20 @@ integration("site members", () => {
       await expect(signIn("bob")).resolves.toBeDefined();
       await manageMembership(owner, "PATCH", { admission: "approval" });
       const frank = await signIn("frank");
-      await expect(
-        as(frank.accessToken, "GET", ["board"]),
-      ).rejects.toMatchObject({ status: 403 });
+      await expect(probe(frank.accessToken)).rejects.toMatchObject({
+        status: 403,
+      });
       await manageMembership(owner, "PATCH", { admission: "open" });
       expect((await manageMembership(owner, "GET")).members).toContainEqual(
         expect.objectContaining({ id: frank.memberId, status: "pending" }),
       );
       const grace = await signIn("grace");
-      await expect(
-        as(grace.accessToken, "GET", ["board"]),
-      ).resolves.toBeDefined();
+      await expect(probe(grace.accessToken)).resolves.toBeDefined();
       await manageMembership(owner, "PATCH", {
         id: frank.memberId,
         status: "approved",
       });
-      await expect(
-        as(frank.accessToken, "GET", ["board"]),
-      ).resolves.toBeDefined();
+      await expect(probe(frank.accessToken)).resolves.toBeDefined();
       const list = await manageMembership(owner, "GET");
       expect(list.admission).toBe("open");
       expect(
@@ -601,9 +583,7 @@ integration("site members", () => {
       });
       // Returning members are checked at sign-in too; issued tokens still work.
       await expect(code("bob")).rejects.toMatchObject({ status: 403 });
-      await expect(
-        as(bob.accessToken, "GET", ["board"]),
-      ).resolves.toBeDefined();
+      await expect(probe(bob.accessToken)).resolves.toBeDefined();
       // An email pending verification is not enough; a verified one is.
       await sql`update users set email = 'hana@example.com' where id = ${users.hana}`.execute(
         db,
@@ -624,148 +604,7 @@ integration("site members", () => {
     }
   });
 
-  test("member collections: members add, and replace and delete their own", async () => {
-    const bob = await signIn("bob");
-    const carol = await signIn("carol");
-    // Visitors neither read nor write them.
-    await expect(as(undefined, "GET", ["board"])).rejects.toMatchObject({
-      status: 403,
-    });
-    await expect(
-      as(undefined, "POST", ["board"], { data: "x" }),
-    ).rejects.toMatchObject({ status: 403 });
-    const post = await as(bob.accessToken, "POST", ["board"], {
-      data: { title: "hi" },
-    });
-    expect(post).toMatchObject({ createdBy: bob.memberId, version: 1 });
-    expect(
-      await as(carol.accessToken, "GET", ["board", post.id]),
-    ).toMatchObject({ document: { createdBy: bob.memberId } });
-    const listed = await as(carol.accessToken, "GET", ["board"]);
-    expect(listed.documents[0]).toMatchObject({ createdBy: bob.memberId });
-    // Its author replaces it, keeping who and when; no one else does.
-    const replaced = await as(bob.accessToken, "PUT", ["board", post.id], {
-      data: { title: "edited" },
-    });
-    expect(replaced).toMatchObject({
-      createdBy: bob.memberId,
-      version: 2,
-      createdAt: post.createdAt,
-    });
-    await expect(
-      as(carol.accessToken, "PUT", ["board", post.id], { data: "mine" }),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(
-      as(carol.accessToken, "DELETE", ["board", post.id]),
-    ).rejects.toMatchObject({ status: 403 });
-    // A chosen id is only ever the member's own.
-    await expect(
-      as(carol.accessToken, "PUT", ["board", "anything"], { data: 1 }),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(
-      as(carol.accessToken, "PUT", ["board", bob.memberId], { data: 1 }),
-    ).rejects.toMatchObject({ status: 403 });
-    expect(
-      await as(carol.accessToken, "PUT", ["board", carol.memberId], {
-        data: { nick: "carol" },
-      }),
-    ).toMatchObject({ id: carol.memberId, createdBy: carol.memberId });
-    // The owner may change anything, and the author stays the author.
-    expect(
-      await owned("PUT", ["board", post.id], { data: { title: "moderated" } }),
-    ).toMatchObject({ createdBy: bob.memberId });
-    // The owner's own documents have no member author, and are the owner's.
-    const notice = await owned("PUT", ["board", "notice"], { data: "rules" });
-    expect(notice.createdBy).toBeNull();
-    await expect(
-      as(bob.accessToken, "PUT", ["board", "notice"], { data: "mine" }),
-    ).rejects.toMatchObject({ status: 403 });
-    // Deleting: the author's, and a missing document is already gone.
-    await as(bob.accessToken, "DELETE", ["board", post.id]);
-    await as(bob.accessToken, "DELETE", ["board", post.id]);
-    await expect(
-      as(bob.accessToken, "GET", ["board", post.id]),
-    ).rejects.toMatchObject({ status: 404 });
-  });
-
-  test("members are visitors elsewhere, and their writes still name them", async () => {
-    const bob = await signIn("bob");
-    const signed = await as(bob.accessToken, "POST", ["guestbook"], {
-      data: "hello",
-    });
-    expect(signed.createdBy).toBe(bob.memberId);
-    await expect(
-      as(bob.accessToken, "PUT", ["guestbook", signed.id], { data: "x" }),
-    ).rejects.toMatchObject({ status: 403 });
-    const anonymous = await as(undefined, "POST", ["guestbook"], {
-      data: "hi",
-    });
-    expect(anonymous.createdBy).toBeNull();
-    expect(
-      await as(bob.accessToken, "PUT", ["wall", "w"], { data: 1 }),
-    ).toMatchObject({ createdBy: bob.memberId });
-    expect(
-      await as(undefined, "PUT", ["wall", "w"], { data: 2 }),
-    ).toMatchObject({ createdBy: bob.memberId });
-    await expect(as(bob.accessToken, "GET", ["notes"])).rejects.toMatchObject({
-      status: 403,
-    });
-    await expect(
-      as(bob.accessToken, "POST", ["notes"], { data: 1 }),
-    ).rejects.toMatchObject({ status: 403 });
-    // World-read, member-write: anyone reads, members write.
-    await as(bob.accessToken, "POST", ["public"], { data: "announcement" });
-    await expect(as(undefined, "GET", ["public"])).resolves.toMatchObject({
-      documents: [expect.objectContaining({ createdBy: bob.memberId })],
-    });
-    // Nothing of the owner's: collections and batches.
-    await expect(
-      as(bob.accessToken, "POST", [], { name: "mine" }),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(as(bob.accessToken, "GET", [])).rejects.toMatchObject({
-      status: 403,
-    });
-    await expect(
-      as(bob.accessToken, "PATCH", ["board"], {
-        read: "world",
-        write: "world",
-      }),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(
-      executeBatch({
-        site: "alice",
-        path: [],
-        method: "POST",
-        bearer: { token: bob.accessToken, origin },
-        body: {
-          operations: [{ type: "delete", collection: "board", id: "x" }],
-        },
-      }),
-    ).rejects.toMatchObject({ status: 403 });
-  });
-
-  test("a member's writes are limited per minute; the owner's are not", async () => {
-    await owned("POST", [], { name: "flood", read: "member", write: "member" });
-    const dave = await signIn("dave");
-    const results = [];
-    for (let n = 0; n < 31; n += 1)
-      results.push(
-        await as(dave.accessToken, "POST", ["flood"], { data: n }).then(
-          () => 201,
-          (error) => error.status,
-        ),
-      );
-    // A minute boundary can fall inside the loop, which then passes all 31.
-    if (results.at(-1) !== 201) {
-      expect(results.slice(0, 30)).toEqual(Array(30).fill(201));
-      expect(results.at(-1)).toBe(429);
-    }
-    await expect(
-      owned("POST", ["flood"], { data: "owner" }),
-    ).resolves.toBeDefined();
-  });
-
-  test("members count against the site's monthly budget, like visitors", async () => {
+  test("members' queries count against the site's monthly budget, like visitors' reads", async () => {
     const bob = await signIn("bob");
     const snapshot = await callSiteObject("alice", "export", {});
     try {
@@ -776,12 +615,13 @@ integration("site members", () => {
         confirmedUntil: Date.now() + 60_000,
         monthlyRequests: 2,
       });
-      await as(bob.accessToken, "GET", ["board"]);
+      await probe(bob.accessToken);
       await as(undefined, "GET", ["wall"]);
-      await expect(as(bob.accessToken, "GET", ["board"])).rejects.toMatchObject(
-        { status: 429, code: "RATE_LIMITED" },
-      );
-      await expect(owned("GET", ["board"])).resolves.toBeDefined();
+      await expect(probe(bob.accessToken)).rejects.toMatchObject({
+        status: 429,
+        code: "RATE_LIMITED",
+      });
+      await expect(owned("GET", ["notes"])).resolves.toBeDefined();
     } finally {
       await callSiteObject("alice", "import", snapshot);
       await callSiteObject("alice", "configure", {
@@ -793,195 +633,33 @@ integration("site members", () => {
     }
   });
 
-  test("documents from before members have no author", async () => {
-    // A snapshot from before members has no created_by; importing keeps the
-    // documents and gives them no author.
-    await callSiteObject("alice", "import", {
-      ownerId: String(owner),
-      collections: [
-        { id: "c1", name: "old", read_access: "world", write_access: "admin" },
-      ],
-      documents: [
-        {
-          collection_id: "c1",
-          id: "kept",
-          data: '"before"',
-          size_bytes: 8,
-          version: 1,
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        },
-      ],
-    });
-    expect(await as(undefined, "GET", ["old", "kept"])).toMatchObject({
-      document: { data: "before", createdBy: null },
-    });
-    await eraseSiteData("alice");
-    for (const [name, read, write] of [
-      ["board", "member", "member"],
-      ["guestbook", "world", "create"],
-      ["wall", "world", "world"],
-      ["notes", "admin", "admin"],
-      ["public", "world", "member"],
-    ])
-      await owned("POST", [], { name, read, write });
-  });
-
-  test("native collection rules enforce board levels, secrets, moderation and fail closed", async () => {
+  test("members reach the site's data through its queries and mutations, not its collections", async () => {
     const bob = await signIn("bob");
-    const carol = await signIn("carol");
-    await owned("POST", [], {
-      name: "rule_posts",
-      read: "member",
-      write: "member",
-    });
-    await owned("POST", [], {
-      name: "rule_roles",
-      read: "admin",
-      write: "admin",
-    });
-    await owned("PUT", ["rule_roles", bob.memberId], { data: { level: 2 } });
-    await owned("PUT", ["rule_roles", carol.memberId], {
-      data: { level: 10, moderator: true },
-    });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      file: "board",
-      folder: "rules",
-      source: `
-      export async function readable(ctx) {
-        if (!ctx.member) return false;
-        const role = (await ctx.get("rule_roles", ctx.member.id))?.data;
-        if (!role || role.level < 2) return false;
-        return role.moderator ? true : { any: [{ ne: ["secret", true] }, { eq: ["owner", ctx.member.id] }] };
-      }
-      export async function canWrite(ctx, {before, after, operation}) {
-        const role = (await ctx.get("rule_roles", ctx.member.id))?.data;
-        if (!role || role.level < 2) return false;
-        if (operation === "create") return after.data.owner === ctx.member.id;
-        return (role.moderator || before.data.owner === ctx.member.id) && (!after || after.data.owner === before.data.owner);
-      }
-    `,
-    });
-    await owned("PATCH", ["rule_posts"], {
-      read: "member",
-      write: "member",
-      rules: "board",
-    });
-    await owned("PUT", ["rule_posts", "a"], {
-      data: { owner: carol.memberId, secret: true, text: "private" },
-    });
-    for (const id of ["b", "c", "d"])
-      await owned("PUT", ["rule_posts", id], {
-        data: { owner: carol.memberId, text: id },
-      });
-    const page = await as(bob.accessToken, "GET", ["rule_posts"], undefined, {
-      size: 2,
-      includeTotal: true,
-    });
-    const bulk = await as(bob.accessToken, "GET", ["rule_posts"], undefined, {
-      ids: JSON.stringify(["c", "a", "missing", "c"]),
-    });
-    expect(bulk.documents.map((row: any) => row?.id ?? null)).toEqual([
-      "c",
-      null,
-      null,
-      "c",
-    ]);
+    for (const [method, path, body] of [
+      ["GET", ["wall"], undefined],
+      ["GET", ["notes"], undefined],
+      ["POST", ["guestbook"], { data: "hi" }],
+      ["PUT", ["wall", bob.memberId], { data: "mine" }],
+    ] as const)
+      await expect(
+        as(bob.accessToken, method, [...path], body),
+      ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+    // As a visitor, the same page reads and adds as 1.0.0's visitors do.
+    await expect(as(undefined, "GET", ["wall"])).resolves.toBeDefined();
+    const added = await as(undefined, "POST", ["guestbook"], { data: "hi" });
+    // Nothing a visitor writes names an author.
+    expect(added).toMatchObject({ createdBy: null });
+    await owned("DELETE", ["guestbook", added.id]);
     await expect(
-      as(bob.accessToken, "GET", ["rule_posts"], undefined, {
-        ids: JSON.stringify(Array(101).fill("c")),
+      owned("PATCH", ["wall"], { read: "member", write: "world" }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      owned("POST", [], {
+        name: "members_only",
+        read: "admin",
+        write: "member",
       }),
     ).rejects.toMatchObject({ status: 400 });
-    expect(page.totalCount).toBe(3);
-    expect(page.documents.map((d: any) => d.id)).toEqual(["b", "c"]);
-    expect(
-      (
-        await as(bob.accessToken, "GET", ["rule_posts"], undefined, {
-          size: 2,
-          after: page.nextCursor,
-        })
-      ).documents.map((d: any) => d.id),
-    ).toEqual(["d"]);
-    await expect(
-      as(bob.accessToken, "GET", ["rule_posts", "a"]),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      as(bob.accessToken, "PUT", ["rule_posts", "b"], {
-        data: { owner: carol.memberId },
-      }),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(
-      as(bob.accessToken, "POST", ["rule_posts"], {
-        data: { owner: carol.memberId },
-      }),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(
-      as(bob.accessToken, "POST", ["rule_posts"], {
-        data: { owner: bob.memberId, secret: true },
-      }),
-    ).resolves.toMatchObject({ createdBy: bob.memberId });
-    await expect(
-      as(carol.accessToken, "GET", ["rule_posts", "a"]),
-    ).resolves.toBeDefined();
-    await as(carol.accessToken, "PUT", ["rule_posts", "b"], {
-      data: { owner: carol.memberId, text: "moderated" },
-    });
-    await owned("PATCH", ["rule_posts"], {
-      read: "world",
-      write: "member",
-      rules: "board",
-    });
-    await callSiteObject("alice", "configure", {
-      ownerId: String(owner),
-      entitledUntil: null,
-      confirmedUntil: Date.now() + 60_000,
-    });
-    const anonymous = await fetch(
-      `${process.env.EDGE_WORKER_URL}/api/data/v1/alice/rule_posts?includeTotal=1`,
-    );
-    expect(anonymous.status).toBe(200);
-    expect(anonymous.headers.get("cache-control")).toBe("no-store");
-    expect(await anonymous.json()).toMatchObject({
-      documents: [],
-      totalCount: 0,
-    });
-    const snapshot = await callSiteObject<any>("alice", "export", {});
-    expect(Object.values(snapshot.rules)).toContain("board");
-    await callSiteObject("alice", "import", snapshot);
-    await expect(
-      as(bob.accessToken, "GET", ["rule_posts", "a"]),
-    ).rejects.toMatchObject({ status: 404 });
-    // Missing files and mutating hooks deny access, never falling back to collection permissions.
-    await owned("PATCH", ["rule_posts"], {
-      read: "member",
-      write: "member",
-      rules: "missing",
-    });
-    await expect(
-      as(bob.accessToken, "GET", ["rule_posts"]),
-    ).rejects.toMatchObject({ status: 403 });
-    await expect(owned("GET", ["rule_posts"])).resolves.toBeDefined();
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      file: "mutating",
-      folder: "rules",
-      source:
-        'export async function readable(ctx) { await ctx.set("rule_roles", "bad", {}); return true; }',
-    });
-    await owned("PATCH", ["rule_posts"], {
-      read: "member",
-      write: "member",
-      rules: "mutating",
-    });
-    await expect(
-      as(bob.accessToken, "GET", ["rule_posts"]),
-    ).rejects.toMatchObject({ status: 400 });
-    await expect(owned("GET", ["rule_roles", "bad"])).rejects.toMatchObject({
-      status: 404,
-    });
-    await owned("DELETE", ["rule_posts"]);
-    await owned("DELETE", ["rule_roles"]);
   });
 
   test("a collection's indexed fields are kept, listed, changed and dropped", async () => {
@@ -1044,358 +722,15 @@ integration("site members", () => {
     }
   });
 
-  test("a rule's refusals and mistakes name the rule, and ctx.fail speaks for it", async () => {
-    const reader = await signIn("dave");
-    await owned("POST", [], { name: "told", read: "member", write: "member" });
-    await owned("PUT", ["told", "one"], { data: { text: "a" } });
-    const rule = async (source: string) => {
-      await callSiteObject("alice", "putFunctions", {
-        site: "alice",
-        folder: "rules",
-        file: "told",
-        source,
-      });
-      await owned("PATCH", ["told"], {
-        read: "member",
-        write: "member",
-        rules: "told",
-      });
-    };
-    const write = () =>
-      as(reader.accessToken, "PUT", ["told", "one"], { data: { text: "b" } });
-    const read = () => as(reader.accessToken, "GET", ["told"]);
-
-    // Forgetting to return true is the usual mistake: the refusal says so.
-    await rule(`export function readable() { return true; }
-      export function canWrite() {}`);
-    await expect(write()).rejects.toMatchObject({
-      status: 403,
-      message: expect.stringMatching(
-        /_naru\/rules\/told\.js refused this \w+ on told: canWrite returned undefined\. .*returns true/,
-      ),
-    });
-    await rule(`export function readable() { return true; }`);
-    await expect(write()).rejects.toMatchObject({
-      status: 403,
-      message: expect.stringContaining("no canWrite function"),
-    });
-    // ctx.fail in a rule is the site's own word, as in a function.
-    await rule(`export function readable() { return true; }
-      export function canWrite(ctx) { ctx.fail("ACCESS_DENIED", "운영진만 고칠 수 있습니다."); }`);
-    await expect(write()).rejects.toMatchObject({
-      status: 403,
-      message: "운영진만 고칠 수 있습니다.",
-      site: true,
-    });
-    await rule(
-      `export function readable(ctx) { ctx.fail("AUTH_REQUIRED", "회원만 볼 수 있는 게시판입니다."); }`,
-    );
-    await expect(read()).rejects.toMatchObject({
-      status: 401,
-      message: "회원만 볼 수 있는 게시판입니다.",
-      site: true,
-    });
-    await rule(`export function readable() { return { eq: "board" }; }`);
-    await expect(read()).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringContaining(
-        "Collection rule _naru/rules/told.js readable() for told returned an invalid predicate",
-      ),
-    });
-    await rule(`export function readable() { throw new Error("no board"); }`);
-    await expect(read()).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringMatching(
-        /Collection rule _naru\/rules\/told\.js failed in readable\(\) for told: .*no board/,
-      ),
-    });
-    await rule(`export const nothing = 1;`);
-    await expect(read()).rejects.toMatchObject({
-      message: expect.stringContaining("exports no readable function"),
-    });
-    await owned("PATCH", ["told"], {
-      read: "member",
-      write: "member",
-      rules: "unpublished",
-    });
-    await expect(read()).rejects.toMatchObject({
-      status: 403,
-      message: expect.stringContaining(
-        "Collection told uses _naru/rules/unpublished.js, which the site's published files do not have",
-      ),
-    });
-    await owned("DELETE", ["told"]);
-  });
-
-  test("a collection rule imports shared modules from the same revision", async () => {
-    const bob = await signIn("dave");
-    await owned("POST", [], { name: "gated", read: "member", write: "member" });
-    await owned("PUT", ["gated", "open"], { data: { level: 1 } });
-    await owned("PUT", ["gated", "closed"], { data: { level: 9 } });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      folder: "modules",
-      file: "levels",
-      source: "export const visible = 5;",
-    });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      folder: "rules",
-      file: "gated",
-      source: `import { visible } from "../modules/levels.js";
-        export function readable() { return { lte: ["level", visible] }; }
-        export function canWrite() { return false; }`,
-    });
-    await owned("PATCH", ["gated"], {
-      read: "member",
-      write: "member",
-      rules: "gated",
-    });
-    const page = (await as(bob.accessToken, "GET", ["gated"])) as any;
-    expect(page.documents.map((d: any) => d.id)).toEqual(["open"]);
-    // Shared code changes reach the rule when the revision is published.
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      folder: "modules",
-      file: "levels",
-      source: "export const visible = 10;",
-    });
-    expect(
-      ((await as(bob.accessToken, "GET", ["gated"])) as any).documents.length,
-    ).toBe(2);
-    await owned("DELETE", ["gated"]);
-  });
-
-  test("a rule's present trims what non-owners read, and limits their queries", async () => {
-    const reader = await signIn("dave");
-    await owned("POST", [], { name: "sheets", read: "member", write: "admin" });
-    await owned("PUT", ["sheets", "a"], {
-      data: { name: "A", side: "east", note: "owner only", tags: ["x"] },
-    });
-    await owned("PUT", ["sheets", "b"], {
-      data: { name: "B", side: "west", note: "hidden too", tags: ["y"] },
-    });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      folder: "rules",
-      file: "sheets",
-      source: `export const queryable = ["name", "side", "tags"];
-        export function readable() { return true; }
-        export function canWrite() { return false; }
-        export function present(ctx, { document }) {
-          const { note, ...shown } = document.data;
-          return shown;
-        }`,
-    });
-    await owned("PATCH", ["sheets"], {
-      read: "member",
-      write: "admin",
-      rules: "sheets",
-    });
-    try {
-      const page = (await as(reader.accessToken, "GET", ["sheets"])) as any;
-      expect(page.documents.map((d: any) => d.data)).toEqual([
-        { name: "A", side: "east", tags: ["x"] },
-        { name: "B", side: "west", tags: ["y"] },
-      ]);
-      expect(
-        ((await as(reader.accessToken, "GET", ["sheets", "a"])) as any).document
-          .data.note,
-      ).toBeUndefined();
-      const many = (await as(reader.accessToken, "GET", ["sheets"], undefined, {
-        ids: JSON.stringify(["b", "missing"]),
-      })) as any;
-      expect(many.documents).toEqual([
-        expect.objectContaining({
-          data: { name: "B", side: "west", tags: ["y"] },
-        }),
-        null,
-      ]);
-      // Queries on queryable fields work; on hidden ones they are refused.
-      expect(
-        (
-          (await as(reader.accessToken, "GET", ["sheets"], undefined, {
-            where: { has: ["tags", "y"] },
-          })) as any
-        ).documents.map((d: any) => d.id),
-      ).toEqual(["b"]);
-      for (const extra of [
-        { filter: { note: "owner only" } },
-        { where: { any: [{ eq: ["note", "owner only"] }] } },
-        { sort: JSON.stringify([["note", "asc"]]) },
-      ])
-        await expect(
-          as(reader.accessToken, "GET", ["sheets"], undefined, extra),
-        ).rejects.toMatchObject({ status: 400 });
-      // The owner reads and queries everything.
-      expect(
-        ((await owned("GET", ["sheets", "a"])) as any).document.data.note,
-      ).toBe("owner only");
-    } finally {
-      await owned("DELETE", ["sheets"]);
-    }
-  });
-
-  test("a rule's present shows each reader only their own authorship", async () => {
-    const carol = await signIn("carol");
-    const dave = await signIn("dave");
-    await owned("POST", [], { name: "masks", read: "member", write: "member" });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      folder: "rules",
-      file: "masks",
-      source: `export const queryable = ["text"];
-        export function readable() { return true; }
-        export function canWrite() { return true; }
-        export function present(ctx, { document }) { return document.data; }`,
-    });
-    await owned("PATCH", ["masks"], {
-      read: "member",
-      write: "member",
-      rules: "masks",
-    });
-    try {
-      const mine = (await as(carol.accessToken, "POST", ["masks"], {
-        data: { text: "carol's" },
-      })) as any;
-      expect(mine.createdBy).toBe(carol.memberId);
-      const theirs = (await as(dave.accessToken, "POST", ["masks"], {
-        data: { text: "dave's" },
-      })) as any;
-      const authors = async (extra = {}) =>
-        Object.fromEntries(
-          (
-            (await as(
-              carol.accessToken,
-              "GET",
-              ["masks"],
-              undefined,
-              extra,
-            )) as any
-          ).documents.map((d: any) => [d.id, d.createdBy]),
-        );
-      expect(await authors()).toEqual({
-        [mine.id]: carol.memberId,
-        [theirs.id]: null,
-      });
-      expect(
-        ((await as(carol.accessToken, "GET", ["masks", theirs.id])) as any)
-          .document.createdBy,
-      ).toBeNull();
-      expect(
-        (
-          (await as(carol.accessToken, "GET", ["masks"], undefined, {
-            ids: JSON.stringify([theirs.id, mine.id]),
-          })) as any
-        ).documents.map((d: any) => d.createdBy),
-      ).toEqual([null, carol.memberId]);
-      // "Mine" may be asked; anyone else's authorship may not.
-      expect(
-        await authors({
-          where: { eq: [{ metadata: "createdBy" }, carol.memberId] },
-        }),
-      ).toEqual({ [mine.id]: carol.memberId });
-      for (const where of [
-        { eq: [{ metadata: "createdBy" }, dave.memberId] },
-        { ne: [{ metadata: "createdBy" }, carol.memberId] },
-        { in: [{ metadata: "createdBy" }, [carol.memberId]] },
-        { eq: [{ metadata: "createdBy" }, null] },
-        {
-          any: [{ eq: ["text", "x"] }, { gt: [{ metadata: "createdBy" }, ""] }],
-        },
-      ])
-        await expect(
-          as(carol.accessToken, "GET", ["masks"], undefined, { where }),
-        ).rejects.toMatchObject({
-          status: 400,
-          message: expect.stringContaining("createdBy only as"),
-        });
-      await expect(
-        as(carol.accessToken, "GET", ["masks"], undefined, {
-          sort: JSON.stringify([[{ metadata: "createdBy" }, "asc"]]),
-        }),
-      ).rejects.toMatchObject({ status: 400 });
-      // The owner sees every author.
-      expect(
-        ((await owned("GET", ["masks", theirs.id])) as any).document.createdBy,
-      ).toBe(dave.memberId);
-    } finally {
-      await owned("DELETE", ["masks"]);
-    }
-  });
-
-  test("a rule's readable sees a batch read's IDs, and whether a visitor reads", async () => {
-    const fern = await signIn("fern");
-    await owned("POST", [], { name: "seen", read: "world", write: "admin" });
-    for (const id of ["open", "closed", "other"])
-      await owned("PUT", ["seen", id], { data: {} });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      folder: "rules",
-      file: "seen",
-      source: `export function readable(ctx, { operation, ids, id }) {
-          if (operation === "getMany") {
-            if (ids.includes("other")) ctx.fail("ACCESS_DENIED", "그건 안 됩니다.");
-            return { in: [{ metadata: "id" }, ids.filter((x) => x !== "closed")] };
-          }
-          if (operation === "get") return { eq: [{ metadata: "id" }, id] };
-          return ctx.visitor ? { eq: [{ metadata: "id" }, "open"] } : true;
-        }
-        export function canWrite() { return false; }`,
-    });
-    await owned("PATCH", ["seen"], {
-      read: "world",
-      write: "admin",
-      rules: "seen",
-    });
-    try {
-      const ids = (token: string | undefined, list: string[]) =>
-        as(token, "GET", ["seen"], undefined, {
-          ids: JSON.stringify(list),
-        }).then((page: any) => page.documents.map((d: any) => d?.id ?? null));
-      expect(await ids(fern.accessToken, ["closed", "open", "open"])).toEqual([
-        null,
-        "open",
-        "open",
-      ]);
-      await expect(ids(undefined, ["open", "other"])).rejects.toMatchObject({
-        status: 403,
-        message: "그건 안 됩니다.",
-      });
-      const listed = async (token?: string) =>
-        ((await as(token, "GET", ["seen"])) as any).documents.map(
-          (d: any) => d.id,
-        );
-      expect(await listed()).toEqual(["open"]);
-      expect(await listed(fern.accessToken)).toEqual([
-        "closed",
-        "open",
-        "other",
-      ]);
-    } finally {
-      await owned("DELETE", ["seen"]);
-    }
-  });
-
-  test("REST writes carry no secret: visitors add to a create collection, and only the owner changes it", async () => {
+  test("visitors add to a create collection, and only the owner changes it", async () => {
     await owned("POST", [], { name: "guests", read: "world", write: "create" });
     try {
-      for (const [method, path] of [
-        ["POST", ["guests"]],
-        ["PUT", ["guests", "one"]],
-      ] as const)
-        await expect(
-          as(undefined, method, [...path], {
-            data: { name: "길손" },
-            secret: "pass1234",
-          }),
-        ).rejects.toMatchObject({
-          status: 400,
-          message: expect.stringContaining("secret is set by site functions"),
-        });
+      // A body's other fields are no part of the write.
       const added = (await as(undefined, "POST", ["guests"], {
         data: { name: "길손", text: "hi" },
+        secret: "pass1234",
       })) as any;
+      expect(added.data).toEqual({ name: "길손", text: "hi" });
       await expect(
         as(undefined, "PUT", ["guests", added.id], { data: { name: "x" } }),
       ).rejects.toMatchObject({ status: 403 });
@@ -1408,238 +743,22 @@ integration("site members", () => {
     }
   });
 
-  test("functions keep a guest's secret: edits and deletes check it, and wrong ones are limited per document", async () => {
-    await owned("POST", [], {
-      name: "secret_book",
-      read: "world",
-      write: "create",
-    });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      file: "secretbook",
-      source: `export const visitors = ["post", "edit", "remove"];
-        const guard = async (ctx, id, secret) => {
-          if (!(await ctx.secretMatches("secret_book", id, secret)))
-            ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
-        };
-        export async function post(ctx, { text, secret }) {
-          return (await ctx.add("secret_book", { text }, { secret })).id;
-        }
-        export async function edit(ctx, { id, text, secret }) {
-          await guard(ctx, id, secret);
-          return (await ctx.set("secret_book", id, { text })).data;
-        }
-        export async function remove(ctx, { id, secret }) {
-          await guard(ctx, id, secret);
-          await ctx.delete("secret_book", id);
-        }
-        export async function guess(ctx, { id, secrets }) {
-          const matched = [];
-          for (const secret of secrets)
-            matched.push(await ctx.secretMatches("secret_book", id, secret));
-          return matched;
-        }`,
-    });
-    try {
-      // A guest's calls are a visitor's; the guesses below are the owner's,
-      // whose calls are not limited, so only the per-document limit counts.
-      const call = (name: string, args: unknown, visitor = true) =>
-        callSiteObject<any>("alice", "call", {
-          ownerId: String(owner),
-          site: "alice",
-          member: null,
-          ...(visitor ? { visitor: true } : {}),
-          file: "secretbook",
-          name,
-          args,
-        });
-      const { result: id } = await call("post", {
-        text: "hi",
-        secret: "s3cret",
-      });
-      const read = (await as(undefined, "GET", ["secret_book", id])) as any;
-      expect(JSON.stringify(read)).not.toMatch(/pbkdf2|s3cret/);
-      await expect(
-        call("edit", { id, text: "x", secret: "wrong" }),
-      ).rejects.toMatchObject({ status: 403 });
-      expect(
-        (await call("edit", { id, text: "edited", secret: "s3cret" })).result,
-      ).toEqual({ text: "edited" });
-      // A set without a secret keeps the one the document has.
-      await call("remove", { id, secret: "s3cret" });
-      await expect(
-        as(undefined, "GET", ["secret_book", id]),
-      ).rejects.toMatchObject({ status: 404 });
-      // Ten wrong secrets an hour: then even the right one waits, so a
-      // short password cannot be guessed by trying them all.
-      const { result: pin } = await call("post", {
-        text: "PIN",
-        secret: "4821",
-      });
-      const guesses = Array.from({ length: 10 }, (_, n) =>
-        String(n).padStart(4, "0"),
-      );
-      for (let at = 0; at < guesses.length; at += 3)
-        expect(
-          (
-            await call(
-              "guess",
-              { id: pin, secrets: guesses.slice(at, at + 3) },
-              false,
-            )
-          ).result,
-        ).toEqual(guesses.slice(at, at + 3).map(() => false));
-      await expect(
-        call("guess", { id: pin, secrets: ["4821"] }, false),
-      ).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED" });
-    } finally {
-      await owned("DELETE", ["secret_book"]);
-    }
-  });
-
-  test("visitors call only the exports a module opens to them, by address", async () => {
-    await owned("POST", [], {
-      name: "visitor_book",
-      read: "admin",
-      write: "admin",
-    });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      file: "guest",
-      source: `export const visitors = ["post", "edit", "list"];
-        export const readOnly = ["list"];
-        export async function post(ctx, { name, text, password }) {
-          const doc = await ctx.add("visitor_book", { name, text }, { secret: password });
-          ctx.broadcast("visitor_book", { id: doc.id });
-          return doc.id;
-        }
-        export async function edit(ctx, { id, text, password }) {
-          const doc = await ctx.get("visitor_book", id);
-          if (!doc || !(await ctx.secretMatches("visitor_book", id, password)))
-            ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.", { reason: "wrong_password" });
-          await ctx.set("visitor_book", id, { ...doc.data, text }, { condition: { revision: doc.revision } });
-          return true;
-        }
-        export async function list(ctx) {
-          const page = await ctx.list("visitor_book");
-          return page.documents.map((d) => ({ name: d.data.name, text: d.data.text, visitor: ctx.visitor }));
-        }
-        export function membersOnly(ctx) { return ctx.member?.id ?? null; }`,
-    });
-    const visit = (name: string, args: unknown, clientIp = "203.0.113.7") =>
-      executeCall({
-        site: "alice",
-        path: [name],
-        method: "POST",
-        body: { args },
-        clientIp,
-      }) as Promise<{ result: any; written: string[] }>;
-    const id = (
-      await visit("guest:post", {
-        name: "손님",
-        text: "안녕",
-        password: "1234",
-      })
-    ).result;
-    await expect(
-      visit("guest:edit", { id, text: "바꿈", password: "0000" }),
-    ).rejects.toMatchObject({
-      status: 403,
-      details: { reason: "wrong_password" },
-    });
-    expect(
-      (await visit("guest:edit", { id, text: "바꿈", password: "1234" }))
-        .written,
-    ).toEqual(["visitor_book"]);
-    // The function decides what visitors see: never the stored hash.
-    expect((await visit("guest:list", null)).result).toEqual([
-      { name: "손님", text: "바꿈", visitor: true },
-    ]);
-    // Exports not opened to visitors still need a sign-in.
-    await expect(visit("guest:membersOnly", null)).rejects.toMatchObject({
-      status: 401,
-      code: "AUTH_REQUIRED",
-    });
-    // Calls that may write: 20 a minute per address (two made above, one refused).
-    for (let n = 0; n < 18; n++)
-      await visit("guest:membersOnly", null, "203.0.113.9").catch(() => null);
-    const results: number[] = [];
-    for (let n = 0; n < 20; n++)
-      results.push(
-        await visit(
-          "guest:edit",
-          { id, text: "x", password: "1234" },
-          "198.51.100.1",
-        ).then(
-          () => 200,
-          (error) => error.status,
-        ),
-      );
-    expect(results).toEqual(Array(20).fill(200));
-    await expect(
-      visit("guest:edit", { id, text: "x", password: "1234" }, "198.51.100.1"),
-    ).rejects.toMatchObject({ status: 429 });
-    // Another address still may, and reads have their own budget.
-    await visit(
-      "guest:edit",
-      { id, text: "ok", password: "1234" },
-      "198.51.100.2",
-    );
-    await visit("guest:list", null, "198.51.100.1");
-    // At the edge, as browsers reach it: answered by the site's object.
-    await callSiteObject("alice", "configure", {
-      ownerId: String(owner),
-      entitledUntil: null,
-      confirmedUntil: Date.now() + 60_000,
-    });
-    const atEdge = await fetch(
-      `${process.env.EDGE_WORKER_URL}/api/data/v1/alice/_call/guest:post`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          args: { name: "엣지", text: "hi", password: "pass" },
-        }),
-      },
-    );
-    expect(atEdge.status).toBe(200);
-    expect(await atEdge.json()).toMatchObject({ written: ["visitor_book"] });
-    const refused = await fetch(
-      `${process.env.EDGE_WORKER_URL}/api/data/v1/alice/_call/guest:membersOnly`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      },
-    );
-    expect(refused.status).toBe(401);
-    await owned("DELETE", ["visitor_book"]);
-  });
-
   test("unique fields refuse a second document with the same value, on every write path", async () => {
-    const bob = await signIn("dave");
-    const carol = await signIn("read-budget");
-    await owned("POST", [], { name: "nicks", read: "member", write: "member" });
-    await as(bob.accessToken, "PUT", ["nicks", bob.memberId], {
-      data: { nick: "lime" },
-    });
-    await as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
-      data: { nick: "lime" },
-    });
+    await owned("POST", [], { name: "nicks", read: "world", write: "world" });
+    await as(undefined, "PUT", ["nicks", "bob"], { data: { nick: "lime" } });
+    await as(undefined, "PUT", ["nicks", "carol"], { data: { nick: "lime" } });
     // Existing duplicates refuse the setting.
     await expect(
       owned("PATCH", ["nicks"], {
-        read: "member",
-        write: "member",
+        read: "world",
+        write: "world",
         unique: ["nick"],
       }),
     ).rejects.toMatchObject({ status: 409 });
-    await as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
-      data: { nick: "lemon" },
-    });
+    await as(undefined, "PUT", ["nicks", "carol"], { data: { nick: "lemon" } });
     await owned("PATCH", ["nicks"], {
-      read: "member",
-      write: "member",
+      read: "world",
+      write: "world",
       unique: ["nick"],
     });
     expect(
@@ -1648,22 +767,21 @@ integration("site members", () => {
       ),
     ).toMatchObject({ unique: ["nick"] });
     await expect(
-      as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
-        data: { nick: "lime" },
-      }),
+      as(undefined, "PUT", ["nicks", "carol"], { data: { nick: "lime" } }),
     ).rejects.toMatchObject({
       status: 409,
       code: "CONFLICT",
       details: { unique: "nick" },
     });
-    // Rewriting your own document keeps your own value.
-    await as(bob.accessToken, "PUT", ["nicks", bob.memberId], {
+    await expect(
+      as(undefined, "POST", ["nicks"], { data: { nick: "lime" } }),
+    ).rejects.toMatchObject({ status: 409, details: { unique: "nick" } });
+    // Rewriting a document keeps its own value.
+    await as(undefined, "PUT", ["nicks", "bob"], {
       data: { nick: "lime", bio: "hi" },
     });
     // A number is not the same value as a string.
-    await as(carol.accessToken, "PUT", ["nicks", carol.memberId], {
-      data: { nick: 7 },
-    });
+    await as(undefined, "PUT", ["nicks", "carol"], { data: { nick: 7 } });
     await expect(
       executeBatch({
         site: "alice",
@@ -1683,15 +801,15 @@ integration("site members", () => {
       }),
     ).rejects.toMatchObject({ status: 409 });
     await owned("PATCH", ["nicks"], {
-      read: "member",
-      write: "member",
+      read: "world",
+      write: "world",
       unique: null,
     });
     await owned("PUT", ["nicks", "x"], { data: { nick: "lime" } });
     await owned("DELETE", ["nicks"]);
   });
 
-  test("live connections hear what functions send, after they commit, until access ends", async () => {
+  test("live connections carry a member's live queries until their access ends", async () => {
     const WebSocketClient = (globalThis as { WebSocket?: typeof WebSocket })
       .WebSocket;
     if (!WebSocketClient) return;
@@ -1701,16 +819,6 @@ integration("site members", () => {
       entitledUntil: null,
       confirmedUntil: Date.now() + 60_000,
     });
-    await callSiteObject("alice", "putFunctions", {
-      site: "alice",
-      file: "live",
-      source: `export function send(ctx, { to, fail }) {
-        ctx.notify(to, { unread: 1 });
-        ctx.broadcast("board", { post: "new" });
-        if (fail) throw new Error("rolled back");
-        return true;
-      }`,
-    });
     const base = `${process.env.EDGE_WORKER_URL!.replace(/^http/, "ws")}/api/data/v1/alice/_live`;
     const open = (query: string) =>
       new Promise<{
@@ -1718,7 +826,7 @@ integration("site members", () => {
         heard: unknown[];
         closed: Promise<number>;
       }>((resolve, reject) => {
-        const socket = new WebSocketClient(`${base}?${query}`);
+        const socket = new WebSocketClient(`${base}${query}`);
         const heard: unknown[] = [];
         const closed = new Promise<number>((done) =>
           socket.addEventListener("close", (event) => done(event.code)),
@@ -1737,34 +845,30 @@ integration("site members", () => {
       method: "POST",
       bearer: { token: bob.accessToken, origin },
     })) as { ticket: string };
-    const member = await open(`ticket=${ticket}`);
-    const visitor = await open("topics=board");
+    const member = await open(`?ticket=${ticket}`);
+    const visitor = await open("");
     await expect(
-      open("ticket=forged.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+      open("?ticket=forged.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
     ).rejects.toThrow();
-    // Visitors get no ticket: they listen without one.
+    // Visitors get no ticket: they connect without one.
     await expect(
       executeLiveTicket({ site: "alice", path: ["_live"], method: "POST" }),
     ).rejects.toMatchObject({ status: 401 });
-    const call = (args: unknown) =>
-      executeCall({
-        site: "alice",
-        path: ["live:send"],
-        method: "POST",
-        body: { args },
-        bearer: { token: bob.accessToken, origin },
-      });
-    await expect(call({ to: bob.memberId, fail: true })).rejects.toMatchObject({
-      status: 400,
-    });
-    await call({ to: bob.memberId });
+    // Each live query runs as whoever the connection is.
+    for (const connection of [member, visitor])
+      connection.socket.send(
+        JSON.stringify({ type: "subscribe", id: "me", query: "whoami:me" }),
+      );
     const settle = () => new Promise((done) => setTimeout(done, 300));
     await settle();
-    // Only the committed call's messages arrive.
-    expect(member.heard).toEqual([{ type: "notice", data: { unread: 1 } }]);
-    expect(visitor.heard).toEqual([
-      { type: "topic", topic: "board", data: { post: "new" } },
+    expect(member.heard).toEqual([
+      {
+        type: "result",
+        id: "me",
+        result: { id: bob.memberId, roles: [] },
+      },
     ]);
+    expect(visitor.heard).toEqual([{ type: "result", id: "me", result: null }]);
     await manageMembership(owner, "PATCH", {
       id: bob.memberId,
       status: "banned",
@@ -1820,12 +924,10 @@ integration("site members", () => {
       const kept = await upload();
       const swapped = await upload();
       const unused = await upload();
-      // An early 1.1.0 page's option, accepted and of no consequence.
-      const legacy = await upload({ managed: true });
       const referenced = async () =>
         (
           await callSiteObject<string[]>("alice", "mediaReferences", {
-            ids: [kept.id, swapped.id, unused.id, legacy.id],
+            ids: [kept.id, swapped.id, unused.id],
           })
         ).sort();
       await owned("POST", [], {
@@ -1838,11 +940,9 @@ integration("site members", () => {
           data: { image: kept.url, body: `<p><img src="${swapped.url}"></p>` },
         });
         await owned("PUT", ["posts_m", "b"], {
-          data: { html: `<img src="${kept.url}">`, other: legacy.url },
+          data: { html: `<img src="${kept.url}">` },
         });
-        expect(await referenced()).toEqual(
-          [kept.id, swapped.id, legacy.id].sort(),
-        );
+        expect(await referenced()).toEqual([kept.id, swapped.id].sort());
         // The owner's library marks what no document names, and lists
         // uploads never finished, which stay until deleted.
         const started = await media(bob.accessToken, "POST", [], file);
@@ -1859,13 +959,12 @@ integration("site members", () => {
         const shown = (id: string) => listed.find((entry) => entry.id === id);
         expect(shown(kept.id)).toMatchObject({ referenced: true });
         expect(shown(unused.id)).toMatchObject({ referenced: false });
-        expect(shown(unused.id)).not.toHaveProperty("managed");
         expect(shown(started.id)).toMatchObject({ unfinished: true });
         expect(shown(started.id)).not.toHaveProperty("referenced");
         // Editing out an upload, or deleting what named it, only unmarks it:
         // media may be linked from anywhere, so nothing is released.
         await owned("PUT", ["posts_m", "a"], { data: { image: kept.url } });
-        expect(await referenced()).toEqual([kept.id, legacy.id].sort());
+        expect(await referenced()).toEqual([kept.id]);
         await owned("DELETE", ["posts_m", "a"]);
         await owned("DELETE", ["posts_m", "b"]);
         expect(await referenced()).toEqual([]);
@@ -1875,17 +974,17 @@ integration("site members", () => {
         const rows = await db
           .selectFrom("site_data_files")
           .select(["id", "deleted_at"])
-          .where("id", "in", [kept.id, swapped.id, unused.id, legacy.id])
+          .where("id", "in", [kept.id, swapped.id, unused.id])
           .execute();
         expect(rows.every((row) => row.deleted_at === null)).toBe(true);
-        expect(rows).toHaveLength(4);
+        expect(rows).toHaveLength(3);
       } finally {
         await owned("DELETE", ["posts_m"]).catch(() => {});
       }
     });
 
     test("a site's first media listing records the references its documents already had", async () => {
-      // Documents written while only managed uploads were tracked: an
+      // Documents written while only some uploads were tracked: an
       // imported site has documents and no references at all.
       const ownerId = "0190f1a2-0000-7000-8000-00000000000a";
       const upload = "0190f1a2-0000-7000-8000-0000000000b1";
@@ -2071,323 +1170,6 @@ integration("site members", () => {
       await expect(
         media(bob.accessToken, "POST", [], file),
       ).resolves.toBeDefined();
-    });
-  });
-
-  describe("functions", () => {
-    const SHOP = `
-      // A shop, as an AvocadoEdition site would have it.
-      export const readOnly = ["lookup", "versioned", "mine", "peek", "sneak"];
-      export async function buy(ctx, { item }) {
-        const listing = await ctx.get("shop", item);
-        if (!listing) return { ok: false, reason: "no_such_item" };
-        if (listing.data.stock < 1) return { ok: false, reason: "sold_out" };
-        const wallet = await ctx.get("wallets", ctx.member.id);
-        const balance = wallet ? wallet.data.balance : 0;
-        if (balance < listing.data.price) return { ok: false, reason: "not_enough_money" };
-        await ctx.set("wallets", ctx.member.id, { balance: balance - listing.data.price });
-        await ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
-        const owned = await ctx.add("inventory", { owner: ctx.member.id, item });
-        return { ok: true, balance: balance - listing.data.price, owned };
-      }
-      export async function buyThenFail(ctx, args) {
-        await buy(ctx, args);
-        throw new Error("changed my mind");
-      }
-      export async function buyThenReject(ctx, args) {
-        await buy(ctx, args);
-        try { ctx.fail("CONFLICT", "Purchase cancelled."); } catch {}
-        return { ok: true };
-      }
-      export async function lookup(ctx) {
-        return { rows: await ctx.getMany("shop", ["shield", "missing", "shield"]), empty: await ctx.getMany("shop", []), count: await ctx.count("shop", { filter: { price: 10 } }), zero: await ctx.count("shop", { filter: { price: 999 } }) };
-      }
-      export async function mine(ctx) {
-        return (await ctx.list("inventory", { filter: { owner: ctx.member.id } })).documents.map((d) => d.data.item);
-      }
-      export function gacha(ctx) {
-        return Math.floor(Math.random() * 100);
-      }
-      export function versioned() {
-        return { version: "not a revision", list: [1, { version: 2 }] };
-      }
-      export function spin() { for (;;) {} }
-      export async function flood(ctx) { for (let i = 0; ; i++) await ctx.set("wallets", "x" + i, i); }
-      export async function trespass(ctx) { await ctx.get("nowhere", "x"); }
-      export async function sneak(ctx) { await ctx.set("wallets", "x", 1); }
-      export async function restock(ctx, { item, revision, stock }) {
-        const listing = await ctx.get("shop", item);
-        return ctx.set("shop", item, { ...listing.data, stock }, { condition: { revision } });
-      }
-      export async function create(ctx, { item }) {
-        return ctx.set("shop", item, { price: 1, stock: 1 }, { condition: { absent: true } });
-      }
-      export async function discontinue(ctx, { item, revision }) {
-        await ctx.delete("shop", item, { condition: { revision } });
-      }
-      export async function soldOut(ctx) {
-        ctx.fail("CONFLICT", "품절입니다.", { reason: "sold_out", item: "sword" });
-      }
-      export async function peek(ctx, { where }) {
-        return (await ctx.list("shop", { where })).documents.map((d) => d.id);
-      }
-    `;
-    const call = (token: string | undefined, name: string, args?: unknown) =>
-      executeCall({
-        site: "alice",
-        path: name.split("/"),
-        method: "POST",
-        body: { args },
-        ...(token ? { bearer: { token, origin } } : {}),
-      }) as Promise<{ result: any; written: string[] }>;
-    beforeAll(async () => {
-      for (const [name, read, write] of [
-        ["shop", "member", "admin"],
-        ["wallets", "member", "admin"],
-        ["inventory", "member", "admin"],
-      ])
-        await owned("POST", [], { name, read, write });
-      await callSiteObject("alice", "putFunctions", {
-        site: "alice",
-        file: "shop",
-        source: SHOP,
-      });
-      await owned("PUT", ["shop", "sword"], {
-        data: { price: 100, stock: 1 },
-      });
-    });
-
-    test("a member buys: the rules hold, and what the function wrote is the owner's", async () => {
-      const bob = await signIn("bob");
-      await owned("PUT", ["wallets", bob.memberId], { data: { balance: 150 } });
-      const bought = await call(bob.accessToken, "shop:buy", { item: "sword" });
-      // The collections it changed, so the caller's SDK rereads only those.
-      expect(bought.written).toEqual(["inventory", "shop", "wallets"]);
-      expect(bought.result).toMatchObject({
-        ok: true,
-        balance: 50,
-        owned: {
-          data: { owner: bob.memberId, item: "sword" },
-          createdBy: null,
-          revision: "r1.1",
-        },
-      });
-      expect(
-        (await call(bob.accessToken, "shop:buy", { item: "sword" })).result,
-      ).toEqual({ ok: false, reason: "sold_out" });
-      expect((await call(bob.accessToken, "shop:mine")).result).toEqual([
-        "sword",
-      ]);
-      // The member cannot change what the function wrote for them.
-      await expect(
-        as(bob.accessToken, "PUT", ["wallets", bob.memberId], {
-          data: { balance: 1e9 },
-        }),
-      ).rejects.toMatchObject({ status: 403 });
-      const roll = (await call(bob.accessToken, "shop:gacha")).result;
-      expect(roll).toBeGreaterThanOrEqual(0);
-      expect(roll).toBeLessThan(100);
-      // A function's result is its own JSON, left as it is.
-      expect((await call(bob.accessToken, "shop:versioned")).result).toEqual({
-        version: "not a revision",
-        list: [1, { version: 2 }],
-      });
-    });
-
-    test("a function that fails changes nothing", async () => {
-      const carol = await signIn("carol");
-      await owned("PUT", ["shop", "shield"], { data: { price: 10, stock: 5 } });
-      await owned("PUT", ["wallets", carol.memberId], {
-        data: { balance: 100 },
-      });
-      for (const [name, message] of [
-        ["shop:buyThenFail", "Function failed: Error: changed my mind"],
-        ["shop:spin", "Function failed: it ran too long."],
-        ["shop:flood", "Function failed: more than 100 database operations."],
-      ])
-        await expect(
-          call(carol.accessToken, name, { item: "shield" }),
-        ).rejects.toMatchObject({ status: 400, message });
-      await expect(
-        call(carol.accessToken, "shop:buyThenReject", { item: "shield" }),
-      ).rejects.toMatchObject({
-        status: 409,
-        code: "CONFLICT",
-        message: "Purchase cancelled.",
-      });
-      expect((await call(carol.accessToken, "shop:mine")).result).toEqual([]);
-      await expect(
-        call(carol.accessToken, "shop:trespass"),
-      ).rejects.toMatchObject({ status: 404 });
-      expect(await owned("GET", ["wallets", carol.memberId])).toMatchObject({
-        document: { data: { balance: 100 } },
-      });
-      expect(await owned("GET", ["shop", "shield"])).toMatchObject({
-        document: { data: { stock: 5 } },
-      });
-      expect(
-        await owned("GET", ["wallets", "x0"]).catch((e) => e),
-      ).toMatchObject({ status: 404 });
-    });
-
-    test("bulk reads preserve order and missing positions; counts use filters in read-only functions", async () => {
-      const bob = await signIn("bob");
-      await owned("PUT", ["shop", "shield"], { data: { price: 10, stock: 5 } });
-      const { result, written } = await call(bob.accessToken, "shop:lookup");
-      expect(written).toEqual([]);
-      expect(result).toMatchObject({
-        rows: [{ id: "shield", data: { price: 10 } }, null, { id: "shield" }],
-        empty: [],
-        count: 1,
-        zero: 0,
-      });
-      expect(result.rows[0]).toEqual(result.rows[2]);
-      expect(result.rows[0].revision).toMatch(/^r1\./);
-    });
-
-    test("only members call, and only what the site has", async () => {
-      const bob = await signIn("bob");
-      await expect(call(undefined, "shop:buy")).rejects.toMatchObject({
-        status: 401,
-      });
-      await expect(
-        executeCall({
-          site: "alice",
-          path: ["shop:buy"],
-          method: "POST",
-          adminUserId: owner,
-        }),
-      ).rejects.toMatchObject({ status: 403 });
-      await expect(call(bob.accessToken, "shop:missing")).rejects.toMatchObject(
-        {
-          status: 404,
-          message: "No function missing.",
-        },
-      );
-      await expect(call(bob.accessToken, "nothing:buy")).rejects.toMatchObject({
-        status: 404,
-        message: "This site has no _naru/functions/nothing.js.",
-      });
-      await expect(call(bob.accessToken, "shop/../buy")).rejects.toMatchObject({
-        status: 404,
-      });
-      await expect(call(bob.accessToken, "sh.op:buy")).rejects.toMatchObject({
-        status: 400,
-      });
-    });
-
-    test("declared read-only exports cannot write and have their own budget", async () => {
-      const reader = await signIn("read-budget");
-      // Buckets are wall-clock minutes in the Worker, whose clock Jest cannot
-      // hold: start early in a minute so all 121 counted calls fall inside it.
-      const into = Date.now() % 60_000;
-      if (into > 20_000)
-        await new Promise((resolve) => setTimeout(resolve, 60_500 - into));
-      const minute = Math.floor(Date.now() / 60_000);
-      await expect(call(undefined, "shop:versioned")).rejects.toMatchObject({
-        status: 401,
-      });
-      await expect(
-        call(reader.accessToken, "shop:sneak"),
-      ).rejects.toMatchObject({
-        status: 400,
-        message: "Function failed: read-only functions cannot write.",
-      });
-      for (let n = 1; n < 120; n++)
-        expect(await call(reader.accessToken, "shop:versioned")).toMatchObject({
-          result: { version: "not a revision" },
-        });
-      const refused = await call(reader.accessToken, "shop:versioned").then(
-        () => undefined,
-        (error) => error,
-      );
-      // A slower runner than this allows fails here, not as a missing 429.
-      expect(Math.floor(Date.now() / 60_000)).toBe(minute);
-      expect(refused).toMatchObject({ status: 429 });
-      // Calls that may write still have their own 30.
-      expect(
-        (await call(reader.accessToken, "shop:gacha")).result,
-      ).toBeGreaterThanOrEqual(0);
-      // An invalid declaration refuses the whole revision.
-      await expect(
-        callSiteObject("alice", "putFunctions", {
-          site: "alice",
-          file: "broken",
-          source: "export let readOnly = ['x']; export function x() {}",
-        }),
-      ).rejects.toThrow(/export const readOnly/);
-      await callSiteObject("alice", "putFunctions", {
-        site: "alice",
-        file: "broken",
-        source: null,
-      });
-    }, 90_000);
-
-    test("conditional writes, failure details and where predicates in functions", async () => {
-      const erin = await signIn("fern");
-      await owned("PUT", ["shop", "lamp"], { data: { price: 5, stock: 1 } });
-      const { document } = (await owned("GET", ["shop", "lamp"])) as any;
-      // The control panel's answer carries the version; sites see revisions.
-      const stale = encodeRevision(document.version);
-      expect(
-        (
-          await call(erin.accessToken, "shop:restock", {
-            item: "lamp",
-            revision: stale,
-            stock: 3,
-          })
-        ).result,
-      ).toMatchObject({ data: { stock: 3 } });
-      await expect(
-        call(erin.accessToken, "shop:restock", {
-          item: "lamp",
-          revision: stale,
-          stock: 9,
-        }),
-      ).rejects.toMatchObject({ status: 409, code: "CONFLICT" });
-      await expect(
-        call(erin.accessToken, "shop:create", { item: "lamp" }),
-      ).rejects.toMatchObject({ status: 409, code: "CONFLICT" });
-      await expect(
-        call(erin.accessToken, "shop:discontinue", {
-          item: "lamp",
-          revision: stale,
-        }),
-      ).rejects.toMatchObject({ status: 409 });
-      await expect(
-        call(erin.accessToken, "shop:soldOut"),
-      ).rejects.toMatchObject({
-        status: 409,
-        code: "CONFLICT",
-        message: "품절입니다.",
-        details: { reason: "sold_out", item: "sword" },
-      });
-      expect(
-        (
-          await call(erin.accessToken, "shop:peek", {
-            where: { all: [{ lte: ["price", 10] }, { in: ["stock", [3, 5]] }] },
-          })
-        ).result.sort(),
-      ).toEqual(["lamp", "shield"]);
-      await expect(
-        call(erin.accessToken, "shop:peek", { where: { like: ["x", 1] } }),
-      ).rejects.toMatchObject({ status: 400 });
-    });
-
-    test("a member's calls are limited per minute", async () => {
-      const dave = await signIn("dave");
-      const results = [];
-      for (let n = 0; n < 31; n += 1)
-        results.push(
-          await call(dave.accessToken, "shop:gacha").then(
-            () => 200,
-            (error) => error.status,
-          ),
-        );
-      if (results.at(-1) !== 200) {
-        expect(results.slice(0, 30)).toEqual(Array(30).fill(200));
-        expect(results.at(-1)).toBe(429);
-      }
     });
   });
 });

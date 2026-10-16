@@ -9,21 +9,13 @@ const invalid = (message: string) =>
   new DataError(400, `Function modules: ${message}`);
 
 /**
- * Canonical paths below _naru. Import-only modules cannot be called as RPCs;
- * collection rules are their own entry points; queries and mutations (1.1.0)
- * are called by name like functions.
+ * Canonical paths below _naru. Queries and mutations are called by name,
+ * routes answer pages; shared code in modules/ is only imported.
  */
 export function modulePath(value: string): string {
   const parts = value.split("/");
   if (
-    ![
-      "functions",
-      "modules",
-      "rules",
-      "queries",
-      "mutations",
-      "routes",
-    ].includes(parts[0]) ||
+    !["modules", "queries", "mutations", "routes"].includes(parts[0]) ||
     parts.length < 2 ||
     parts.some(
       (part) =>
@@ -49,11 +41,7 @@ export function resolveModule(base: string, specifier: string): string {
       parts.push(part);
     }
   }
-  const resolved = modulePath(parts.join("/"));
-  // Rules may share modules; functions and modules never import a rule.
-  if (resolved.startsWith("rules/") && !base.startsWith("rules/"))
-    throw invalid("only collection rules may import from _naru/rules.");
-  return resolved;
+  return modulePath(parts.join("/"));
 }
 
 export function moduleImports(source: string, filename: string): string[] {
@@ -109,78 +97,6 @@ export function moduleImports(source: string, filename: string): string[] {
   visit(tree);
   return [...new Set(imports)];
 }
-
-/**
- * The exports a functions module lists in `export const <list> = ["name", ...]`,
- * string literals only, so publishing can read them without running anything:
- * `readOnly`, whose calls run with writes forbidden on the read budget, and
- * `visitors`, which visitors may call without signing in.
- */
-export function declaredExports(
-  source: string,
-  filename: string,
-  list: "readOnly" | "visitors",
-): string[] {
-  let tree: Node;
-  try {
-    tree = parse(source, { ecmaVersion: "latest", sourceType: "module" });
-  } catch (error) {
-    throw invalid(
-      `${filename}: ${error instanceof Error ? error.message : "invalid JavaScript"}`,
-    );
-  }
-  const wrong = () =>
-    invalid(
-      `${filename}: declare these as export const ${list} = ["name", ...].`,
-    );
-  let names: string[] = [];
-  for (const statement of (tree as unknown as { body: Node[] }).body) {
-    const node = statement as Node & Record<string, unknown>;
-    if (node.type !== "ExportNamedDeclaration") continue;
-    for (const specifier of (node.specifiers ?? []) as {
-      exported: { name?: string; value?: string };
-    }[])
-      if ((specifier.exported.name ?? specifier.exported.value) === list)
-        throw wrong();
-    const declaration = node.declaration as
-      (Node & Record<string, unknown>) | null;
-    if (!declaration) continue;
-    if (declaration.type !== "VariableDeclaration") {
-      if ((declaration.id as { name?: string } | null)?.name === list)
-        throw wrong();
-      continue;
-    }
-    for (const declarator of declaration.declarations as {
-      id: { type: string; name?: string };
-      init: (Node & Record<string, unknown>) | null;
-    }[]) {
-      if (declarator.id.type !== "Identifier") {
-        if (JSON.stringify(declarator.id).includes(`"${list}"`)) throw wrong();
-        continue;
-      }
-      if (declarator.id.name !== list) continue;
-      const init = declarator.init;
-      if (
-        declaration.kind !== "const" ||
-        init?.type !== "ArrayExpression" ||
-        (init.elements as ({ type: string; value?: unknown } | null)[]).some(
-          (element) =>
-            element?.type !== "Literal" ||
-            typeof element.value !== "string" ||
-            !/^[a-zA-Z0-9_-]{1,64}$/.test(element.value),
-        )
-      )
-        throw wrong();
-      names = (init.elements as { value: string }[]).map(
-        (element) => element.value,
-      );
-    }
-  }
-  return [...new Set(names)];
-}
-
-export const readOnlyExports = (source: string, filename: string) =>
-  declaredExports(source, filename, "readOnly");
 
 /** Storage I/O finishes before QuickJS and the synchronous SQLite transaction. */
 export async function loadModuleGraph(

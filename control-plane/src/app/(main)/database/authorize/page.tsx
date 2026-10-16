@@ -86,7 +86,6 @@ export default async function AuthorizePage({
         name: c.name,
         read: c.read_access,
         write: c.write_access,
-        rules: c.rules ?? null,
       }))}
       tokenLifetimeSeconds={client.token_lifetime_seconds}
     />

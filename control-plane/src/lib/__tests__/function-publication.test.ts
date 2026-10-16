@@ -20,10 +20,13 @@ beforeEach(() => {
 
 test("bulk edits publish once per affected site, including deleted nested keys", async () => {
   await purgeSiteObjects([
-    "alice/_naru/functions/a.js",
+    "alice/_naru/queries/a.js",
     "alice/_naru/modules/nested/b.js",
-    "bob/_naru/functions/a.js",
+    "bob/_naru/mutations/a.js",
     "carol/app.js",
+    // Folders of an early 1.1.0, published no more.
+    "dave/_naru/functions/a.js",
+    "dave/_naru/rules/auth.js",
   ]);
   expect(publish.mock.calls).toEqual([["alice"], ["bob"]]);
 });
@@ -35,14 +38,15 @@ test("ordinary frontend changes need no function publication", async () => {
   await purgeSiteFiles("alice", ["index.html", "_naru/README.md"]);
   expect(publish).not.toHaveBeenCalled();
 });
-test("collection rules publish like functions, since they run from revisions", async () => {
-  await purgeSiteFiles("alice", ["_naru/rules/auth.js"]);
-  expect(publish).toHaveBeenCalledWith("alice");
+test("migrations and routes publish like queries, since they ride in revisions", async () => {
+  await purgeSiteFiles("alice", ["_naru/migrations/0001_posts.sql"]);
+  await purgeSiteFiles("bob", ["_naru/routes/index.js"]);
+  expect(publish.mock.calls).toEqual([["alice"], ["bob"]]);
 });
 test("publication failures reach the caller so saves cannot report activation", async () => {
   publish.mockRejectedValue(new Error("Missing import"));
   await expect(
-    purgeSiteFiles("alice", ["_naru/functions/a.js"]),
+    purgeSiteFiles("alice", ["_naru/queries/a.js"]),
   ).rejects.toThrow("Missing import");
 });
 

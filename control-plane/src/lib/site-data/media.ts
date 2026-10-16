@@ -133,8 +133,6 @@ function uploadInput(body: Record<string, unknown>) {
     Number(size) > MAX_MEDIA_FILE_BYTES
   )
     throw new DataError(413, "File must be between 1 byte and 25 MiB.");
-  // `managed` (an early 1.1.0 option) is ignored: every upload's references
-  // are tracked.
   return { filename, contentType, size: Number(size) };
 }
 

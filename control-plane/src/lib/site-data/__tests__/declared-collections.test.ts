@@ -27,9 +27,8 @@ const FILE = JSON.stringify({
   collections: {
     guestbook: { read: "world", write: "create" },
     posts: {
-      read: "member",
+      read: "world",
       write: "admin",
-      rules: "board",
       unique: ["slug"],
       indexes: ["board", "owner"],
     },
@@ -68,13 +67,12 @@ beforeEach(() => {
 });
 
 describe("a site's declared collections", () => {
-  test("parse with the sign-in's settings", () => {
+  test("parse with their settings", () => {
     expect(declared.parseDeclaration(FILE)).toEqual({
       guestbook: { read: "world", write: "create" },
       posts: {
-        read: "member",
+        read: "world",
         write: "admin",
-        rules: "board",
         unique: ["slug"],
         indexes: ["board", "owner"],
       },
@@ -92,6 +90,16 @@ describe("a site's declared collections", () => {
       JSON.stringify({ collections: { a: {} } }),
       JSON.stringify({ collections: { a: { read: "world" } } }),
       JSON.stringify({ collections: { a: { write: "admin" } } }),
+      // Members' access and collection rules, from an early 1.1.0, are gone.
+      JSON.stringify({
+        collections: { a: { read: "member", write: "admin" } },
+      }),
+      JSON.stringify({
+        collections: { a: { read: "admin", write: "member" } },
+      }),
+      JSON.stringify({
+        collections: { a: { read: "admin", write: "admin", rules: "board" } },
+      }),
       JSON.stringify({
         collections: {
           a: {
@@ -112,8 +120,7 @@ describe("a site's declared collections", () => {
 
   test("plan the collections to create apart from changes to existing ones", async () => {
     service.listCollections.mockResolvedValue([
-      row("posts", "member", "admin", {
-        rules: "board",
+      row("posts", "world", "admin", {
         unique: ["slug"],
         indexes: ["board"],
       }),
@@ -139,9 +146,8 @@ describe("a site's declared collections", () => {
       { name: "guestbook", read_access: "world", write_access: "create" },
       {
         name: "posts",
-        read_access: "member",
+        read_access: "world",
         write_access: "admin",
-        rules: "board",
         unique: ["slug"],
         indexes: ["board", "owner"],
       },
@@ -156,16 +162,15 @@ describe("a site's declared collections", () => {
     bucket(FILE);
     service.listCollections.mockResolvedValue([
       row("guestbook", "world", "create"),
-      row("posts", "member", "admin", { rules: "board", unique: ["slug"] }),
+      row("posts", "world", "admin", { unique: ["slug"] }),
       row("settings", "world"),
     ]);
     const result = await declared.installDeclaredCollections("alice");
     expect(service.configureCollections).toHaveBeenCalledWith(owner, [
       {
         name: "posts",
-        read_access: "member",
+        read_access: "world",
         write_access: "admin",
-        rules: "board",
         unique: ["slug"],
         indexes: ["board", "owner"],
       },
@@ -180,8 +185,7 @@ describe("a site's declared collections", () => {
     bucket(FILE);
     service.listCollections.mockResolvedValue([
       row("guestbook", "world", "create"),
-      row("posts", "member", "admin", {
-        rules: "board",
+      row("posts", "world", "admin", {
         unique: ["slug"],
         indexes: ["board", "owner"],
       }),

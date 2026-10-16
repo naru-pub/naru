@@ -5,7 +5,6 @@ import {
   loadModuleGraph,
   modulePath,
   moduleImports,
-  declaredExports,
   MAX_MODULE_BYTES,
   type ModuleSources,
 } from "./modules";
@@ -33,10 +32,6 @@ type Manifest = {
   version: 2;
   publication: string;
   files: Record<string, string>;
-  /** Each functions module's read-only exports, when it declares any. */
-  readOnly?: Record<string, string[]>;
-  /** Each functions module's exports visitors may call, when it declares any. */
-  visitors?: Record<string, string[]>;
 };
 
 /**
@@ -100,14 +95,7 @@ export class FunctionRevisions {
   }
   private async files() {
     const files: Array<{ path: string; key: string; etag: string }> = [];
-    for (const folder of [
-      "functions",
-      "modules",
-      "rules",
-      "queries",
-      "mutations",
-      "routes",
-    ]) {
+    for (const folder of ["modules", "queries", "mutations", "routes"]) {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
       do {
@@ -199,23 +187,12 @@ export class FunctionRevisions {
             `Missing import ${dependency} in ${filename}.`,
           );
       }
-    const readOnly: Record<string, string[]> = Object.create(null);
-    const visitors: Record<string, string[]> = Object.create(null);
-    for (const [filename, source] of Object.entries(sources))
-      if (filename.startsWith("functions/")) {
-        const reads = declaredExports(source, filename, "readOnly");
-        if (reads.length) readOnly[filename] = reads;
-        const open = declaredExports(source, filename, "visitors");
-        if (open.length) visitors[filename] = open;
-      }
     if (JSON.stringify(files) !== JSON.stringify(await this.files()))
       throw conflict();
     const manifest: Manifest = {
       version: 2,
       publication: randomUUID(),
       files: digests,
-      ...(Object.keys(readOnly).length ? { readOnly } : {}),
-      ...(Object.keys(visitors).length ? { visitors } : {}),
     };
     const body = JSON.stringify(manifest),
       revision = hash(body);
@@ -262,16 +239,6 @@ export class FunctionRevisions {
     for (const [filename, digest] of Object.entries(manifest.files))
       if (filePath(filename) !== filename || !/^[a-f0-9]{64}$/.test(digest))
         throw new DataError(503, "Invalid function manifest.");
-    for (const [filename, names] of [
-      ...Object.entries(manifest.readOnly ?? {}),
-      ...Object.entries(manifest.visitors ?? {}),
-    ])
-      if (
-        !Object.hasOwn(manifest.files, filename) ||
-        !Array.isArray(names) ||
-        names.some((name) => typeof name !== "string")
-      )
-        throw new DataError(503, "Invalid function manifest.");
     shared.manifests.set(revision, manifest);
     if (shared.manifests.size > 64)
       shared.manifests.delete(shared.manifests.keys().next().value!);
@@ -279,21 +246,13 @@ export class FunctionRevisions {
   }
   /**
    * The published file for `path` without its extension, such as
-   * `functions/shop`: `.js`, or `.mjs` when that is what the site has.
+   * `queries/shop`: `.js`, or `.mjs` when that is what the site has.
    */
   async entry(revision: string, path: string) {
     const manifest = await this.manifest(revision);
     return Object.hasOwn(manifest.files, `${path}.mjs`)
       ? `${path}.mjs`
       : `${path}.js`;
-  }
-  /** What `entry`'s module declares of its export `name`. */
-  async declarations(revision: string, entry: string, name: string) {
-    const manifest = await this.manifest(revision);
-    return {
-      readOnly: manifest.readOnly?.[entry]?.includes(name) ?? false,
-      visitors: manifest.visitors?.[entry]?.includes(name) ?? false,
-    };
   }
   /** A file of `revision`, from the shared cache or verified from the bucket. */
   private async source(revision: string, manifest: Manifest, filename: string) {

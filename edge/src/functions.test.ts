@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
-import { ruleEntry, rulePredicate } from "./rules";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
 import { newEngine } from "./engine";
 import {
   MAX_OPERATIONS,
+  MAX_PASSWORD_OPERATIONS,
   retired,
   runFunction,
   type Host,
@@ -22,49 +22,71 @@ const metered = new (
 const engine = () => newEngine(metered);
 
 let module: QuickJSWASMModule;
-let documents: Map<string, unknown>;
+let wallets: Map<string, number>;
 let operations: [string, unknown[]][];
+// Site SQL as the object answers it, for the few statements these tests
+// run: a wallet's balance, read and written, and a table that is always full.
 const host: Host = (operation, args) => {
   operations.push([operation, args]);
-  const key = `${args[0]}/${args[1]}`;
   switch (operation) {
     case "random":
       return 0.5;
-    case "get":
-      return documents.has(key)
-        ? { id: args[1], data: documents.get(key) }
-        : null;
-    case "set":
-      if (args[0] === "full")
+    case "rolesOf":
+      return { m1: ["staff"] };
+    case "passwordHash":
+      return `hash:${args[0]}`;
+    case "passwordVerify":
+      return args[1] === `hash:${args[0]}`;
+    case "sql": {
+      const [text, values, readonly] = args as [string, unknown[], boolean];
+      if (readonly && !/^SELECT/i.test(text))
+        throw new DataError(400, "A query's SQL only reads.");
+      if (/^SELECT balance FROM wallets/.test(text)) {
+        const balance = wallets.get(String(values[0]));
+        return {
+          rows: balance === undefined ? [] : [{ balance }],
+          changes: 0,
+        };
+      }
+      if (/^UPDATE wallets SET balance/.test(text)) {
+        wallets.set(String(values[1]), Number(values[0]));
+        return { rows: [], changes: 1 };
+      }
+      if (/^INSERT INTO full/.test(text))
         throw new DataError(
           409,
           "Site database quota exceeded.",
           "QUOTA_EXCEEDED",
         );
-      documents.set(key, args[2]);
-      return { id: args[1], data: args[2] };
-    case "add":
-      documents.set(`${args[0]}/new`, args[1]);
-      return { id: "new", data: args[1] };
-    case "list":
-      return { documents: [], nextCursor: null };
-    case "delete":
-      documents.delete(key);
-      return null;
+      return { rows: [], changes: 0 };
+    }
     default:
       throw new DataError(400, `ctx has no ${operation}.`);
   }
 };
-const run = (source: string, name: string, args: unknown = null) =>
+const run = (
+  source: string,
+  name: string,
+  args: unknown = null,
+  kind: Invocation["kind"] = "mutation",
+) =>
   runFunction(
     module,
-    { source, name, args, member: "m-1", now: 1_700_000_000_000 } as Invocation,
+    {
+      source,
+      name,
+      args,
+      member: "m-1",
+      now: 1_700_000_000_000,
+      kind,
+      readonly: kind !== "mutation",
+    },
     host,
   );
 
 beforeEach(async () => {
   module = await engine();
-  documents = new Map();
+  wallets = new Map();
   operations = [];
 });
 // Calls share an instance, so an ordinary call, failed or not, must leave it
@@ -74,7 +96,7 @@ afterEach(() => {
 });
 
 test("one instance serves many calls, each freed before the next", () => {
-  documents.set("wallets/m-1", { balance: 0 });
+  wallets.set("m-1", 0);
   // A megabyte a call, 100 MB in all: past the instance's 32 MiB unless freed.
   for (let n = 0; n < 100; n++)
     expect(
@@ -82,9 +104,9 @@ test("one instance serves many calls, each freed before the next", () => {
         `let calls = 0;
         export async function f(ctx) {
           const filler = "x".repeat(1 << 20);
-          const wallet = await ctx.get("wallets", ctx.member.id);
+          const { rows } = await ctx.sql\`SELECT balance FROM wallets WHERE id = \${ctx.member.id}\`;
           globalThis.leaked = filler;
-          return [++calls, wallet.data.balance, filler.length];
+          return [++calls, rows[0].balance, filler.length];
         }`,
         "f",
       ),
@@ -93,19 +115,22 @@ test("one instance serves many calls, each freed before the next", () => {
     run(`export function f(ctx) { ctx.fail("CONFLICT", "No."); }`, "f");
   } catch {}
   try {
-    run(`export async function f(ctx) { await ctx.set("full", "x", 1); }`, "f");
+    run(
+      `export async function f(ctx) { await ctx.sql("INSERT INTO full VALUES (1)"); }`,
+      "f",
+    );
   } catch {}
 });
 
 describe("calling", () => {
-  test("a function gets ctx and its arguments, and returns JSON", () => {
-    documents.set("wallets/m-1", { balance: 150 });
+  test("site code gets ctx and its arguments, and returns JSON", () => {
+    wallets.set("m-1", 150);
     const result = run(
       `export async function buy(ctx, { item, price }) {
-        const wallet = await ctx.get("wallets", ctx.member.id);
-        if (wallet.data.balance < price) return { ok: false };
-        await ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - price });
-        return { ok: true, item, at: ctx.now, roll: Math.random(), more: [ctx.random, ctx.password] };
+        const { rows: [wallet] } = await ctx.sql\`SELECT balance FROM wallets WHERE id = \${ctx.member.id}\`;
+        if (wallet.balance < price) return { ok: false };
+        await ctx.sql("UPDATE wallets SET balance = ? WHERE id = ?", [wallet.balance - price, ctx.member.id]);
+        return { ok: true, item, at: ctx.now, roll: Math.random(), more: [ctx.random, ctx.get, ctx.notify] };
       }`,
       "buy",
       { item: "sword", price: 100 },
@@ -115,11 +140,16 @@ describe("calling", () => {
       item: "sword",
       at: 1_700_000_000_000,
       roll: 0.5,
-      // Math.random is the host's; ctx keeps no second way to it, nor to
-      // password hashes (document secrets are ctx.secretMatches).
-      more: [null, null],
+      // Math.random is the host's; ctx keeps no second way to it, and no
+      // collection or message methods.
+      more: [null, null, null],
     });
-    expect(documents.get("wallets/m-1")).toEqual({ balance: 50 });
+    expect(wallets.get("m-1")).toBe(50);
+    // A tagged template binds its values as parameters.
+    expect(operations[0]).toEqual([
+      "sql",
+      ["SELECT balance FROM wallets WHERE id = ?", ["m-1"], false],
+    ]);
   });
 
   test("ctx.owner says the site's owner called", () => {
@@ -129,7 +159,15 @@ describe("calling", () => {
     expect(
       runFunction(
         module,
-        { source, name: "who", args: null, member: null, owner: true, now: 0 },
+        {
+          source,
+          name: "who",
+          args: null,
+          member: null,
+          owner: true,
+          now: 0,
+          kind: "mutation",
+        },
         host,
       ),
     ).toEqual([true, null]);
@@ -139,7 +177,16 @@ describe("calling", () => {
     const visit = (source: string) =>
       runFunction(
         module,
-        { source, name: "f", args: null, member: null, visitor: true, now: 0 },
+        {
+          source,
+          name: "f",
+          args: null,
+          member: null,
+          visitor: true,
+          now: 0,
+          kind: "query",
+          readonly: true,
+        },
         host,
       );
     expect(
@@ -150,13 +197,13 @@ describe("calling", () => {
     expect(run("export function f(ctx) { return ctx.visitor; }", "f")).toBe(
       false,
     );
-    // Uploads are deleted by their owner or member, never by a function.
+    // Uploads are deleted by their owner or member, never by site code.
     expect(visit("export function f(ctx) { return ctx.media ?? null; }")).toBe(
       null,
     );
   });
 
-  test("ctx.fail carries the function's details to the caller", () => {
+  test("ctx.fail carries the code's details to the caller", () => {
     const failure = (args: string) => {
       try {
         run(`export function f(ctx) { ctx.fail(${args}); }`, "f");
@@ -196,7 +243,7 @@ describe("calling", () => {
     expect(operations).toEqual([]);
   });
 
-  test("a function that throws is Naru's failure, not a message of the site's", () => {
+  test("code that throws is Naru's failure, not a message of the site's", () => {
     let thrown: unknown;
     try {
       run(
@@ -210,23 +257,17 @@ describe("calling", () => {
     expect((thrown as { site?: boolean }).site).toBeUndefined();
   });
 
-  test("a caught failure is terminal, including in read-only functions", () => {
+  test("a caught failure is terminal, including in queries", () => {
     expect(() =>
-      runFunction(
-        module,
-        {
-          source: `export async function reject(ctx) {
-        try { ctx.fail("ACCESS_DENIED", "No access."); } catch {}
-        try { await ctx.set("wallets", "x", 1); } catch {}
-        return { ok: true };
-      }`,
-          name: "reject",
-          args: null,
-          member: "m-1",
-          now: 0,
-          readonly: true,
-        },
-        host,
+      run(
+        `export async function reject(ctx) {
+          try { ctx.fail("ACCESS_DENIED", "No access."); } catch {}
+          try { await ctx.sql("SELECT 1"); } catch {}
+          return { ok: true };
+        }`,
+        "reject",
+        null,
+        "query",
       ),
     ).toThrow(expect.objectContaining({ status: 403, code: "ACCESS_DENIED" }));
     expect(operations).toEqual([]);
@@ -254,48 +295,6 @@ describe("calling", () => {
     },
   );
 
-  test("bulk read size and cumulative operations remain bounded", () => {
-    const invoke = (source: string) =>
-      runFunction(
-        module,
-        {
-          source,
-          name: "read",
-          args: null,
-          member: "m",
-          now: 0,
-          readonly: true,
-        },
-        () => [],
-      );
-    expect(
-      invoke(
-        `export function read(ctx) { return ctx.getMany("profiles", []); }`,
-      ),
-    ).toEqual([]);
-    // A getMany of 100 IDs is one operation, as a list of 100 is.
-    expect(
-      invoke(
-        `export async function read(ctx) { for (let i = 0; i < 100; i++) await ctx.getMany("profiles", Array(100).fill("a")); return null; }`,
-      ),
-    ).toBeNull();
-    expect(() =>
-      invoke(
-        `export async function read(ctx) { for (let i = 0; i < 101; i++) await ctx.getMany("profiles", ["a"]); }`,
-      ),
-    ).toThrow(/more than 100 database operations/);
-    expect(() =>
-      invoke(
-        `export async function read(ctx) { await ctx.getMany("profiles", Array(101).fill("a")); }`,
-      ),
-    ).toThrow(/at most 100 IDs/);
-    expect(() =>
-      invoke(
-        `export async function read(ctx) { await ctx.getMany("profiles", "a"); }`,
-      ),
-    ).toThrow(/at most 100 IDs/);
-  });
-
   test("undefined is null, and only own exports are functions", () => {
     expect(run("export function nothing() {}", "nothing")).toBeNull();
     for (const name of ["missing", "toString", "constructor", "__proto__"])
@@ -307,7 +306,7 @@ describe("calling", () => {
     );
   });
 
-  test("the function's own failures are a 400 that says why, and which retire the instance", async () => {
+  test("the code's own failures are a 400 that says why, and which retire the instance", async () => {
     // Each case says whether it leaves the instance in doubt, so retires it.
     const cases: [string, RegExp, boolean][] = [
       [
@@ -369,7 +368,11 @@ describe("calling", () => {
         true,
       ],
       ["export function f( {", /does not load/, false],
-      ["export function f() { return 'x'.repeat(70000); }", /64 KiB/, false],
+      [
+        "export function f() { return 'x'.repeat(1024 * 1024 + 1); }",
+        /1 MiB/,
+        false,
+      ],
     ];
     for (const [source, message, retires] of cases) {
       if (retired.has(module)) module = await engine();
@@ -399,11 +402,7 @@ describe("calling", () => {
   });
 
   test("a query or mutation's ctx holds who calls and sql, and nothing else", () => {
-    const call = (
-      source: string,
-      kind: "query" | "mutation",
-      readonly = false,
-    ) =>
+    const call = (source: string, kind: "query" | "mutation" | "route") =>
       runFunction(
         module,
         {
@@ -414,26 +413,23 @@ describe("calling", () => {
           visitor: true,
           now: 1_700_000_000_000,
           kind,
-          readonly,
-        } as Invocation,
+          readonly: kind !== "mutation",
+        },
         host,
       );
-    expect(
-      call(
-        "export function f(ctx) { return Object.keys(ctx); }",
-        "query",
-        true,
-      ),
-    ).toEqual([
-      "member",
-      "owner",
-      "visitor",
-      "now",
-      "fail",
-      "sql",
-      "rolesOf",
-      "passwords",
-    ]);
+    for (const kind of ["query", "route"] as const)
+      expect(
+        call("export function f(ctx) { return Object.keys(ctx); }", kind),
+      ).toEqual([
+        "member",
+        "owner",
+        "visitor",
+        "now",
+        "fail",
+        "sql",
+        "rolesOf",
+        "passwords",
+      ]);
     // A mutation may grant roles too.
     expect(
       call("export function f(ctx) { return Object.keys(ctx); }", "mutation"),
@@ -462,7 +458,7 @@ describe("calling", () => {
           kind: "query",
           readonly: true,
           roles: ["staff"],
-        } as Invocation,
+        },
         host,
       ),
     ).toEqual({ id: "m-1", roles: ["staff"] });
@@ -471,23 +467,60 @@ describe("calling", () => {
       call(
         "export function f() { return __call('setRoles', 'm-2', ['staff']); }",
         "query",
-        true,
       ),
     ).toThrow(/a query has no ctx.setRoles/);
-    // Nor through the host entry point the ctx methods use.
+    // Nor reach anything but site SQL, whatever it asks the host.
+    for (const operation of ["get", "add", "notify", "secretMatches"])
+      expect(() =>
+        call(
+          `export function f() { return __call('${operation}', 'posts', '1'); }`,
+          "mutation",
+        ),
+      ).toThrow(new RegExp(`a mutation has no ctx.${operation}`));
     expect(() =>
-      call(
-        "export function f() { return __call('get', 'posts', '1'); }",
-        "mutation",
-      ),
-    ).toThrow(/a mutation has no ctx.get/);
-    expect(() =>
-      call(
-        "export function f(ctx) { ctx.fail('NOT_FOUND', 'no'); }",
-        "query",
-        true,
-      ),
+      call("export function f(ctx) { ctx.fail('NOT_FOUND', 'no'); }", "query"),
     ).toThrow(expect.objectContaining({ status: 404, message: "no" }));
+  });
+
+  test("a query's SQL is read-only whatever its code asks", () => {
+    expect(() =>
+      run(
+        `export async function f(ctx) { await ctx.sql("UPDATE wallets SET balance = ? WHERE id = ?", [1, "m-1"]); }`,
+        "f",
+        null,
+        "query",
+      ),
+    ).toThrow(/only reads/);
+    expect(operations.at(-1)?.[1][2]).toBe(true);
+    expect(wallets.size).toBe(0);
+  });
+
+  test("passwords are hashed by mutations, checked by both, a few a call", () => {
+    expect(
+      run(
+        `export async function f(ctx) {
+          const hash = await ctx.passwords.hash("1234");
+          return [hash, await ctx.passwords.verify("1234", hash, "post-1"), await ctx.passwords.verify("0000", hash, "post-1")];
+        }`,
+        "f",
+      ),
+    ).toEqual(["hash:1234", true, false]);
+    expect(
+      run(
+        "export function f(ctx) { return typeof ctx.passwords.hash; }",
+        "f",
+        null,
+        "query",
+      ),
+    ).toBe("undefined");
+    expect(() =>
+      run(
+        `export async function f(ctx) { for (;;) await ctx.passwords.verify("1", "hash:2", "k"); }`,
+        "f",
+        null,
+        "query",
+      ),
+    ).toThrow(`more than ${MAX_PASSWORD_OPERATIONS} password operations`);
   });
 
   test("a call with no arguments gets undefined, so default parameters apply", () => {
@@ -502,7 +535,7 @@ describe("calling", () => {
     ).toEqual({ a: 1 });
   });
 
-  test("a function can catch its own stack overflow and carry on", () => {
+  test("code can catch its own stack overflow and carry on", () => {
     expect(
       run(
         `export function f() {
@@ -577,7 +610,7 @@ describe("the host", () => {
     expect(() =>
       run(
         `export async function f(ctx) {
-          try { await ctx.set("full", "x", 1); } catch {}
+          try { await ctx.sql("INSERT INTO full VALUES (1)"); } catch {}
           return "carried on";
         }`,
         "f",
@@ -594,66 +627,63 @@ describe("the host", () => {
       }
       return null;
     };
-    expect(failure(`ctx.set("c", "x", 1); return 1;`)).toBe(
-      "Function failed: it did not await ctx.set.",
+    expect(failure(`ctx.sql("SELECT 1"); return 1;`)).toBe(
+      "Function failed: it did not await ctx.sql.",
     );
-    expect(failure(`if (!ctx.get("c", "x")) return 1;`)).toBe(
-      "Function failed: it did not await ctx.get.",
+    expect(failure(`if (!ctx.rolesOf(["m1"])) return 1;`)).toBe(
+      "Function failed: it did not await ctx.rolesOf.",
     );
     // The host's own failure explains more than the missing await.
     expect(() =>
-      run(`export function f(ctx) { ctx.set("full", "x", 1); }`, "f"),
+      run(
+        `export function f(ctx) { ctx.sql("INSERT INTO full VALUES (1)"); }`,
+        "f",
+      ),
     ).toThrow(expect.objectContaining({ code: "QUOTA_EXCEEDED" }));
     // Awaiting, returning, chaining and Promise.all all count as use.
     for (const body of [
-      `await ctx.get("c", "x");`,
-      `return ctx.get("c", "x");`,
-      `return ctx.get("c", "x").then((doc) => doc);`,
-      `await ctx.get("c", "x").catch(() => null);`,
-      `await Promise.all([ctx.get("c", "x"), ctx.list("c")]);`,
-      `const [a] = await Promise.allSettled([ctx.get("c", "x")]); return a.status;`,
+      `await ctx.sql("SELECT 1");`,
+      `return ctx.sql("SELECT 1");`,
+      `return ctx.sql("SELECT 1").then((result) => result.rows);`,
+      `await ctx.sql("SELECT 1").catch(() => null);`,
+      `await Promise.all([ctx.sql("SELECT 1"), ctx.rolesOf(["m1"])]);`,
+      `const [a] = await Promise.allSettled([ctx.sql("SELECT 1")]); return a.status;`,
     ])
       expect(failure(body)).toBeNull();
     expect(
       run(
-        `export function f(ctx) { const p = ctx.get("c", "x"); return [p instanceof Promise, p.then(() => 1) instanceof Promise]; }`,
+        `export function f(ctx) { const p = ctx.sql("SELECT 1"); return [p instanceof Promise, p.then(() => 1) instanceof Promise]; }`,
         "f",
       ),
     ).toEqual([true, true]);
   });
 
-  test("operations, writes among them, are counted, since the interrupt checks cannot see them", () => {
+  test("operations are counted, since the interrupt checks cannot see them", () => {
     expect(() =>
       run(
-        `export async function f(ctx) { for (let i = 0; ; i++) await ctx.get("c", "x"); }`,
+        `export async function f(ctx) { for (let i = 0; ; i++) await ctx.sql("SELECT 1"); }`,
         "f",
       ),
     ).toThrow(`more than ${MAX_OPERATIONS} database operations`);
     expect(operations.length).toBe(MAX_OPERATIONS);
     operations = [];
-    expect(() =>
-      run(
-        `export async function f(ctx) { for (let i = 0; ; i++) await ctx.set("c", "x" + i, i); }`,
-        "f",
-      ),
-    ).toThrow(`more than ${MAX_OPERATIONS} database operations`);
-    expect(operations.length).toBe(MAX_OPERATIONS);
     // Within the limits, everything goes through.
     expect(
       run(
         `export async function f(ctx) {
-          for (let i = 0; i < ${MAX_OPERATIONS - 1}; i++) await ctx.set("c", "x" + i, i);
-          return (await ctx.list("c", { size: 1 })).documents.length;
+          for (let i = 0; i < ${MAX_OPERATIONS - 1}; i++)
+            await ctx.sql("UPDATE wallets SET balance = ? WHERE id = ?", [i, "m-1"]);
+          return (await ctx.sql\`SELECT balance FROM wallets WHERE id = \${"m-1"}\`).rows;
         }`,
         "f",
       ),
-    ).toBe(0);
+    ).toEqual([{ balance: MAX_OPERATIONS - 2 }]);
   });
 
   test("ctx is frozen, and nothing outlives a call", () => {
     expect(
       run(
-        `export function f(ctx) { "use strict"; try { ctx.get = null; } catch (e) { return e.name; } }`,
+        `export function f(ctx) { "use strict"; try { ctx.sql = null; } catch (e) { return e.name; } }`,
         "f",
       ),
     ).toBe("TypeError");
@@ -663,197 +693,16 @@ describe("the host", () => {
   });
 });
 
-test("read-only execution rejects every write even when caught", () => {
-  for (const operation of ["add", "set", "delete"]) {
-    expect(() =>
-      runFunction(
-        module,
-        {
-          source: `export async function read(ctx) { try { await ctx.${operation}("items", "one", {}); } catch {} return true; }`,
-          name: "read",
-          args: null,
-          member: "m-1",
-          now: 0,
-          readonly: true,
-        },
-        host,
-      ),
-    ).toThrow("read-only functions cannot write");
-  }
-  expect(operations).toEqual([]);
-  expect(documents.size).toBe(0);
-});
-test("read-only execution permits reads", () => {
-  documents.set("items/one", { value: 1 });
-  expect(
-    runFunction(
-      module,
-      {
-        source: 'export function read(ctx) { return ctx.get("items", "one"); }',
-        name: "read",
-        args: null,
-        member: "m-1",
-        now: 0,
-        readonly: true,
-      },
-      host,
-    ),
-  ).toEqual({ id: "one", data: { value: 1 } });
-});
-
-describe("community board rule example", () => {
-  const modules = {
-    "rules/community-board.js": readFileSync(
-      new URL("../../docs/examples/community-board-rules.js", import.meta.url),
-      "utf8",
-    ),
-  };
-  const invoke = (name: string, args: unknown, member: string | null = "m-1") =>
-    runFunction(
-      module,
-      {
-        ...ruleEntry("rules/community-board.js"),
-        modules,
-        name,
-        args,
-        member,
-        now: 1,
-        readonly: true,
-      },
-      host,
-    );
-  // The write hook answers true, or what canWrite gave instead.
-  const allowed = (args: unknown) => invoke("__naruWrite", args) === true;
-  const log = {
-    id: "log",
-    createdBy: "m-1",
-    data: {
-      owner: "m-1",
-      board: "default",
-      secret: true,
-      title: "Secret",
-      category: "",
-      text: "body",
-      image: "https://example.com/a.png",
-    },
-  };
-  test("board read/list levels produce restrictive SQL and anonymous access is denied", () => {
-    documents.set("neo_avocado_boards/default", { listLevel: 3, readLevel: 2 });
-    expect(
-      invoke("__naruReadable", {
-        collection: "neo_avocado_logs",
-        operation: "list",
-        filter: { board: "default" },
-      }),
-    ).toBe(false);
-    expect(
-      invoke(
-        "__naruReadable",
-        { collection: "neo_avocado_logs", operation: "list", filter: {} },
-        null,
-      ),
-    ).toBe(false);
-    documents.set("neo_avocado_boards/default", { listLevel: 2, readLevel: 2 });
-    const predicate = invoke("__naruReadable", {
-      collection: "neo_avocado_logs",
-      operation: "list",
-      filter: { board: "default" },
-    });
-    expect(rulePredicate(predicate).bindings).toContain("m-1");
-  });
-  test("write ownership, required secrets, board changes and direct cascade deletion are checked", () => {
-    documents.set("neo_avocado_boards/default", {
-      writeLevel: 2,
-      secret: "required",
-      kind: "image",
-    });
-    const write = (before: unknown, after: unknown, operation = "update") =>
-      allowed({
-        collection: "neo_avocado_logs",
-        before,
-        after,
-        operation,
-      });
-    expect(write(null, log, "create")).toBe(true);
-    expect(write(log, { ...log, data: { ...log.data, owner: "other" } })).toBe(
-      false,
-    );
-    expect(write(log, { ...log, data: { ...log.data, board: "other" } })).toBe(
-      false,
-    );
-    expect(write(log, { ...log, data: { ...log.data, secret: false } })).toBe(
-      false,
-    );
-    expect(write(log, null, "delete")).toBe(false);
-    expect(write({ ...log, createdBy: "other" }, log)).toBe(false);
-    documents.set("neo_avocado_members/m-1", { role: "moderator", level: 10 });
-    const other = {
-      ...log,
-      createdBy: "other",
-      data: { ...log.data, owner: "other" },
-    };
-    expect(write(other, other)).toBe(true);
-  });
-  test("comments require readable parents, enforce comment levels and reject parent forgery", () => {
-    documents.set("neo_avocado_logs/log", { ...log.data, owner: "other" });
-    const args = {
-      collection: "neo_avocado_comments",
-      operation: "list",
-      filter: { logId: "log" },
-    };
-    expect(invoke("__naruReadable", args)).toBe(false);
-    documents.set("neo_avocado_logs/log", log.data);
-    expect(invoke("__naruReadable", args)).toEqual({ eq: ["logId", "log"] });
-    const comment = {
-      id: "comment",
-      createdBy: "m-1",
-      data: { owner: "m-1", logId: "log", text: "hi", dice: false },
-    };
-    documents.set("neo_avocado_boards/default", {
-      readLevel: 2,
-      commentLevel: 3,
-    });
-    expect(
-      allowed({
-        collection: "neo_avocado_comments",
-        operation: "create",
-        before: null,
-        after: comment,
-      }),
-    ).toBe(false);
-    documents.set("neo_avocado_boards/default", {
-      readLevel: 2,
-      commentLevel: 2,
-    });
-    expect(
-      allowed({
-        collection: "neo_avocado_comments",
-        operation: "create",
-        before: null,
-        after: comment,
-      }),
-    ).toBe(true);
-    expect(
-      allowed({
-        collection: "neo_avocado_comments",
-        operation: "update",
-        before: comment,
-        after: { ...comment, data: { ...comment.data, logId: "other" } },
-      }),
-    ).toBe(false);
-  });
-});
-
 test("preloaded imports execute through the same ctx and read-only guard", () => {
-  const filename = "functions/shop.js";
+  const filename = "mutations/shop.js";
   const source =
     'import { act } from "../modules/wallet.js"; export function buy(ctx) { return act(ctx); }';
   const modules = {
     [filename]: source,
     "modules/wallet.js":
-      'export async function act(ctx) { try { await ctx.set("wallets", "one", 10); } catch {} return 1; }',
+      'export async function act(ctx) { await ctx.sql("UPDATE wallets SET balance = ? WHERE id = ?", [10, "one"]); return 1; }',
   };
-  expect(() =>
+  const invoke = (kind: "query" | "mutation") =>
     runFunction(
       module,
       {
@@ -864,32 +713,19 @@ test("preloaded imports execute through the same ctx and read-only guard", () =>
         args: null,
         member: "m-1",
         now: 0,
-        readonly: true,
+        kind,
+        readonly: kind === "query",
       },
       host,
-    ),
-  ).toThrow("read-only functions cannot write");
-  expect(documents.size).toBe(0);
-  expect(
-    runFunction(
-      module,
-      {
-        source,
-        filename,
-        modules,
-        name: "buy",
-        args: null,
-        member: "m-1",
-        now: 0,
-      },
-      host,
-    ),
-  ).toBe(1);
-  expect(documents.get("wallets/one")).toBe(10);
+    );
+  expect(() => invoke("query")).toThrow(/only reads/);
+  expect(wallets.size).toBe(0);
+  expect(invoke("mutation")).toBe(1);
+  expect(wallets.get("one")).toBe(10);
 });
 
 test("native cycles and re-exports retain live bindings, fresh for each call", () => {
-  const filename = "functions/cycle.js";
+  const filename = "queries/cycle.js";
   const source = 'export { read } from "../modules/a.js";';
   const modules = {
     [filename]: source,
@@ -909,6 +745,8 @@ test("native cycles and re-exports retain live bindings, fresh for each call", (
         args: null,
         member: null,
         now: 0,
+        kind: "query",
+        readonly: true,
       },
       host,
     );

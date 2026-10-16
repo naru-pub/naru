@@ -186,36 +186,8 @@ describe("filters", () => {
   });
 });
 
-describe("array membership", () => {
-  test("has matches an array holding the value, by JSON type", () => {
-    const insert = db.prepare(
-      "INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
-    );
-    insert.run(COLLECTION, "tags", '{"t":["봄","꽃",1,true,null]}', BASE, BASE);
-    insert.run(COLLECTION, "text", '{"t":"봄"}', BASE, BASE);
-    insert.run(COLLECTION, "map", '{"t":{"a":"봄"}}', BASE, BASE);
-    insert.run(COLLECTION, "numbers", '{"t":["1",2]}', BASE, BASE);
-    const has = (value: unknown) => readAll({ where: { has: ["t", value] } });
-    expect(has("봄")).toEqual(["tags"]);
-    expect(has(1)).toEqual(["tags"]);
-    expect(has("1")).toEqual(["numbers"]);
-    expect(has(true)).toEqual(["tags"]);
-    expect(has(false)).toEqual([]);
-    expect(has(null)).toEqual(["tags"]);
-    expect(
-      readAll({ where: { any: [{ has: ["t", 2] }, { eq: ["v", "apple"] }] } }),
-    ).toEqual(["lower", "numbers"]);
-    expect(() =>
-      listQuery(COLLECTION, { where: { has: [{ metadata: "id" }, "x"] } }),
-    ).toThrow(/metadata/);
-    expect(() =>
-      listQuery(COLLECTION, { where: { has: ["t", ["a"]] } }),
-    ).toThrow();
-  });
-});
-
 describe("declared indexes", () => {
-  test("serve a filter or where on the field, newest first, without a scan", () => {
+  test("serve a filter on the field, newest first, without a scan", () => {
     const insert = db.prepare(
       "INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     );
@@ -242,18 +214,7 @@ describe("declared indexes", () => {
     const { index } = fieldIndex(COLLECTION, "board");
     for (const input of [
       { filter: { board: "b3" }, sort: newest, size: 5 },
-      { where: { eq: ["board", "b3"] as const }, sort: newest, size: 5 },
-      // A rule's condition beside the reader's own.
-      {
-        where: {
-          all: [
-            { eq: ["board", "b3"] as const },
-            { ne: ["secret", true] as const },
-          ],
-        },
-        sort: newest,
-        size: 5,
-      },
+      { filter: { board: "b3", n: { gt: 1 } }, sort: newest, size: 5 },
     ]) {
       expect(plan(input)).toContain(`USING INDEX ${index}`);
       expect(plan(input)).not.toContain("TEMP B-TREE");
@@ -262,37 +223,6 @@ describe("declared indexes", () => {
     expect(readAll({ filter: { board: "b3" }, sort: newest, size: 3 })).toEqual(
       ["p48", "p43", "p38", "p33", "p28", "p23", "p18", "p13", "p8", "p3"],
     );
-  });
-});
-
-describe("text search", () => {
-  test("contains finds text within a string field, A–Z in either case", () => {
-    const insert = db.prepare(
-      "INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
-    );
-    insert.run(COLLECTION, "post", '{"q":"오늘의 Avocado 로그"}', BASE, BASE);
-    insert.run(COLLECTION, "list", '{"q":["avocado"]}', BASE, BASE);
-    insert.run(COLLECTION, "wild", '{"q":"100%_done"}', BASE, BASE);
-    const contains = (text: unknown) =>
-      readAll({ where: { contains: ["q", text] } });
-    expect(contains("avocado")).toEqual(["post"]);
-    expect(contains("AVOCADO")).toEqual(["post"]);
-    expect(contains("의 Av")).toEqual(["post"]);
-    expect(contains("%")).toEqual(["wild"]);
-    expect(contains("_")).toEqual(["wild"]);
-    expect(contains("없는 말")).toEqual([]);
-    expect(
-      readAll({
-        where: { any: [{ contains: ["q", "done"] }, { eq: ["v", "apple"] }] },
-      }),
-    ).toEqual(["lower", "wild"]);
-    for (const bad of ["", "x".repeat(101), 1, null])
-      expect(() =>
-        listQuery(COLLECTION, { where: { contains: ["q", bad] } }),
-      ).toThrow(/contains/);
-    expect(() =>
-      listQuery(COLLECTION, { where: { contains: [{ metadata: "id" }, "x"] } }),
-    ).toThrow(/metadata/);
   });
 });
 

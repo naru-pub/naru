@@ -12,12 +12,6 @@ export type Access = {
   allowedIds: string[] | null;
   /** No credential at all: a visitor. Only such reads may be cached. */
   anonymous: boolean;
-  /**
-   * A signed-in member of the site, by their member ID: what `member`
-   * collections admit, and what the documents they write record as their
-   * author. Absent for everyone else.
-   */
-  member?: string | null;
 };
 
 export type ExecuteInput = {
@@ -28,13 +22,10 @@ export type ExecuteInput = {
   method: string;
   body?: Record<string, unknown>;
   filter?: unknown;
-  /** A predicate, as a rule's readable returns (rules.ts), ANDed with filter. */
-  where?: unknown;
   size?: number;
   sort?: string;
   after?: string;
   includeTotal?: boolean;
-  ids?: string;
   ifVersion?: unknown;
   clientIp?: string;
 };
@@ -42,7 +33,7 @@ export type ExecuteInput = {
 /** What a list read takes beyond the collection it reads. */
 export type ListInput = Pick<
   ExecuteInput,
-  "filter" | "where" | "size" | "sort" | "after" | "includeTotal"
+  "filter" | "size" | "sort" | "after" | "includeTotal"
 >;
 
 export type Collection = {
@@ -50,7 +41,6 @@ export type Collection = {
   name: string;
   read_access: string;
   write_access: string;
-  rules?: string;
   unique?: string[];
 };
 
@@ -63,7 +53,7 @@ export type StoredDocument = {
   version: number;
   created_at: number;
   updated_at: number;
-  /** The member who created it; null for the owner's and visitors'. */
+  /** The member who created it, when members wrote collections; else null. */
   created_by: string | null;
 };
 
@@ -101,7 +91,6 @@ export type Snapshot = {
   ownerId: string | null;
   collections: Collection[];
   documents: StoredDocument[];
-  rules?: Record<string, string>;
   /** Each collection's unique fields, by collection ID. */
   unique?: Record<string, string[]>;
   indexes?: Record<string, string[]>;

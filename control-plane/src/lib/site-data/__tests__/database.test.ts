@@ -772,7 +772,7 @@ integration("answering visitors at the edge", () => {
     });
     expect(read.status).toBe(299);
     const call = await fetch(
-      `${worker}/api/data/v1/moved-away/_call/site:frame`,
+      `${worker}/api/data/v1/moved-away/_mutate/site:frame`,
       {
         method: "POST",
         headers: {
@@ -785,7 +785,7 @@ integration("answering visitors at the edge", () => {
     expect(call.status).toBe(299);
     expect(passed.map(({ method, url }) => [method, url])).toEqual([
       ["GET", "/api/data/v1/moved-away/posts/one"],
-      ["POST", "/api/data/v1/moved-away/_call/site:frame"],
+      ["POST", "/api/data/v1/moved-away/_mutate/site:frame"],
     ]);
     expect(passed[1].body).toBe('{"args":null}');
     passed.length = 0;

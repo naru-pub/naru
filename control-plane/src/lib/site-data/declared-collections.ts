@@ -17,20 +17,20 @@ import {
 import { DataError, unreservedName } from "./validation";
 
 // A site declares the collections it needs in _naru/collections.json, beside
-// the functions and rules that use them, and Naru installs them as the files
-// arrive (cache-purge.ts): a template applied, a GitHub deploy, a save in the
+// the pages that use them, and Naru installs them as the files arrive
+// (cache-purge.ts): a template applied, a GitHub deploy, a save in the
 // editor. Missing collections are created at once, since the owner put the
 // files on their own site. A declaration that would change an existing
-// collection (its access, rules or unique fields) waits for the owner on
-// /database, so nothing is widened without being seen.
+// collection (its access or unique fields) waits for the owner on /database,
+// so nothing is widened without being seen.
 //
 //   { "collections": {
 //       "guestbook": { "read": "world", "write": "create" },
 //       "settings": { "read": "admin", "write": "admin" } } }
 //
-// Each collection takes read, write, rules, unique and indexes as a sign-in's settings
-// do. read and write are required, so the file says who can reach every
-// collection; rules and unique are optional (none when left out).
+// Each collection takes read, write, unique and indexes. read and write are
+// required, so the file says who can reach every collection; unique and
+// indexes are optional (none when left out).
 
 export const DECLARATION_PATH = "_naru/collections.json";
 const MAX_BYTES = 64 * 1024;
@@ -130,7 +130,6 @@ const setup = (name: string, wanted: CollectionRequest): CollectionSetup => ({
   name,
   read_access: wanted.read,
   write_access: wanted.write,
-  ...(wanted.rules !== undefined ? { rules: wanted.rules } : {}),
   ...(wanted.unique !== undefined ? { unique: wanted.unique } : {}),
   ...(wanted.indexes !== undefined ? { indexes: wanted.indexes } : {}),
 });

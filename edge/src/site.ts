@@ -17,10 +17,6 @@ import {
   writePermission,
 } from "../../control-plane/src/lib/site-data/validation";
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
-import {
-  decodeRevision,
-  publicResult,
-} from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
 import {
   bindings,
@@ -75,24 +71,7 @@ const fromDump = (value: DumpRow[string] | undefined): SqlValue =>
   value && typeof value === "object"
     ? new Uint8Array(Buffer.from(value.$base64, "base64")).buffer
     : (value ?? null);
-import {
-  authorQueries,
-  presented,
-  queriedFields,
-  ruleEntry,
-  rulePredicate,
-} from "./rules";
-
-/** What each rule hook is in the owner's file, for errors. */
-const HOOKS: Record<string, string> = {
-  __naruReadable: "readable()",
-  __naruWrite: "canWrite()",
-  __naruView: "queryable",
-  __naruPresent: "present()",
-};
 import { hashPassword, verifyPassword } from "./passwords";
-import type { ModuleSources } from "./modules";
-import type { QuickJSWASMModule } from "quickjs-emscripten-core";
 import { quickjs } from "./quickjs";
 import {
   documentOf,
@@ -164,17 +143,10 @@ const nextMonth = (now: Date) =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 const rateLimited = () =>
   new DataError(429, "Public write rate limit reached. Try again next minute.");
-/** Writes a member may make a minute, across the site's collections. */
-const MEMBER_WRITES_PER_MINUTE = 30;
-/** Function calls a member may make a minute. */
+/** Mutations a member may make a minute. */
 const MEMBER_CALLS_PER_MINUTE = 30;
-const MEMBER_READS_PER_MINUTE = 120;
-/**
- * Calls of exports a module opens to visitors, a minute: per address, and for
- * the whole site. A visitor's read-only call counts against the reads.
- */
+/** Mutations visitors may make a minute: per address, and for the whole site. */
 const VISITOR_CALLS = { address: 20, site: 300 };
-const VISITOR_READS = { address: 60, site: 900 };
 /**
  * Rows SQLite may read a minute for a site's members and visitors: about 5 s
  * of the one thread every site shares, so a site whose queries scan (contains
@@ -192,13 +164,8 @@ const busy = () =>
 const READS_PER_MINUTE = 600;
 /** Live connections one site's object holds at once. */
 const MAX_LIVE_CONNECTIONS = 1000;
-/** A message a function sends, as JSON. */
-const MAX_MESSAGE_BYTES = 4 * 1024;
-/** Wrong write secrets one document accepts an hour (checkSecret). */
-const SECRET_FAILURES_PER_HOUR = 10;
-type Message =
-  | { to: "member"; member: string; data: unknown }
-  | { to: "topic"; topic: string; data: unknown };
+/** Wrong passwords one key accepts an hour (checkPassword). */
+const PASSWORD_FAILURES_PER_HOUR = 10;
 
 const unpublished = () =>
   new DataError(503, "Site functions have not been published.", "UNAVAILABLE");
@@ -277,8 +244,8 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * A live connection the edge Worker admitted (website.ts): a visitor's, or
-   * a member's whose ticket it checked, listening to up to eight topics. It
-   * hibernates between messages, so an idle one costs nothing.
+   * a member's whose ticket it checked, for its live queries. It hibernates
+   * between messages, so an idle one costs nothing.
    */
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
@@ -300,9 +267,6 @@ export class SiteData extends DurableObject<Env> {
     if (!spent.ok)
       return new Response(spent.error.message, { status: spent.error.status });
     const member = request.headers.get("X-Naru-Member") || null;
-    const topics = (request.headers.get("X-Naru-Topics") ?? "")
-      .split(",")
-      .filter(Boolean);
     const pair = new WebSocketPair();
     const socket: LiveSocket = {
       id: randomUUID(),
@@ -314,7 +278,6 @@ export class SiteData extends DurableObject<Env> {
       "live",
       `socket:${socket.id}`,
       ...(member ? [`member:${member}`] : []),
-      ...topics.map((topic) => `topic:${topic}`),
     ]);
     pair[1].serializeAttachment(socket);
     return new Response(null, { status: 101, webSocket: pair[0] });
@@ -553,27 +516,6 @@ export class SiteData extends DurableObject<Env> {
     }
   }
 
-  /** Sends what a call's function sent, once the call has committed. */
-  private deliver(messages: Message[]) {
-    for (const message of messages) {
-      const tag =
-        message.to === "member"
-          ? `member:${message.member}`
-          : `topic:${message.topic}`;
-      const text = JSON.stringify(
-        message.to === "member"
-          ? { type: "notice", data: message.data }
-          : { type: "topic", topic: message.topic, data: message.data },
-      );
-      for (const socket of this.ctx.getWebSockets(tag))
-        try {
-          socket.send(text);
-        } catch {
-          /* closing already */
-        }
-    }
-  }
-
   /** Closes a member's live connections, as their access ends. */
   async disconnect(input: { member: string }) {
     for (const socket of this.ctx.getWebSockets(`member:${name(input.member)}`))
@@ -592,8 +534,9 @@ export class SiteData extends DurableObject<Env> {
       )
     )
       this.sql.exec("ALTER TABLE documents ADD COLUMN created_by TEXT");
-    // A document's write secret (1.1.0), hashed; never read back out. Only
-    // site functions set and check it.
+    // A document's write secret, from an early 1.1.0 that has since gone:
+    // nothing reads or writes it now. Kept, so every object's documents have
+    // the same columns (dumps, standby fingerprints).
     if (
       !this.rows("PRAGMA table_info(documents)").some(
         (column) => column.name === "secret_hash",
@@ -695,14 +638,12 @@ export class SiteData extends DurableObject<Env> {
   }
 
   private collection(id: string, row: Row) {
-    const rules = this.meta(`rules:${id}`);
     const unique = this.uniqueFields(id);
     const indexes = this.indexFields(id);
     return {
       id,
       user_id: this.meta("owner_id"),
       ...row,
-      ...(rules ? { rules } : {}),
       ...(unique.length ? { unique } : {}),
       ...(indexes.length ? { indexes } : {}),
     };
@@ -847,34 +788,29 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * Wrong write secrets a document allows an hour, counted in memory: a
-   * failed write rolls its transaction back, so a stored count would be
-   * undone by the very guess it counts. A four-digit PIN then takes about
-   * a thousand hours to guess, however many calls the guesses are spread
-   * over (ctx.secretMatches checks three a call).
+   * Wrong passwords a key (ctx.passwords.verify's: the post a password
+   * opens, say) allows an hour, counted in memory: a failed call rolls its
+   * transaction back, so a stored count would be undone by the very guess it
+   * counts. A four-digit PIN then takes about a thousand hours to guess,
+   * however many calls the guesses are spread over (a call checks three).
    */
-  private secretFailures = new Map<string, { hour: number; count: number }>();
-  private checkSecret(
-    collectionId: string,
-    id: string,
-    secret: string,
-    hash: string,
-  ) {
+  private passwordFailures = new Map<string, { hour: number; count: number }>();
+  private checkPassword(key: string, password: string, hash: string) {
     const hour = Math.floor(Date.now() / 3600000);
-    if (this.secretFailures.size > 10000)
-      for (const [key, entry] of this.secretFailures)
-        if (entry.hour !== hour) this.secretFailures.delete(key);
-    const key = `${collectionId}/${id}`;
-    const entry = this.secretFailures.get(key);
+    if (this.passwordFailures.size > 10000)
+      for (const [key, entry] of this.passwordFailures)
+        if (entry.hour !== hour) this.passwordFailures.delete(key);
+    const entry = this.passwordFailures.get(key);
     const failures = entry?.hour === hour ? entry.count : 0;
-    if (failures >= SECRET_FAILURES_PER_HOUR)
+    if (failures >= PASSWORD_FAILURES_PER_HOUR)
       throw new DataError(
         429,
-        "Too many wrong secrets for this document. Try again later.",
+        "Too many wrong passwords for this. Try again later.",
         "RATE_LIMITED",
       );
-    const matches = verifyPassword(secret, hash) === true;
-    if (!matches) this.secretFailures.set(key, { hour, count: failures + 1 });
+    const matches = verifyPassword(password, hash) === true;
+    if (!matches)
+      this.passwordFailures.set(key, { hour, count: failures + 1 });
     return matches;
   }
 
@@ -902,32 +838,19 @@ export class SiteData extends DurableObject<Env> {
     }
   }
 
-  /**
-   * A member's writes, or function calls, a minute, in fixed-minute buckets
-   * like visitors'.
-   */
-  private limitMember(
-    member: string,
-    kind: "write" | "call" | "read" = "write",
-  ) {
+  /** A member's mutations a minute, in fixed-minute buckets like visitors'. */
+  private limitMember(member: string) {
     const window = Math.floor(Date.now() / 60000) * 60000;
     this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
-    const key = kind === "write" ? `member:${member}` : `${kind}:${member}`;
+    const key = `call:${member}`;
     const count = Number(
       this.rows("SELECT count FROM rate_limits WHERE key = ?", key)[0]?.count ??
         0,
     );
-    if (
-      count >=
-      (kind === "write"
-        ? MEMBER_WRITES_PER_MINUTE
-        : kind === "read"
-          ? MEMBER_READS_PER_MINUTE
-          : MEMBER_CALLS_PER_MINUTE)
-    )
+    if (count >= MEMBER_CALLS_PER_MINUTE)
       throw new DataError(
         429,
-        `Member ${kind} rate limit reached. Try again next minute.`,
+        "Member call rate limit reached. Try again next minute.",
       );
     this.sql.exec(
       "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
@@ -952,21 +875,20 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * `author` is the member writing, recorded only when the write creates the
-   * document: a replacement keeps who created it, as it keeps when.
+   * Writes a document. Its author (`created_by`) is no one's now: members
+   * once wrote documents, and those keep theirs.
    */
   private upsert(
     collectionId: string,
     id: string,
     encoded: string,
     size: number,
-    author: string | null,
   ) {
     this.trackMedia(collectionId, id, encoded);
     const now = Date.now();
     this.sql.exec(
-      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (collection_id, id) DO UPDATE SET data = excluded.data,
          size_bytes = excluded.size_bytes, updated_at = excluded.updated_at,
          version = documents.version + 1`,
@@ -976,7 +898,6 @@ export class SiteData extends DurableObject<Env> {
       size,
       now,
       now,
-      author,
     );
   }
 
@@ -1055,36 +976,21 @@ export class SiteData extends DurableObject<Env> {
    * control panel, a signed-in website, or a visitor the edge sent on.
    */
   async execute(input: ExecuteInput) {
-    // Members are counted like visitors: the budget is what the site's
-    // community may use, and only its owner is free of it.
-    const counted = Boolean(input.access.anonymous || input.access.member);
+    // Only the site's owner is free of the budget.
+    const counted = input.access.anonymous;
     if (counted) {
       const spent = this.run(() => {
         this.admitWork();
-        if (input.method === "GET")
-          this.limitReader(
-            input.access.member
-              ? `member:${input.access.member}`
-              : callerKey(input.clientIp),
-          );
-        this.spend(
-          `${input.access.member ? "member" : "visitor"}_${input.method === "GET" ? "read" : "write"}`,
-        );
+        if (input.method === "GET") this.limitReader(callerKey(input.clientIp));
+        this.spend(input.method === "GET" ? "visitor_read" : "visitor_write");
       });
       if (!spent.ok) return spent;
     }
-    try {
-      const rules = await this.prepareRules(input);
-      return this.run(() =>
-        counted
-          ? this.metered(() => this.executeSync(input, rules))
-          : this.executeSync(input, rules),
-      );
-    } catch (error) {
-      return this.run(() => {
-        throw error;
-      });
-    }
+    return this.run(() =>
+      counted
+        ? this.metered(() => this.executeSync(input))
+        : this.executeSync(input),
+    );
   }
 
   /**
@@ -1118,21 +1024,11 @@ export class SiteData extends DurableObject<Env> {
       ownerId,
       access: { admin: false, allowedIds: null, anonymous: true },
     };
-    try {
-      const rules = await this.prepareRules(command);
-      return this.run(() => {
-        if (input.path.length > 2) throw new DataError(404, "Not found.");
-        input.path.forEach(name);
-        return this.metered(() => this.executeSync(command, rules));
-      });
-    } catch (error) {
-      // Rules with no revision yet: the control plane publishes one.
-      if (error instanceof DataError && error.message === unpublished().message)
-        return { ok: true, value: { pass: true } };
-      return this.run(() => {
-        throw error;
-      });
-    }
+    return this.run(() => {
+      if (input.path.length > 2) throw new DataError(404, "Not found.");
+      input.path.forEach(name);
+      return this.metered(() => this.executeSync(command));
+    });
   }
 
   /** Sets what `serve` relies on (see EdgeConfiguration); reports usage. */
@@ -1158,18 +1054,9 @@ export class SiteData extends DurableObject<Env> {
     });
   }
 
-  private executeSync(
-    input: ExecuteInput,
-    rules?: {
-      file: string;
-      entry: string;
-      sources: ModuleSources;
-      module: QuickJSWASMModule;
-    },
-  ) {
+  private executeSync(input: ExecuteInput) {
     const { path, method, access } = input;
     const body = input.body ?? {};
-    const reading = method === "GET";
     this.claim(input.ownerId);
     const { admin, allowedIds } = access;
     let publicRead = false;
@@ -1267,12 +1154,6 @@ export class SiteData extends DurableObject<Env> {
         this.setUnique(collection, body.unique);
       if (Object.hasOwn(body, "indexes"))
         this.setIndexes(collection, body.indexes);
-      if (Object.hasOwn(body, "rules")) {
-        this.setMeta(
-          `rules:${collection.id}`,
-          body.rules === null ? null : name(body.rules),
-        );
-      }
       const updated = {
         name: collection.name,
         read_access: permission(body.read),
@@ -1289,196 +1170,15 @@ export class SiteData extends DurableObject<Env> {
         publicRead,
       };
     }
-    const member = access.member ?? null;
-    const ruleFile = this.meta(`rules:${collection.id}`);
-    if (!admin && ruleFile && rules?.file !== ruleFile)
-      throw new DataError(503, "Collection rules changed; retry the request.");
-    const ruleHost = this.functionHost();
-    const ruleName = `_naru/rules/${ruleFile}.js`;
-    const invokeRule = (hook: string, args: unknown) => {
-      if (!rules) throw new DataError(503, "Collection rules are unavailable.");
-      const loaded = rules;
-      const entry = ruleEntry(loaded.entry);
-      try {
-        return runRule();
-      } catch (error) {
-        // A rule's own mistake names the rule: "Function failed" alone
-        // leaves the owner guessing which file and which hook.
-        if (
-          error instanceof DataError &&
-          !error.site &&
-          error.status === 400 &&
-          error.message.startsWith("Function failed: ")
-        )
-          throw new DataError(
-            400,
-            `Collection rule ${ruleName} failed in ${HOOKS[hook]} for ${collection.name}: ${error.message.slice("Function failed: ".length)}`,
-          );
-        throw error;
-      }
-      function runRule() {
-        return runFunction(
-          loaded.module,
-          {
-            ...entry,
-            modules: loaded.sources,
-            name: hook,
-            args,
-            member: access.member ?? null,
-            // Rules never run for the owner: anyone else unsigned is a visitor.
-            visitor: !access.member,
-            now: Date.now(),
-            readonly: true,
-            // A page of trimmed documents can be as large as the page itself.
-            ...(hook === "__naruPresent"
-              ? { maxResultBytes: 101 * 64 * 1024 }
-              : {}),
-          },
-          ruleHost,
-        );
-      }
-    };
-    // A rule that exports `present` trims what non-owners read, and allows
-    // queries only on its `queryable` fields, so hidden values cannot be
-    // probed by filtering on them.
-    let view: string[] | null | undefined;
-    const ruleView = () => {
-      if (view === undefined)
-        view =
-          !admin && ruleFile
-            ? (invokeRule("__naruView", {}) as string[] | null)
-            : null;
-      return view;
-    };
-    // createdBy too: a rule that hides who wrote a post (an anonymous one,
-    // say) could not otherwise, so a reader sees only their own authorship.
-    const present = <
-      T extends { id: string; data: unknown; createdBy: string | null } | null,
-    >(
-      documents: T[],
-    ): T[] => {
-      if (!ruleView()) return documents;
-      const shown = documents.filter((document) => document !== null);
-      if (!shown.length) return documents;
-      const data = invokeRule("__naruPresent", {
-        collection: collection.name,
-        documents: shown,
-      }) as unknown[];
-      const byId = new Map(
-        shown.map((document, index) => [document!.id, presented(data[index])]),
-      );
-      return documents.map((document) =>
-        document === null
-          ? document
-          : {
-              ...document,
-              data: byId.get(document.id),
-              createdBy:
-                member && document.createdBy === member ? member : null,
-            },
-      );
-    };
-    // A batch read's IDs, as asked: readable() sees them, as a get its id.
-    let requested: string[] | undefined;
-    if (reading && input.ids !== undefined) {
-      if (path.length !== 1)
-        throw new DataError(400, "Batch reads target a collection.");
-      let values: unknown;
-      try {
-        values = JSON.parse(input.ids);
-      } catch {
-        throw new DataError(400, "Invalid IDs.");
-      }
-      if (!Array.isArray(values) || values.length > 100)
-        throw new DataError(400, "Batch reads need at most 100 IDs.");
-      requested = values.map(name);
-    }
-    const authorization =
-      reading && !admin && ruleFile
-        ? rulePredicate(
-            invokeRule("__naruReadable", {
-              collection: collection.name,
-              operation: requested
-                ? "getMany"
-                : path.length === 2
-                  ? "get"
-                  : "list",
-              id: path[1] ?? null,
-              ...(requested ? { ids: [...new Set(requested)] } : {}),
-              filter: input.filter ?? {},
-              where: input.where ?? null,
-            }),
-            `Collection rule ${ruleName} readable() for ${collection.name} returned an invalid predicate`,
-          )
-        : undefined;
-    const checkWrite = (before: unknown, after: unknown, operation: string) => {
-      if (admin || !ruleFile) return;
-      const answer = invokeRule("__naruWrite", {
-        collection: collection.name,
-        before,
-        after,
-        operation,
-      });
-      if (answer !== true)
-        throw new DataError(
-          403,
-          `Collection rule ${ruleName} refused this ${operation} on ${collection.name}: ${answer}. A write is allowed only when canWrite returns true; to tell the visitor why not, call ctx.fail(code, message) there.`,
-          "ACCESS_DENIED",
-        );
-    };
-    if (method === "GET" && ruleView()) {
-      const allowed = ruleView()!;
-      const asked = queriedFields(input).filter(
-        (field) => !allowed.includes(field),
-      );
-      if (asked.length)
-        throw new DataError(
-          400,
-          `Collection ${collection.name} can be queried only on ${allowed.join(", ") || "its metadata"}; not ${asked.join(", ")}.`,
-        );
-      // Authorship is presented only to its author, so it is asked about
-      // only as "mine": anything else would tell whose a document is.
-      if (
-        authorQueries(input.where).some(
-          ([operator, value]) =>
-            operator !== "eq" || !member || value !== member,
-        )
-      )
-        throw new DataError(
-          400,
-          `Collection ${collection.name} can be queried on createdBy only as { eq: [{ metadata: "createdBy" }, <your own member ID>] }.`,
-        );
-    }
     if (method === "GET") {
       const level = collection.read_access;
-      if (!(admin || level === "world" || (level === "member" && member)))
+      if (!(admin || level === "world"))
         throw new DataError(
           403,
-          level === "member"
-            ? `Collection ${collection.name} is for the site's members. Sign in as a member.`
-            : `Collection ${collection.name} is not publicly readable. Change its read access in the control panel, or sign in.`,
+          `Collection ${collection.name} is not publicly readable. Change its read access in the control panel, or sign in.`,
         );
       // Identical rows for any stranger, so a shared cache may hold them.
-      publicRead = level === "world" && access.anonymous && !ruleFile;
-      if (requested) {
-        const ids = requested;
-        const unique = [...new Set(ids)];
-        const rows = unique.length
-          ? this.rows(
-              `SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id IN (${unique.map(() => "?").join(",")})${authorization ? ` AND (${authorization.sql})` : ""}`,
-              collection.id,
-              ...unique,
-              ...(authorization?.bindings ?? []),
-            )
-          : [];
-        const found = new Map(rows.map((row) => [row.id, documentOf(row)]));
-        return {
-          result: {
-            documents: present(ids.map((id) => found.get(id) ?? null)),
-          },
-          publicRead,
-        };
-      }
+      publicRead = level === "world" && access.anonymous;
       if (path.length === 2) {
         const row = this.rows(
           "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
@@ -1486,79 +1186,36 @@ export class SiteData extends DurableObject<Env> {
           path[1],
         )[0];
         if (!row) throw new DataError(404, "Document not found.");
-        if (authorization) {
-          const visible = this.rows(
-            `SELECT id FROM documents WHERE collection_id = ? AND id = ? AND (${authorization.sql})`,
-            collection.id,
-            path[1],
-            ...authorization.bindings,
-          );
-          if (!visible.length) throw new DataError(404, "Document not found.");
-        }
-        return {
-          result: { document: present([documentOf(row)])[0] },
-          publicRead,
-        };
+        return { result: { document: documentOf(row) }, publicRead };
       }
-      const page = this.list(collection, input, authorization);
-      return {
-        result: { ...page, documents: present(page.documents) },
-        publicRead,
-      };
+      return { result: this.list(collection, input), publicRead };
     }
     const creating = method === "POST" && path.length === 1;
     const level = collection.write_access;
-    // A document's write secret is a site function's to set and check
-    // (ctx.add's secret, ctx.secretMatches), with its own limits; a REST
-    // write never carries one.
-    if (Object.hasOwn(body, "secret"))
-      throw new DataError(
-        400,
-        "secret is set by site functions: ctx.add(collection, data, { secret }) and ctx.secretMatches.",
-      );
-    // Adding is open to anyone in `create` and to members in `member`.
-    // Replacing and deleting there is the owner's, and in `member` also the
-    // author's, checked against the document below.
-    const authorOnly = !admin && !ruleFile && level === "member" && !creating;
-    if (!(
-      admin ||
-      level === "world" ||
-      (level === "create" && creating) ||
-      (level === "member" && member)
-    ))
+    // Adding is open to anyone in `create`; replacing and deleting there is
+    // the owner's.
+    if (!(admin || level === "world" || (level === "create" && creating)))
       throw new DataError(
         403,
-        level === "member"
-          ? `Only the site's members can write to collection ${collection.name}. Sign in as a member.`
-          : creating
-            ? `Visitors cannot add to collection ${collection.name}. Change its write access in the control panel, or sign in.`
-            : `Only a signed-in owner can change documents in collection ${collection.name}.`,
+        creating
+          ? `Visitors cannot add to collection ${collection.name}. Change its write access in the control panel, or sign in.`
+          : `Only a signed-in owner can change documents in collection ${collection.name}.`,
       );
     // Every write past this point is reachable without an owner credential
     // when the collection allows it, so all of them are counted.
-    if (member && !admin) this.limitMember(member);
-    else if (!admin) this.limitPublicWrite(input.clientIp);
+    if (!admin) this.limitPublicWrite(input.clientIp);
     const expected = expectedVersion(input.ifVersion);
     const current = (id: string) =>
       this.rows(
-        "SELECT size_bytes, version, created_by FROM documents WHERE collection_id = ? AND id = ?",
+        "SELECT size_bytes, version FROM documents WHERE collection_id = ? AND id = ?",
         collection.id,
         id,
-      )[0] as
-        | { size_bytes: number; version: number; created_by: string | null }
-        | undefined;
+      )[0] as { size_bytes: number; version: number } | undefined;
     if (method === "DELETE" && path.length === 2) {
       deletable(expected);
       const existing = current(path[1]);
       if (expected !== undefined) matchVersion(expected, existing?.version);
       // A missing document is already gone, as it is for the owner.
-      if (authorOnly && existing && existing.created_by !== member)
-        throw new DataError(
-          403,
-          `Members can delete only the documents they created in collection ${collection.name}.`,
-        );
-      if (existing)
-        checkWrite(this.ruleDocument(collection.id, path[1]), null, "delete");
       this.removeDocument(collection.id, path[1]);
       return { result: { success: true }, publicRead };
     }
@@ -1569,19 +1226,6 @@ export class SiteData extends DurableObject<Env> {
     const id = path[1] ?? randomUUID();
     const existing = current(id);
     if (expected !== undefined) matchVersion(expected, existing?.version);
-    // A member replaces what they created, and may create the one document
-    // named by their own member ID: a profile, say, that no one else can
-    // claim first.
-    if (
-      authorOnly &&
-      (existing ? existing.created_by !== member : id !== member)
-    )
-      throw new DataError(
-        403,
-        existing
-          ? `Members can replace only the documents they created in collection ${collection.name}.`
-          : `Members can create a document with a chosen ID only under their own member ID in collection ${collection.name}. Use add() for others.`,
-      );
     const { encoded, size } = encode(body.data);
     this.checkQuota(existing?.size_bytes, size);
     // Never overwrite on create, even in the event of an ID collision.
@@ -1592,24 +1236,10 @@ export class SiteData extends DurableObject<Env> {
         "CONFLICT",
       );
     this.checkUnique(collection, id, body.data);
-    const before = this.ruleDocument(collection.id, id);
-    checkWrite(
-      before,
-      {
-        ...(before ?? {}),
-        id,
-        data: body.data,
-        createdBy: before ? before.createdBy : admin ? null : member,
-      },
-      existing ? "update" : "create",
-    );
-    this.upsert(collection.id, id, encoded, size, admin ? null : member);
-    // A writer sees what they wrote as a reader would.
-    const [result] = present([{ id, ...this.written(collection.id, id) }]);
-    return { result, publicRead };
+    this.upsert(collection.id, id, encoded, size);
+    return { result: { id, ...this.written(collection.id, id) }, publicRead };
   }
 
-  /** Refuses a write of `size` bytes, over a document of `existing`, past the site's quota. */
   /**
    * One statement of site SQL (ctx.sql, 1.1.0) against the site's own tables:
    * checked (sql.ts), held to its plan, and run in the call's transaction.
@@ -1690,6 +1320,7 @@ export class SiteData extends DurableObject<Env> {
       );
   }
 
+  /** Refuses a write of `size` bytes, over a document of `existing`, past the site's quota. */
   private checkQuota(existing: number | undefined, size: number) {
     const usage = this.usage();
     if (
@@ -1701,57 +1332,6 @@ export class SiteData extends DurableObject<Env> {
         "Site database quota exceeded.",
         "QUOTA_EXCEEDED",
       );
-  }
-
-  private ruleDocument(collection: string, id: string) {
-    const row = this.rows(
-      "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
-      collection,
-      id,
-    )[0];
-    return row
-      ? (publicResult(documentOf(row)) as {
-          id: string;
-          data: unknown;
-          createdBy: string | null;
-        })
-      : null;
-  }
-
-  private async prepareRules(input: ExecuteInput) {
-    if (
-      input.access.admin ||
-      !input.path.length ||
-      (input.path.length === 1 && ["PATCH", "DELETE"].includes(input.method))
-    )
-      return;
-    const row = this.rows(
-      "SELECT id FROM collections WHERE name = ?",
-      name(input.path[0]),
-    )[0];
-    const file = row ? this.meta(`rules:${row.id}`) : null;
-    if (!file) return;
-    if (!input.site)
-      throw new DataError(503, "Collection rules need a site name.");
-    // From the active function revision, like functions: a rule changes when
-    // the site's _naru files are next published, all at once.
-    const revision = this.meta("functions_revision");
-    if (!revision) throw unpublished();
-    let sources: ModuleSources, entry: string;
-    try {
-      const revisions = this.revisions(input.site);
-      entry = await revisions.entry(revision, `rules/${file}`);
-      sources = await revisions.graph(revision, entry);
-    } catch (error) {
-      if (error instanceof DataError && error.status === 404)
-        throw new DataError(
-          403,
-          `Collection ${input.path[0]} uses _naru/rules/${file}.js, which the site's published files do not have; members and visitors are refused until it is published.`,
-          "ACCESS_DENIED",
-        );
-      throw error;
-    }
-    return { file, entry, sources, module: await quickjs() };
   }
 
   private functionRevisions: FunctionRevisions | undefined;
@@ -2026,99 +1606,14 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * What a function's ctx may do: anything the owner may with the site's
-   * documents, in this call's transaction. What it writes has no member
-   * author, so a member cannot then change it directly.
+   * What site code's ctx may do, in this call's transaction: run site SQL,
+   * read and grant members' roles, and hash and check passwords. `tables`
+   * gathers the tables its SQL read and wrote, for live queries.
    */
-  private functionHost(
-    written = new Set<string>(),
-    messages: Message[] = [],
+  private siteHost(
     tables: SqlTables = { read: new Set(), written: new Set() },
   ): Host {
-    const cachedCollections = new Map<string, Collection>();
     const sqlBudget = { rowsRead: 0, tables };
-    const collection = (value: unknown) => {
-      const key = name(value);
-      const cached = cachedCollections.get(key);
-      if (cached) return cached;
-      const found = this.rows(
-        "SELECT id, name, read_access, write_access FROM collections WHERE name = ?",
-        name(value),
-      )[0];
-      if (!found)
-        throw new DataError(404, `Collection ${String(value)} does not exist.`);
-      const target = found as unknown as Collection;
-      cachedCollections.set(key, target);
-      return target;
-    };
-    const document = (collectionId: string, id: string) =>
-      this.rows(
-        "SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id = ?",
-        collectionId,
-        id,
-      )[0];
-    // A write's condition, as the SDK's: { revision } or { absent: true }.
-    const condition = (value: unknown, deleting = false) => {
-      if (value === undefined || value === null) return undefined;
-      const options = value as { condition?: unknown };
-      if (typeof value !== "object" || Array.isArray(value))
-        throw new DataError(400, "Write options must be an object.");
-      if (options.condition === undefined) return undefined;
-      const given = options.condition as Record<string, unknown>;
-      if (
-        !given ||
-        typeof given !== "object" ||
-        Array.isArray(given) ||
-        Object.keys(given).length !== 1
-      )
-        throw new DataError(400, "condition must contain revision or absent.");
-      if (typeof given.revision === "string")
-        return decodeRevision(given.revision);
-      if (given.absent === true && !deleting) return 0;
-      throw new DataError(
-        400,
-        deleting
-          ? "A delete can only be conditional on a revision."
-          : "condition must contain revision or absent.",
-      );
-    };
-    // A document's write secret (1.1.0): ctx.add or ctx.set's { secret },
-    // a guest's password that ctx.secretMatches checks later.
-    const secretOption = (options: unknown) => {
-      if (!options || typeof options !== "object") return undefined;
-      const secret = (options as { secret?: unknown }).secret;
-      if (secret === undefined) return undefined;
-      if (typeof secret !== "string" || !secret || secret.length > 256)
-        throw new DataError(400, "A secret is 1–256 characters.");
-      return secret;
-    };
-    const write = (
-      target: Collection,
-      id: string,
-      data: unknown,
-      expected?: number,
-      secret?: string,
-    ) => {
-      const existing = this.rows(
-        "SELECT size_bytes, version FROM documents WHERE collection_id = ? AND id = ?",
-        target.id,
-        id,
-      )[0] as { size_bytes: number; version: number } | undefined;
-      if (expected !== undefined) matchVersion(expected, existing?.version);
-      const { encoded, size } = encode(data);
-      this.checkQuota(existing?.size_bytes, size);
-      this.checkUnique(target, id, data);
-      this.upsert(target.id, id, encoded, size, null);
-      if (secret !== undefined)
-        this.sql.exec(
-          "UPDATE documents SET secret_hash = ? WHERE collection_id = ? AND id = ?",
-          hashPassword(secret),
-          target.id,
-          id,
-        );
-      written.add(target.name);
-      return publicResult(documentOf(document(target.id, id)));
-    };
     return (operation, args) => {
       switch (operation) {
         case "random":
@@ -2131,73 +1626,6 @@ export class SiteData extends DurableObject<Env> {
         case "sql":
           // [text, values, read-only], the last from the call, not the code.
           return this.siteSql(args[0], args[1], args[2] === true, sqlBudget);
-        case "get": {
-          const row = document(collection(args[0]).id, name(args[1]));
-          return row ? publicResult(documentOf(row)) : null;
-        }
-        case "getMany": {
-          const target = collection(args[0]);
-          if (!Array.isArray(args[1]) || args[1].length > 100)
-            throw new DataError(400, "getMany needs at most 100 IDs.");
-          const ids = args[1].map(name);
-          if (!ids.length) return [];
-          const unique = [...new Set(ids)];
-          const rows = this.rows(
-            `SELECT id, data, version, created_at, updated_at, created_by FROM documents WHERE collection_id = ? AND id IN (${unique.map(() => "?").join(",")})`,
-            target.id,
-            ...unique,
-          );
-          const found = new Map(
-            rows.map((row) => [row.id, publicResult(documentOf(row))]),
-          );
-          return ids.map((id) => found.get(id) ?? null);
-        }
-        case "count": {
-          const options = (args[1] ?? {}) as Record<string, unknown>;
-          const query = listQuery(collection(args[0]).id, {
-            filter: options.filter,
-            where: options.where,
-            includeTotal: true,
-          });
-          return Number(
-            this.rows(query.count!.sql, ...query.count!.bindings)[0].matched,
-          );
-        }
-        case "list": {
-          const options = (args[1] ?? {}) as Record<string, unknown>;
-          const target = collection(args[0]);
-          return publicResult(
-            this.list(target, {
-              filter: options.filter,
-              where: options.where,
-              sort:
-                options.sort === undefined
-                  ? undefined
-                  : JSON.stringify(options.sort),
-              size: options.size as number | undefined,
-              after: (options.after ?? undefined) as string | undefined,
-              includeTotal: false,
-            }),
-          );
-        }
-        case "add":
-          return write(
-            collection(args[0]),
-            randomUUID(),
-            args[1],
-            undefined,
-            secretOption(args[2]),
-          );
-        case "set":
-          if (args.length < 3)
-            throw new DataError(400, "set(collection, id, data) needs data.");
-          return write(
-            collection(args[0]),
-            name(args[1]),
-            args[2],
-            condition(args[3]),
-            secretOption(args[3]),
-          );
         case "passwordHash": {
           const password = args[0];
           if (
@@ -2223,54 +1651,7 @@ export class SiteData extends DurableObject<Env> {
               400,
               "ctx.passwords.verify takes a password, its hash and a key.",
             );
-          return this.checkSecret("passwords", key, password, hash);
-        }
-        case "secretMatches": {
-          const secret = secretOption({ secret: args[2] });
-          const target = collection(args[0]);
-          const id = name(args[1]);
-          const row = this.rows(
-            "SELECT secret_hash FROM documents WHERE collection_id = ? AND id = ?",
-            target.id,
-            id,
-          )[0];
-          return Boolean(
-            secret &&
-            row?.secret_hash &&
-            this.checkSecret(target.id, id, secret, String(row.secret_hash)),
-          );
-        }
-        case "notify":
-        case "broadcast": {
-          const target = name(args[0]);
-          const data = args[1] ?? null;
-          if (Buffer.byteLength(JSON.stringify(data)) > MAX_MESSAGE_BYTES)
-            throw new DataError(400, "A message is at most 4 KiB of JSON.");
-          messages.push(
-            operation === "notify"
-              ? { to: "member", member: target, data }
-              : { to: "topic", topic: target, data },
-          );
-          return null;
-        }
-        case "delete": {
-          const target = collection(args[0]);
-          const id = name(args[1]);
-          const expected = condition(args[2], true);
-          if (expected !== undefined)
-            matchVersion(
-              expected,
-              (
-                this.rows(
-                  "SELECT version FROM documents WHERE collection_id = ? AND id = ?",
-                  target.id,
-                  id,
-                )[0] as { version: number } | undefined
-              )?.version,
-            );
-          this.removeDocument(target.id, id);
-          written.add(target.name);
-          return null;
+          return this.checkPassword(`passwords/${key}`, password, hash);
         }
         default:
           throw new DataError(400, `ctx has no ${operation}.`);
@@ -2279,81 +1660,58 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * A member, or the site's owner (`member` null), calls one of the site's
-   * functions. An export its module declares read-only (`export const
-   * readOnly = [...]`, read when the revision was published) runs with writes
-   * forbidden and counts against the member's reads; any other against their
-   * calls. A member's call is counted against the month and their budget
-   * first, on its own: a call that then fails was still made. The owner's are
-   * never counted. The function runs in one transaction; a failure rolls it
-   * back. `written` names the collections it changed, for the caller's cache.
+   * A member, the site's owner (`member` null), or a visitor calls one of the
+   * site's queries or mutations, or a route renders: an export of
+   * `_naru/queries/`, `_naru/mutations/` or `_naru/routes/`. A query or
+   * route only reads, and counts as a read; a mutation counts against the
+   * member's or visitor's calls. A member's or visitor's call is counted
+   * against the month first, on its own: a call that then fails was still
+   * made. The owner's are never counted. The code runs in one transaction; a
+   * failure rolls it back.
    */
   async call(input: {
     ownerId: string;
     site: string;
     member: string | null;
-    /** No one signed in: only exports the module lists in `visitors`. */
+    /** No one signed in. */
     visitor?: boolean;
     /**
-     * Only exports declared read-only may run: this copy is the standby,
-     * answering while the mini is away, and must not change.
+     * Only queries and routes may run: this copy is the standby, answering
+     * while the mini is away, and must not change.
      */
     readOnlyOnly?: boolean;
     /** A visitor's address, which their calls are limited by. */
     clientIp?: string;
-    /** The module, _naru/functions/<file>.js (queries/, mutations/). */
+    /** The module, as `<module/path>` under its kind's folder. */
     file: string;
     name: string;
     args: unknown;
-    /**
-     * A site function (the default), or a query or mutation (1.1.0's new
-     * design): anyone may call those, and their code says who may do what.
-     */
-    kind?: "function" | "query" | "mutation" | "route";
+    kind: "query" | "mutation" | "route";
     /**
      * A live query's run (internal): its answer says the tables it read,
      * and a re-run after a write ("refresh") is not counted as a call.
      */
     live?: "subscribe" | "refresh";
-  }): Promise<
-    Outcome<{ result: unknown; written: string[]; tables?: string[] }>
-  > {
+  }): Promise<Outcome<{ result: unknown; tables?: string[] }>> {
     const visitor = input.member === null && input.visitor === true;
-    const kind = input.kind ?? "function";
-    let filename: string, sources, readonly;
+    const kind = input.kind;
+    const readonly = kind === "query" || kind === "route";
+    let filename: string, sources;
     try {
+      if (!["query", "mutation", "route"].includes(kind))
+        throw new DataError(400, "Invalid call.");
       if (kind === "route") routeModule(input.file);
       else functionModule(input.file);
       name(input.name);
-      if (!["function", "query", "mutation", "route"].includes(kind))
-        throw new DataError(400, "Invalid call.");
+      if (input.readOnlyOnly && !readonly) throw readOnlyStandby();
       const revision = this.meta("functions_revision");
       if (!revision) throw unpublished();
       const revisions = this.revisions(input.site);
-      const folder = {
-        function: "functions",
-        query: "queries",
-        mutation: "mutations",
-        route: "routes",
-      }[kind];
+      const folder = { query: "queries", mutation: "mutations", route: "routes" }[
+        kind
+      ];
       filename = await revisions.entry(revision, `${folder}/${input.file}`);
       sources = await revisions.graph(revision, filename);
-      const declared = await revisions.declarations(
-        revision,
-        filename,
-        input.name,
-      );
-      readonly =
-        kind === "function"
-          ? declared.readOnly
-          : kind === "query" || kind === "route";
-      if (input.readOnlyOnly && !readonly) throw readOnlyStandby();
-      if (visitor && kind === "function" && !declared.visitors)
-        throw new DataError(
-          401,
-          "Sign in as a member to use this function.",
-          "AUTH_REQUIRED",
-        );
     } catch (error) {
       if (error instanceof DataError)
         return this.run(() => {
@@ -2365,9 +1723,9 @@ export class SiteData extends DurableObject<Env> {
       this.claim(input.ownerId);
       if (input.live === "refresh") return;
       if (visitor || input.member !== null) this.admitWork();
-      // A query or a route's page replaces a page's reads (1.1.0), so it is
-      // limited as reads are: 600 a minute per member or address.
-      if ((kind === "query" || kind === "route") && (visitor || input.member)) {
+      // A query or a route's page replaces a page's reads, so it is limited
+      // as reads are: 600 a minute per member or address.
+      if (readonly && (visitor || input.member)) {
         this.spend(visitor ? "visitor_query" : "member_query");
         this.limitReader(
           visitor ? callerKey(input.clientIp) : `member:${input.member}`,
@@ -2375,18 +1733,16 @@ export class SiteData extends DurableObject<Env> {
         return;
       }
       if (visitor) {
-        this.spend(readonly ? "visitor_read_call" : "visitor_call");
-        this.limitVisitor(input.clientIp, readonly);
+        this.spend("visitor_call");
+        this.limitVisitor(input.clientIp);
         return;
       }
       if (input.member === null) return;
-      this.spend(readonly ? "member_read_call" : "member_call");
-      this.limitMember(input.member, readonly ? "read" : "call");
+      this.spend("member_call");
+      this.limitMember(input.member);
     });
     if (!admitted.ok) return admitted;
     const engine = await quickjs();
-    const written = new Set<string>();
-    const messages: Message[] = [];
     const tables: SqlTables = { read: new Set(), written: new Set() };
     try {
       const counted =
@@ -2413,24 +1769,18 @@ export class SiteData extends DurableObject<Env> {
                 input.member === null
                   ? []
                   : (this.memberRoles([input.member])[input.member] ?? []),
-              // A query's rows, a page of them, can be larger than a
-              // function's answer.
-              ...(kind !== "function" ? { maxResultBytes: MAX_ROW_BYTES } : {}),
             },
-            this.functionHost(written, messages, tables),
+            this.siteHost(tables),
           ),
         ),
-        written: [...written].sort(),
         ...(input.live ? { tables: [...tables.read].sort() } : {}),
       }));
-      if (outcome.ok) {
-        this.deliver(messages);
-        if (tables.written.size) this.scheduleRefresh(tables.written);
-      }
+      if (outcome.ok && tables.written.size)
+        this.scheduleRefresh(tables.written);
       return outcome;
     } catch (error) {
-      // Not the function's doing: the engine itself failed. The call retired
-      // its instance (functions.ts), and the next starts a new one.
+      // Not the code's doing: the engine itself failed. The call retired its
+      // instance (functions.ts), and the next starts a new one.
       console.error("A site function's engine failed", error);
       return {
         ok: false,
@@ -2444,9 +1794,9 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * A visitor's call at the edge (website.ts): answered here only while the
-   * edge may answer the site's visitors, like `serve`; otherwise the Worker
-   * sends it on to the control plane.
+   * A visitor's query or mutation at the edge (website.ts): answered here
+   * only while the edge may answer the site's visitors, like `serve`;
+   * otherwise the Worker sends it on to the control plane.
    */
   async visit(input: {
     site: string;
@@ -2455,12 +1805,8 @@ export class SiteData extends DurableObject<Env> {
     args: unknown;
     clientIp?: string;
     readOnlyOnly?: boolean;
-    kind?: "function" | "query" | "mutation";
-  }): Promise<
-    Outcome<
-      { pass: true } | { pass?: undefined; result: unknown; written: string[] }
-    >
-  > {
+    kind: "query" | "mutation";
+  }): Promise<Outcome<{ pass: true } | { pass?: undefined; result: unknown }>> {
     const ownerId = this.meta("owner_id");
     const until = this.meta("entitled_until");
     const now = Date.now();
@@ -2479,8 +1825,7 @@ export class SiteData extends DurableObject<Env> {
       visitor: true,
     });
     if (!outcome.ok) return outcome;
-    const { result, written } = outcome.value;
-    return { ok: true, value: { result, written } };
+    return { ok: true, value: { result: outcome.value.result } };
   }
 
   /**
@@ -2533,12 +1878,12 @@ export class SiteData extends DurableObject<Env> {
     return { ok: true, value: { result: outcome.value.result } };
   }
 
-  /** A visitor's calls a minute, by address and for the whole site. */
-  private limitVisitor(clientIp: string | undefined, readonly: boolean) {
+  /** A visitor's mutations a minute, by address and for the whole site. */
+  private limitVisitor(clientIp: string | undefined) {
     const window = Math.floor(Date.now() / 60000) * 60000;
     this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
-    const kind = readonly ? "visitor-read" : "visitor-call";
-    const limits = readonly ? VISITOR_READS : VISITOR_CALLS;
+    const kind = "visitor-call";
+    const limits = VISITOR_CALLS;
     const caller = createHash("sha256")
       .update(callerKey(clientIp))
       .digest("base64url");
@@ -2564,8 +1909,8 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * Deletes a collection with its documents, rules, unique fields and upload
-   * references. Its uploads stay: media may be linked from anywhere.
+   * Deletes a collection with its documents, unique fields, indexes and
+   * upload references. Its uploads stay: media may be linked from anywhere.
    */
   private deleteCollection(collection: Collection) {
     this.setUnique(collection, null);
@@ -2579,6 +1924,7 @@ export class SiteData extends DurableObject<Env> {
       collection.id,
     );
     this.sql.exec("DELETE FROM collections WHERE id = ?", collection.id);
+    // Once a collection rule's module (`rules:<id>`, from an early 1.1.0).
     this.setMeta(`rules:${collection.id}`, null);
   }
 
@@ -2703,36 +2049,28 @@ export class SiteData extends DurableObject<Env> {
     });
   }
 
-  /** Tests only: replaces a functions module, or removes it (null). */
+  /** Tests only: replaces a module or migration, or removes it (null). */
   async putFunctions(input: {
     site: string;
     file: string;
     source: string | null;
-    folder?:
-      | "functions"
-      | "rules"
-      | "modules"
-      | "migrations"
-      | "queries"
-      | "mutations"
-      | "routes";
+    folder: "modules" | "migrations" | "queries" | "mutations" | "routes";
     /** False stores the file only, for a batch published by its last file. */
     publish?: boolean;
   }) {
-    const folder = [
-      "rules",
-      "modules",
-      "migrations",
-      "queries",
-      "mutations",
-      "routes",
-    ].includes(input.folder ?? "")
-      ? input.folder!
-      : "functions";
+    const folder = input.folder;
+    if (
+      !["modules", "migrations", "queries", "mutations", "routes"].includes(
+        folder,
+      )
+    )
+      return this.run(() => {
+        throw new DataError(400, "Invalid folder.");
+      });
     const key =
       folder === "migrations"
         ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
-        : `${input.site}/_naru/${folder}/${folder === "rules" ? name(input.file) : folder === "routes" ? routeModule(input.file) : functionModule(input.file)}.js`;
+        : `${input.site}/_naru/${folder}/${folder === "routes" ? routeModule(input.file) : functionModule(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
     if (input.publish === false) return { ok: true, value: null };
@@ -2741,12 +2079,8 @@ export class SiteData extends DurableObject<Env> {
     return { ok: true, value: null };
   }
 
-  private list(
-    collection: Collection,
-    input: ListInput,
-    authorization?: ReturnType<typeof rulePredicate>,
-  ) {
-    const query = listQuery(collection.id, input, authorization);
+  private list(collection: Collection, input: ListInput) {
+    const query = listQuery(collection.id, input);
     const rows = this.rows(query.select.sql, ...query.select.bindings);
     const totalCount = query.count
       ? Number(this.rows(query.count.sql, ...query.count.bindings)[0].matched)
@@ -2807,7 +2141,7 @@ export class SiteData extends DurableObject<Env> {
           throw new DataError(400, "Batch operations must be set or delete.");
         const { encoded, size } = encode(operation.data);
         this.checkUnique(collection, id, operation.data);
-        this.upsert(collection.id, id, encoded, size, null);
+        this.upsert(collection.id, id, encoded, size);
         const { version, createdAt, updatedAt } = this.written(
           collection.id,
           id,
@@ -2834,18 +2168,16 @@ export class SiteData extends DurableObject<Env> {
       const rows = this.rows(
         "SELECT id, name, read_access, write_access FROM collections ORDER BY name",
       ) as unknown as Collection[];
-      // With each one's rules module and unique fields, when it has them.
+      // With each one's unique and indexed fields, when it has them.
       return (
         input.names
           ? rows.filter((row) => input.names!.includes(row.name))
           : rows
       ).map((row) => {
-        const rules = this.meta(`rules:${row.id}`);
         const unique = this.uniqueFields(row.id);
         const indexes = this.indexFields(row.id);
         return {
           ...row,
-          ...(rules ? { rules } : {}),
           ...(unique.length ? { unique } : {}),
           ...(indexes.length ? { indexes } : {}),
         };
@@ -2887,13 +2219,12 @@ export class SiteData extends DurableObject<Env> {
   /**
    * Gives collections the settings a page asked for at owner sign-in, all or
    * none: creates those that are missing and updates the others' access,
-   * rules module and unique fields. Null when new ones would pass the
+   * unique and indexed fields. Null when new ones would pass the
    * collection limit; a unique field documents already share fails it all.
    */
   async configureCollections(input: {
     ownerId: string;
     collections: (Omit<Collection, "id"> & {
-      rules?: string | null;
       unique?: string[];
       indexes?: string[];
     })[];
@@ -2931,8 +2262,6 @@ export class SiteData extends DurableObject<Env> {
           wanted.write_access,
           row.id,
         );
-        if (wanted.rules !== undefined)
-          this.setMeta(`rules:${row.id}`, wanted.rules);
         if (wanted.unique !== undefined) this.setUnique(row, wanted.unique);
         if (wanted.indexes !== undefined) this.setIndexes(row, wanted.indexes);
       }
@@ -2943,11 +2272,6 @@ export class SiteData extends DurableObject<Env> {
   async export(): Promise<Outcome<Snapshot>> {
     return this.run(() => ({
       ownerId: this.meta("owner_id"),
-      rules: Object.fromEntries(
-        this.rows("SELECT key, value FROM meta WHERE key LIKE 'rules:%'").map(
-          (row) => [String(row.key).slice(6), String(row.value)],
-        ),
-      ),
       unique: Object.fromEntries(
         this.rows("SELECT key, value FROM meta WHERE key LIKE 'unique:%'").map(
           (row) => [String(row.key).slice(7), JSON.parse(String(row.value))],
@@ -2997,8 +2321,6 @@ export class SiteData extends DurableObject<Env> {
       this.sql.exec("DELETE FROM meta");
       this.budget = undefined;
       if (snapshot.ownerId !== null) this.setMeta("owner_id", snapshot.ownerId);
-      for (const [id, file] of Object.entries(snapshot.rules ?? {}))
-        this.setMeta(`rules:${id}`, name(file));
       for (const [id, fields] of Object.entries(snapshot.unique ?? {})) {
         this.setMeta(`unique:${id}`, JSON.stringify(fields));
         for (const field of fields)
@@ -3105,8 +2427,8 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * Every row of every table, to move the site to another runtime (its
-   * `restore`): collections, documents with their write secrets, upload
-   * references, limits and settings.
+   * `restore`): collections, documents, upload references, limits and
+   * settings, and the site's own tables.
    */
   async dump(): Promise<Outcome<Dump>> {
     return this.run(() => {

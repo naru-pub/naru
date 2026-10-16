@@ -29,11 +29,11 @@ export class DataError extends Error {
     message: string,
     /** Only where the status alone would name the wrong code. */
     public code?: ErrorCode,
-    /** A site function's own JSON for its caller, from ctx.fail. */
+    /** Site code's own JSON for its caller, from ctx.fail. */
     public details?: unknown,
     /**
-     * The message is a site function's own, from ctx.fail, written for the
-     * page's visitors; SDK 1.1.0 shows it as is and words Naru's own errors.
+     * The message is site code's own, from ctx.fail, written for the page's
+     * visitors; SDK 1.1.0 shows it as is and words Naru's own errors.
      */
     public site?: boolean,
   ) {
@@ -74,7 +74,7 @@ export function protocolError(
 
 /**
  * A collection name. Names starting with an underscore are reserved for the
- * protocol's own paths (`_batch`, `_files`, `_call`), which a collection would
+ * protocol's own paths (`_batch`, `_files`, `_query`), which a collection would
  * shadow.
  */
 export function unreservedName(value: unknown): string {
@@ -94,23 +94,18 @@ export function name(value: unknown): string {
   return value;
 }
 
-/**
- * Who may read a collection: its owner, any signed-in member of the site as
- * well, or anyone.
- */
-export function permission(value: unknown): "admin" | "member" | "world" {
-  if (value !== "admin" && value !== "member" && value !== "world")
+/** Who may read a collection: its owner, or anyone. */
+export function permission(value: unknown): "admin" | "world" {
+  if (value !== "admin" && value !== "world")
     throw new DataError(400, "Invalid permission.");
   return value;
 }
 
 /**
  * Who may write to it. `create` lets anyone add documents and no one else
- * change them; `member` lets members add documents and change their own.
+ * change them.
  */
-export function writePermission(
-  value: unknown,
-): "admin" | "create" | "member" | "world" {
+export function writePermission(value: unknown): "admin" | "create" | "world" {
   return value === "create" ? "create" : permission(value);
 }
 

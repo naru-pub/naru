@@ -14,8 +14,6 @@ export const COMPARISONS: Record<ComparisonOperator, string> = {
 export const MAX_FILTER_BYTES = 2048;
 export const MAX_FILTER_PREDICATES = 5;
 
-export const MAX_WHERE_BYTES = 4096;
-
 export function parseFilterQuery(raw: string | null): unknown {
   if (raw === null) return undefined;
   if (Buffer.byteLength(raw) > MAX_FILTER_BYTES)
@@ -24,18 +22,6 @@ export function parseFilterQuery(raw: string | null): unknown {
     return JSON.parse(raw);
   } catch {
     throw new DataError(400, "filter must be a JSON object.");
-  }
-}
-
-/** A list's `where` predicate (edge/src/rules.ts checks its shape). */
-export function parseWhereQuery(raw: string | null): unknown {
-  if (raw === null) return undefined;
-  if (Buffer.byteLength(raw) > MAX_WHERE_BYTES)
-    throw new DataError(400, "where exceeds 4096 bytes.");
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new DataError(400, "where must be JSON.");
   }
 }
 

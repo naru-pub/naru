@@ -72,12 +72,12 @@ integration(
   "control plane records snapshots and durable retirement atomically; stale tasks cannot reactivate retired code",
   async () => {
     mockObjects.set(
-      `${site}/_naru/functions/shop.js`,
+      `${site}/_naru/mutations/shop.js`,
       "export function buy() { return 1; }",
     );
     const first = await publishSiteFunctions(site);
     mockObjects.set(
-      `${site}/_naru/functions/shop.js`,
+      `${site}/_naru/mutations/shop.js`,
       "export function buy() { return 2; }",
     );
     const second = await publishSiteFunctions(site);
@@ -115,7 +115,7 @@ integration(
     ).toBe(false);
     expect(
       mockObjects.get(
-        `_naru-runtime/${site}/revisions/${second.revision}/functions/shop.js`,
+        `_naru-runtime/${site}/revisions/${second.revision}/mutations/shop.js`,
       ),
     ).toContain("return 2");
     expect(
@@ -135,7 +135,7 @@ integration(
       .selectAll()
       .execute();
     mockObjects.set(
-      `${site}/_naru/functions/shop.js`,
+      `${site}/_naru/mutations/shop.js`,
       'import "../modules/missing.js";',
     );
     await expect(publishSiteFunctions(site)).rejects.toThrow("Missing import");
@@ -158,7 +158,7 @@ integration(
   "a release whose migration fails is refused, its files go, and the active release stays",
   async () => {
     mockObjects.set(
-      `${site}/_naru/functions/shop.js`,
+      `${site}/_naru/mutations/shop.js`,
       "export function buy() { return 3; }",
     );
     mockObjects.set(

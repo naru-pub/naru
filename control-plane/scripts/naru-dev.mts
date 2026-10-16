@@ -2,8 +2,8 @@
 //   pnpm naru-dev <site folder> [--site name] [--port 4000] [--state dir]
 //
 // Runs the real edge Worker (`wrangler dev`, workerd with SQLite-backed
-// Durable Objects), so documents, collection rules, site functions, live
-// connections and limits behave as on Naru. This process stands in for the
+// Durable Objects), so collections, the site's tables, queries, mutations,
+// routes, live queries and limits behave as on Naru. This process stands in for the
 // control plane around it: it serves the site's files and the SDK (pointed at
 // itself), signs owners and members in on one click, answers the requests
 // that carry a sign-in, keeps uploads in a folder, and republishes `_naru/`
@@ -30,10 +30,7 @@ import {
 } from "node:http";
 import { connect } from "node:net";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
-import {
-  parseFilterQuery,
-  parseWhereQuery,
-} from "../src/lib/site-data/filters";
+import { parseFilterQuery } from "../src/lib/site-data/filters";
 import { signLiveTicket } from "../src/lib/site-data/live-ticket";
 import {
   CALLS,
@@ -173,9 +170,7 @@ await object("configure", {
 /* ----------------------------------------------- _naru/ publication --- */
 
 const FOLDERS = [
-  "functions",
   "modules",
-  "rules",
   "migrations",
   "queries",
   "mutations",
@@ -301,7 +296,6 @@ async function installDeclaration() {
           {
             read: string;
             write: string;
-            rules?: string | null;
             unique?: string[];
             indexes?: string[];
           }
@@ -318,7 +312,6 @@ async function installDeclaration() {
         name: string;
         read_access: string;
         write_access: string;
-        rules?: string;
         unique?: string[];
         indexes?: string[];
       }[]
@@ -327,9 +320,6 @@ async function installDeclaration() {
       name,
       read_access: declared[name].read,
       write_access: declared[name].write,
-      ...(declared[name].rules !== undefined
-        ? { rules: declared[name].rules }
-        : {}),
       ...(declared[name].unique !== undefined
         ? { unique: declared[name].unique }
         : {}),
@@ -343,7 +333,6 @@ async function installDeclaration() {
         !row ||
         row.read_access !== want.read_access ||
         row.write_access !== want.write_access ||
-        ("rules" in want && (row.rules ?? null) !== want.rules) ||
         ("unique" in want &&
           (row.unique ?? []).join(",") !== (want.unique ?? []).join(",")) ||
         ("indexes" in want &&
@@ -637,21 +626,17 @@ async function signed(
   }
   if (Object.hasOwn(CALLS, path[0])) {
     const { file, fn } = functionReference(path.slice(1).join("/"));
-    const kind = CALLS[path[0]];
-    const answer = await object<{ result: unknown; written: string[] }>(
-      "call",
-      {
-        ownerId: OWNER,
-        site,
-        member,
-        ...(owner || member ? {} : { visitor: true }),
-        file,
-        name: fn,
-        args: body?.args ?? null,
-        ...(kind !== "function" ? { kind } : {}),
-      },
-    );
-    return json(res, 200, answer);
+    const { result } = await object<{ result: unknown }>("call", {
+      ownerId: OWNER,
+      site,
+      member,
+      ...(owner || member ? {} : { visitor: true }),
+      file,
+      name: fn,
+      args: body?.args ?? null,
+      kind: CALLS[path[0]],
+    });
+    return json(res, 200, { result });
   }
   if (path[0] === "_live") {
     if (!member) throw new DataError(403, "Live tickets are for members.");
@@ -659,22 +644,26 @@ async function signed(
       ticket: await signLiveTicket(secret, site, member),
     });
   }
+  if (member)
+    throw new DataError(
+      403,
+      "Members reach a site's data through its queries and mutations, not its collections.",
+      "ACCESS_DENIED",
+    );
   const { result } = await object<{ result: unknown }>("execute", {
     ownerId: OWNER,
     site,
-    access: { admin: owner, allowedIds: null, anonymous: false, member },
+    access: { admin: owner, allowedIds: null, anonymous: false },
     path,
     method,
     body,
     filter: parseFilterQuery(url.searchParams.get("filter")),
-    where: parseWhereQuery(url.searchParams.get("where")),
     size: url.searchParams.has("size")
       ? Number(url.searchParams.get("size"))
       : undefined,
     sort: url.searchParams.get("sort") ?? undefined,
     after: url.searchParams.get("after") ?? undefined,
     includeTotal: url.searchParams.get("includeTotal") === "1",
-    ids: url.searchParams.get("ids") ?? undefined,
     ifVersion: websiteCondition(url),
   });
   return json(res, method === "POST" ? 201 : 200, publicResult(result));

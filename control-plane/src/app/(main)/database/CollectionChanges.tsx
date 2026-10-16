@@ -11,14 +11,12 @@ import {
 
 const ACCESS: Record<string, string> = {
   admin: "관리자만",
-  member: "회원",
   create: "누구나 새 글만",
   world: "누구나",
 };
 const LABELS: Record<string, string> = {
   read: "읽기",
   write: "쓰기",
-  rules: "규칙",
   unique: "중복 금지 필드",
   indexes: "색인 필드",
 };
@@ -60,7 +58,6 @@ export default function CollectionChanges({
                   <TableHead>컬렉션</TableHead>
                   <TableHead>읽기</TableHead>
                   <TableHead>쓰기</TableHead>
-                  <TableHead>규칙</TableHead>
                   <TableHead>중복 금지 필드</TableHead>
                   <TableHead>색인 필드</TableHead>
                 </TableRow>
@@ -73,9 +70,6 @@ export default function CollectionChanges({
                       <TableCell className="font-mono">{collection}</TableCell>
                       <TableCell>{ACCESS[wanted?.read ?? "admin"]}</TableCell>
                       <TableCell>{ACCESS[wanted?.write ?? "admin"]}</TableCell>
-                      <TableCell className="font-mono">
-                        {wanted?.rules || "—"}
-                      </TableCell>
                       <TableCell className="font-mono">
                         {wanted?.unique?.join(", ") || "—"}
                       </TableCell>
@@ -133,8 +127,7 @@ export default function CollectionChanges({
           </div>
           {widened && (
             <p className="text-sm text-destructive">
-              빨간 줄은 관리자만 보던 자료를 회원이나 방문자에게 엽니다. 규칙이
-              함께 설정되는지 확인하세요.
+              빨간 줄은 관리자만 보던 자료를 방문자에게 엽니다.
             </p>
           )}
         </section>

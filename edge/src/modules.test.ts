@@ -3,15 +3,16 @@ import {
   loadModuleGraph,
   moduleImports,
   resolveModule,
+  modulePath,
   MAX_MODULES,
 } from "./modules";
 describe("static site imports", () => {
   test("resolves siblings and private modules within _naru", () => {
     expect(
-      resolveModule("functions/shop/buy.js", "../../modules/wallet.js"),
+      resolveModule("mutations/shop/buy.js", "../../modules/wallet.js"),
     ).toBe("modules/wallet.js");
-    expect(resolveModule("functions/shop.js", "./shared.js")).toBe(
-      "functions/shared.js",
+    expect(resolveModule("mutations/shop.js", "./shared.js")).toBe(
+      "mutations/shared.js",
     );
   });
   test.each([
@@ -24,27 +25,22 @@ describe("static site imports", () => {
     "./x\\y.js",
     "../rules/auth.js",
   ])("rejects %s", (value) =>
-    expect(() => resolveModule("functions/shop.js", value)).toThrow(),
+    expect(() => resolveModule("mutations/shop.js", value)).toThrow(),
   );
-  test("rules import shared modules and other rules, nothing imports a rule", () => {
-    expect(resolveModule("rules/board.js", "../modules/shared.js")).toBe(
-      "modules/shared.js",
-    );
-    expect(resolveModule("rules/:naru", "./board.js")).toBe("rules/board.js");
-    expect(resolveModule("functions/shop.js", "../modules/x.mjs")).toBe(
+  test("site code lives in modules, queries, mutations and routes alone", () => {
+    expect(resolveModule("queries/shop.js", "../modules/x.mjs")).toBe(
       "modules/x.mjs",
     );
-    expect(() =>
-      resolveModule("modules/shared.js", "../rules/board.js"),
-    ).toThrow(/only collection rules/);
+    for (const folder of ["functions", "rules"])
+      expect(() => modulePath(`${folder}/shop.js`)).toThrow(/invalid path/);
   });
   test("discovers imports and reexports without treating strings/comments as imports", () => {
     expect(
       moduleImports(
         'import {x} from "../modules/x.js"; export * from "./other.js"; const s="import(123)"; // import("x")',
-        "functions/shop.js",
+        "mutations/shop.js",
       ),
-    ).toEqual(["modules/x.js", "functions/other.js"]);
+    ).toEqual(["modules/x.js", "mutations/other.js"]);
   });
   test.each([
     'export function x() { return import("./x.js"); }',
@@ -52,35 +48,35 @@ describe("static site imports", () => {
     "for await (const value of []) {}",
     'import {x} from "node:fs";',
   ])("rejects unsupported module code", (source) =>
-    expect(() => moduleImports(source, "functions/shop.js")).toThrow(),
+    expect(() => moduleImports(source, "mutations/shop.js")).toThrow(),
   );
   test("loads a cyclic graph once and finishes storage reads before execution", async () => {
     const files: Record<string, string> = {
-      "functions/a.js": 'export { b } from "../modules/b.js";',
+      "mutations/a.js": 'export { b } from "../modules/b.js";',
       "modules/b.js":
-        'import "../functions/a.js"; export function b() {return 1;}',
+        'import "../mutations/a.js"; export function b() {return 1;}',
     };
     const reads: string[] = [];
     expect(
-      await loadModuleGraph("functions/a.js", async (path) => {
+      await loadModuleGraph("mutations/a.js", async (path) => {
         reads.push(path);
         return files[path] ?? null;
       }),
     ).toEqual(files);
-    expect(reads).toEqual(["functions/a.js", "modules/b.js"]);
+    expect(reads).toEqual(["mutations/a.js", "modules/b.js"]);
   });
   test("missing imports and oversized graphs fail before any execution", async () => {
     await expect(
-      loadModuleGraph("functions/a.js", async (path) =>
+      loadModuleGraph("mutations/a.js", async (path) =>
         path.endsWith("a.js") ? 'import "./missing.js";' : null,
       ),
     ).rejects.toMatchObject({ status: 404 });
     await expect(
-      loadModuleGraph("functions/a.js", async () => " ".repeat(256 * 1024 + 1)),
+      loadModuleGraph("mutations/a.js", async () => " ".repeat(256 * 1024 + 1)),
     ).rejects.toThrow("256 KiB");
     await expect(
       loadModuleGraph(
-        "functions/0.js",
+        "mutations/0.js",
         async (path) => `import "./${Number(path.match(/\d+/)![0]) + 1}.js";`,
       ),
     ).rejects.toThrow(`${MAX_MODULES} files`);

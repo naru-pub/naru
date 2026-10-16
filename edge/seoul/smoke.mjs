@@ -178,7 +178,7 @@ try {
   // A visitor's live connection, held by the object (hibernation API); its
   // keepalive is answered without waking it.
   const socket = new WebSocket(
-    `ws://127.0.0.1:${port}/api/data/v1/alpha/_live?topics=posts`,
+    `ws://127.0.0.1:${port}/api/data/v1/alpha/_live`,
   );
   const pong = await new Promise((done, fail) => {
     socket.onopen = () => socket.send("ping");

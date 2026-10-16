@@ -29,20 +29,20 @@ describe("the site bucket through R2's S3 API", () => {
       new Response(
         `<?xml version="1.0"?><ListBucketResult>
           <IsTruncated>true</IsTruncated>
-          <Contents><Key>a/_naru/functions/x&amp;y.js</Key><ETag>&quot;e1&quot;</ETag><Size>12</Size></Contents>
-          <Contents><Key>a/_naru/functions/z.js</Key><ETag>&quot;e2&quot;</ETag><Size>3</Size></Contents>
+          <Contents><Key>a/_naru/queries/x&amp;y.js</Key><ETag>&quot;e1&quot;</ETag><Size>12</Size></Contents>
+          <Contents><Key>a/_naru/queries/z.js</Key><ETag>&quot;e2&quot;</ETag><Size>3</Size></Contents>
           <NextContinuationToken>next+page</NextContinuationToken>
         </ListBucketResult>`,
       ),
     );
     const page = await s3Bucket(env).list({
-      prefix: "a/_naru/functions/",
+      prefix: "a/_naru/queries/",
       cursor: "this",
     });
     expect(page).toEqual({
       objects: [
-        { key: "a/_naru/functions/x&y.js", etag: '"e1"', size: 12 },
-        { key: "a/_naru/functions/z.js", etag: '"e2"', size: 3 },
+        { key: "a/_naru/queries/x&y.js", etag: '"e1"', size: 12 },
+        { key: "a/_naru/queries/z.js", etag: '"e2"', size: 3 },
       ],
       truncated: true,
       cursor: "next+page",
@@ -50,7 +50,7 @@ describe("the site bucket through R2's S3 API", () => {
     const url = new URL(seen[0].url);
     expect(url.origin + url.pathname).toBe(BASE);
     expect(url.searchParams.get("list-type")).toBe("2");
-    expect(url.searchParams.get("prefix")).toBe("a/_naru/functions/");
+    expect(url.searchParams.get("prefix")).toBe("a/_naru/queries/");
     expect(url.searchParams.get("continuation-token")).toBe("this");
     // Signed for R2's S3 endpoint.
     expect(seen[0].headers.get("authorization")).toMatch(
@@ -66,10 +66,10 @@ describe("the site bucket through R2's S3 API", () => {
       new Response("", { status: 404 }),
     );
     const bucket = s3Bucket(env);
-    const found = await bucket.get("a/_naru/functions/x.js");
+    const found = await bucket.get("a/_naru/queries/x.js");
     expect(found).toMatchObject({ etag: '"e1"', size: 19 });
     expect(await found!.text()).toBe("export const x = 1;");
-    expect(await bucket.get("a/_naru/functions/gone.js")).toBeNull();
+    expect(await bucket.get("a/_naru/queries/gone.js")).toBeNull();
   });
 
   test("writes only where nothing is yet, answering null as the binding does", async () => {
@@ -102,8 +102,8 @@ describe("the site bucket through R2's S3 API", () => {
       new Response(null, { status: 500 }),
     );
     const bucket = s3Bucket(env);
-    await bucket.delete("a/_naru/functions/x.js");
-    await expect(bucket.delete("a/_naru/functions/x.js")).rejects.toThrow(
+    await bucket.delete("a/_naru/queries/x.js");
+    await expect(bucket.delete("a/_naru/queries/x.js")).rejects.toThrow(
       "R2 answered 500",
     );
   });

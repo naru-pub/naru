@@ -13,7 +13,6 @@ import {
 } from "../../control-plane/src/lib/site-data/pagination";
 import { createHash } from "node:crypto";
 import type { ListInput } from "./types";
-import { predicate } from "./rules";
 
 // The SQL of a site's object (site.ts), as pure functions: its tables, and
 // the list query with Naru's ordering, filters and cursors. Nothing here
@@ -221,27 +220,9 @@ type Query = { sql: string; bindings: SqlValue[] };
  * for, and `page`, which turns the statement's rows into the documents and
  * next cursor.
  */
-export function listQuery(
-  collectionId: string,
-  input: ListInput,
-  authorization?: { sql: string; bindings: SqlValue[] },
-) {
+export function listQuery(collectionId: string, input: ListInput) {
   const filter = filters(input.filter);
   const { conditions, bindings } = filterConditions(filter);
-  if (input.where !== undefined) {
-    const where = predicate(input.where, "where");
-    conditions.push(where.sql);
-    bindings.push(...where.bindings);
-    filter.fingerprint = `${filter.fingerprint ?? ""}:w${where.fingerprint}`;
-  }
-  // A rule's predicate narrows every page, but is not the cursor's: it is
-  // applied again on each page, and one that depends on data (the reader's
-  // own items, say) would otherwise turn every cursor stale as it changed.
-  // The cursor binds only to what the caller asked: filter, where and sort.
-  if (authorization) {
-    conditions.push(authorization.sql);
-    bindings.push(...authorization.bindings);
-  }
   const limit = input.size ?? 50;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new DataError(400, "Page size must be 1–100.");

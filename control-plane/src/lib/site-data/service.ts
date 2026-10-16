@@ -9,7 +9,7 @@ import { signLiveTicket } from "./live-ticket";
 
 // Site databases live in Durable Objects, one per site, in the site-data
 // Worker (edge/ at the repository root); the object applies every
-// collection and document rule. What lives in PostgreSQL is decided here
+// collection's access. What lives in PostgreSQL is decided here
 // first: whether the site exists and has the database feature, and an owner
 // token's scope, which renews the token. The object is then told the outcome.
 //
@@ -35,10 +35,7 @@ export type DataCommand = {
   /** JSON array of one or two [field, direction] pairs. */
   sort?: string;
   filter?: unknown;
-  /** A predicate, as a collection rule's readable returns. */
-  where?: unknown;
   includeTotal?: boolean;
-  ids?: string;
   ifVersion?: number;
   /**
    * Filled in by the service when the response it produced is one any stranger
@@ -58,13 +55,11 @@ export type CollectionSettings = {
 };
 export type Collection = CollectionSettings & {
   id: string;
-  rules?: string;
   unique?: string[];
   indexes?: string[];
 };
 /** Settings _naru/collections.json asks for, applied on the owner's click. */
 export type CollectionSetup = CollectionSettings & {
-  rules?: string | null;
   unique?: string[];
   indexes?: string[];
 };
@@ -122,7 +117,7 @@ export async function resolveSiteAccess(command: DataCommand) {
 
 /**
  * Runs `invoke`, publishing the site's _naru files first if its object has no
- * function revision yet: functions and collection rules both run from one.
+ * revision of its code yet, which queries and mutations run from.
  */
 async function withRevision<T>(site: string, invoke: () => Promise<T>) {
   try {
@@ -144,40 +139,43 @@ export async function executeData(command: DataCommand) {
   if (path.length > 2) throw new DataError(404, "Not found.");
   path.forEach(name);
   const { owner, allowedIds, memberId } = await resolveSiteAccess(command);
+  // Collections are the owner's and visitors', as in SDK 1.0.0; members reach
+  // the site's data through its queries and mutations.
+  if (memberId !== undefined)
+    throw new DataError(
+      403,
+      "Members reach a site's data through its queries and mutations, not its collections.",
+      "ACCESS_DENIED",
+    );
   const admin = adminUserId === owner.id || allowedIds !== undefined;
   if (adminUserId !== undefined && !admin)
     throw new DataError(403, "Permission denied.");
-  const { result, publicRead } = await withRevision(command.site, () =>
-    callSiteObject<{
-      result: unknown;
-      publicRead: boolean;
-    }>(
-      command.site,
-      "execute",
-      {
-        ownerId: String(owner.id),
-        site: command.site,
-        access: {
-          admin,
-          allowedIds: allowedIds?.map(String) ?? null,
-          anonymous: command.bearer === undefined && adminUserId === undefined,
-          member: memberId ?? null,
-        },
-        path,
-        method: command.method,
-        body: command.body,
-        filter: command.filter,
-        where: command.where,
-        size: command.size,
-        sort: command.sort,
-        after: command.after,
-        includeTotal: command.includeTotal,
-        ids: command.ids,
-        ifVersion: command.ifVersion,
-        clientIp: command.clientIp,
+  const { result, publicRead } = await callSiteObject<{
+    result: unknown;
+    publicRead: boolean;
+  }>(
+    command.site,
+    "execute",
+    {
+      ownerId: String(owner.id),
+      site: command.site,
+      access: {
+        admin,
+        allowedIds: allowedIds?.map(String) ?? null,
+        anonymous: command.bearer === undefined && adminUserId === undefined,
       },
-      command.signal,
-    ),
+      path,
+      method: command.method,
+      body: command.body,
+      filter: command.filter,
+      size: command.size,
+      sort: command.sort,
+      after: command.after,
+      includeTotal: command.includeTotal,
+      ifVersion: command.ifVersion,
+      clientIp: command.clientIp,
+    },
+    command.signal,
   );
   if (publicRead && command.cacheability) command.cacheability.public = true;
   return withDates(result);
@@ -212,15 +210,14 @@ export async function executeBatch(command: DataCommand) {
 
 /**
  * A member, the site's owner with an owner token, or a visitor with no token
- * calls one of the site's functions: `path` is the module and the function,
- * `_naru/functions/<module>.js` and its export. Visitors reach only exports
- * the module lists in `export const visitors`; the edge usually answers them
- * itself (website.ts), and sends here what it cannot. A function has the
- * owner's access to every collection whatever collections the owner's
- * sign-in approved, as it has for members.
+ * calls one of the site's queries or mutations: `path` is the module and the
+ * export, `_naru/queries/<module>.js` or `_naru/mutations/<module>.js`. The
+ * edge usually answers visitors itself (website.ts), and sends here what it
+ * cannot. The code decides who may do what, whatever collections the
+ * owner's sign-in approved.
  */
 export async function executeCall(
-  command: DataCommand & { kind?: "function" | "query" | "mutation" },
+  command: DataCommand & { kind: "query" | "mutation" },
 ) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
@@ -229,12 +226,11 @@ export async function executeCall(
   if (command.adminUserId !== undefined)
     throw new DataError(
       403,
-      "Site functions are called by signed-in members or the site's owner.",
+      "A site's queries and mutations are called from its pages, not the control panel.",
     );
   const visitor = memberId === undefined && allowedIds === undefined;
-  const kind = command.kind ?? "function";
-  return withRevision(command.site, () =>
-    callSiteObject<{ result: unknown; written: string[] }>(
+  const { result } = await withRevision(command.site, () =>
+    callSiteObject<{ result: unknown }>(
       command.site,
       "call",
       {
@@ -245,16 +241,17 @@ export async function executeCall(
         file,
         name: fn,
         args: command.body?.args ?? null,
-        ...(kind !== "function" ? { kind } : {}),
+        kind: command.kind,
       },
       command.signal,
     ),
   );
+  return { result };
 }
 
 /**
  * A member's ticket onto the site's live connection: the WebSocket they open
- * next at the edge, which hears what site functions send them (ctx.notify).
+ * next at the edge, whose live queries then run as them.
  */
 export async function executeLiveTicket(command: DataCommand) {
   if (command.method !== "POST")

@@ -4,7 +4,7 @@ import { callSiteObject } from "@/lib/edge/client";
 
 // Site SQL (1.1.0) end to end in the site's Durable Object
 // (scripts/with-edge-worker.sh): migrations applied with a release, ctx.sql
-// in functions, and the site's tables carried by dump and restore.
+// in queries and mutations, and the site's tables carried by dump and restore.
 const integration =
   process.env.NARU_DATA_TEST === "1" ? describe : describe.skip;
 
@@ -17,22 +17,26 @@ const put = (
   publish = true,
 ) =>
   callSiteObject(site, "putFunctions", { site, folder, file, source, publish });
+/** The posts module's queries are these; its other exports are mutations. */
+const QUERIES = ["list", "sneak", "naru", "cross"];
 const call = (name: string, args: unknown = null, member = "member-1") =>
   callSiteObject<{ result: unknown }>(site, "call", {
     ownerId,
     site,
     member,
+    kind: QUERIES.includes(name) ? "query" : "mutation",
     file: "posts",
     name,
     args,
   }).then((answer) => answer.result);
 
-const POSTS = `
-export const readOnly = ["list", "sneak", "naru", "cross"];
+const POST_MUTATIONS = `
 export async function add(ctx, { title, board }) {
   const { rows } = await ctx.sql\`INSERT INTO posts (title, board, author) VALUES (\${title}, \${board}, \${ctx.member.id}) RETURNING id\`;
   return rows[0].id;
 }
+`;
+const POST_QUERIES = `
 export async function list(ctx, { board }) {
   return (await ctx.sql("SELECT id, title FROM posts WHERE board = ? ORDER BY id", [board])).rows;
 }
@@ -42,9 +46,14 @@ export async function cross(ctx) {
   return (await ctx.sql\`SELECT count(*) AS n FROM posts a, posts b WHERE a.id > b.id\`).rows;
 }
 `;
+/** Both posts modules, published once. */
+const putPosts = async () => {
+  await put("mutations", "posts", POST_MUTATIONS, false);
+  await put("queries", "posts", POST_QUERIES);
+};
 
 integration("site SQL", () => {
-  test("a release's migrations make tables that functions use with ctx.sql", async () => {
+  test("a release's migrations make tables that queries and mutations use with ctx.sql", async () => {
     await callSiteObject(site, "erase", {});
     await put(
       "migrations",
@@ -58,7 +67,7 @@ integration("site SQL", () => {
        CREATE INDEX posts_board ON posts (board);`,
       false,
     );
-    await put("functions", "posts", POSTS);
+    await putPosts();
     expect(await call("add", { title: "첫 글", board: "free" })).toBe(1);
     expect(await call("add", { title: "둘째", board: "free" })).toBe(2);
     expect(await call("add", { title: "공지", board: "notice" })).toBe(3);
@@ -66,7 +75,7 @@ integration("site SQL", () => {
       { id: 1, title: "첫 글" },
       { id: 2, title: "둘째" },
     ]);
-    // A read-only call cannot write, Naru's tables cannot be named, and a
+    // A query cannot write, Naru's tables cannot be named, and a
     // statement that would read a table once per row is refused.
     await expect(call("sneak")).rejects.toMatchObject({
       status: 400,
@@ -121,7 +130,7 @@ integration("site SQL", () => {
     });
     // The ALTER went back with it: the release before still serves.
     await put("migrations", "0002_body", null, false);
-    await put("functions", "posts", POSTS);
+    await putPosts();
     expect(await call("list", { board: "notice" })).toEqual([
       { id: 3, title: "공지" },
     ]);
@@ -140,7 +149,7 @@ integration("site SQL", () => {
       });
       await put("migrations", "0002_bad", null, false);
     }
-    await put("functions", "posts", POSTS);
+    await putPosts();
   });
 
   test("a dump carries the site's tables, and restore makes them again", async () => {
@@ -231,12 +240,13 @@ integration("queries and mutations", () => {
     await expect(code("query", "sneak", null)).rejects.toMatchObject({
       message: expect.stringMatching(/read-only query cannot write/),
     });
-    // A query or mutation file is not a function, and the other way round.
+    // A query's file is not a mutation's.
     await expect(
       callSiteObject(site, "call", {
         ownerId,
         site,
         member: "member-2",
+        kind: "mutation",
         file: "board",
         name: "recent",
         args: null,
@@ -695,9 +705,9 @@ integration("AUTOINCREMENT", () => {
 });
 
 integration("query limits", () => {
-  test("a member's queries are limited as reads are, not as function calls", async () => {
+  test("a member's queries are limited as reads are, not as calls", async () => {
     await put("queries", "ping", "export function ping() { return 1; }");
-    // More than the 120 read-only calls a minute functions allow.
+    // More than the 30 calls a minute a member's mutations allow.
     for (let i = 0; i < 130; i++)
       await callSiteObject(site, "call", {
         ownerId,

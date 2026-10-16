@@ -1,7 +1,4 @@
-import {
-  parseFilterQuery,
-  parseWhereQuery,
-} from "../../control-plane/src/lib/site-data/filters";
+import { parseFilterQuery } from "../../control-plane/src/lib/site-data/filters";
 import {
   CALLS,
   PUBLIC_READ_CACHE,
@@ -25,9 +22,8 @@ import type { Outcome, Served } from "./types";
 // of crossing to the control plane and back. Whatever needs the control plane
 // is sent on to it unchanged: requests with an owner token (sign-in scope and
 // renewal live in PostgreSQL), media (`_files`), batches (owner only),
-// function calls (`_call`, members and the owner), and
-// any request the object will not answer, such as a site whose paid status it
-// has not had confirmed.
+// members' queries and mutations, and any request the object will not
+// answer, such as a site whose paid status it has not had confirmed.
 //
 // The answer is the control plane's (http.ts), from the same protocol module:
 // same headers, same caching, same errors.
@@ -91,18 +87,13 @@ const METHODS = ["GET", "POST", "PUT", "DELETE"];
 const spent = new Map<string, { until: number; message: string }>();
 
 /**
- * Opens a live connection: `topics` (up to eight names) to hear what site
- * functions broadcast, and with a member's `ticket`, what they send that
- * member. Refusals are plain HTTP, before any WebSocket opens.
+ * Opens a live connection for live queries: a visitor's, or with a member's
+ * `ticket`, that member's, whose queries run as them. Refusals are plain
+ * HTTP, before any WebSocket opens.
  */
 async function live(request: Request, env: WebsiteEnv, site: string) {
   const url = new URL(request.url);
   if (!NAME.test(site)) return new Response("Not found.", { status: 404 });
-  const topics = (url.searchParams.get("topics") ?? "")
-    .split(",")
-    .filter(Boolean);
-  if (topics.length > 8 || !topics.every((topic) => NAME.test(topic)))
-    return new Response("Use up to eight topic names.", { status: 400 });
   const ticket = url.searchParams.get("ticket");
   let member: string | null = null;
   if (ticket !== null) {
@@ -119,7 +110,6 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
     new Request("https://site.invalid/_live", {
       headers: {
         Upgrade: "websocket",
-        "X-Naru-Topics": topics.join(","),
         // For the connection's live queries: whose site, and whose address
         // a visitor's are limited by.
         "X-Naru-Site": site,
@@ -131,9 +121,9 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
 }
 
 /**
- * Runs an export its module opens to visitors (`export const visitors`), in
- * the site's object. What the object will not answer, such as a site whose
- * paid status it has not had confirmed, goes on to the control plane.
+ * Runs a visitor's query or mutation in the site's object. What the object
+ * will not answer, such as a site whose paid status it has not had
+ * confirmed, goes on to the control plane.
  */
 async function visit(
   request: Request,
@@ -155,16 +145,13 @@ async function visit(
       args: body?.args ?? null,
       clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
       readOnlyOnly: env.READ_ONLY === "1",
-    })) as Outcome<
-      { pass: true } | { pass?: undefined; result: unknown; written: string[] }
-    >;
+    })) as Outcome<{ pass: true } | { pass?: undefined; result: unknown }>;
     if (!outcome.ok) {
       const { status, message, code, details, site } = outcome.error;
       return protocolError(status, message, code, headers, details, site);
     }
     if (outcome.value.pass) return passOn(original, env, headers);
-    const { result, written } = outcome.value;
-    return Response.json({ result, written }, { headers });
+    return Response.json({ result: outcome.value.result }, { headers });
   } catch (error) {
     if (error instanceof DataError)
       return protocolError(
@@ -175,7 +162,7 @@ async function visit(
         error.details,
         error.site,
       );
-    console.error("A visitor's function call failed", error);
+    console.error("A visitor's call failed", error);
     return protocolError(500, "Function call failed.", undefined, headers);
   }
 }
@@ -207,10 +194,9 @@ export async function website(
   // the mini, so a page holding an older SDK still works; a live connection
   // would attach to this copy, so it is refused and the SDK retries.
   if (env.READ_ONLY === "1") {
-    // A mutation always changes the site; the object refuses a function
-    // that is not read-only.
+    // A visitor's query reads; a mutation would change the site.
     const visitorCall =
-      (path[0] === "_call" || path[0] === "_query") &&
+      path[0] === "_query" &&
       request.method === "POST" &&
       !request.headers.has("authorization");
     if (
@@ -237,8 +223,7 @@ export async function website(
     request.headers.get("Upgrade")?.toLowerCase() === "websocket"
   )
     return live(request, env, site);
-  // A visitor's function call, query or mutation: answered here, like a
-  // visitor's read.
+  // A visitor's query or mutation: answered here, like a visitor's read.
   if (
     Object.hasOwn(CALLS, path[0]) &&
     request.method === "POST" &&
@@ -288,7 +273,6 @@ export async function website(
       site,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
-      where: parseWhereQuery(url.searchParams.get("where")),
       includeTotal: url.searchParams.get("includeTotal") === "1",
       ifVersion: websiteCondition(url),
       sort: url.searchParams.get("sort") ?? undefined,
