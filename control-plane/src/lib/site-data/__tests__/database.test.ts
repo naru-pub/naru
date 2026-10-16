@@ -705,6 +705,61 @@ integration("answering visitors at the edge", () => {
     });
   });
 
+  test("readers are limited by address, a site's work by the minute, and the owner sees the month", async () => {
+    // One fixed minute holds the whole test: start early in it.
+    const second = new Date().getUTCSeconds();
+    if (second > 40)
+      await new Promise((done) => setTimeout(done, (61 - second) * 1000));
+    const from = (address: string) =>
+      visit("posts?fresh=1", { headers: { "CF-Connecting-IP": address } });
+    // 600 reads a minute from one IPv6 /64, however its addresses vary.
+    for (let n = 0; n < 600; n++)
+      expect(
+        (await from(`2001:db8:1:2::${(n % 97).toString(16)}`)).status,
+      ).toBe(200);
+    const refused = await from("2001:db8:1:2::beef");
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toMatchObject({
+      error: { code: "RATE_LIMITED" },
+    });
+    expect((await from("2001:db8:1:3::1")).status).toBe(200);
+
+    // The owner's listing shows what the site holds and the month's requests.
+    const before = (await owned("GET", [])) as any;
+    expect(before.usage.requests).toMatchObject({ limit: 500_000 });
+    expect(before.usage.requests.used).toBeGreaterThanOrEqual(601);
+    await owned("PUT", ["posts", "counted"], { data: { title: "x" } });
+    const after = (await owned("GET", [])) as any;
+    expect(after.usage.documents).toBe(before.usage.documents + 1);
+    expect(after.usage.bytes).toBeGreaterThan(before.usage.bytes);
+    await owned("DELETE", ["posts", "counted"]);
+    expect(((await owned("GET", [])) as any).usage).toMatchObject({
+      documents: before.usage.documents,
+      bytes: before.usage.bytes,
+    });
+
+    // A site that has read its rows for the minute refuses its members and
+    // visitors, never its owner, until the next minute.
+    const configure = (rowsPerMinute: number | null) =>
+      callSiteObject("erin", "configure", {
+        ownerId: String(owner),
+        entitledUntil: null,
+        confirmedUntil: Date.now() + 60_000,
+        rowsPerMinute,
+      });
+    await configure(1);
+    try {
+      const busy = await from("198.51.100.9");
+      expect(busy.status).toBe(429);
+      expect(await busy.json()).toMatchObject({
+        error: { code: "RATE_LIMITED" },
+      });
+      await expect(owned("GET", ["posts"])).resolves.toBeDefined();
+    } finally {
+      await configure(null);
+    }
+  }, 120_000);
+
   test("a site that moved to the mini goes on to the control plane, visitors too", async () => {
     passed.length = 0;
     const read = await fetch(`${worker}/api/data/v1/moved-away/posts/one`, {

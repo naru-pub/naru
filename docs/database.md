@@ -500,6 +500,27 @@ the next month. `SITE_MONTHLY_REQUESTS` sets the default; `monthlyRequests`
 in `configure` overrides it for a site. Counts are persisted every 25 requests,
 so an evicted object can forget up to 24 requests.
 
+Three guards keep one caller, or one site, from spending what others need
+(`site.ts`):
+
+- Reads a minute: 600 per address for visitors' reads at the edge, and per
+  member for theirs (`limitReader`, kept in memory). Every per-address limit,
+  this one and the visitors' write and call buckets, keys an IPv6 address by
+  its /64 (`addresses.ts`), so stepping through one subscriber's addresses
+  earns no fresh limit.
+- Work a minute: the rows SQLite reads for a site's members and visitors,
+  counted from each query's `rowsRead` (`metered`), at most 5,000,000 a minute
+  (`SITE_ROWS_PER_MINUTE`, or `rowsPerMinute` in `configure` for one site).
+  Past it the site refuses its members and visitors with 429 `RATE_LIMITED`
+  until the next minute, never its owner. Every site shares one workerd
+  thread, so a site whose queries scan slows itself rather than the others.
+- The owner's /database shows the month's requests against the budget
+  (`usage.requests` in the owner's collection listing), marked from 80%.
+
+A write's quota check reads the site's document count and bytes from a
+`usage` row that triggers on `documents` keep, rather than counting every
+document.
+
 Collection creation outside a document request, such as website registration
 or board-template application, commits in the object separately from the
 PostgreSQL transaction. Template applications record the application first;

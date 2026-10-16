@@ -1,3 +1,4 @@
+import { callerKey } from "./addresses";
 import { FunctionRevisions } from "./function-revisions";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
@@ -112,6 +113,21 @@ const MEMBER_READS_PER_MINUTE = 120;
  */
 const VISITOR_CALLS = { address: 20, site: 300 };
 const VISITOR_READS = { address: 60, site: 900 };
+/**
+ * Rows SQLite may read a minute for a site's members and visitors: about 5 s
+ * of the one thread every site shares, so a site whose queries scan (contains
+ * over 100,000 documents, totals of big boards) slows itself, not the others.
+ * The owner is never refused.
+ */
+const ROWS_PER_MINUTE = 5_000_000;
+const busy = () =>
+  new DataError(
+    429,
+    "This site has read as much as it may this minute. Try again next minute.",
+    "RATE_LIMITED",
+  );
+/** Reads a minute by one address or member; see limitReader. */
+const READS_PER_MINUTE = 600;
 /** Live connections one site's object holds at once. */
 const MAX_LIVE_CONNECTIONS = 1000;
 /** A message a function sends, as JSON. */
@@ -272,6 +288,28 @@ export class SiteData extends DurableObject<Env> {
       )
     )
       this.sql.exec("ALTER TABLE documents ADD COLUMN secret_hash TEXT");
+    // The site's document count and bytes, kept by triggers on every write
+    // path, so a write's quota check reads one row instead of every document.
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS usage (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        documents INTEGER NOT NULL,
+        bytes INTEGER NOT NULL
+      );
+      CREATE TRIGGER IF NOT EXISTS usage_insert AFTER INSERT ON documents BEGIN
+        UPDATE usage SET documents = documents + 1, bytes = bytes + NEW.size_bytes WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS usage_delete AFTER DELETE ON documents BEGIN
+        UPDATE usage SET documents = documents - 1, bytes = bytes - OLD.size_bytes WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS usage_update AFTER UPDATE OF size_bytes ON documents BEGIN
+        UPDATE usage SET bytes = bytes - OLD.size_bytes + NEW.size_bytes WHERE id = 1;
+      END;
+    `);
+    // Counted once, when an object first has the table.
+    this.sql.exec(
+      "INSERT OR IGNORE INTO usage (id, documents, bytes) SELECT 1, count(*), coalesce(sum(size_bytes), 0) FROM documents",
+    );
   }
   private run<T>(work: () => T): Outcome<T> {
     try {
@@ -296,7 +334,40 @@ export class SiteData extends DurableObject<Env> {
   }
 
   private rows(query: string, ...bindings: SqlValue[]): Row[] {
-    return this.sql.exec(query, ...bindings).toArray() as Row[];
+    const cursor = this.sql.exec(query, ...bindings);
+    const rows = cursor.toArray() as Row[];
+    this.rowsRead += cursor.rowsRead;
+    return rows;
+  }
+
+  /** Every row SQLite has read through `rows`, and this minute's share for members and visitors. */
+  private rowsRead = 0;
+  private worked = { minute: 0, rows: 0 };
+  private thisMinute() {
+    const minute = Math.floor(Date.now() / 60000);
+    if (this.worked.minute !== minute) this.worked = { minute, rows: 0 };
+    return this.worked;
+  }
+  private rowsPerMinute() {
+    const own = this.meta("rows_per_minute");
+    if (own !== null) return Number(own);
+    const configured = Number(
+      (this.env as { SITE_ROWS_PER_MINUTE?: string }).SITE_ROWS_PER_MINUTE,
+    );
+    return configured > 0 ? configured : ROWS_PER_MINUTE;
+  }
+  /** Refuses a member's or visitor's request once the site has read its rows this minute. */
+  private admitWork() {
+    if (this.thisMinute().rows >= this.rowsPerMinute()) throw busy();
+  }
+  /** Runs a member's or visitor's work, counting the rows it read. */
+  private metered<T>(work: () => T): T {
+    const before = this.rowsRead;
+    try {
+      return work();
+    } finally {
+      this.thisMinute().rows += this.rowsRead - before;
+    }
   }
 
   private meta(key: string): string | null {
@@ -446,10 +517,28 @@ export class SiteData extends DurableObject<Env> {
   }
 
   private usage() {
-    const row = this.rows(
-      "SELECT count(*) AS documents, coalesce(sum(size_bytes), 0) AS bytes FROM documents",
-    )[0];
+    const row = this.rows("SELECT documents, bytes FROM usage WHERE id = 1")[0];
     return { documents: Number(row.documents), bytes: Number(row.bytes) };
+  }
+
+  /**
+   * Reads a minute by one address (an IPv6 /64) or one member, kept in
+   * memory: a script reading in a loop is refused long before it spends the
+   * site's month, while a person browsing never meets it.
+   */
+  private readers = { minute: 0, counts: new Map<string, number>() };
+  private limitReader(key: string) {
+    const minute = Math.floor(Date.now() / 60000);
+    if (this.readers.minute !== minute)
+      this.readers = { minute, counts: new Map() };
+    const count = (this.readers.counts.get(key) ?? 0) + 1;
+    if (count > READS_PER_MINUTE)
+      throw new DataError(
+        429,
+        "Too many reads from here this minute. Try again next minute.",
+        "RATE_LIMITED",
+      );
+    this.readers.counts.set(key, count);
   }
 
   /** Fixed-minute buckets: 60 public writes per site, 20 per caller. */
@@ -457,7 +546,7 @@ export class SiteData extends DurableObject<Env> {
     const window = Math.floor(Date.now() / 60000) * 60000;
     this.sql.exec("DELETE FROM rate_limits WHERE window_start < ?", window);
     const caller = createHash("sha256")
-      .update(clientIp || "unknown")
+      .update(callerKey(clientIp))
       .digest("base64url");
     for (const [key, maximum] of [
       ["site", 60],
@@ -565,6 +654,19 @@ export class SiteData extends DurableObject<Env> {
     return configured > 0 ? configured : DEFAULT_MONTHLY_REQUESTS;
   }
 
+  /** The month's requests so far, its budget, and when it starts again. */
+  private requestsThisMonth() {
+    const now = new Date();
+    const month = now.toISOString().slice(0, 7);
+    const used =
+      this.budget?.month === month
+        ? this.budget.used
+        : this.meta("budget_month") === month
+          ? Number(this.meta("budget_used"))
+          : 0;
+    return { used, limit: this.monthlyLimit(), resetsAt: nextMonth(now) };
+  }
+
   /**
    * Counts one anonymous request against the month, or refuses it once the
    * month's budget is spent. Owners are never counted. Run on its own, not in
@@ -602,13 +704,27 @@ export class SiteData extends DurableObject<Env> {
   async execute(input: ExecuteInput) {
     // Members are counted like visitors: the budget is what the site's
     // community may use, and only its owner is free of it.
-    if (input.access.anonymous || input.access.member) {
-      const spent = this.run(() => this.spend());
+    const counted = Boolean(input.access.anonymous || input.access.member);
+    if (counted) {
+      const spent = this.run(() => {
+        this.admitWork();
+        if (input.method === "GET")
+          this.limitReader(
+            input.access.member
+              ? `member:${input.access.member}`
+              : callerKey(input.clientIp),
+          );
+        this.spend();
+      });
       if (!spent.ok) return spent;
     }
     try {
       const rules = await this.prepareRules(input);
-      return this.run(() => this.executeSync(input, rules));
+      return this.run(() =>
+        counted
+          ? this.metered(() => this.executeSync(input, rules))
+          : this.executeSync(input, rules),
+      );
     } catch (error) {
       return this.run(() => {
         throw error;
@@ -636,7 +752,11 @@ export class SiteData extends DurableObject<Env> {
       (until !== "forever" && Number(until) <= now)
     )
       return { ok: true, value: { pass: true } };
-    const spent = this.run(() => this.spend());
+    const spent = this.run(() => {
+      this.admitWork();
+      if (input.method === "GET") this.limitReader(callerKey(input.clientIp));
+      this.spend();
+    });
     if (!spent.ok) return spent;
     const command: ExecuteInput = {
       ...input,
@@ -648,7 +768,7 @@ export class SiteData extends DurableObject<Env> {
       return this.run(() => {
         if (input.path.length > 2) throw new DataError(404, "Not found.");
         input.path.forEach(name);
-        return this.executeSync(command, rules);
+        return this.metered(() => this.executeSync(command, rules));
       });
     } catch (error) {
       // Rules with no revision yet: the control plane publishes one.
@@ -673,6 +793,11 @@ export class SiteData extends DurableObject<Env> {
         this.setMeta(
           "monthly_requests",
           input.monthlyRequests === null ? null : String(input.monthlyRequests),
+        );
+      if (input.rowsPerMinute !== undefined)
+        this.setMeta(
+          "rows_per_minute",
+          input.rowsPerMinute === null ? null : String(input.rowsPerMinute),
         );
       return this.usage();
     });
@@ -703,6 +828,9 @@ export class SiteData extends DurableObject<Env> {
             collections: this.rows(
               "SELECT id, name, read_access, write_access FROM collections ORDER BY name",
             ).map((row) => this.collection(row.id as string, row)),
+            // For the owner's /database: what the site holds, and what its
+            // members and visitors have used of the month's requests.
+            usage: { ...this.usage(), requests: this.requestsThisMonth() },
           },
           publicRead,
         };
@@ -1523,6 +1651,7 @@ export class SiteData extends DurableObject<Env> {
     }
     const admitted = this.run(() => {
       this.claim(input.ownerId);
+      if (visitor || input.member !== null) this.admitWork();
       if (visitor) {
         this.spend();
         this.limitVisitor(input.clientIp, readonly);
@@ -1537,22 +1666,27 @@ export class SiteData extends DurableObject<Env> {
     const written = new Set<string>();
     const messages: Message[] = [];
     try {
+      const counted = visitor || input.member !== null;
       const outcome = this.run(() => ({
-        result: runFunction(
-          engine,
-          {
-            source: sources[filename],
-            filename,
-            modules: sources,
-            name: input.name,
-            args: input.args,
-            member: input.member,
-            owner: input.member === null && !visitor,
-            visitor,
-            now: Date.now(),
-            readonly,
-          },
-          this.functionHost(written, messages),
+        result: (counted
+          ? <T>(work: () => T) => this.metered(work)
+          : <T>(work: () => T) => work())(() =>
+          runFunction(
+            engine,
+            {
+              source: sources[filename],
+              filename,
+              modules: sources,
+              name: input.name,
+              args: input.args,
+              member: input.member,
+              owner: input.member === null && !visitor,
+              visitor,
+              now: Date.now(),
+              readonly,
+            },
+            this.functionHost(written, messages),
+          ),
         ),
         written: [...written].sort(),
         ...this.pendingMedia(),
@@ -1620,7 +1754,7 @@ export class SiteData extends DurableObject<Env> {
     const kind = readonly ? "visitor-read" : "visitor-call";
     const limits = readonly ? VISITOR_READS : VISITOR_CALLS;
     const caller = createHash("sha256")
-      .update(clientIp || "unknown")
+      .update(callerKey(clientIp))
       .digest("base64url");
     for (const [key, maximum] of [
       [`${kind}:site`, limits.site],

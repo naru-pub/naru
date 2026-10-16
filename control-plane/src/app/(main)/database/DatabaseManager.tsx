@@ -22,6 +22,12 @@ type Collection = {
   indexes?: string[];
 };
 type Document = { id: string; data: unknown };
+type Usage = {
+  documents: number;
+  bytes: number;
+  requests: { used: number; limit: number; resetsAt: number };
+};
+const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
 async function api(path = "", method = "GET", body?: unknown) {
   const response = await fetch(`/api/account/database${path}`, {
     method,
@@ -61,6 +67,7 @@ export default function DatabaseManager({
   const [unique, setUnique] = useState("");
   const [indexes, setIndexes] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const [total, setTotal] = useState<number | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [id, setId] = useState("");
@@ -131,7 +138,10 @@ export default function DatabaseManager({
   }
   useEffect(() => {
     api()
-      .then((result) => setCollections(result.collections))
+      .then((result) => {
+        setCollections(result.collections);
+        setUsage(result.usage ?? null);
+      })
       .catch((e) => setError(failureMessage(e)))
       .finally(() => setBusy(false));
   }, []);
@@ -148,6 +158,27 @@ export default function DatabaseManager({
           <p className="text-sm text-muted-foreground">
             최대 100 MiB · 문서 100,000개 · 컬렉션 100개
           </p>
+          {usage && (
+            <p
+              className={`text-sm ${
+                usage.requests.used >= usage.requests.limit * 0.8
+                  ? "font-semibold text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
+              사용 중: 문서 {usage.documents.toLocaleString("ko-KR")}개 ·{" "}
+              {mib(usage.bytes)} MiB · 이번 달 회원·방문자 요청{" "}
+              {usage.requests.used.toLocaleString("ko-KR")} /{" "}
+              {usage.requests.limit.toLocaleString("ko-KR")}회 (
+              {new Date(usage.requests.resetsAt).toLocaleDateString("ko-KR")}에
+              초기화)
+              {usage.requests.used >= usage.requests.limit
+                ? " — 다 써서 회원과 방문자의 요청이 거절되고 있습니다."
+                : usage.requests.used >= usage.requests.limit * 0.8
+                  ? " — 80%를 넘었습니다."
+                  : ""}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">

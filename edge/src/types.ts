@@ -140,6 +140,8 @@ export type EdgeConfiguration = {
   confirmedUntil: number;
   /** A budget other than the Worker's default; null restores the default. */
   monthlyRequests?: number | null;
+  /** Rows a minute other than the Worker's default; null restores it. */
+  rowsPerMinute?: number | null;
 };
 
 export type Usage = { documents: number; bytes: number };
