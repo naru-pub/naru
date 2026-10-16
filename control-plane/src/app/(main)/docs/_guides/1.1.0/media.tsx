@@ -44,7 +44,7 @@ export default function MediaDocs() {
             사이트가 올린 이미지와 파일을 다루세요.
           </h1>
           <p className="text-lg leading-8 text-muted-foreground">
-            글에 넣을 사진 등 데이터베이스 문서와 함께 쓰는 파일을 보관합니다.
+            글에 넣을 사진 등 데이터베이스와 함께 쓰는 파일을 보관합니다.
           </p>
           <div className="flex flex-wrap gap-5 text-sm underline underline-offset-4">
             <a href="/media">미디어 라이브러리 열기 →</a>
@@ -124,26 +124,33 @@ await admin.collection("posts").set("hello", {
             <Section id="manage" title="03 · 관리와 삭제">
               <p>
                 나루는 파일을 스스로 지우지 않습니다. 파일 주소는 문서 밖
-                어디에서든 쓰일 수 있기 때문입니다. 대신 어떤 문서가 파일의
-                URL을 담고 있는지 기록하고, 담은 문서가 하나도 없는 파일을
-                미디어 라이브러리에 &lsquo;참조 없음&rsquo;으로 표시합니다. 일반
-                필드든 HTML 안이든 URL이 들어 있으면 참조로 셉니다. 사이트
-                파일이 쓰는지는 보지 않으니, 필요 없는 파일만 그곳에서 지우세요.
+                어디에서든 쓰일 수 있기 때문입니다. 대신 어떤 문서나 사이트
+                테이블의 행이 파일의 URL을 담고 있는지 살피고, 담은 곳이 하나도
+                없는 파일을 미디어 라이브러리에 &lsquo;참조 없음&rsquo;으로
+                표시합니다. 문서의 일반 필드든 HTML 안이든, 테이블의 텍스트
+                열이든 URL이 들어 있으면 참조로 셉니다. 사이트 파일이 쓰는지는
+                보지 않으니, 필요 없는 파일만 그곳에서 지우세요.
               </p>
-              <Code>{`const image = await member.media.upload(file);
-await posts.add({ title: "사진", image: image.url });
+              <Code>{`const image = await admin.media.upload(file);
+await admin.collection("posts").set("spring", { title: "사진", image: image.url });
 // 글을 지우거나 다른 사진으로 바꾸면, 이 파일은 미디어 라이브러리에
 // '참조 없음'으로 표시됩니다.`}</Code>
               <p>
-                업로드 결과에는 파일 ID가 있습니다. 페이지에서 지우려면 URL과
-                함께 문서에 저장하고, 더 이상 사용하는 문서가 없을 때 ID로
-                삭제하세요. 회원은 자신이 올린 파일만 지울 수 있습니다. 서버
-                함수는 파일을 지우지 않습니다.
+                <a href="/docs/1.1.0/database#members">회원</a>은{" "}
+                <code>member.media.upload()</code>로 파일을 올리고(한 시간에
+                30개까지), 받은 URL을 사이트의 뮤테이션에 넘겨 테이블에
+                저장합니다. 업로드 결과에는 파일 ID가 있습니다. 페이지에서
+                지우려면 URL과 함께 저장하고, 더 이상 쓰는 곳이 없을 때 ID로
+                삭제하세요. 회원은 자신이 올린 파일만 지울 수 있습니다. 사이트
+                코드(쿼리와 뮤테이션)는 파일을 지우지 않습니다.
               </p>
               <Code>{`const uploaded = await member.media.upload(file);
-await posts.add({ image: uploaded.url, imageId: uploaded.id });
-// 참조하는 문서를 먼저 삭제하거나 이미지를 교체한 뒤:
-await member.media.delete(uploaded.id);`}</Code>
+await member.mutate("profile:setAvatar", {
+  url: uploaded.url,
+  fileId: uploaded.id,
+});
+// 다른 사진으로 바꾼 뒤, 예전 파일을:
+await member.media.delete(previousFileId);`}</Code>
               <p>
                 사이트 소유자가 웹페이지에서 삭제하려면 로그인할 때 미디어 삭제
                 권한을 따로 요청해야 합니다. 기존 로그인에는 이 권한이 없습니다.

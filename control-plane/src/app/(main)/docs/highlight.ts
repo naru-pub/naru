@@ -1,6 +1,7 @@
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
+import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 
@@ -9,6 +10,7 @@ import xml from "highlight.js/lib/languages/xml";
 const highlighter = hljs.newInstance();
 highlighter.registerLanguage("javascript", javascript);
 highlighter.registerLanguage("json", json);
+highlighter.registerLanguage("sql", sql);
 highlighter.registerLanguage("typescript", typescript);
 highlighter.registerLanguage("xml", xml);
 
@@ -17,6 +19,7 @@ export const LANGUAGE_LABELS = {
   json: "JSON",
   html: "HTML",
   typescript: "TypeScript",
+  sql: "SQL",
 } as const;
 
 export type Language = keyof typeof LANGUAGE_LABELS;

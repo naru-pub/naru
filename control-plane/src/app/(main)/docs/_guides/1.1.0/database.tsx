@@ -7,7 +7,7 @@ import DocsNav from "../../DocsNav";
 export const metadata: Metadata = {
   title: "데이터베이스 사용 안내 | 나루",
   description:
-    "나루 제어판과 웹 SDK로 블로그, 방명록, 관리자 글쓰기를 만드는 방법",
+    "나루 제어판과 웹 SDK로 블로그, 방명록, 회원 게시판과 관리자 글쓰기를 만드는 방법",
 };
 
 const sections = [
@@ -16,12 +16,14 @@ const sections = [
   ["php", "03 · PHP와 견주어 보기"],
   ["collections", "04 · 컬렉션과 공개 범위"],
   ["admin", "05 · 관리자 로그인"],
-  ["members", "06 · 회원과 서버 함수"],
-  ["write", "07 · 글 수정과 충돌 처리"],
-  ["read", "08 · 목록·검색·페이지"],
-  ["rules", "09 · 컬렉션 규칙"],
-  ["recipes", "10 · 사용 예"],
-  ["errors", "11 · 한도와 오류"],
+  ["write", "06 · 글 수정과 충돌 처리"],
+  ["read", "07 · 목록과 페이지 나누기"],
+  ["members", "08 · 회원"],
+  ["code", "09 · 사이트 코드: 테이블·쿼리·뮤테이션"],
+  ["live", "10 · 실시간 쿼리"],
+  ["routes", "11 · 라우트"],
+  ["recipes", "12 · 사용 예"],
+  ["errors", "13 · 한도와 오류"],
 ];
 
 function Section({
@@ -173,19 +175,60 @@ export default function DatabaseDocs() {
                 페이지의 스크립트는 방문자의 브라우저에서 돌고, 방문자는 그
                 코드를 마음대로 고칠 수 있습니다. 그래서 페이지가 정한 것은 믿을
                 수 없습니다. 페이지는 보여 주고 요청할 뿐이고, 누가 무엇을 할 수
-                있는지는 나루가 정합니다. 가격, 잔액, 권한, 주사위처럼 속이면 안
-                되는 것은 모두 나루에서 정하세요.
+                있는지는 나루와 나루에서 도는 사이트 코드가 정합니다. 가격,
+                잔액, 권한, 주사위처럼 속이면 안 되는 것은 모두 그곳에서
+                정하세요.
               </p>
-              <h3 className="font-bold">세 사람, 하나의 손잡이</h3>
+              <h3 className="font-bold">데이터를 두는 곳은 두 가지입니다</h3>
+              <Table
+                head={["", "컬렉션", "사이트 테이블"]}
+                rows={[
+                  [
+                    "모양",
+                    "문서마다 JSON 하나",
+                    <>
+                      <code>_naru/migrations/</code>의 SQL로 만든 SQLite 테이블
+                    </>,
+                  ],
+                  [
+                    "읽고 쓰는 길",
+                    <>
+                      페이지가 SDK의 <code>collection(이름)</code>으로 바로
+                    </>,
+                    <>
+                      사이트의 <a href="#code">쿼리와 뮤테이션</a>을 거쳐서만
+                    </>,
+                  ],
+                  [
+                    "누가 정하나",
+                    "컬렉션마다 하나의 공개 범위",
+                    "사이트 코드가 부른 사람을 보고 정합니다",
+                  ],
+                  [
+                    "알맞은 곳",
+                    "블로그 글, 방명록, 문의함, 설정",
+                    "회원 게시판, 댓글, 포인트, 상점처럼 규칙이 있는 데이터",
+                  ],
+                ]}
+              />
+              <p>
+                둘은 서로 섞이지 않습니다. 사이트 코드의 SQL은 컬렉션을 읽을 수
+                없고, 컬렉션의 SDK는 테이블을 읽을 수 없습니다. 한 사이트에서
+                둘을 함께 써도 됩니다.
+              </p>
+              <h3 className="font-bold">세 사람</h3>
               <p>
                 요청하는 사람은 셋입니다. 로그인하지 않은{" "}
-                <strong>방문자</strong>, 자기 나루 계정으로 로그인한{" "}
+                <strong>방문자</strong>, 자기 나루 계정으로 이 사이트에 로그인한{" "}
                 <strong>회원</strong>, 사이트의 <strong>소유자</strong>입니다.
-                셋 모두 같은 <code>collection(이름)</code>으로 같은 메서드를
-                부릅니다. 허락할지는 요청한 사람을 보고 나루가 정하므로, 페이지
-                코드가 역할마다 달라지지 않습니다.
+                방문자와 소유자는 컬렉션을 공개 범위에 따라 읽고 씁니다. 회원은
+                컬렉션에 따로 권한이 없고, 사이트 코드를 부릅니다. 셋 모두 같은{" "}
+                <code>query(이름, 인자)</code>와 <code>mutate(이름, 인자)</code>
+                를 부르고, 사이트 코드는 <code>ctx.member</code>·
+                <code>ctx.owner</code>·<code>ctx.visitor</code>로 누가 불렀는지
+                압니다.
               </p>
-              <h3 className="font-bold">지키는 곳은 세 겹입니다</h3>
+              <h3 className="font-bold">지키는 곳</h3>
               <p>필요한 만큼만 쓰세요. 위에서부터 가장 단순합니다.</p>
               <Table
                 head={["필요한 것", "쓸 것", "예"]}
@@ -198,49 +241,47 @@ export default function DatabaseDocs() {
                     "공지는 누구나 읽고 관리자만 쓴다",
                   ],
                   [
-                    "문서마다 다른 권한",
-                    <a key="a" href="#rules">
-                      컬렉션 규칙
+                    "사람마다, 글마다 다른 권한",
+                    <a key="a" href="#code">
+                      쿼리와 뮤테이션
                     </a>,
-                    "비밀글은 글쓴이와 운영진만 읽는다",
+                    "회원은 자기 글만 고치고, 운영진은 모든 글을 지운다",
                   ],
                   [
-                    "여러 문서를 함께 바꾸는 일",
-                    <a key="a" href="#members">
-                      서버 함수
+                    "여러 행을 함께 바꾸는 일",
+                    <a key="a" href="#code">
+                      뮤테이션
                     </a>,
                     "물건을 사면 잔액과 재고와 인벤토리가 한꺼번에 바뀐다",
                   ],
                 ]}
               />
               <p>
-                규칙은 페이지가 SDK로 바로 읽고 쓰는 길을 지키고, 서버 함수는
-                페이지가 할 수 없는 일을 대신합니다. 함수 한 번은 트랜잭션
-                하나라서, 다 되거나 아무것도 바뀌지 않습니다. 중간에 멈춘
-                구매처럼 반쯤 된 상태는 생기지 않습니다.
+                뮤테이션 한 번은 트랜잭션 하나라서, 다 되거나 아무것도 바뀌지
+                않습니다. 중간에 멈춘 구매처럼 반쯤 된 상태는 생기지 않습니다.
               </p>
               <h3 className="font-bold">사이트 파일이 곧 설정입니다</h3>
               <p>
-                컬렉션, 함수, 규칙은 사이트의 <code>_naru/</code> 폴더에 둡니다.
-                사이트와 함께 GitHub에 올라가고, 템플릿을 설치하면 함께
-                복사되며, 파일을 올리면 바로 적용됩니다. 제어판에서 하나씩
-                누르지 않아도 사이트가 스스로 필요한 것을 갖춥니다. 다만 이미
-                있는 컬렉션을 바꾸는 내용은 소유자가 제어판에서 확인한 뒤에
-                적용됩니다. 이 파일들은 다른 사이트 파일처럼 누구나 볼 수 있으니
-                비밀값을 넣지 마세요.
+                컬렉션, 테이블, 쿼리, 뮤테이션, 라우트는 사이트의{" "}
+                <code>_naru/</code> 폴더에 둡니다. 사이트와 함께 GitHub에
+                올라가고, 템플릿을 설치하면 함께 복사되며, 파일을 올리면 바로
+                적용됩니다. 제어판에서 하나씩 누르지 않아도 사이트가 스스로
+                필요한 것을 갖춥니다. 다만 이미 있는 컬렉션의 공개 범위를 바꾸는
+                내용은 소유자가 제어판에서 확인한 뒤에 적용됩니다. 이 파일들은
+                다른 사이트 파일처럼 누구나 볼 수 있으니 비밀값을 넣지 마세요.
               </p>
               <h3 className="font-bold">작고 빠르게, 정해진 한도 안에서</h3>
               <p>
-                모든 사이트가 서버를 나눠 쓰므로 함수와 규칙에는 한도가
+                모든 사이트가 서버를 나눠 쓰므로 사이트 코드에는 한도가
                 있습니다. 한 번에 데이터베이스 작업 100번, 수십 밀리초입니다.
                 한도는 실수를 일찍 드러냅니다. 끝없는 반복이나 한 번에 모든 글을
                 읽는 코드는 실패하고, 바꾼 것은 되돌려집니다. 많은 글을 다룰
-                때는 <code>where</code>로 필요한 것만 읽고 쪽을 나누세요.
+                때는 색인을 만들고 <code>LIMIT</code>로 필요한 만큼만 읽으세요.
               </p>
               <h3 className="font-bold">오류는 방문자에게 보여 줄 수 있게</h3>
               <p>
                 실패하면 <code>error.message</code>를 그대로 화면에 띄워도
-                되도록, 나루의 오류는 한국어로, 함수와 규칙의{" "}
+                되도록, 나루의 오류는 한국어로, 사이트 코드의{" "}
                 <code>ctx.fail</code>은 사이트가 쓴 말 그대로 옵니다. 무엇이 왜
                 실패했는지 개발자를 위한 설명은 <code>error.cause.message</code>
                 에, 처리를 나눌 값은 <code>error.code</code>와{" "}
@@ -251,8 +292,8 @@ export default function DatabaseDocs() {
             <Section id="php" title="03 · PHP와 견주어 보기">
               <p>
                 그누보드나 PHP로 게시판을 만들어 봤다면, 나루에서도 하는 일은
-                같습니다. 다만 서버 파일 대신 페이지의 스크립트가 SDK를 부르고,
-                PHP에서 직접 짜던 검사는 서버 함수와 컬렉션 규칙이 맡습니다.
+                같습니다. PHP 파일이 하던 일은 사이트 코드가 맡고, 페이지의
+                스크립트가 그것을 이름으로 부릅니다. SQL도 그대로 씁니다.
               </p>
               <Table
                 head={["PHP에서", "나루에서"]}
@@ -260,62 +301,56 @@ export default function DatabaseDocs() {
                   [
                     <code key="c">CREATE TABLE</code>,
                     <>
-                      <a href="#collections">
-                        <code>_naru/collections.json</code>
+                      <a href="#code">
+                        <code>_naru/migrations/0001_posts.sql</code>
                       </a>
-                      에 컬렉션을 적거나 제어판에서 만듭니다.
+                      에 같은 SQL을 적습니다.
                     </>,
                   ],
                   [
                     <code key="c">
                       SELECT … WHERE board = &apos;free&apos;
                     </code>,
-                    <code key="n">
-                      list({'{ filter: { board: "free" } }'})
-                    </code>,
+                    <>
+                      쿼리 안에서{" "}
+                      <code>{"ctx.sql`SELECT … WHERE board = ${board}`"}</code>
+                    </>,
                   ],
                   [
                     <code key="c">WHERE title LIKE &apos;%봄%&apos;</code>,
-                    <code key="n">
-                      list({'{ where: { contains: ["title", "봄"] } }'})
-                    </code>,
+                    "쿼리 안에서 같은 LIKE를 씁니다.",
                   ],
                   [
                     <code key="c">LIMIT 20 OFFSET 40</code>,
                     <>
-                      <code>size: 20</code>과 <code>nextCursor</code>로 다음
-                      쪽을 읽습니다.
+                      쿼리 안의 <code>LIMIT</code>. 컬렉션은 <code>size</code>와{" "}
+                      <code>nextCursor</code>로 다음 쪽을 읽습니다.
                     </>,
                   ],
                   [
                     <code key="c">INSERT</code>,
                     <>
-                      <code>add(data)</code>, ID를 정하면{" "}
-                      <code>set(id, data)</code>
+                      뮤테이션 안의 <code>{"ctx.sql`INSERT …`"}</code>. 컬렉션은{" "}
+                      <code>add(data)</code>
                     </>,
                   ],
                   [
                     <code key="c">$_SESSION[&apos;mb_id&apos;]</code>,
                     <>
-                      <a href="#members">회원 로그인</a> 뒤의{" "}
-                      <code>member.id</code>
+                      <a href="#members">회원 로그인</a> 뒤 사이트 코드의{" "}
+                      <code>ctx.member.id</code>
                     </>,
                   ],
                   [
+                    <code key="c">$member[&apos;mb_level&apos;]</code>,
                     <>
-                      <code>write_update.php</code>의 권한·포인트 검사
-                    </>,
-                    <>
-                      <a href="#members">서버 함수</a>(
-                      <code>_naru/functions/</code>)나{" "}
-                      <a href="#rules">컬렉션 규칙</a>(<code>_naru/rules/</code>
-                      )
+                      회원의 역할, <code>ctx.member.roles</code>
                     </>,
                   ],
                   [
                     <code key="c">alert(&apos;권한이 없습니다.&apos;)</code>,
                     <>
-                      함수와 규칙의 <code>ctx.fail(코드, 메시지)</code>.
+                      사이트 코드의 <code>ctx.fail(코드, 메시지)</code>.
                       메시지가 그대로 방문자에게 보입니다.
                     </>,
                   ],
@@ -329,30 +364,38 @@ export default function DatabaseDocs() {
                 head={["나루", "PHP 사이트에서", "다른 점"]}
                 rows={[
                   [
-                    <code key="n">_naru/collections.json</code>,
+                    <code key="n">_naru/migrations/</code>,
                     <>
-                      <code>install.sql</code>의 <code>CREATE TABLE</code>
+                      <code>install.sql</code>과 업데이트마다 돌리던 SQL
                     </>,
-                    "열(칼럼)은 정하지 않습니다. 문서마다 JSON을 담습니다.",
+                    "파일을 올리면 나루가 차례대로 한 번씩 적용합니다. 적용된 파일은 고치지 않고 새 파일을 더합니다.",
                   ],
                   [
-                    <code key="n">_naru/functions/</code>,
+                    <code key="n">_naru/queries/</code>,
+                    <>
+                      <code>list.php</code>·<code>view.php</code>처럼 읽는 파일
+                    </>,
+                    <>
+                      주소 대신 이름으로 부릅니다:{" "}
+                      <code>naru.query(&quot;board:recent&quot;)</code>
+                    </>,
+                  ],
+                  [
+                    <code key="n">_naru/mutations/</code>,
                     <>
                       폼이 보내는 <code>write_update.php</code> 같은 파일
                     </>,
                     <>
-                      주소 대신 이름으로 부릅니다:{" "}
-                      <code>member.call(&quot;shop:buy&quot;)</code>
+                      <code>member.mutate(&quot;board:write&quot;, 인자)</code>.
+                      한 번이 트랜잭션 하나입니다.
                     </>,
                   ],
                   [
-                    <code key="n">_naru/rules/</code>,
+                    <code key="n">_naru/routes/</code>,
                     <>
-                      페이지마다 맨 위에 쓰던{" "}
-                      <code>if ($member[&apos;mb_level&apos;] &lt; 2)</code>{" "}
-                      검사
+                      <code>board.php?id=3</code>처럼 서버가 그리는 페이지
                     </>,
-                    "페이지가 아니라 데이터를 지킵니다. 한곳에 쓰면 모든 읽기와 쓰기에 적용됩니다.",
+                    "필요할 때만 씁니다. 대부분의 페이지는 정적 HTML과 스크립트로 충분합니다.",
                   ],
                   [
                     <code key="n">_naru/modules/</code>,
@@ -360,7 +403,12 @@ export default function DatabaseDocs() {
                       <code>include &apos;lib/common.lib.php&apos;</code>로 불러
                       쓰던 <code>lib/</code>
                     </>,
-                    "함수와 규칙이 import합니다. 페이지에서 직접 부를 수는 없습니다.",
+                    "사이트 코드가 import합니다. 페이지에서 직접 부를 수는 없습니다.",
+                  ],
+                  [
+                    <code key="n">_naru/collections.json</code>,
+                    "—",
+                    "SQL 없이 JSON 문서를 모으는 컬렉션을 정합니다.",
                   ],
                 ]}
               />
@@ -392,14 +440,6 @@ export default function DatabaseDocs() {
                       <code>pages</code>로 누구나 읽습니다.
                     </>,
                   ],
-                  [
-                    "읽기",
-                    "회원",
-                    <>
-                      나루 계정으로 이 사이트에{" "}
-                      <a href="#members">회원 로그인</a>한 방문자만 읽습니다.
-                    </>,
-                  ],
                   ["쓰기", "관리자만", "방문자는 쓸 수 없습니다."],
                   [
                     "쓰기",
@@ -407,14 +447,6 @@ export default function DatabaseDocs() {
                     <>
                       <code>add</code>로 새 문서만 만듭니다. 방명록에
                       알맞습니다.
-                    </>,
-                  ],
-                  [
-                    "쓰기",
-                    "회원 생성, 자기 문서 덮어쓰기·삭제",
-                    <>
-                      회원은 <code>add</code>로 글을 쓰고, 자기가 만든 문서만
-                      고치고 지웁니다. 게시판과 커뮤니티에 알맞습니다.
                     </>,
                   ],
                   [
@@ -428,47 +460,41 @@ export default function DatabaseDocs() {
                 관리자는 <a href="#admin">로그인</a>하면 등록한 컬렉션을 공개
                 범위와 상관없이 읽고 쓸 수 있습니다. 공개 읽기 컬렉션의 문서는
                 누구나 읽을 수 있으니, 비공개로 둘 데이터는 ‘관리자만’ 읽는
-                컬렉션에 따로 저장하세요.
+                컬렉션에 따로 저장하세요. 회원만 읽거나 글쓴이만 고치는 데이터는
+                컬렉션 대신 <a href="#code">사이트 테이블</a>에 두세요.
               </p>
               <h3 className="font-bold">파일로 컬렉션 정하기</h3>
               <p>
                 사이트 파일에 <code>_naru/collections.json</code>을 두면, 파일을
                 올릴 때 나루가 없는 컬렉션을 만듭니다. 템플릿을 설치한 사람도
                 제어판에서 하나씩 만들 필요가 없습니다. 이미 있는 컬렉션의 공개
-                범위나 규칙을 바꾸는 내용은 소유자가{" "}
+                범위나 unique 필드를 바꾸는 내용은 소유자가{" "}
                 <a href="/database">제어판</a>에서 확인한 뒤에 적용됩니다.
               </p>
               <Code language="json">{`{
   "collections": {
-    "posts": { "read": "world", "write": "admin" },
+    "posts": { "read": "world", "write": "admin", "indexes": ["category"] },
     "guestbook": { "read": "world", "write": "create" },
-    "profiles": { "read": "member", "write": "member", "unique": ["nick"] },
-    "logs": {
-      "read": "world", "write": "admin", "rules": "board",
-      "indexes": ["board", "owner"]
-    }
+    "subscribers": { "read": "admin", "write": "create", "unique": ["email"] }
   }
 }`}</Code>
               <p>
-                <code>read</code>는 <code>admin</code>·<code>member</code>·
-                <code>world</code>(누구나), <code>write</code>는 여기에{" "}
-                <code>create</code>(누구나 생성만)를 더한 넷 중 하나이며 둘 다
-                꼭 적어야 합니다. <code>unique</code>는 겹치면 안 되는 필드,{" "}
-                <code>rules</code>는 <a href="#rules">컬렉션 규칙</a> 파일
-                이름입니다. 다른 문서가 이미 가진 값을 쓰면{" "}
-                <code>CONFLICT</code>로 실패하고,{" "}
+                <code>read</code>는 <code>admin</code>·<code>world</code>
+                (누구나), <code>write</code>는 여기에 <code>create</code>(누구나
+                생성만)를 더한 셋 중 하나이며 둘 다 꼭 적어야 합니다.{" "}
+                <code>unique</code>는 겹치면 안 되는 필드입니다. 다른 문서가
+                이미 가진 값을 쓰면 <code>CONFLICT</code>로 실패하고,{" "}
                 <code>error.details.unique</code>에 그 필드 이름이 담깁니다.
               </p>
               <p>
                 <code>indexes</code>에는 자주 거르는 필드를 5개까지 적습니다.
-                게시판별 목록(<code>board</code>)이나 내가 쓴 글(
-                <code>owner</code>)처럼 그 필드로 거른 목록을
+                분류별 목록(<code>category</code>)처럼 그 필드로 거른 목록을
                 최신순·오래된순으로 읽을 때, 문서가 많아도 모든 문서를 살피지
                 않고 필요한 쪽만 읽습니다. 10만 개 중 스무 개를 찾는 데 수십
                 밀리초 걸리던 것이 0.1밀리초 안쪽이 됩니다. 대신 그 컬렉션의
-                쓰기가 조금 느려지고, <code>contains</code> 검색이나 다른 필드로
-                정렬하는 데는 쓰이지 않습니다. 색인만 바꾸는 내용은 누구에게도
-                무엇을 열지 않으므로 파일을 올리면 바로 적용됩니다.
+                쓰기가 조금 느려지고, 다른 필드로 정렬하는 데는 쓰이지 않습니다.
+                색인만 바꾸는 내용은 누구에게도 무엇을 열지 않으므로 파일을
+                올리면 바로 적용됩니다.
               </p>
             </Section>
 
@@ -510,200 +536,17 @@ export default function DatabaseDocs() {
               </p>
               <Code>{`await admin.signOut();
 location.reload();`}</Code>
-            </Section>
-
-            <Section id="members" title="06 · 회원과 서버 함수">
               <p>
-                <strong>회원</strong>은 자기 나루 계정으로 이 사이트에 로그인한
-                방문자입니다. 나루 계정이 있으면 누구나 회원이 될 수 있고, 미리
-                등록할 것은 없습니다. 컬렉션의 읽기나 쓰기를 ‘회원’으로 설정하면
-                회원만 읽거나 쓸 수 있습니다. SDK 1.1.0부터 쓸 수 있습니다.
-              </p>
-              <Code language="html">{`<button id="join">회원 로그인</button>
-<script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.1.0/naru.js";
-  const naru = createNaru();
-  const member = await naru.members.session();
-  document.querySelector("#join").hidden = !!member;
-  document.querySelector("#join").onclick = () => naru.members.signIn();
-  if (member) {
-    const board = member.collection("board");
-    const post = await board.add({ title: "안녕하세요" });
-    // post.createdBy === member.id: 누가 썼는지 서버가 기록합니다.
-    await board.set(member.id, { nick: "나루" }); // 내 프로필
-  }
-</script>`}</Code>
-              <p>
-                <code>member.id</code>는 이 사이트에서만 쓰이는 회원 번호입니다.
-                회원의 나루 아이디와 이메일은 사이트에 전달되지 않습니다. 회원이
-                만든 문서에는 <code>createdBy</code>로 회원 번호가 남고, 회원은
-                자기가 만든 문서와 자기 회원 번호를 ID로 쓰는 문서만 고칠 수
-                있습니다. 닉네임처럼 회원마다 하나씩인 정보는{" "}
-                <code>set(member.id, …)</code>로 저장하세요.
-              </p>
-              <p>
-                회원 로그인은 사이트의 모든 페이지와 탭에서 유지되며, 7일 동안
-                쓰지 않거나 로그인한 지 30일이 지나면, 또는 나루에서
-                로그아웃하면 끝납니다. 페이지에서 끝내려면{" "}
-                <code>member.signOut()</code>을 부르세요. 회원은{" "}
-                <code>member.media.upload()</code>로 사이트의 미디어에 파일을
-                올릴 수 있고, 쓰기와 업로드에는 회원마다 횟수 제한이 있습니다.
-                관리자는 회원의 문서도 고치고 지울 수 있습니다.
-              </p>
-              <h3 className="font-bold">서버 함수</h3>
-              <p>
-                상점의 가격과 재고, 지갑의 잔액, 뽑기와 주사위처럼 회원의
-                브라우저가 정하면 안 되는 규칙은 나루에서 돌아가는 함수로
-                만듭니다. 사이트 파일의{" "}
-                <code>_naru/functions/&lt;모듈&gt;.js</code>에서 함수를
-                내보내고, 회원이{" "}
-                <code>member.call(&quot;모듈/경로:함수&quot;, 인자)</code>로
-                부릅니다. 함수는 한 트랜잭션 안에서 사이트 소유자의 권한으로
-                모든 컬렉션을 읽고 쓰며, 오류가 나거나 한도를 넘으면 아무것도
-                바꾸지 않습니다. 함수가 지키는 컬렉션(지갑 같은)은 쓰기를
-                ‘관리자만’으로 두고 회원은 읽게만 하세요.
-              </p>
-              <Code language="javascript">{`// _naru/functions/shop.js
-export async function buy(ctx, { item }) {
-  const listing = await ctx.get("shop", item);
-  const wallet = await ctx.get("wallets", ctx.member.id);
-  if (!listing || listing.data.stock < 1) return { ok: false, reason: "품절" };
-  if (wallet.data.balance < listing.data.price) return { ok: false, reason: "잔액 부족" };
-  await ctx.set("wallets", ctx.member.id, { balance: wallet.data.balance - listing.data.price });
-  await ctx.set("shop", item, { ...listing.data, stock: listing.data.stock - 1 });
-  await ctx.add("inventory", { owner: ctx.member.id, item });
-  return { ok: true };
-}
-
-// 페이지에서
-const result = await member.call("shop:buy", { item: "sword" });
-const boards = await member.call("community/boards:list");`}</Code>
-              <p>
-                공통 코드는 <code>_naru/modules/</code>에 두고 상대 경로로
-                import하거나 다시 내보낼 수 있습니다. 경로에 <code>.js</code>를
-                포함하세요. 번들 생성은 필요하지 않습니다. 패키지 이름과 URL,
-                동적 import, 최상위 await는 지원하지 않습니다. 공통 모듈은
-                회원이 직접 호출할 수 없습니다.
-              </p>
-              <Code language="javascript">{`// _naru/modules/prices.js
-export const price = 10;
-
-// _naru/functions/shop/buy.js
-import { price } from "../../modules/prices.js";
-export function quote() { return price; }
-
-// 페이지에서
-const price = await member.call("shop/buy:quote");`}</Code>
-              <p>
-                파일을 저장하거나 사이트를 설치하면 나루가 함수 파일의 리비전을
-                만들고 적용합니다. import가 잘못되면 이전 리비전이 계속
-                실행됩니다. 파일을 하나씩 올릴 때는 공통 모듈부터 올리세요. 한
-                호출은 같은 리비전의 파일만 사용하며, 읽기 전용 호출에서는
-                가져온 코드도 데이터를 쓸 수 없습니다.
-              </p>
-              <p>
-                <code>ctx</code>에는 부른 사람(<code>member</code>,{" "}
-                <code>owner</code>, <code>visitor</code>), 호출 시각{" "}
-                <code>now</code>, 읽기 <code>get</code>·<code>getMany</code>·
-                <code>list</code>·<code>count</code>, 쓰기 <code>add</code>·
-                <code>set</code>·<code>delete</code>, 비밀번호 확인{" "}
-                <code>secretMatches</code>, 거절하는 <code>fail</code>, 실시간
-                알림 <code>notify</code>·<code>broadcast</code>가 있습니다.
-                타입은 <a href="/sdk/1.1.0/functions.d.ts">functions.d.ts</a>에
-                모두 적혀 있으니 내려받아 함수와 규칙 파일에서 쓰세요.
-                데이터베이스 메서드는 Promise를 돌려주므로 <code>await</code>
-                하세요. <code>await</code>하지 않은 호출이 있으면 함수 전체가
-                실패하고 되돌려집니다. 함수는 <code>async</code>여도 되고, 끝날
-                때까지 한 트랜잭션입니다. 함수가 쓴 문서에는 글쓴이가 남지 않아{" "}
-                <code>createdBy</code>가 null이니, 누구의 것인지는{" "}
-                <code>owner: ctx.member.id</code>처럼 데이터에 적으세요.
-              </p>
-              <p>
-                네트워크와 타이머는 쓸 수 없으며, 한 번 부를 때 데이터베이스
-                작업 100번(쓰기 포함), 비밀번호 확인 3번, 실시간 메시지 50개(각
-                4 KiB), 수십 밀리초, 메모리 32MiB까지 쓰고, 돌려주는 값은 64
-                KiB까지입니다. <code>fail</code>의 세부는 4 KiB까지입니다. ID
-                100개를 한꺼번에 읽는 <code>getMany</code>도 <code>list</code>
-                처럼 한 번으로 셉니다. 글 20개의 글쓴이를 하나씩{" "}
-                <code>get</code>하지 말고 <code>getMany</code>로 한 번에
-                읽으세요. 함수 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니
-                비밀값을 넣지 마세요.
-              </p>
-              <p>
-                읽기만 하는 함수는 모듈에서{" "}
-                <code>export const readOnly = [&quot;함수&quot;]</code>로 알려
-                주세요. 그 함수는 쓸 수 없고, 회원의 분당 호출 30번 대신 읽기
-                120번에서 셉니다. 사이트 소유자도 <code>admin.call()</code>로
-                같은 함수를 부를 수 있으며, 이때 <code>ctx.member</code>는 null,{" "}
-                <code>ctx.owner</code>는 true입니다.
-              </p>
-              <h3 className="font-bold">방문자가 부르는 함수</h3>
-              <p>
-                로그인하지 않은 방문자에게도 열 함수는{" "}
-                <code>export const visitors = [&quot;함수&quot;]</code>로
-                알리세요. 방문자는 <code>naru.call()</code>로 부르고, 함수에서는{" "}
-                <code>ctx.visitor</code>가 true, <code>ctx.member</code>가
-                null입니다. 손님 글쓰기처럼 로그인 없이 쓰는 기능을 만들 때
-                씁니다. 방문자의 호출은 주소마다 분당 쓰기 20번, 읽기
-                60번까지입니다.
-              </p>
-              <Code language="javascript">{`// _naru/functions/guestbook.js
-export const visitors = ["sign"];
-export async function sign(ctx, { name, text }) {
-  if (!text?.trim()) ctx.fail("INVALID_REQUEST", "내용을 입력해 주세요.");
-  return (await ctx.add("guestbook", { name, text })).id;
-}
-
-// 페이지에서, 로그인 없이
-await naru.call("guestbook:sign", { name: "손님", text: "안녕하세요" });`}</Code>
-              <p>
-                요청을 거절할 때는 <code>ctx.fail(코드, 메시지, 세부)</code>를
-                부르세요. 함수가 한 일은 모두 되돌려지고, 페이지에서 받는{" "}
-                <code>error.message</code>는 함수가 쓴 메시지 그대로라
-                방문자에게 바로 보여 줄 수 있습니다. 세부는{" "}
-                <code>error.details</code>로 전달되어, 페이지가 이유에 따라
-                다르게 처리할 수 있습니다.
-              </p>
-              <Code language="javascript">{`// _naru/functions/points.js
-export async function give(ctx, { to, amount }) {
-  if (!Number.isInteger(amount) || amount < 1)
-    ctx.fail("INVALID_REQUEST", "포인트는 1 이상의 정수로 보내 주세요.");
-  const wallet = await ctx.get("wallets", ctx.member.id);
-  if (wallet.data.points < amount)
-    ctx.fail("CONFLICT", "포인트가 부족합니다.", { reason: "short" });
-  // …
-}
-
-// 페이지에서
-try {
-  await member.call("points:give", { to, amount: 10 });
-} catch (error) {
-  status.textContent = error.message; // "포인트가 부족합니다."
-}`}</Code>
-              <Code language="javascript">{`// 함수에서: 커밋된 뒤에만 보냅니다.
-ctx.notify(받는회원ID, { unread: true });
-ctx.broadcast("board", { post: "new" });
-
-// 페이지에서: 5초마다 묻는 대신 들으세요.
-const live = member.live({
-  topics: ["board"],
-  onMessage(message) {
-    if (message.type === "notice") showUnread();
-    if (message.type === "topic") refreshBoard();
-  },
-});`}</Code>
-              <p>
-                <code>ctx.notify</code>는 그 회원에게만,{" "}
-                <code>ctx.broadcast</code>는 주제를 듣는 모두에게 갑니다.
-                로그인하지 않은 방문자는{" "}
-                <code>naru.live(&#123; topics, onMessage &#125;)</code>로 같은
-                주제를 듣습니다. 메시지는 저장되지 않으니 다시 연결되면 데이터를
-                다시 읽으세요. 연결은 끊기면 스스로 다시 이어지고, 회원 승인이
-                취소되면 닫힙니다.
+                관리자도 <code>admin.query()</code>·<code>admin.mutate()</code>
+                로 사이트 코드를 부릅니다. 이때 <code>ctx.owner</code>는 true,{" "}
+                <code>ctx.member</code>는 null이고, 소유자의 호출은 횟수 제한에
+                세지 않습니다. 컬렉션은 쓰지 않고 사이트 코드로만 관리하는
+                페이지라면 <code>collections</code> 없이{" "}
+                <code>naru.auth.signIn()</code>으로 로그인하세요.
               </p>
             </Section>
 
-            <Section id="write" title="07 · 글 수정과 충돌 처리">
+            <Section id="write" title="06 · 글 수정과 충돌 처리">
               <Table
                 head={["호출", "동작"]}
                 rows={[
@@ -751,40 +594,9 @@ try {
   { collection: "drafts", delete: { id, condition: { revision: draft.revision } } },
 ]);
 // saved.revision → 다음 저장의 condition`}</Code>
-              <h3 className="font-bold">손님 글과 비밀번호</h3>
-              <p>
-                그누보드의 손님 글처럼, 방문자가 비밀번호를 걸어 글을 쓰고
-                나중에 같은 비밀번호로 고치거나 지우게 하려면{" "}
-                <a href="#members">방문자가 부르는 함수</a>를 씁니다.{" "}
-                <code>ctx.add(컬렉션, 데이터, {"{ secret }"})</code>로 저장하면
-                나루가 비밀번호를 해시로만 보관하고 돌려주지 않으며,{" "}
-                <code>ctx.secretMatches(컬렉션, ID, 비밀번호)</code>로
-                확인합니다. 컬렉션의 쓰기는 ‘관리자만’으로 두어 함수로만 바뀌게
-                하세요.
-              </p>
-              <Code language="javascript">{`// _naru/functions/guestbook.js
-export const visitors = ["write", "edit"];
-export async function write(ctx, { name, text, password }) {
-  return (await ctx.add("guestbook", { name, text }, { secret: password })).id;
-}
-export async function edit(ctx, { id, text, password }) {
-  const post = await ctx.get("guestbook", id);
-  if (!post || !(await ctx.secretMatches("guestbook", id, password)))
-    ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
-  await ctx.set("guestbook", id, { ...post.data, text });
-}`}</Code>
-              <p>
-                한 번 부를 때 비밀번호는 세 번까지 확인할 수 있고, 한 글에 틀린
-                비밀번호는 한 시간에 열 번까지입니다. 그 뒤에는 맞는 비밀번호도{" "}
-                <code>RATE_LIMITED</code>로 실패하니, 짧은 비밀번호도 하나씩
-                맞혀 볼 수 없습니다. SDK의 <code>add</code>·<code>set</code>·
-                <code>delete</code>는 비밀번호를 받지 않습니다. ‘누구나
-                생성만’인 컬렉션에서는 방문자가 글을 더할 수만 있고, 고치고
-                지우는 것은 관리자만 할 수 있습니다.
-              </p>
             </Section>
 
-            <Section id="read" title="08 · 목록·검색·페이지">
+            <Section id="read" title="07 · 목록과 페이지 나누기">
               <Code>{`const posts = naru.collection("posts");
 
 const post = await posts.get("hello");
@@ -846,202 +658,645 @@ for await (const { documents } of posts.pages({ ...query, size: 100 })) {
                   때 다시 읽지 않습니다.
                 </li>
               </ul>
-              <h3 className="font-bold">검색과 여러 조건</h3>
               <p>
-                <code>where</code>는 filter로 못 하는 조건을 적습니다.{" "}
-                <code>all</code>(그리고)과 <code>any</code>(또는) 안에 비교를
-                넣습니다. <code>contains</code>는 글자가 들어 있는 문자열 필드를
-                찾으니, 게시판 검색에 쓰세요. 영문은 대소문자를 가리지 않습니다.
-              </p>
-              <Code>{`// 자유게시판에서 제목이나 본문에 "봄"이 들어간 글, 최신순
-const found = await posts.list({
-  filter: { board: "free" },
-  where: {
-    any: [
-      { contains: ["title", "봄"] },
-      { contains: ["text", "봄"] },
-    ],
-  },
-  sort: [[{ metadata: "createdAt" }, "desc"]],
-  size: 20,
-});`}</Code>
-              <Table
-                head={["비교", "뜻"]}
-                rows={[
-                  [
-                    <code key="c">{'{ eq: ["board", "free"] }'}</code>,
-                    "같다 (ne는 다르다)",
-                  ],
-                  [
-                    <code key="c">{'{ gte: ["level", 2] }'}</code>,
-                    "크거나 같다 (gt·lt·lte도 있습니다)",
-                  ],
-                  [
-                    <code key="c">
-                      {'{ in: ["board", ["free", "notice"]] }'}
-                    </code>,
-                    "목록의 값 중 하나 (100개까지)",
-                  ],
-                  [
-                    <code key="c">{'{ has: ["tags", "여행"] }'}</code>,
-                    "배열 필드가 그 값을 담고 있다",
-                  ],
-                  [
-                    <code key="c">{'{ contains: ["title", "봄"] }'}</code>,
-                    "문자열 필드에 그 글자(1~100자)가 들어 있다",
-                  ],
-                  [
-                    <code key="c">
-                      {'{ eq: [{ metadata: "createdBy" }, member.id] }'}
-                    </code>,
-                    "그 회원이 만든 문서",
-                  ],
-                  [
-                    <code key="c">
-                      {
-                        '{ gte: [{ metadata: "createdAt" }, "2026-10-01T00:00:00Z"] }'
-                      }
-                    </code>,
-                    "그 시각 뒤에 만든 문서 (updatedAt도 됩니다)",
-                  ],
-                ]}
-              />
-              <p>
-                filter와 where는 요청 주소에 실리므로 filter는 JSON으로 2 KiB,
-                where는 4 KiB까지입니다. where는 비교 100개, 열 단계까지 중첩할
-                수 있습니다. <code>count()</code>와 서버 함수의{" "}
-                <code>ctx.list</code>·<code>ctx.count</code>도 같은{" "}
-                <code>where</code>를 받습니다. 검색은 조건에 맞는 문서를 모두
-                살피므로, 문서가 아주 많은 컬렉션에서는 <code>filter</code>로
-                게시판 같은 범위를 함께 좁히세요.
+                글자가 들어 있는 글을 찾는 검색이나 여러 조건을 또는(OR)으로
+                묶는 목록은 컬렉션으로 할 수 없습니다. 그런 데이터는{" "}
+                <a href="#code">사이트 테이블</a>에 두고 쿼리에서 SQL로
+                찾으세요.
               </p>
               <h3 className="font-bold">요청 취소하기</h3>
               <p>
-                읽기, 쓰기, 업로드, 함수 호출은 옵션으로 <code>signal</code>을
-                받습니다. 검색어를 바꿀 때 이전 검색을 멈추는 것처럼, 더 필요
-                없는 요청은 <code>AbortController</code>로 취소하세요. 취소된
-                요청은 <code>NaruError</code>가 아니라 브라우저의{" "}
-                <code>AbortError</code>로 끝나며, 나루가 이미 받은 쓰기는
-                되돌리지 않습니다.
+                읽기, 쓰기, 업로드, 쿼리와 뮤테이션은 옵션으로{" "}
+                <code>signal</code>을 받습니다. 검색어를 바꿀 때 이전 검색을
+                멈추는 것처럼, 더 필요 없는 요청은 <code>AbortController</code>
+                로 취소하세요. 취소된 요청은 <code>NaruError</code>가 아니라
+                브라우저의 <code>AbortError</code>로 끝나며, 나루가 이미 받은
+                쓰기는 되돌리지 않습니다.
               </p>
               <Code>{`let searching;
 input.oninput = async () => {
   searching?.abort();
   searching = new AbortController();
   try {
-    const page = await posts.list({
-      where: { contains: ["title", input.value] },
-      signal: searching.signal,
-    });
-    show(page.documents);
+    const found = await naru.query(
+      "board:search",
+      { word: input.value },
+      { signal: searching.signal },
+    );
+    show(found);
   } catch (error) {
     if (error.name !== "AbortError") throw error;
   }
 };`}</Code>
             </Section>
 
-            <Section id="rules" title="09 · 컬렉션 규칙">
+            <Section id="members" title="08 · 회원">
               <p>
-                공개 범위는 컬렉션 전체에 하나입니다. ‘레벨 2 이상만 읽는
-                게시판’, ‘비밀글은 글쓴이와 운영진만’처럼 문서마다 다른 권한이
-                필요하면 <strong>컬렉션 규칙</strong>을 씁니다.{" "}
-                <code>_naru/rules/&lt;이름&gt;.js</code>에서 두 함수를 내보내고,
-                컬렉션의 <code>rules</code>에 그 이름을 적습니다. 그러면 회원과
-                방문자가 SDK로 바로 읽고 쓰는 요청마다 나루가 규칙을 먼저
-                부릅니다. 관리자는 규칙을 거치지 않습니다.
+                <strong>회원</strong>은 자기 나루 계정으로 이 사이트에 로그인한
+                방문자입니다. 미리 등록할 것은 없고, 페이지에서{" "}
+                <code>naru.members.signIn()</code>을 부르면 나루에서 로그인하고
+                (계정이 없으면 만들고) 이 페이지로 돌아옵니다.{" "}
+                <code>naru.members.session()</code>은 로그인한 회원을, 아니면
+                null을 돌려줍니다. SDK 1.1.0부터 쓸 수 있습니다.
               </p>
-              <Code language="javascript">{`// _naru/rules/board.js  (collections.json: "rules": "board")
-export async function readable(ctx, { operation, id, filter }) {
-  // 읽기: 이 회원에게 보일 문서의 조건을 돌려줍니다.
-  // 글 하나(get)는 그 글의 게시판, 목록(list)은 filter의 게시판을 봅니다.
-  const boardId =
-    operation === "get" ? (await ctx.get("posts", id))?.data.board : filter.board;
-  const board = boardId && (await ctx.get("boards", boardId));
-  if (!board) return false; // 빈 목록
-  if (board.data.membersOnly && !ctx.member)
-    ctx.fail("AUTH_REQUIRED", "회원만 볼 수 있는 게시판입니다.");
-  return {
-    all: [
-      { eq: ["board", board.id] },
-      ctx.member
-        ? { any: [{ ne: ["secret", true] }, { eq: ["owner", ctx.member.id] }] }
-        : { ne: ["secret", true] },
-    ],
-  };
-}
-
-export async function canWrite(ctx, { operation, before, after }) {
-  // 쓰기: 정확히 true를 돌려줘야 허락됩니다.
-  if (!ctx.member) return false;
-  if (operation === "create") return after.data.owner === ctx.member.id;
-  if (before.data.owner !== ctx.member.id)
-    ctx.fail("ACCESS_DENIED", "내가 쓴 글만 고칠 수 있습니다.");
-  return true;
+              <Code language="html">{`<button id="join">회원 로그인</button>
+<script type="module">
+  import { createNaru } from "https://naru.pub/sdk/1.1.0/naru.js";
+  const naru = createNaru();
+  const member = await naru.members.session();
+  document.querySelector("#join").hidden = !!member;
+  document.querySelector("#join").onclick = () => naru.members.signIn();
+  if (member) {
+    const id = await member.mutate("board:write", {
+      title: "안녕하세요",
+      body: "처음 인사드립니다.",
+    });
+    // 사이트 코드에서는 ctx.member.id === member.id
+  }
+</script>`}</Code>
+              <p>
+                <code>member.id</code>는 이 사이트에서만 쓰이는 회원 번호이고,
+                방문할 때마다 같습니다. 회원의 나루 아이디와 이메일은 사이트에
+                전달되지 않습니다. 회원이 할 수 있는 일은 사이트 코드가
+                정합니다. 회원은 <code>member.query()</code>·
+                <code>member.mutate()</code>로 <a href="#code">사이트 코드</a>를
+                부르고, <code>member.subscribe()</code>로{" "}
+                <a href="#live">실시간 쿼리</a>를 듣습니다. 그러면 사이트
+                코드에서 <code>ctx.member</code>가{" "}
+                <code>{"{ id, roles }"}</code>입니다. 회원은 컬렉션에 따로
+                권한이 없으니, 컬렉션은 방문자로서{" "}
+                <code>naru.collection()</code>
+                으로 읽습니다.
+              </p>
+              <p>
+                회원 로그인은 사이트의 모든 페이지와 탭에서 유지되며, 7일 동안
+                쓰지 않거나 로그인한 지 30일이 지나면, 또는 나루에서
+                로그아웃하면 끝납니다. 페이지에서 끝내려면{" "}
+                <code>member.signOut()</code>을 부르세요. 회원은{" "}
+                <code>member.media.upload()</code>로 사이트의{" "}
+                <a href="/docs/1.1.0/media">미디어</a>에 파일을 올리고{" "}
+                <code>member.media.delete()</code>로 자기가 올린 파일을 지울 수
+                있습니다. 업로드는 회원마다 한 시간에 30개까지입니다.
+              </p>
+              <h3 className="font-bold">가입과 승인</h3>
+              <p>
+                <a href="/database">제어판</a>의 ‘사이트 회원’에서 신규 가입을
+                ‘누구나 가입’, ‘운영자 승인 후 이용’, ‘신규 가입 중단’ 중에
+                고르고, 이메일을 인증한 계정만 받을지 정합니다. 회원 목록에서
+                회원을 승인하거나 차단할 수 있습니다. 승인을 기다리거나 차단된
+                회원의 요청은 <code>ACCESS_DENIED</code>로 실패하고,{" "}
+                <code>error.details.membership</code>이{" "}
+                <code>&quot;pending&quot;</code> 또는{" "}
+                <code>&quot;banned&quot;</code>이니 페이지에서 알맞은 안내를
+                보여 주세요. 로그인은 남아 있어서, 승인되면 다시 로그인하지
+                않아도 됩니다. 사이트에 회원으로 가입하려면 그 나루 계정에 후원
+                플랜이 있어야 합니다.
+              </p>
+              <h3 className="font-bold">역할</h3>
+              <p>
+                <strong>역할</strong>은 사이트가 회원에게 붙이는 이름입니다(예:{" "}
+                <code>staff</code>, <code>writer</code>). 회원마다 16개까지 붙일
+                수 있고, 제어판의 회원 목록이나 뮤테이션의{" "}
+                <code>ctx.setRoles(회원ID, 역할)</code>로 정합니다. 사이트
+                코드는 부른 회원의 역할을 <code>ctx.member.roles</code>로, 다른
+                회원의 역할을 <code>ctx.rolesOf([회원ID, …])</code>로 읽습니다.
+                그누보드의 회원 레벨이나 운영진 표시를 역할로 만드세요.
+              </p>
+              <Code>{`// _naru/mutations/staff.js
+export async function promote(ctx, { member }) {
+  if (!ctx.owner && !ctx.member?.roles.includes("staff"))
+    ctx.fail("ACCESS_DENIED", "운영진만 할 수 있습니다.");
+  const roles = (await ctx.rolesOf([member]))[member];
+  await ctx.setRoles(member, [...roles, "writer"]);
 }`}</Code>
+            </Section>
+
+            <Section id="code" title="09 · 사이트 코드: 테이블·쿼리·뮤테이션">
+              <p>
+                회원 게시판, 댓글, 포인트처럼 누가 무엇을 할 수 있는지 사이트가
+                정해야 하는 데이터는 사이트의 SQLite 테이블에 두고, 나루에서
+                도는 사이트의 코드로 읽고 씁니다. 세 가지 파일을 씁니다.
+              </p>
+              <Table
+                head={["파일", "하는 일", "부르는 법"]}
+                rows={[
+                  [
+                    <code key="f">_naru/migrations/*.sql</code>,
+                    "테이블과 색인을 만들고 바꿉니다.",
+                    "파일을 올리면 나루가 한 번씩 적용합니다.",
+                  ],
+                  [
+                    <code key="f">_naru/queries/경로.js</code>,
+                    "테이블을 읽어 돌려줍니다. 쓸 수 없습니다.",
+                    <code key="c">
+                      naru.query(&quot;경로:이름&quot;, 인자)
+                    </code>,
+                  ],
+                  [
+                    <code key="f">_naru/mutations/경로.js</code>,
+                    "검사하고, 쓰고, 결과를 돌려줍니다. 한 번이 트랜잭션 하나입니다.",
+                    <code key="c">
+                      member.mutate(&quot;경로:이름&quot;, 인자)
+                    </code>,
+                  ],
+                ]}
+              />
+              <h3 className="font-bold">테이블 만들기: 마이그레이션</h3>
+              <p>
+                <code>_naru/migrations/</code>에 <code>.sql</code> 파일을
+                둡니다. 나루는 파일을 올릴 때 아직 적용하지 않은 마이그레이션을
+                이름 순서대로 한 번씩 적용하고, 그 직전의 데이터를 복원 지점으로
+                남겨 둡니다. 이름 앞에 <code>0001_</code>처럼 자리를 채운 번호를
+                붙이세요.
+              </p>
+              <Code language="sql">{`-- _naru/migrations/0001_posts.sql
+CREATE TABLE posts (
+  id INTEGER PRIMARY KEY,
+  author TEXT NOT NULL,       -- 회원 번호 (ctx.member.id)
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL -- ctx.now (밀리초)
+);
+CREATE INDEX posts_author ON posts (author);`}</Code>
               <ul className="list-disc space-y-3 pl-6">
                 <li>
-                  <code>readable</code>은 이 사람이 읽을 수 있는 문서를
-                  고릅니다. 글 하나를 읽어도 되는지 예·아니오로 답하는 대신{" "}
-                  <code>true</code>(모두), <code>false</code>(아무것도), 또는{" "}
-                  <a href="#read">where와 같은 조건</a>을 돌려줍니다. 나루가 그
-                  조건을 회원의 filter와 합쳐서 읽으므로, 숨긴 글 때문에 쪽이
-                  짧아지거나 개수가 틀리지 않습니다. <code>false</code>는 오류가
-                  아니라 빈 목록이 되니, 왜 안 보이는지 알려야 하면{" "}
-                  <code>ctx.fail</code>을 쓰세요. 조건은 쪽마다 다시 묻고,
-                  커서는 읽는 사람이 준 filter·where·sort에만 묶이니 조건이
-                  바뀌어도 다음 쪽을 이어 읽습니다.
+                  한 번 적용된 파일은 고치거나 지울 수 없습니다. 열을 더하거나
+                  바꾸려면 <code>0002_body_format.sql</code>처럼 새 파일을
+                  더하세요. 새 파일의 이름은 이미 적용된 파일보다 뒤에 와야
+                  합니다.
                 </li>
                 <li>
-                  <code>readable</code>이 받는 값은 <code>collection</code>,{" "}
-                  <code>operation</code>, 읽는 사람의 <code>filter</code>(없으면{" "}
-                  <code>{"{}"}</code>)와 <code>where</code>(없으면 null)입니다.{" "}
-                  <code>operation</code>은 글 하나(<code>get</code>, 그 글의{" "}
-                  <code>id</code>), 여러 글(<code>getMany</code>, 요청한{" "}
-                  <code>ids</code>), 목록(<code>list</code>) 중 하나입니다.
-                  로그인하지 않은 방문자가 읽으면 <code>ctx.visitor</code>가
-                  true, <code>ctx.member</code>가 null입니다.
+                  <code>CREATE</code>·<code>ALTER</code>·<code>DROP</code>{" "}
+                  (TABLE·INDEX·VIEW)과 데이터를 옮기는 <code>INSERT</code>·
+                  <code>UPDATE</code>·<code>DELETE</code>를 쓸 수 있습니다.
+                  트리거, 임시 테이블, 전문 검색 같은 가상 테이블은 아직 쓸 수
+                  없습니다.
                 </li>
                 <li>
-                  <code>canWrite</code>는 <code>create</code>·
-                  <code>update</code>·<code>delete</code>마다{" "}
-                  <code>{"{ collection, operation, before, after }"}</code>로
-                  불리고, 정확히 <code>true</code>를 돌려줄 때만 허락합니다.{" "}
-                  <code>before</code>는 저장된 문서(만들 때는 null),{" "}
-                  <code>after</code>는 쓰려는 문서(지울 때는 null)입니다.{" "}
-                  <code>return</code>을 빠뜨리면 거절됩니다. 그때 오류의 원인(
-                  <code>error.cause.message</code>)에{" "}
-                  <code>canWrite returned undefined</code>처럼 규칙 파일과 받은
-                  값이 적혀 있습니다.
+                  마이그레이션 하나라도 실패하면 그 릴리스 전체가 거절되고
+                  아무것도 바뀌지 않습니다. 이전의 테이블과 코드가 그대로
+                  쓰입니다. 오류를 고친 파일을 다시 올리세요.
                 </li>
                 <li>
-                  규칙은 <code>ctx.get</code>·<code>ctx.list</code>로 읽기만 할
-                  수 있고, <code>_naru/modules/</code>의 공통 코드를 서버 함수와
-                  함께 쓸 수 있습니다. 규칙 파일이 없거나 오류가 나면 회원과
-                  방문자의 요청은 거절됩니다.
+                  나루가 쓰는 이름(<code>collections</code>,{" "}
+                  <code>documents</code>, <code>meta</code>, <code>usage</code>,{" "}
+                  <code>rate_limits</code>, <code>media_refs</code>와{" "}
+                  <code>_naru</code>·<code>sqlite_</code>로 시작하는 이름)은
+                  테이블 이름으로 쓸 수 없습니다.
+                </li>
+              </ul>
+              <h3 className="font-bold">읽기: 쿼리</h3>
+              <p>
+                <code>_naru/queries/board.js</code>에서 내보낸 함수는{" "}
+                <code>&quot;board:이름&quot;</code>으로,{" "}
+                <code>_naru/queries/community/board.js</code>의 함수는{" "}
+                <code>&quot;community/board:이름&quot;</code>으로 부릅니다.
+                함수는 <code>ctx</code>와 페이지가 넘긴 인자를 받고, 돌려준 JSON
+                값이 페이지에 그대로 갑니다.
+              </p>
+              <Code>{`// _naru/queries/board.js
+export async function recent(ctx, { before } = {}) {
+  const { rows } = await ctx.sql\`
+    SELECT id, author, title, created_at FROM posts
+    WHERE id < \${before ?? Number.MAX_SAFE_INTEGER}
+    ORDER BY id DESC LIMIT 20\`;
+  return rows;
+}
+
+export async function post(ctx, { id }) {
+  const [post] = (await ctx.sql\`SELECT * FROM posts WHERE id = \${id}\`).rows;
+  if (!post) ctx.fail("NOT_FOUND", "글이 없거나 지워졌습니다.");
+  return post;
+}
+
+// 페이지에서
+const posts = await naru.query("board:recent");
+const more = await naru.query("board:recent", { before: posts.at(-1).id });`}</Code>
+              <p>
+                쿼리는 누구나 부를 수 있습니다. 회원만 읽게 하려면{" "}
+                <code>ctx.member</code>를 확인하고, 돌려주면 안 되는 열(비밀번호
+                해시 같은)은 고르지 마세요. 쿼리는 테이블을 쓸 수 없고, 나루
+                서버가 잠시 대기 서버로 넘어가 있는 동안에도 답합니다.
+              </p>
+              <h3 className="font-bold">쓰기: 뮤테이션</h3>
+              <Code>{`// _naru/mutations/board.js
+export async function write(ctx, { title, body }) {
+  if (!ctx.member) ctx.fail("AUTH_REQUIRED", "회원만 글을 쓸 수 있습니다.");
+  if (typeof title !== "string" || !title.trim())
+    ctx.fail("INVALID_REQUEST", "제목을 입력해 주세요.");
+  const { rows } = await ctx.sql\`
+    INSERT INTO posts (author, title, body, created_at)
+    VALUES (\${ctx.member.id}, \${title}, \${String(body)}, \${ctx.now})
+    RETURNING id\`;
+  return rows[0].id;
+}
+
+export async function remove(ctx, { id }) {
+  const [post] = (await ctx.sql\`SELECT author FROM posts WHERE id = \${id}\`).rows;
+  if (!post) return;
+  const mine = post.author === ctx.member?.id;
+  if (!mine && !ctx.owner && !ctx.member?.roles.includes("staff"))
+    ctx.fail("ACCESS_DENIED", "내가 쓴 글만 지울 수 있습니다.");
+  await ctx.sql\`DELETE FROM posts WHERE id = \${id}\`;
+}
+
+// 페이지에서
+try {
+  await member.mutate("board:remove", { id });
+} catch (error) {
+  status.textContent = error.message; // "내가 쓴 글만 지울 수 있습니다."
+}`}</Code>
+              <p>
+                뮤테이션 한 번은 트랜잭션 하나입니다. 함수가 값을 돌려주면 쓴
+                것이 모두 저장되고, 오류가 나거나 <code>ctx.fail</code>을
+                부르거나 한도를 넘으면 아무것도 바뀌지 않습니다. 요청을 거절할
+                때는 <code>ctx.fail(코드, 메시지, 세부)</code>를 부르세요.
+                페이지가 받는 <code>error.message</code>는 사이트가 쓴 메시지
+                그대로(1~1000자)라 방문자에게 바로 보여 줄 수 있고, 세부(4 KiB
+                이하의 JSON)는 <code>error.details</code>로 전달되어 페이지가
+                이유에 따라 다르게 처리할 수 있습니다.
+              </p>
+              <h3 className="font-bold">누가 불렀나</h3>
+              <Table
+                head={["페이지에서", "ctx.member", "ctx.owner", "ctx.visitor"]}
+                rows={[
+                  [
+                    <code key="c">naru.query()·naru.mutate()</code>,
+                    "null",
+                    "false",
+                    "true",
+                  ],
+                  [
+                    <code key="c">member.query()·member.mutate()</code>,
+                    <code key="m">{"{ id, roles }"}</code>,
+                    "false",
+                    "false",
+                  ],
+                  [
+                    <code key="c">admin.query()·admin.mutate()</code>,
+                    "null",
+                    "true",
+                    "false",
+                  ],
+                ]}
+              />
+              <p>
+                회원이 로그인해 있어도 <code>naru.query()</code>로 부르면
+                방문자로 부릅니다. 회원으로 부르려면 <code>member</code>의
+                메서드를 쓰세요.
+              </p>
+              <h3 className="font-bold">ctx</h3>
+              <Table
+                head={["", "뜻"]}
+                rows={[
+                  [
+                    <code key="c">member · owner · visitor</code>,
+                    "누가 불렀는지 (위 표)",
+                  ],
+                  [
+                    <code key="c">now</code>,
+                    "호출 시각(밀리초). 한 호출 안에서 바뀌지 않습니다.",
+                  ],
+                  [
+                    <code key="c">sql</code>,
+                    "사이트 테이블에 SQL 한 문장을 실행합니다.",
+                  ],
+                  [
+                    <code key="c">fail(코드, 메시지, 세부)</code>,
+                    "요청을 거절하고 쓴 것을 되돌립니다.",
+                  ],
+                  [
+                    <code key="c">rolesOf(회원ID 목록)</code>,
+                    "회원들의 역할 (한 번에 100명까지)",
+                  ],
+                  [
+                    <code key="c">passwords.verify(비밀번호, 해시, 키)</code>,
+                    "손님 비밀번호 확인",
+                  ],
+                  [
+                    <code key="c">passwords.hash(비밀번호)</code>,
+                    "손님 비밀번호의 해시 (뮤테이션만)",
+                  ],
+                  [
+                    <code key="c">setRoles(회원ID, 역할)</code>,
+                    "회원의 역할을 바꿉니다 (뮤테이션만)",
+                  ],
+                ]}
+              />
+              <p>
+                <code>ctx</code>의 메서드는 Promise를 돌려주므로{" "}
+                <code>await</code>하세요. <code>await</code>하지 않은 호출이
+                있으면 호출 전체가 실패하고 되돌려집니다. 인자 없이 부르면
+                인자는 <code>undefined</code>라서{" "}
+                <code>{"{ board } = {}"}</code>
+                같은 기본값이 그대로 쓰입니다.
+              </p>
+              <h3 className="font-bold">ctx.sql</h3>
+              <p>
+                <code>{"ctx.sql`SELECT … WHERE id = ${id}`"}</code>처럼 태그로
+                쓰면 <code>{"${…}"}</code> 안의 값은 모두 매개변수로 묶이므로,
+                방문자가 보낸 값을 그대로 넣어도 SQL이 바뀌지 않습니다. 쿼리
+                빌더가 만든 문장은 <code>ctx.sql(문장, 값 목록)</code>으로
+                넘깁니다. 결과는 <code>{"{ rows, changes }"}</code>입니다.
+              </p>
+              <ul className="list-disc space-y-3 pl-6">
+                <li>
+                  한 번에 한 문장, <code>SELECT</code>·<code>INSERT</code>·
+                  <code>UPDATE</code>·<code>DELETE</code>(와 <code>WITH</code>·
+                  <code>RETURNING</code>)를 씁니다. 쿼리에서는{" "}
+                  <code>SELECT</code>만 됩니다. 테이블을 만들고 바꾸는 일은
+                  마이그레이션에서 합니다.
                 </li>
                 <li>
-                  일부 필드만 숨기려면{" "}
-                  <code>present(ctx, {"{ collection, document }"})</code>로 읽는
-                  사람에게 보일 데이터를 돌려주고, 거르고 정렬해도 되는 필드를{" "}
-                  <code>queryable</code>에 적습니다. 이때 글쓴이(
-                  <code>createdBy</code>)는 자기 글에서만 보이고 남의 글에서는
-                  null이며, where로는{" "}
-                  <code>
-                    {'{ eq: [{ metadata: "createdBy" }, member.id] }'}
-                  </code>
-                  처럼 ‘내 글’만 물을 수 있습니다. 익명 글의 글쓴이를 조건으로
-                  알아낼 수 없게 하려는 것입니다.
+                  묶는 값은 문자열, 숫자, 불리언(1·0으로), null이며 100개까지
+                  입니다. 한 문장은 1,000행·1 MiB까지 돌려주니{" "}
+                  <code>LIMIT</code>를 붙이세요. BLOB 값은 아직 돌려받을 수
+                  없습니다.
                 </li>
                 <li>
-                  받는 값과 <code>ctx</code>의 타입은{" "}
-                  <a href="/sdk/1.1.0/functions.d.ts">functions.d.ts</a>의{" "}
-                  <code>Readable</code>·<code>CanWrite</code>·
-                  <code>Present</code>를 보세요.
+                  나루의 테이블, PRAGMA, 트리거, 트랜잭션, 재귀 쿼리는
+                  거절됩니다.
+                </li>
+                <li>
+                  한 문장은 테이블 하나를 한 번 훑는 데까지 할 수 있습니다. 다른
+                  테이블을 줄마다 훑는 조인이나 하위 쿼리는 실행 전에 거절되니,
+                  조인하는 열에 색인을 만들고 같은 값으로 조인하세요. 한 호출은
+                  모두 합쳐 500,000행까지 읽습니다.
+                </li>
+                <li>
+                  <code>UNIQUE</code> 열에 이미 있는 값을 쓰면{" "}
+                  <code>CONFLICT</code>로 실패하고{" "}
+                  <code>error.details.unique</code>에 그 열 이름이 담깁니다.
+                  닉네임 중복 같은 것을 이렇게 알 수 있습니다. 그 밖의 SQL
+                  실수는 SQLite의 설명과 함께 <code>INVALID_REQUEST</code>로
+                  실패합니다.
+                </li>
+              </ul>
+              <h3 className="font-bold">손님 글과 비밀번호</h3>
+              <p>
+                그누보드의 손님 글처럼, 방문자가 비밀번호를 걸어 글을 쓰고
+                나중에 같은 비밀번호로 고치거나 지우게 하려면 뮤테이션에서{" "}
+                <code>ctx.passwords.hash()</code>로 만든 해시를 테이블에
+                저장하고, <code>ctx.passwords.verify()</code>로 확인합니다.
+                비밀번호 자체는 어디에도 남지 않습니다.
+              </p>
+              <Code language="sql">{`-- _naru/migrations/0002_guestbook.sql
+CREATE TABLE guestbook (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  text TEXT NOT NULL,
+  password TEXT NOT NULL -- 해시만 저장됩니다
+);`}</Code>
+              <Code>{`// _naru/mutations/guestbook.js
+export async function write(ctx, { name, text, password }) {
+  const hash = await ctx.passwords.hash(password);
+  const { rows } = await ctx.sql\`
+    INSERT INTO guestbook (name, text, password)
+    VALUES (\${name}, \${text}, \${hash}) RETURNING id\`;
+  return rows[0].id;
+}
+
+export async function edit(ctx, { id, text, password }) {
+  const [entry] = (await ctx.sql\`SELECT password FROM guestbook WHERE id = \${id}\`).rows;
+  if (!entry || !(await ctx.passwords.verify(password, entry.password, \`guestbook:\${id}\`)))
+    ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
+  await ctx.sql\`UPDATE guestbook SET text = \${text} WHERE id = \${id}\`;
+}
+
+// _naru/queries/guestbook.js: password 열은 돌려주지 않습니다.
+export async function list(ctx) {
+  return (await ctx.sql\`SELECT id, name, text FROM guestbook ORDER BY id DESC LIMIT 50\`).rows;
+}
+
+// 페이지에서, 로그인 없이
+await naru.mutate("guestbook:write", { name: "손님", text: "안녕하세요", password });`}</Code>
+              <p>
+                <code>verify</code>의 세 번째 인자는 무엇을 여는 비밀번호인지를
+                나타내는 키입니다(<code>guestbook:42</code>처럼). 한 키에 틀린
+                비밀번호는 누가 시도하든 한 시간에 열 번까지이고, 그 뒤에는 맞는
+                비밀번호도 <code>RATE_LIMITED</code>로 실패하니, 짧은 비밀번호도
+                하나씩 맞혀 볼 수 없습니다. 한 번 부를 때 비밀번호 해시와 확인은
+                합쳐서 세 번까지입니다.
+              </p>
+              <h3 className="font-bold">공통 코드와 타입</h3>
+              <p>
+                공통 코드는 <code>_naru/modules/</code>에 두고 상대 경로로
+                import하거나 다시 내보낼 수 있습니다. 경로에 <code>.js</code>를
+                포함하세요. 번들 생성은 필요하지 않습니다. 패키지 이름과 URL,
+                동적 import, 최상위 await는 지원하지 않습니다. 공통 모듈은
+                페이지에서 직접 부를 수 없습니다.
+              </p>
+              <Code>{`// _naru/modules/text.js
+export const clean = (value, max) => String(value ?? "").trim().slice(0, max);
+
+// _naru/mutations/comments.js
+import { clean } from "../modules/text.js";
+export async function add(ctx, { post, text }) {
+  if (!ctx.member) ctx.fail("AUTH_REQUIRED", "회원만 댓글을 쓸 수 있습니다.");
+  await ctx.sql\`INSERT INTO comments (post, author, text, created_at)
+    VALUES (\${post}, \${ctx.member.id}, \${clean(text, 1000)}, \${ctx.now})\`;
+}`}</Code>
+              <p>
+                파일을 저장하거나 사이트를 설치하면 나루가 <code>_naru/</code>의
+                코드와 마이그레이션으로 릴리스를 만들고 적용합니다. import가
+                잘못되거나 마이그레이션이 실패하면 이전 릴리스가 계속
+                실행됩니다. 파일을 하나씩 올릴 때는 공통 모듈과 마이그레이션부터
+                올리세요. 한 호출은 같은 릴리스의 파일만 씁니다.
+              </p>
+              <p>
+                <code>ctx</code>의 타입은{" "}
+                <a href="/sdk/1.1.0/functions.d.ts">functions.d.ts</a>에 모두
+                적혀 있습니다. 내려받아 <code>_naru/types/</code>에 두고
+                JSDoc으로 쓰면 편집기가 <code>ctx</code>를 알아봅니다. 로컬 개발
+                서버 naru-dev로 사이트를 돌리면 마이그레이션이 만든 테이블마다
+                행의 타입을 <code>_naru/types/database.d.ts</code>에 써 줍니다.
+              </p>
+              <Code>{`// _naru/queries/board.js
+/** @type {import("../types/functions").Query<{ board: string }>} */
+export const latest = async (ctx, { board }) =>
+  (await ctx.sql\`SELECT id, title FROM posts WHERE board = \${board} LIMIT 20\`).rows;`}</Code>
+              <p>
+                사이트 코드에서는 네트워크와 타이머를 쓸 수 없습니다.{" "}
+                <code>URL</code>과 <code>Math.random()</code>은 쓸 수 있습니다.
+                사이트 코드 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니
+                비밀값을 넣지 마세요.
+              </p>
+            </Section>
+
+            <Section id="live" title="10 · 실시간 쿼리">
+              <p>
+                5초마다 다시 읽는 대신 <code>subscribe()</code>로 쿼리를
+                들으세요. 나루가 쿼리를 바로 한 번 돌려 답을 주고, 그 뒤에
+                뮤테이션이 쿼리가 읽은 테이블을 바꿔 답이 달라질 때마다 새 답을
+                보냅니다. 방문자는 <code>naru.subscribe()</code>, 회원은{" "}
+                <code>member.subscribe()</code>로 듣고, 쿼리는{" "}
+                <code>query()</code>로 부를 때와 같은 사람으로 돕니다.
+              </p>
+              <Code>{`const live = naru.subscribe(
+  "board:recent",
+  {},
+  (posts) => render(posts),
+  { onError: (error) => (status.textContent = error.message) },
+);
+
+// 더 듣지 않을 때
+live.close();`}</Code>
+              <ul className="list-disc space-y-3 pl-6">
+                <li>
+                  같은 페이지의 실시간 쿼리는 연결 하나를 나눠 쓰며, 연결 하나에
+                  20개까지 들을 수 있습니다. 마지막 쿼리를 닫으면 연결도
+                  닫힙니다.
+                </li>
+                <li>
+                  연결이 끊기면 스스로 다시 이어지고, 이어지면 모든 쿼리를 다시
+                  물어 놓친 답을 받습니다. 회원의 승인이 취소되거나 차단되면
+                  연결이 닫힙니다.
+                </li>
+                <li>
+                  처음 한 번은 쿼리 호출로 세고, 쓰기 뒤에 다시 도는 것은 세지
+                  않습니다. 답이 그대로이면 아무것도 보내지 않습니다.
+                </li>
+                <li>
+                  사이트 테이블의 변경만 다시 돌게 합니다. 컬렉션은 실시간으로
+                  들을 수 없습니다. 새 릴리스가 적용되면 모든 실시간 쿼리가 다시
+                  돕니다.
+                </li>
+                <li>
+                  지금 실패하거나, 나중에 다시 돌다 실패한 것은{" "}
+                  <code>onError</code>로 갑니다.
                 </li>
               </ul>
             </Section>
 
-            <Section id="recipes" title="10 · 사용 예">
+            <Section id="routes" title="11 · 라우트">
+              <p>
+                대부분의 페이지는 정적 HTML과 스크립트로 충분합니다. 다만 글
+                하나하나의 주소를 링크로 공유할 때 미리보기에 글 제목이 나오게
+                하거나, 검색 엔진과 RSS 리더에 내용을 보여 주려면 서버가
+                페이지를 그려야 합니다. 그럴 때 <code>_naru/routes/</code>에
+                파일을 두면, 그 주소의 요청에 나루가 파일의 기본 내보내기를 돌려
+                답합니다.
+              </p>
+              <Table
+                head={["파일", "답하는 주소"]}
+                rows={[
+                  [
+                    <code key="f">routes/index.js</code>,
+                    <code key="p">/</code>,
+                  ],
+                  [
+                    <code key="f">routes/about.js</code>,
+                    <code key="p">/about</code>,
+                  ],
+                  [
+                    <code key="f">routes/posts/index.js</code>,
+                    <code key="p">/posts, /posts/</code>,
+                  ],
+                  [
+                    <code key="f">routes/posts/_id.js</code>,
+                    <>
+                      <code>/posts/42</code> (<code>params.id</code>는{" "}
+                      <code>&quot;42&quot;</code>)
+                    </>,
+                  ],
+                  [
+                    <code key="f">routes/feed.xml.js</code>,
+                    <code key="p">/feed.xml</code>,
+                  ],
+                ]}
+              />
+              <p>
+                <code>_</code>로 시작하는 이름은 경로 한 칸의 무엇이든 받으며,
+                같은 주소에 맞는 파일이 둘이면 이름이 정해진 쪽이 먼저입니다.
+                라우트와 맞는 주소는 같은 이름의 사이트 파일보다 라우트가
+                답하고, 어떤 라우트와도 맞지 않는 주소는 전처럼 사이트 파일이
+                답합니다.
+              </p>
+              <Code>{`// _naru/modules/html.js
+export const escape = (value) =>
+  String(value).replace(/[&<>"']/g, (c) => \`&#\${c.charCodeAt(0)};\`);
+
+// _naru/routes/posts/_id.js
+import { escape } from "../../modules/html.js";
+
+export default async function (ctx, { path, params, query }) {
+  const id = Number(params.id) || 0;
+  const [post] = (await ctx.sql\`SELECT title, body FROM posts WHERE id = \${id}\`).rows;
+  if (!post) ctx.fail("NOT_FOUND", "글이 없거나 지워졌습니다.");
+  return {
+    html: \`<!doctype html>
+<meta charset="utf-8">
+<title>\${escape(post.title)}</title>
+<h1>\${escape(post.title)}</h1>
+<p>\${escape(post.body)}</p>\`,
+    cache: 30,
+  };
+}`}</Code>
+              <p>
+                함수는 <code>{"{ path, params, query }"}</code>를 받습니다.{" "}
+                <code>query</code>는 주소의 <code>?</code> 뒤 값입니다. 라우트는
+                로그인과 상관없이 방문자의 쿼리로 돌아, <code>ctx.visitor</code>
+                가 true이고 테이블을 읽기만 합니다. 회원에게만 보일 내용은
+                페이지의 스크립트에서 <code>member.query()</code>로 읽으세요.
+                HTML에 넣는 값은 위의 <code>escape</code>처럼 직접
+                이스케이프해야 합니다.
+              </p>
+              <Table
+                head={["돌려주는 값", "응답"]}
+                rows={[
+                  [
+                    <code key="c">&quot;&lt;h1&gt;…&quot;</code>,
+                    "문자열은 HTML 페이지입니다.",
+                  ],
+                  [<code key="c">{"{ html }"}</code>, "HTML 페이지"],
+                  [
+                    <code key="c">{"{ body, type }"}</code>,
+                    <>
+                      RSS·JSON 같은 글. <code>type</code>은{" "}
+                      <code>application/rss+xml</code>·
+                      <code>application/atom+xml</code>·
+                      <code>application/json</code>·<code>application/xml</code>
+                      ·<code>text/xml</code>·<code>text/plain</code>·
+                      <code>text/css</code>·<code>text/calendar</code> 중
+                      하나입니다.
+                    </>,
+                  ],
+                  [
+                    <code key="c">{"{ file, head }"}</code>,
+                    <>
+                      사이트 파일(예: <code>post.html</code>)을 그대로 보내되{" "}
+                      <code>head</code>를 그 파일의 <code>&lt;head&gt;</code>에
+                      넣습니다. 페이지는 스크립트가 그리고, 링크 미리보기용{" "}
+                      <code>og:title</code> 같은 태그만 서버에서 넣을 때 씁니다.
+                    </>,
+                  ],
+                  [
+                    <code key="c">{"{ redirect }"}</code>,
+                    <>
+                      그 주소로 보냅니다. <code>/</code>로 시작하는 경로나{" "}
+                      <code>https://</code> 주소이고, 기본 상태는 302입니다.
+                    </>,
+                  ],
+                ]}
+              />
+              <p>
+                객체에는 <code>status</code>(200~599)와 <code>cache</code>
+                (0~300초)를 함께 넣을 수 있습니다. <code>cache</code>를 주면
+                나루가 그 시간 동안 같은 주소의 페이지를 다시 그리지 않고
+                보내므로, 그동안은 글이 바뀌어도 이전 페이지가 보입니다.{" "}
+                <code>ctx.fail</code>을 부르면 그 상태 코드와 메시지로 오류
+                페이지를 보냅니다. 라우트는 <code>GET</code> 요청에만 답하니,
+                글쓰기는 페이지의 스크립트에서 뮤테이션으로 하세요.
+              </p>
+              <Code>{`// 글은 post.html의 스크립트가 그리고, 미리보기 태그만 넣습니다.
+return {
+  file: "post.html",
+  head: \`<meta property="og:title" content="\${escape(post.title)}">\`,
+  cache: 60,
+};`}</Code>
+            </Section>
+
+            <Section id="recipes" title="12 · 사용 예">
               <div className="grid gap-4 md:grid-cols-2">
                 {[
                   {
@@ -1091,14 +1346,6 @@ await posts.set(id, { ...post.data, cover: image.url },
   { condition: { revision: post.revision } });`,
                   },
                   {
-                    title: "게시판 검색",
-                    setup: "posts · 읽기 누구나 / 쓰기 관리자만",
-                    code: `naru.collection("posts").list({
-  filter: { board: "free" },
-  where: { contains: ["title", word] },
-});`,
-                  },
-                  {
                     title: "특정 글의 댓글",
                     setup: "comments · 읽기 누구나 / 쓰기 누구나 생성만",
                     code: `naru
@@ -1106,6 +1353,50 @@ await posts.set(id, { ...post.data, cover: image.url },
   .list({
     filter: { postId: "hello" },
   });`,
+                  },
+                  {
+                    title: "회원 게시판",
+                    setup: (
+                      <>
+                        posts 테이블 · <a href="#code">쿼리와 뮤테이션</a>
+                      </>
+                    ),
+                    code: `await member.mutate("board:write",
+  { title, body });
+naru.subscribe("board:recent", {},
+  (posts) => render(posts));`,
+                  },
+                  {
+                    title: "게시판 검색",
+                    setup: "posts 테이블 · _naru/queries/board.js",
+                    code: `export async function search(ctx, { word }) {
+  return (await ctx.sql\`
+    SELECT id, title FROM posts
+    WHERE title LIKE '%' || \${word} || '%'
+    ORDER BY id DESC LIMIT 20\`).rows;
+}`,
+                  },
+                  {
+                    title: "회원 사진 올리기",
+                    setup: (
+                      <>
+                        <a href="/docs/1.1.0/media">미디어</a> · 회원 업로드
+                      </>
+                    ),
+                    code: `const image =
+  await member.media.upload(file);
+await member.mutate("board:write",
+  { title, body, image: image.url });`,
+                  },
+                  {
+                    title: "손님 비밀글",
+                    setup: (
+                      <>
+                        guestbook 테이블 · <a href="#code">ctx.passwords</a>
+                      </>
+                    ),
+                    code: `await naru.mutate("guestbook:edit",
+  { id, text, password });`,
                   },
                 ].map((recipe) => (
                   <section
@@ -1131,21 +1422,41 @@ await posts.set(id, { ...post.data, cover: image.url },
               </p>
             </Section>
 
-            <Section id="errors" title="11 · 한도와 오류">
+            <Section id="errors" title="13 · 한도와 오류">
               <ul className="list-disc space-y-3 pl-6">
                 <li>
-                  사이트당 컬렉션 100개, 문서 100,000개, 데이터 100 MiB. 요청
-                  하나는 64 KiB까지입니다.
+                  사이트당 컬렉션 100개, 문서 100,000개, 데이터는 컬렉션과
+                  사이트 테이블을 합쳐 100 MiB. 컬렉션 요청 하나는 64
+                  KiB까지입니다.
                 </li>
                 <li>
-                  방문자의 <code>add</code>는 분당 횟수가 제한됩니다.
+                  방문자의 컬렉션 <code>add</code>는 분당 횟수가 제한됩니다.
+                </li>
+                <li>
+                  쿼리와 라우트는 읽기로 세어, 컬렉션 읽기와 합쳐 회원이나
+                  주소마다 분당 600번까지입니다.
+                </li>
+                <li>
+                  뮤테이션은 회원마다 분당 30번, 방문자는 주소마다 분당 20번,
+                  사이트 전체에서 분당 300번까지입니다. 소유자의 호출은 세지
+                  않습니다.
+                </li>
+                <li>
+                  사이트 코드 한 번은 데이터베이스 작업(<code>ctx.sql</code> 한
+                  문장, <code>rolesOf</code>, <code>setRoles</code>,{" "}
+                  <code>Math.random()</code> 한 번씩) 100번, 비밀번호 해시와
+                  확인 3번, 수십 밀리초, 메모리 32 MiB까지 쓰고, 돌려주는 값은
+                  JSON으로 1 MiB까지입니다.
+                </li>
+                <li>
+                  사이트 코드 파일은 하나에 256 KiB, 모두 256개까지입니다.
                 </li>
                 <li>관리자 로그인 페이지는 사이트당 20개까지 등록합니다.</li>
               </ul>
               <p>
                 실패하면 <code>NaruError</code>를 던집니다. 방문자에게는{" "}
                 <code>error.message</code>를 보여 주세요. 나루의 오류는 한국어로
-                적혀 있고, 서버 함수나 규칙의 <code>ctx.fail</code>은 그 메시지
+                적혀 있고, 사이트 코드의 <code>ctx.fail</code>은 그 메시지
                 그대로입니다. 무엇이 왜 실패했는지 개발자를 위한 자세한 설명은{" "}
                 <code>error.cause.message</code>에 영어로 있으니, 막히면
                 콘솔에서 확인하세요. 처리를 나눌 때는 <code>code</code>를
@@ -1154,18 +1465,21 @@ await posts.set(id, { ...post.data, cover: image.url },
               <Table
                 head={["code", "뜻"]}
                 rows={[
-                  ["NOT_FOUND", "문서, 컬렉션 또는 사이트가 없습니다."],
+                  [
+                    "NOT_FOUND",
+                    "문서, 컬렉션, 쿼리·뮤테이션 또는 사이트가 없습니다.",
+                  ],
                   [
                     "ACCESS_DENIED",
-                    "공개 범위, 등록된 컬렉션 또는 컬렉션 규칙이 허용하지 않습니다.",
+                    "공개 범위나 등록된 컬렉션이 허용하지 않거나, 회원이 승인 대기·차단 상태입니다(error.details.membership).",
                   ],
                   [
                     "AUTH_REQUIRED",
-                    "관리자 권한이 만료되었습니다. 다시 로그인하세요.",
+                    "관리자나 회원의 로그인이 만료되었습니다. 다시 로그인하세요.",
                   ],
                   [
                     "CONFLICT",
-                    "condition이 맞지 않거나, unique 필드의 값이 이미 쓰이고 있습니다(error.details.unique).",
+                    "condition이 맞지 않거나, unique 필드나 UNIQUE 열의 값이 이미 쓰이고 있습니다(error.details.unique).",
                   ],
                   [
                     "QUOTA_EXCEEDED",
@@ -1173,18 +1487,25 @@ await posts.set(id, { ...post.data, cover: image.url },
                   ],
                   [
                     "RATE_LIMITED",
-                    "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
+                    "요청이 너무 많거나, 틀린 비밀번호가 너무 많습니다. 잠시 후 다시 시도하세요.",
                   ],
                   [
                     "INVALID_REQUEST",
-                    "이름, 필터, 크기 등 요청 형식이 잘못되었습니다.",
+                    "이름, 필터, 크기, SQL 등 요청 형식이 잘못되었거나 사이트 코드가 한도를 넘었습니다.",
                   ],
-                  ["UNAVAILABLE", "일시적인 오류입니다."],
+                  [
+                    "UNAVAILABLE",
+                    "일시적인 오류입니다. 나루 서버가 잠시 대기 서버로 넘어가 있는 동안에는 읽기만 되고 쓰기는 이 오류로 실패합니다.",
+                  ],
                 ].map(([code, meaning]) => [
                   <code key="c">{code}</code>,
                   meaning,
                 ])}
               />
+              <p>
+                사이트 코드의 <code>ctx.fail</code>은 위의 코드 중 하나를 골라
+                씁니다. 같은 코드라도 메시지와 세부는 사이트가 정합니다.
+              </p>
               <Code>{`try {
   await naru.collection("guestbook").add({ message });
 } catch (error) {
