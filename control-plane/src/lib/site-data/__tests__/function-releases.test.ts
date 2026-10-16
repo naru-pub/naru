@@ -203,7 +203,7 @@ integration(
 );
 
 integration(
-  "activating a release lists its routes for the edge, and only valid ones",
+  "activating a release lists its routes for the edge, dotted names too",
   async () => {
     mockObjects.set(
       `${site}/_naru/routes/posts/_id.js`,
@@ -218,7 +218,7 @@ integration(
       JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!),
     ).toEqual({
       revision,
-      routes: ["posts/_id"],
+      routes: ["feed.xml", "posts/_id"],
     });
     mockObjects.delete(`${site}/_naru/routes/posts/_id.js`);
     mockObjects.delete(`${site}/_naru/routes/feed.xml.js`);
