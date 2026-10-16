@@ -1263,6 +1263,16 @@ function credential(place: Place, token: string, expiresAt: number) {
       return await request<Result>(url, { ...init, token, renew });
     } catch (error) {
       if ((error as NaruError).code === "AUTH_REQUIRED") forget(place, token);
+      // Naru's read-only standby, answering while its server is away, cannot
+      // check a sign-in: a read is asked again as a visitor, so what visitors
+      // may see still shows. Writes and members-only data wait.
+      if (
+        (init.method ?? "GET") === "GET" &&
+        (error as NaruError).code === "UNAVAILABLE" &&
+        ((error as NaruError).details as { standby?: unknown } | undefined)
+          ?.standby === true
+      )
+        return request<Result>(url, init);
       throw error;
     }
   };

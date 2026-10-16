@@ -434,7 +434,10 @@ when the mini is away (`edge/src/standby.ts`,
   reported in for three (and has ever), it turns on Cloudflare's proxy for
   `sdk.naru.pub`: the Worker then serves visitors read-only from the copies,
   runs only functions declared read-only, and refuses sign-ins, writes,
-  uploads and live connections as `UNAVAILABLE`. After five healthy minutes,
+  uploads and live connections as `UNAVAILABLE`. Those refusals carry
+  `details.standby`; SDK 1.1.0 then asks a signed-in member's or owner's
+  read again without the token, which the standby cannot check, so their
+  pages still show what visitors may see. After five healthy minutes,
   once the mini reports in holding at least the standby's collections and
   documents for every site, it turns the proxy off again. While the mini is
   up, what reaches Cloudflare for `sdk.naru.pub` (resolvers holding the
@@ -504,7 +507,8 @@ Three guards keep one caller, or one site, from spending what others need
 (`site.ts`):
 
 - Reads a minute: 600 per address for visitors' reads at the edge, and per
-  member for theirs (`limitReader`, kept in memory). Every per-address limit,
+  member for theirs (`limitReader`, kept in memory; `SITE_READS_PER_MINUTE`
+  changes it, as `pnpm naru-dev` does, where every local browser is one address). Every per-address limit,
   this one and the visitors' write and call buckets, keys an IPv6 address by
   its /64 (`addresses.ts`), so stepping through one subscriber's addresses
   earns no fresh limit.

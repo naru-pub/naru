@@ -65,6 +65,9 @@ const unavailable = (headers: Record<string, string>) =>
     "Naru's server is away: this site can be read, not changed, until it is back.",
     "UNAVAILABLE",
     headers,
+    // The SDK reads public data again without the sign-in, which this copy
+    // cannot check, so a signed-in page still shows what visitors may see.
+    { standby: true },
   );
 
 /** passThrough, unless this is the standby, which has nowhere to send it. */

@@ -648,6 +648,15 @@ function credential(place, token, expiresAt) {
       return await request(url, { ...init, token, renew });
     } catch (error) {
       if (error.code === "AUTH_REQUIRED") forget(place, token);
+      // Naru's read-only standby, answering while its server is away, cannot
+      // check a sign-in: a read is asked again as a visitor, so what visitors
+      // may see still shows. Writes and members-only data wait.
+      if (
+        (init.method ?? "GET") === "GET" &&
+        error.code === "UNAVAILABLE" &&
+        error.details?.standby === true
+      )
+        return request(url, init);
       throw error;
     }
   };

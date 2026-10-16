@@ -448,6 +448,41 @@ test("typed function failures keep their message and details without retrying", 
   });
 });
 
+test("on Naru's standby a member's read is asked again as a visitor; writes wait", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    saveMember(local);
+    const member = await createNaru().members.session();
+    const standby = () =>
+      Response.json(
+        {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Naru's server is away.",
+            details: { standby: true },
+          },
+        },
+        { status: 503 },
+      );
+    respond((call) =>
+      call.headers.Authorization
+        ? standby()
+        : Response.json({ documents: [], nextCursor: null }),
+    );
+    const page = await member.collection("board").list();
+    assert.deepEqual(page.documents, []);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
+    assert.equal(calls[1].headers.Authorization, undefined);
+    // A write is not retried, and the session stays for when the server is back.
+    respond(standby);
+    await assert.rejects(member.collection("board").add({ text: "hi" }), {
+      code: "UNAVAILABLE",
+    });
+    assert.equal(calls.length, 3);
+    assert.ok(local.has(MEMBER));
+  });
+});
+
 test("a member the site has not approved learns so from the refusal", async () => {
   await browser(async ({ respond, local }) => {
     saveMember(local);

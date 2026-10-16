@@ -532,7 +532,11 @@ export class SiteData extends DurableObject<Env> {
     if (this.readers.minute !== minute)
       this.readers = { minute, counts: new Map() };
     const count = (this.readers.counts.get(key) ?? 0) + 1;
-    if (count > READS_PER_MINUTE)
+    const limit =
+      Number(
+        (this.env as { SITE_READS_PER_MINUTE?: string }).SITE_READS_PER_MINUTE,
+      ) || READS_PER_MINUTE;
+    if (count > limit)
       throw new DataError(
         429,
         "Too many reads from here this minute. Try again next minute.",

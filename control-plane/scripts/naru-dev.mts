@@ -90,6 +90,10 @@ const worker = spawn(
     `PASSTHROUGH_ORIGIN:${origin}`,
     "--var",
     "TEST_OPERATIONS:1",
+    // Every browser and tab on this machine is one address here, which the
+    // per-address read limit would otherwise count as one heavy reader.
+    "--var",
+    "SITE_READS_PER_MINUTE:100000",
     // Here the local Worker is every site's database, whatever production's
     // config says has moved to the mini.
     "--var",

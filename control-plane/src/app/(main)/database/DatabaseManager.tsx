@@ -12,6 +12,7 @@ import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
 import MembershipManager from "./MembershipManager";
 import DeclaredCollections from "./DeclaredCollections";
+import { MAX_DOCUMENTS, MAX_SITE_BYTES } from "@/lib/site-data/validation";
 
 type Collection = {
   name: string;
@@ -28,6 +29,30 @@ type Usage = {
   requests: { used: number; limit: number; resetsAt: number };
 };
 const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
+/** The site's limits, as the database enforces them. */
+const LIMITS = { documents: MAX_DOCUMENTS, bytes: MAX_SITE_BYTES };
+/** What is near or at its limit, worded for the owner; nothing when all is well. */
+function warnings(usage: Usage) {
+  const parts: string[] = [];
+  const near = (used: number, limit: number, what: string, effect: string) => {
+    if (used >= limit) parts.push(`${what}을 다 써서 ${effect}`);
+    else if (used >= limit * 0.8) parts.push(`${what}이 80%를 넘었습니다`);
+  };
+  near(
+    usage.documents,
+    LIMITS.documents,
+    "문서 수",
+    "새 문서를 쓸 수 없습니다",
+  );
+  near(usage.bytes, LIMITS.bytes, "용량", "새 문서를 쓸 수 없습니다");
+  near(
+    usage.requests.used,
+    usage.requests.limit,
+    "이번 달 요청",
+    "회원과 방문자의 요청이 거절되고 있습니다",
+  );
+  return parts;
+}
 async function api(path = "", method = "GET", body?: unknown) {
   const response = await fetch(`/api/account/database${path}`, {
     method,
@@ -161,7 +186,7 @@ export default function DatabaseManager({
           {usage && (
             <p
               className={`text-sm ${
-                usage.requests.used >= usage.requests.limit * 0.8
+                warnings(usage).length
                   ? "font-semibold text-destructive"
                   : "text-muted-foreground"
               }`}
@@ -172,11 +197,9 @@ export default function DatabaseManager({
               {usage.requests.limit.toLocaleString("ko-KR")}회 (
               {new Date(usage.requests.resetsAt).toLocaleDateString("ko-KR")}에
               초기화)
-              {usage.requests.used >= usage.requests.limit
-                ? " — 다 써서 회원과 방문자의 요청이 거절되고 있습니다."
-                : usage.requests.used >= usage.requests.limit * 0.8
-                  ? " — 80%를 넘었습니다."
-                  : ""}
+              {warnings(usage).length
+                ? ` — ${warnings(usage).join(", ")}.`
+                : ""}
             </p>
           )}
         </div>
