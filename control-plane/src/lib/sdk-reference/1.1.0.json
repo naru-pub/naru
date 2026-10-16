@@ -35,15 +35,7 @@
           "spans": [
             {
               "type": "text",
-              "value": "The site's queries and mutations (1.1.0's new design): its own code over its own tables, which its "
-            },
-            {
-              "type": "code",
-              "value": "_naru/migrations/"
-            },
-            {
-              "type": "text",
-              "value": " create. Anyone may call them, signed in or not; the code decides what each caller may see and do from "
+              "value": "The owner signed in on this page. Its queries and mutations see "
             },
             {
               "type": "code",
@@ -51,7 +43,7 @@
             },
             {
               "type": "text",
-              "value": ", "
+              "value": " null and "
             },
             {
               "type": "code",
@@ -59,15 +51,7 @@
             },
             {
               "type": "text",
-              "value": " and "
-            },
-            {
-              "type": "code",
-              "value": "ctx.visitor"
-            },
-            {
-              "type": "text",
-              "value": "."
+              "value": " true, whatever collections this sign-in approved, and are not counted against the site's budget."
             }
           ]
         }
@@ -127,50 +111,9 @@
           "throws": []
         },
         {
-          "name": "call",
-          "optional": false,
-          "signature": "call<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Calls one of the site's functions as the owner, as "
-                },
-                {
-                  "type": "code",
-                  "value": "Member.call"
-                },
-                {
-                  "type": "text",
-                  "value": " does for a member: the function sees "
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.member"
-                },
-                {
-                  "type": "text",
-                  "value": " null and "
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.owner"
-                },
-                {
-                  "type": "text",
-                  "value": " true, whatever collections this sign-in approved. Owner calls are not counted against the site's budget."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
           "name": "collection",
           "optional": false,
-          "signature": "collection<T = Json>(name: string): Collection<T>",
+          "signature": "collection<T = Json>(name: string): AdminCollection<T>",
           "summary": [],
           "throws": []
         },
@@ -194,89 +137,15 @@
       ]
     },
     {
-      "name": "Collection",
+      "name": "AdminCollection",
       "kind": "interface",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "A handle on one collection, the same for a visitor, a member and the owner: what each may do, the collection's permissions and rules decide on Naru."
-            }
-          ]
-        }
-      ],
+      "summary": [],
       "throws": [],
-      "signature": "interface Collection<T = Json>",
-      "extends": [],
+      "signature": "interface AdminCollection<T = Json> extends PublicCollection<T>",
+      "extends": [
+        "PublicCollection<T>"
+      ],
       "members": [
-        {
-          "name": "add",
-          "optional": false,
-          "signature": "add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Adds a document under a new ID. A guest's post that its writer may edit later with a password is a site function's: "
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.add(collection, data,\n{ secret })"
-                },
-                {
-                  "type": "text",
-                  "value": " keeps the password's hash, "
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.secretMatches"
-                },
-                {
-                  "type": "text",
-                  "value": " checks it."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "count",
-          "optional": false,
-          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n  where?: Predicate;\n}): Promise<number>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "How many documents match "
-                },
-                {
-                  "type": "code",
-                  "value": "filter"
-                },
-                {
-                  "type": "text",
-                  "value": " and "
-                },
-                {
-                  "type": "code",
-                  "value": "where"
-                },
-                {
-                  "type": "text",
-                  "value": ", or the whole collection."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
         {
           "name": "delete",
           "optional": false,
@@ -287,79 +156,7 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "Deletes a document, as "
-                },
-                {
-                  "type": "code",
-                  "value": "set"
-                },
-                {
-                  "type": "text",
-                  "value": " may replace it. Deleting a missing document succeeds unless a condition was supplied."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "get",
-          "optional": false,
-          "signature": "get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>",
-          "summary": [],
-          "throws": []
-        },
-        {
-          "name": "getMany",
-          "optional": false,
-          "signature": "getMany(\n  ids: readonly string[],\n  options?: { signal?: AbortSignal },\n): Promise<(Document<T> | null)[]>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "One bounded read, in input order; missing or unreadable rows are null."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "list",
-          "optional": false,
-          "signature": "list(options?: ListOptions): Promise<Page<T>>",
-          "summary": [],
-          "throws": []
-        },
-        {
-          "name": "pages",
-          "optional": false,
-          "signature": "pages(options?: ListOptions): AsyncIterable<Page<T>>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Every page of a query in turn, following "
-                },
-                {
-                  "type": "code",
-                  "value": "nextCursor"
-                },
-                {
-                  "type": "text",
-                  "value": " from "
-                },
-                {
-                  "type": "code",
-                  "value": "after"
-                },
-                {
-                  "type": "text",
-                  "value": " (or the start). Not a snapshot: writes in between can shift later pages."
+                  "value": "Deleting a missing document succeeds unless a condition was supplied."
                 }
               ]
             }
@@ -376,15 +173,7 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "Replaces the whole document, or creates it, when the collection or its rule allows: the owner always; a member, a document they created or the one named by their own "
-                },
-                {
-                  "type": "code",
-                  "value": "member.id"
-                },
-                {
-                  "type": "text",
-                  "value": "."
+                  "value": "Replaces the whole document or creates it."
                 }
               ]
             }
@@ -416,47 +205,6 @@
           "optional": false,
           "signature": "createdAt: string",
           "summary": [],
-          "throws": []
-        },
-        {
-          "name": "createdBy",
-          "optional": false,
-          "signature": "createdBy: string | null",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "The member who created the document, by their member ID, which a replacement keeps. Null for one the site's owner, a visitor or a site function created. Where the collection's rule exports "
-                },
-                {
-                  "type": "code",
-                  "value": "present"
-                },
-                {
-                  "type": "text",
-                  "value": " (1.1.0), a member sees only their own: anyone else's reads as null, and "
-                },
-                {
-                  "type": "code",
-                  "value": "where"
-                },
-                {
-                  "type": "text",
-                  "value": " may ask about it only as "
-                },
-                {
-                  "type": "code",
-                  "value": "{ eq: [{ metadata: \"createdBy\" }, member.id] }"
-                },
-                {
-                  "type": "text",
-                  "value": "."
-                }
-              ]
-            }
-          ],
           "throws": []
         },
         {
@@ -558,31 +306,6 @@
           "signature": "sort?: Sort",
           "summary": [],
           "throws": []
-        },
-        {
-          "name": "where",
-          "optional": true,
-          "signature": "where?: Predicate",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Combined with "
-                },
-                {
-                  "type": "code",
-                  "value": "filter"
-                },
-                {
-                  "type": "text",
-                  "value": ": documents must match both."
-                }
-              ]
-            }
-          ],
-          "throws": []
         }
       ]
     },
@@ -595,7 +318,7 @@
           "spans": [
             {
               "type": "text",
-              "value": "A live connection, reconnecting by itself until closed."
+              "value": "A live query, kept current until closed."
             }
           ]
         }
@@ -609,73 +332,6 @@
           "optional": false,
           "signature": "close(): void",
           "summary": [],
-          "throws": []
-        }
-      ]
-    },
-    {
-      "name": "LiveOptions",
-      "kind": "interface",
-      "summary": [],
-      "throws": [],
-      "signature": "interface LiveOptions",
-      "extends": [],
-      "members": [
-        {
-          "name": "topics",
-          "optional": true,
-          "signature": "topics?: readonly string[]",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Up to eight topic names whose broadcasts to hear."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "onMessage",
-          "optional": false,
-          "signature": "onMessage(message: LiveMessage): void",
-          "summary": [],
-          "throws": []
-        },
-        {
-          "name": "onStatus",
-          "optional": true,
-          "signature": "onStatus(status: \"closed\" | \"connecting\" | \"open\" | \"reconnecting\"): void",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Called as the connection opens, drops and reconnects, and once it is closed for good: by "
-                },
-                {
-                  "type": "code",
-                  "value": "close()"
-                },
-                {
-                  "type": "text",
-                  "value": ", or because the member's access ended. Messages sent while it was down are not delivered later, so read again on "
-                },
-                {
-                  "type": "code",
-                  "value": "open"
-                },
-                {
-                  "type": "text",
-                  "value": " if they matter."
-                }
-              ]
-            }
-          ],
           "throws": []
         }
       ]
@@ -788,15 +444,15 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "This member's ID on this site, the same on every visit. Documents they create carry it as "
+                  "value": "This member's ID on this site, the same on every visit: "
                 },
                 {
                   "type": "code",
-                  "value": "createdBy"
+                  "value": "ctx.member.id"
                 },
                 {
                   "type": "text",
-                  "value": ". It is not their Naru account name."
+                  "value": " in the site's queries and mutations. It is not their Naru account name."
                 }
               ]
             }
@@ -808,119 +464,6 @@
           "optional": false,
           "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
-          "throws": []
-        },
-        {
-          "name": "call",
-          "optional": false,
-          "signature": "call<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Calls one of the site's functions, "
-                },
-                {
-                  "type": "code",
-                  "value": "\"<module/path>:<function>\""
-                },
-                {
-                  "type": "text",
-                  "value": ": an export of the site's "
-                },
-                {
-                  "type": "code",
-                  "value": "_naru/functions/<module/path>.js"
-                },
-                {
-                  "type": "text",
-                  "value": ". It runs on Naru, in one transaction, with the site owner's access to its collections, and resolves with what it returned. A function that throws, or exceeds its limits, changes nothing. Exports the module lists in "
-                },
-                {
-                  "type": "code",
-                  "value": "export const readOnly = [...]"
-                },
-                {
-                  "type": "text",
-                  "value": " cannot write, and count against the member's read budget instead of their calls. Static relative JavaScript imports and re-exports may share code in "
-                },
-                {
-                  "type": "code",
-                  "value": "_naru/modules/"
-                },
-                {
-                  "type": "text",
-                  "value": "; imports stay within "
-                },
-                {
-                  "type": "code",
-                  "value": "_naru/functions/"
-                },
-                {
-                  "type": "text",
-                  "value": " and "
-                },
-                {
-                  "type": "code",
-                  "value": "_naru/modules/"
-                },
-                {
-                  "type": "text",
-                  "value": ". Include "
-                },
-                {
-                  "type": "code",
-                  "value": ".js"
-                },
-                {
-                  "type": "text",
-                  "value": "; dynamic imports and top-level await are unsupported. File updates activate an immutable source revision."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "collection",
-          "optional": false,
-          "signature": "collection<T = Json>(name: string): Collection<T>",
-          "summary": [],
-          "throws": []
-        },
-        {
-          "name": "live",
-          "optional": false,
-          "signature": "live(options: LiveOptions): Live",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Hears what the site's functions send this member ("
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.notify"
-                },
-                {
-                  "type": "text",
-                  "value": "), and broadcasts to "
-                },
-                {
-                  "type": "code",
-                  "value": "topics"
-                },
-                {
-                  "type": "text",
-                  "value": ", until closed or until their access ends."
-                }
-              ]
-            }
-          ],
           "throws": []
         },
         {
@@ -951,31 +494,7 @@
           "spans": [
             {
               "type": "text",
-              "value": "The site's queries and mutations (1.1.0's new design): its own code over its own tables, which its "
-            },
-            {
-              "type": "code",
-              "value": "_naru/migrations/"
-            },
-            {
-              "type": "text",
-              "value": " create. Anyone may call them, signed in or not; the code decides what each caller may see and do from "
-            },
-            {
-              "type": "code",
-              "value": "ctx.member"
-            },
-            {
-              "type": "text",
-              "value": ", "
-            },
-            {
-              "type": "code",
-              "value": "ctx.owner"
-            },
-            {
-              "type": "text",
-              "value": " and "
+              "value": "A page's client. Its queries and mutations run as a visitor, signed in to nothing: they see "
             },
             {
               "type": "code",
@@ -983,7 +502,15 @@
             },
             {
               "type": "text",
-              "value": "."
+              "value": " true and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": " null, are limited per visitor address, and count against the site's budget."
             }
           ]
         }
@@ -1010,58 +537,9 @@
           "throws": []
         },
         {
-          "name": "call",
-          "optional": false,
-          "signature": "call<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Calls a site function as a visitor, signed in to nothing: only exports the module lists in "
-                },
-                {
-                  "type": "code",
-                  "value": "export const visitors = [...]"
-                },
-                {
-                  "type": "text",
-                  "value": "; others fail with "
-                },
-                {
-                  "type": "code",
-                  "value": "AUTH_REQUIRED"
-                },
-                {
-                  "type": "text",
-                  "value": ". The function sees "
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.visitor"
-                },
-                {
-                  "type": "text",
-                  "value": " true and "
-                },
-                {
-                  "type": "code",
-                  "value": "ctx.member"
-                },
-                {
-                  "type": "text",
-                  "value": " null. Calls are limited per visitor address and count against the site's budget."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
           "name": "collection",
           "optional": false,
-          "signature": "collection<T = Json>(name: string): Collection<T>",
+          "signature": "collection<T = Json>(name: string): PublicCollection<T>",
           "summary": [
             {
               "type": "paragraph",
@@ -1069,31 +547,6 @@
                 {
                   "type": "text",
                   "value": "Visitor access, even when signed in."
-                }
-              ]
-            }
-          ],
-          "throws": []
-        },
-        {
-          "name": "live",
-          "optional": false,
-          "signature": "live(options: LiveOptions): Live",
-          "summary": [
-            {
-              "type": "paragraph",
-              "spans": [
-                {
-                  "type": "text",
-                  "value": "Hears what the site's functions broadcast to "
-                },
-                {
-                  "type": "code",
-                  "value": "topics"
-                },
-                {
-                  "type": "text",
-                  "value": ", as anyone may: broadcasts are public. Connecting counts against the site's budget."
                 }
               ]
             }
@@ -1134,6 +587,95 @@
       ]
     },
     {
+      "name": "PublicCollection",
+      "kind": "interface",
+      "summary": [],
+      "throws": [],
+      "signature": "interface PublicCollection<T = Json>",
+      "extends": [],
+      "members": [
+        {
+          "name": "add",
+          "optional": false,
+          "signature": "add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "count",
+          "optional": false,
+          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n}): Promise<number>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "How many documents match "
+                },
+                {
+                  "type": "code",
+                  "value": "filter"
+                },
+                {
+                  "type": "text",
+                  "value": ", or the whole collection."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "get",
+          "optional": false,
+          "signature": "get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "list",
+          "optional": false,
+          "signature": "list(options?: ListOptions): Promise<Page<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "pages",
+          "optional": false,
+          "signature": "pages(options?: ListOptions): AsyncIterable<Page<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Every page of a query in turn, following "
+                },
+                {
+                  "type": "code",
+                  "value": "nextCursor"
+                },
+                {
+                  "type": "text",
+                  "value": " from "
+                },
+                {
+                  "type": "code",
+                  "value": "after"
+                },
+                {
+                  "type": "text",
+                  "value": " (or the start). Not a snapshot: writes in between can shift later pages."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
       "name": "SiteCode",
       "kind": "interface",
       "summary": [
@@ -1142,7 +684,7 @@
           "spans": [
             {
               "type": "text",
-              "value": "The site's queries and mutations (1.1.0's new design): its own code over its own tables, which its "
+              "value": "The site's queries and mutations: its own code over its own tables, which its "
             },
             {
               "type": "code",
@@ -1297,7 +839,7 @@
             },
             {
               "type": "text",
-              "value": "): a site function's own "
+              "value": "): a query's or mutation's own "
             },
             {
               "type": "code",
@@ -1349,7 +891,7 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "The JSON a site function passed as "
+                  "value": "The JSON a query or mutation passed as "
                 },
                 {
                   "type": "code",
@@ -1407,13 +949,6 @@
       ]
     },
     {
-      "name": "AdminCollection",
-      "kind": "type",
-      "summary": [],
-      "throws": [],
-      "signature": "type AdminCollection<T = Json> = Collection<T>"
-    },
-    {
       "name": "Filter",
       "kind": "type",
       "summary": [
@@ -1438,23 +973,6 @@
       "signature": "type Json =\n  null | boolean | number | string | Json[] | { [key: string]: Json }"
     },
     {
-      "name": "LiveMessage",
-      "kind": "type",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "What a live connection hears from the site's functions."
-            }
-          ]
-        }
-      ],
-      "throws": [],
-      "signature": "type LiveMessage =\n  | { data: Json; type: \"notice\" }\n  | { data: Json; topic: string; type: \"topic\" }"
-    },
-    {
       "name": "NaruErrorCode",
       "kind": "type",
       "summary": [
@@ -1470,119 +988,6 @@
       ],
       "throws": [],
       "signature": "type NaruErrorCode =\n  | \"CONFLICT\"\n  | \"QUOTA_EXCEEDED\"\n  | \"AUTH_REQUIRED\"\n  | \"ACCESS_DENIED\"\n  | \"NOT_FOUND\"\n  | \"RATE_LIMITED\"\n  | \"INVALID_REQUEST\"\n  | \"UNAVAILABLE\""
-    },
-    {
-      "name": "Predicate",
-      "kind": "type",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "A condition on documents, as a collection rule's "
-            },
-            {
-              "type": "code",
-              "value": "readable"
-            },
-            {
-              "type": "text",
-              "value": " returns: "
-            },
-            {
-              "type": "code",
-              "value": "true"
-            },
-            {
-              "type": "text",
-              "value": ", "
-            },
-            {
-              "type": "code",
-              "value": "false"
-            },
-            {
-              "type": "text",
-              "value": ", "
-            },
-            {
-              "type": "code",
-              "value": "all"
-            },
-            {
-              "type": "text",
-              "value": " or "
-            },
-            {
-              "type": "code",
-              "value": "any"
-            },
-            {
-              "type": "text",
-              "value": " of conditions, or one comparison. Values match only their own JSON type; a missing field matches no comparison except "
-            },
-            {
-              "type": "code",
-              "value": "ne"
-            },
-            {
-              "type": "text",
-              "value": ". At most 100 nodes, ten levels deep."
-            }
-          ]
-        }
-      ],
-      "throws": [],
-      "signature": "type Predicate =\n  | boolean\n  | { all: readonly Predicate[] }\n  | { any: readonly Predicate[] }\n  | { eq: readonly [PredicateField, string | number | boolean | null] }\n  | { ne: readonly [PredicateField, string | number | boolean | null] }\n  | { gt: readonly [PredicateField, string | number] }\n  | { gte: readonly [PredicateField, string | number] }\n  | { lt: readonly [PredicateField, string | number] }\n  | { lte: readonly [PredicateField, string | number] }\n  | {\n      in: readonly [\n        PredicateField,\n        readonly (string | number | boolean | null)[],\n      ];\n    }\n  | { has: readonly [string, string | number | boolean | null] }\n  | { contains: readonly [string, string] }"
-    },
-    {
-      "name": "PredicateField",
-      "kind": "type",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "A top-level user field by name, or document metadata. "
-            },
-            {
-              "type": "code",
-              "value": "createdAt"
-            },
-            {
-              "type": "text",
-              "value": " and "
-            },
-            {
-              "type": "code",
-              "value": "updatedAt"
-            },
-            {
-              "type": "text",
-              "value": " (1.1.0) compare as UTC times written as documents show them, such as "
-            },
-            {
-              "type": "code",
-              "value": "\"2026-10-16T09:00:00.000Z\""
-            },
-            {
-              "type": "text",
-              "value": "."
-            }
-          ]
-        }
-      ],
-      "throws": [],
-      "signature": "type PredicateField =\n  string | { metadata: \"id\" | \"createdBy\" | \"createdAt\" | \"updatedAt\" }"
-    },
-    {
-      "name": "PublicCollection",
-      "kind": "type",
-      "summary": [],
-      "throws": [],
-      "signature": "type PublicCollection<T = Json> = Collection<T>"
     },
     {
       "name": "Revision",
