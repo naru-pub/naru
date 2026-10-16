@@ -57,6 +57,17 @@ cold reads. A Durable Object retains at most four manifests and 8 MiB/256 source
 blobs in memory. Warm cache hits need no storage validation; eviction, restart
 and new source hashes still produce misses. QuickJS instances are fresh per call.
 
+SQL migrations (1.1.0) ride in the same snapshot: `_naru/migrations/<name>.sql`,
+directly in the folder, recorded in the manifest beside the modules. The control
+plane sends a release's migrations with `activateFunctions`; the object refuses a
+release that edits, removes or names a migration before one already applied
+(recorded in `_naru_migrations` with its digest), writes a dump of the database to
+`_naru-runtime/<site>/restore-points/<generation>.json` when any are pending, then
+applies them in name order and switches the pointer in one transaction. Each
+statement passes the same checks as `ctx.sql` (`edge/src/sql.ts`). A refusal is a
+422 with `details.reason` `migration_failed`; the release task then deletes the
+refused revision and its row instead of retrying, and leaves the active release.
+
 After activation, the Absurd task waits five minutes and deletes the previous
 release's entire directory through the control plane's S3 client, then removes
 its release row. There are no edge cleanup endpoints, alarms, reader leases or

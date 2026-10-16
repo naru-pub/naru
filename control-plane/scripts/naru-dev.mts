@@ -29,7 +29,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { connect } from "node:net";
-import { extname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import {
   parseFilterQuery,
   parseWhereQuery,
@@ -161,26 +161,33 @@ await object("configure", {
 
 /* ----------------------------------------------- _naru/ publication --- */
 
-const FOLDERS = ["functions", "modules", "rules"] as const;
+const FOLDERS = ["functions", "modules", "rules", "migrations"] as const;
 async function files(dir: string): Promise<string[]> {
   if (!existsSync(dir)) return [];
   const found: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) found.push(...(await files(path)));
-    else if (/\.m?js$/.test(entry.name)) found.push(path);
+    else if (/\.(m?js|sql)$/.test(entry.name)) found.push(path);
   }
   return found;
 }
-/** Publishes one `_naru/<folder>/<path>.js`, or removes it when gone. */
+/**
+ * Publishes one `_naru/<folder>/<path>.js` (or a migration's `.sql`), or
+ * removes it when gone.
+ */
 async function publish(path: string, publishing = true) {
   const inside = relative(join(folder, "_naru"), path).split(sep);
   const kind = inside[0] as (typeof FOLDERS)[number];
-  if (!FOLDERS.includes(kind) || !/\.m?js$/.test(path)) return;
+  if (
+    !FOLDERS.includes(kind) ||
+    !(kind === "migrations" ? /\.sql$/ : /\.m?js$/).test(path)
+  )
+    return;
   const file = inside
     .slice(1)
     .join("/")
-    .replace(/\.m?js$/, "");
+    .replace(/\.(m?js|sql)$/, "");
   const source = existsSync(path) ? await readFile(path, "utf8") : null;
   try {
     await object("putFunctions", {
@@ -190,10 +197,67 @@ async function publish(path: string, publishing = true) {
       source,
       publish: publishing,
     });
-    if (publishing) console.log(`published _naru/ (${kind}/${file} changed)`);
+    if (publishing) {
+      console.log(`published _naru/ (${kind}/${file} changed)`);
+      await writeTypes();
+    }
   } catch (error) {
     console.error(`_naru/${kind}/${file}: ${(error as Error).message}`);
   }
+}
+
+/**
+ * `_naru/types/database.d.ts`: the site's tables as their migrations left
+ * them, an interface each and a `Database` map, for ctx.sql and any query
+ * builder. Columns follow SQLite's type affinity.
+ */
+async function writeTypes() {
+  const tables = await object<
+    {
+      name: string;
+      view: boolean;
+      columns: { name: string; type: string; nullable: boolean }[];
+    }[]
+  >("siteTables", {});
+  const typeOf = (declared: string) => {
+    const type = declared.toUpperCase();
+    if (type.includes("INT")) return "number";
+    if (/CHAR|CLOB|TEXT/.test(type)) return "string";
+    if (type.includes("BLOB") || !type) return "unknown";
+    return "number";
+  };
+  const pascal = (name: string) =>
+    name
+      .split(/[^A-Za-z0-9]+/)
+      .filter(Boolean)
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join("")
+      .replace(/^(?=\d)/, "T");
+  const key = (name: string) =>
+    /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
+  const body = [
+    "// Written by naru dev from the site's tables: do not edit.",
+    "",
+    ...tables.flatMap((table) => [
+      `/** ${table.view ? "View" : "Table"} ${table.name}. */`,
+      `export interface ${pascal(table.name)} {`,
+      ...table.columns.map(
+        (column) =>
+          `  ${key(column.name)}: ${typeOf(column.type)}${column.nullable ? " | null" : ""};`,
+      ),
+      "}",
+      "",
+    ]),
+    "export interface Database {",
+    ...tables.map((table) => `  ${key(table.name)}: ${pascal(table.name)};`),
+    "}",
+    "",
+  ].join("\n");
+  const path = join(folder, "_naru", "types", "database.d.ts");
+  if (existsSync(path) && (await readFile(path, "utf8")) === body) return;
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, body);
+  console.log("wrote _naru/types/database.d.ts");
 }
 // Every file first, then one publication: modules import each other.
 const everything = (

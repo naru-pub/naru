@@ -1,5 +1,5 @@
 import { callerKey } from "./addresses";
-import { FunctionRevisions } from "./function-revisions";
+import { FunctionRevisions, migrationPath } from "./function-revisions";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -20,6 +20,34 @@ import {
   publicResult,
 } from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
+import {
+  bindings,
+  checkPlan,
+  classify,
+  MAX_ROW_BYTES,
+  MAX_ROWS,
+  reserved,
+  statements,
+  type PlanStep,
+} from "./sql";
+
+/** One of a release's SQL migrations (FunctionRevisions.migrations). */
+type Migration = { name: string; sql: string; digest: string };
+
+/** A row for a dump, which is JSON: a BLOB becomes { $base64 }. */
+const dumpRow = (row: Row): DumpRow =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      value instanceof ArrayBuffer
+        ? { $base64: Buffer.from(value).toString("base64") }
+        : value,
+    ]),
+  );
+const fromDump = (value: DumpRow[string] | undefined): SqlValue =>
+  value && typeof value === "object"
+    ? new Uint8Array(Buffer.from(value.$base64, "base64")).buffer
+    : (value ?? null);
 import {
   authorQueries,
   presented,
@@ -44,6 +72,7 @@ import {
   fieldIndex,
   listQuery,
   SCHEMA,
+  USAGE_SCHEMA,
   type Row,
   type SqlValue,
 } from "./query";
@@ -59,7 +88,7 @@ import type {
   Usage,
   Dump,
 } from "./types";
-import { DUMP_TABLES } from "./types";
+import { DUMP_TABLES, type DumpRow } from "./types";
 
 // One site's collections and documents, stored in SQLite: the request rules
 // and storage. Its arguments and answers are in types.ts, its list query in
@@ -315,24 +344,7 @@ export class SiteData extends DurableObject<Env> {
     // delete uploads (ctx.media.delete): the tables for both go.
     this.sql.exec("DROP TABLE IF EXISTS managed_media");
     this.sql.exec("DROP TABLE IF EXISTS media_releases");
-    // The site's document count and bytes, kept by triggers on every write
-    // path, so a write's quota check reads one row instead of every document.
-    this.sql.exec(`
-      CREATE TABLE IF NOT EXISTS usage (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        documents INTEGER NOT NULL,
-        bytes INTEGER NOT NULL
-      );
-      CREATE TRIGGER IF NOT EXISTS usage_insert AFTER INSERT ON documents BEGIN
-        UPDATE usage SET documents = documents + 1, bytes = bytes + NEW.size_bytes WHERE id = 1;
-      END;
-      CREATE TRIGGER IF NOT EXISTS usage_delete AFTER DELETE ON documents BEGIN
-        UPDATE usage SET documents = documents - 1, bytes = bytes - OLD.size_bytes WHERE id = 1;
-      END;
-      CREATE TRIGGER IF NOT EXISTS usage_update AFTER UPDATE OF size_bytes ON documents BEGIN
-        UPDATE usage SET bytes = bytes - OLD.size_bytes + NEW.size_bytes WHERE id = 1;
-      END;
-    `);
+    this.sql.exec(USAGE_SCHEMA);
     // Counted once, when an object first has the table.
     this.sql.exec(
       "INSERT OR IGNORE INTO usage (id, documents, bytes) SELECT 1, count(*), coalesce(sum(size_bytes), 0) FROM documents",
@@ -1338,6 +1350,58 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /** Refuses a write of `size` bytes, over a document of `existing`, past the site's quota. */
+  /**
+   * One statement of site SQL (ctx.sql, 1.1.0) against the site's own tables:
+   * checked (sql.ts), held to its plan, and run in the call's transaction.
+   * Returns its rows, at most MAX_ROWS of them and MAX_ROW_BYTES as JSON,
+   * and how many rows it changed.
+   */
+  private siteSql(text: unknown, values: unknown, readonly: boolean) {
+    if (typeof text !== "string" || text.length > 64 * 1024)
+      throw new DataError(400, "ctx.sql takes a statement of at most 64 KiB.");
+    const parsed = statements(text);
+    if (parsed.length !== 1)
+      throw new DataError(400, "ctx.sql runs one statement at a time.");
+    const kind = classify(
+      parsed[0].tokens,
+      readonly ? ["read"] : ["read", "write"],
+    );
+    const bound = bindings(values ?? []);
+    checkPlan(
+      this.rows(
+        `EXPLAIN QUERY PLAN ${text}`,
+        ...bound,
+      ) as unknown as PlanStep[],
+    );
+    const cursor = this.sql.exec(text, ...bound);
+    const rows: Record<string, SqlValue>[] = [];
+    let bytes = 0;
+    for (const row of cursor) {
+      for (const value of Object.values(row))
+        if (value instanceof ArrayBuffer)
+          throw new DataError(400, "ctx.sql does not return BLOB values yet.");
+      bytes += JSON.stringify(row).length;
+      rows.push(row as Record<string, SqlValue>);
+      if (rows.length > MAX_ROWS || bytes > MAX_ROW_BYTES)
+        throw new DataError(
+          400,
+          `ctx.sql returns at most ${MAX_ROWS} rows and 1 MiB; add a LIMIT.`,
+        );
+    }
+    if (kind === "write") this.checkDatabaseSize();
+    return { rows, changes: kind === "write" ? cursor.rowsWritten : 0 };
+  }
+
+  /** The whole database, collections and tables, within the site's quota. */
+  private checkDatabaseSize() {
+    if (this.sql.databaseSize > MAX_SITE_BYTES)
+      throw new DataError(
+        409,
+        "Site database quota exceeded.",
+        "QUOTA_EXCEEDED",
+      );
+  }
+
   private checkQuota(existing: number | undefined, size: number) {
     const usage = this.usage();
     if (
@@ -1410,19 +1474,64 @@ export class SiteData extends DurableObject<Env> {
     ));
   }
 
-  /** Activation only: snapshots and retirement tasks belong to the control plane. */
-  async activateFunctions(input: { revision: string; generation: string }) {
-    return this.run(() => {
-      if (
-        !/^[a-f0-9]{64}$/.test(input.revision) ||
-        !/^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
-          input.generation,
-        )
+  /**
+   * Activation only: snapshots and retirement tasks belong to the control
+   * plane. A release's pending migrations (1.1.0) are applied in the same
+   * transaction that switches to its code, after a restore point is kept in
+   * R2; one that fails refuses the release (422) and changes nothing.
+   */
+  async activateFunctions(input: {
+    revision: string;
+    generation: string;
+    /** The site, for its restore point; with the release's migrations. */
+    site?: string;
+    migrations?: Migration[];
+  }) {
+    if (
+      !/^[a-f0-9]{64}$/.test(input.revision) ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
+        input.generation,
       )
+    )
+      return this.run(() => {
         throw new DataError(400, "Invalid function release.");
+      });
+    // An older durable task must never reactivate code retired by a newer release.
+    const newer = () => {
       const current = this.meta("functions_generation");
-      // An older durable task must never reactivate code retired by a newer release.
-      if (!current || input.generation > current) {
+      return !current || input.generation > current;
+    };
+    const migrations = input.migrations ?? [];
+    if (
+      !Array.isArray(migrations) ||
+      migrations.some(
+        (m) =>
+          typeof m?.name !== "string" ||
+          !/^[A-Za-z0-9_.-]{1,128}\.sql$/.test(m.name) ||
+          typeof m.sql !== "string" ||
+          !/^[a-f0-9]{64}$/.test(m.digest),
+      ) ||
+      (migrations.length && !input.site)
+    )
+      return this.run(() => {
+        throw new DataError(400, "Invalid function release.");
+      });
+    if (newer() && migrations.length) {
+      const pending = this.run(() => this.pendingMigrations(migrations));
+      if (!pending.ok) return pending;
+      if (pending.value.length) {
+        const dump = await this.dump();
+        if (!dump.ok) return dump;
+        await this.env.SITE_FILES.put(
+          `_naru-runtime/${input.site}/restore-points/${input.generation}.json`,
+          JSON.stringify(dump.value),
+        );
+      }
+    }
+    return this.run(() => {
+      if (newer()) {
+        for (const migration of this.pendingMigrations(migrations))
+          this.applyMigration(migration, input.generation);
         this.setMeta("functions_revision", input.revision);
         this.setMeta("functions_generation", input.generation);
       }
@@ -1430,9 +1539,124 @@ export class SiteData extends DurableObject<Env> {
     });
   }
 
-  /** Test fixture only: production snapshots are created in the control plane. */
+  /**
+   * The migrations of a release not yet applied, in order. Refuses a release
+   * that edits or drops one already applied, or names a new one before it:
+   * what has run is history, and a fix is a new file.
+   */
+  private pendingMigrations(migrations: Migration[]) {
+    const applied = new Map(
+      this.rows("SELECT name, digest FROM _naru_migrations").map((row) => [
+        String(row.name),
+        String(row.digest),
+      ]),
+    );
+    const refuse = (name: string, reason: string) =>
+      new DataError(422, `Migration ${name} ${reason}`, "INVALID_REQUEST", {
+        reason: "migration_failed",
+        migration: name,
+      });
+    const given = new Map(migrations.map((m) => [m.name, m]));
+    for (const [name, digest] of applied) {
+      if (!given.has(name))
+        throw refuse(name, "has been applied and cannot be removed.");
+      if (given.get(name)!.digest !== digest)
+        throw refuse(
+          name,
+          "has been applied and cannot be changed; add a new migration instead.",
+        );
+    }
+    const last = [...applied.keys()].sort().at(-1);
+    const pending = migrations.filter((m) => !applied.has(m.name));
+    for (const migration of pending)
+      if (last !== undefined && migration.name < last)
+        throw refuse(
+          migration.name,
+          `sorts before ${last}, which has been applied; name it to come after.`,
+        );
+    return pending;
+  }
+
+  /** Runs one migration's statements and records it, inside the caller's transaction. */
+  private applyMigration(migration: Migration, generation: string) {
+    const fail = (reason: string) =>
+      new DataError(
+        422,
+        `Migration ${migration.name} failed: ${reason}`,
+        "INVALID_REQUEST",
+        { reason: "migration_failed", migration: migration.name },
+      );
+    try {
+      for (const statement of statements(migration.sql)) {
+        const kind = classify(statement.tokens, ["write", "schema"]);
+        if (kind === "write")
+          checkPlan(
+            this.rows(
+              `EXPLAIN QUERY PLAN ${statement.text}`,
+            ) as unknown as PlanStep[],
+          );
+        this.sql.exec(statement.text);
+      }
+    } catch (error) {
+      throw fail(
+        error instanceof DataError
+          ? error.message
+          : String((error as Error)?.message ?? error),
+      );
+    }
+    this.sql.exec(
+      "INSERT INTO _naru_migrations (name, digest, applied_at, generation) VALUES (?, ?, ?, ?)",
+      migration.name,
+      migration.digest,
+      Date.now(),
+      generation,
+    );
+    this.checkDatabaseSize();
+  }
+
+  /** The site's own tables and views with their columns, for naru-dev's types. */
+  async siteTables() {
+    return this.run(() =>
+      this.siteObjects()
+        .filter((object) => object.type !== "index")
+        .map((object) => ({
+          name: object.name,
+          view: object.type === "view",
+          columns: this.rows(
+            'SELECT name, type, "notnull", pk FROM pragma_table_info(?)',
+            object.name,
+          ).map((column) => ({
+            name: String(column.name),
+            type: String(column.type),
+            nullable: Number(column.notnull) === 0 && Number(column.pk) === 0,
+          })),
+        })),
+    );
+  }
+
+  /**
+   * The site's own tables, indexes and views, as sqlite_master has them, in
+   * the order they can be created again: tables, then indexes, then views.
+   */
+  private siteObjects() {
+    const order: Record<string, number> = { table: 0, index: 1, view: 2 };
+    return this.rows(
+      "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table', 'index', 'view') ORDER BY rowid",
+    )
+      .filter((row) => !reserved(String(row.name)))
+      .sort((a, b) => order[String(a.type)] - order[String(b.type)])
+      .map((row) => ({
+        type: String(row.type),
+        name: String(row.name),
+        sql: String(row.sql),
+      }));
+  }
+
+  /**
+   * Test fixture and naru-dev only: production snapshots are created in the
+   * control plane. Activates what it publishes, migrations included.
+   */
   private async publishFunctions(input: { site: string }) {
-    const previous = this.meta("functions_revision");
     let revision: string;
     try {
       revision = await this.revisions(input.site).publish();
@@ -1441,15 +1665,19 @@ export class SiteData extends DurableObject<Env> {
         throw error;
       });
     }
-    return this.run(() => {
-      if (this.meta("functions_revision") !== previous)
-        throw new DataError(
-          409,
-          "Another function revision was published. Retry.",
-          "CONFLICT",
-        );
-      this.setMeta("functions_revision", revision);
-      return { revision };
+    let migrations: Migration[];
+    try {
+      migrations = await this.revisions(input.site).migrations(revision);
+    } catch (error) {
+      return this.run(() => {
+        throw error;
+      });
+    }
+    return this.activateFunctions({
+      revision,
+      generation: uuidv7(),
+      site: input.site,
+      migrations,
     });
   }
 
@@ -1549,6 +1777,9 @@ export class SiteData extends DurableObject<Env> {
       switch (operation) {
         case "random":
           return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+        case "sql":
+          // [text, values, read-only], the last from the call, not the code.
+          return this.siteSql(args[0], args[1], args[2] === true);
         case "get": {
           const row = document(collection(args[0]).id, name(args[1]));
           return row ? publicResult(documentOf(row)) : null;
@@ -1974,7 +2205,7 @@ export class SiteData extends DurableObject<Env> {
     site: string;
     file: string;
     source: string | null;
-    folder?: "functions" | "rules" | "modules";
+    folder?: "functions" | "rules" | "modules" | "migrations";
     /** False stores the file only, for a batch published by its last file. */
     publish?: boolean;
   }) {
@@ -1983,8 +2214,13 @@ export class SiteData extends DurableObject<Env> {
         ? "rules"
         : input.folder === "modules"
           ? "modules"
-          : "functions";
-    const key = `${input.site}/_naru/${folder}/${folder !== "rules" ? functionModule(input.file) : name(input.file)}.js`;
+          : input.folder === "migrations"
+            ? "migrations"
+            : "functions";
+    const key =
+      folder === "migrations"
+        ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
+        : `${input.site}/_naru/${folder}/${folder !== "rules" ? functionModule(input.file) : name(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
     if (input.publish === false) return { ok: true, value: null };
@@ -2361,17 +2597,31 @@ export class SiteData extends DurableObject<Env> {
    * references, limits and settings.
    */
   async dump(): Promise<Outcome<Dump>> {
-    return this.run(() => ({
-      tables: Object.fromEntries(
-        DUMP_TABLES.map((table) => [
-          table,
-          this.rows(`SELECT * FROM ${table}`) as Record<
-            string,
-            string | number | null
-          >[],
-        ]),
-      ) as Dump["tables"],
-    }));
+    return this.run(() => {
+      const objects = this.siteObjects();
+      return {
+        tables: Object.fromEntries(
+          DUMP_TABLES.map((table) => [
+            table,
+            this.rows(`SELECT * FROM ${table}`).map(dumpRow),
+          ]),
+        ) as Dump["tables"],
+        site: {
+          schema: objects.map((object) => object.sql),
+          tables: Object.fromEntries(
+            objects
+              .filter((object) => object.type === "table")
+              .map((object) => [
+                object.name,
+                this.rows(
+                  `SELECT * FROM "${object.name.replaceAll('"', '""')}"`,
+                ).map(dumpRow),
+              ]),
+          ),
+          migrations: this.rows("SELECT * FROM _naru_migrations").map(dumpRow),
+        },
+      };
+    });
   }
 
   /**
@@ -2382,13 +2632,15 @@ export class SiteData extends DurableObject<Env> {
     return this.run(() => {
       if (this.rows("SELECT 1 FROM collections LIMIT 1").length)
         throw new DataError(409, "The site already has collections.");
+      if (this.siteObjects().length)
+        throw new DataError(409, "The site already has tables.");
       return this.fill(input);
     });
   }
 
   /** Writes a `dump` into tables `restore` or `replace` emptied. */
   private fill(input: Dump) {
-    let rows = 0;
+    let rows = this.fillSite(input.site);
     for (const table of DUMP_TABLES) {
       const given = input?.tables?.[table];
       if (!Array.isArray(given))
@@ -2402,7 +2654,7 @@ export class SiteData extends DurableObject<Env> {
         const present = columns.filter((column) => Object.hasOwn(row, column));
         this.sql.exec(
           `INSERT INTO ${table} (${present.join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
-          ...present.map((column) => row[column] ?? null),
+          ...present.map((column) => fromDump(row[column])),
         );
         rows++;
       }
@@ -2419,6 +2671,51 @@ export class SiteData extends DurableObject<Env> {
         this.sql.exec(fieldIndex(String(row.key).slice(8), field).create);
     this.budget = undefined;
     return { rows };
+  }
+
+  /**
+   * Replaces the site's own tables with a dump's: what it held is dropped,
+   * the dump's schema created (checked as a migration's is) and its rows
+   * written. Returns how many rows were written.
+   */
+  private fillSite(site: Dump["site"]) {
+    for (const object of this.siteObjects().reverse())
+      this.sql.exec(
+        `DROP ${object.type.toUpperCase()} IF EXISTS "${object.name.replaceAll('"', '""')}"`,
+      );
+    this.sql.exec("DELETE FROM _naru_migrations");
+    if (!site) return 0;
+    let rows = 0;
+    for (const sql of site.schema) {
+      for (const statement of statements(sql))
+        classify(statement.tokens, ["schema"]);
+      this.sql.exec(sql);
+    }
+    const insert = (table: string, given: DumpRow[]) => {
+      const columns = this.rows(
+        `SELECT name FROM pragma_table_info(?)`,
+        table,
+      ).map((column) => String(column.name));
+      for (const row of given) {
+        const present = columns.filter((column) => Object.hasOwn(row, column));
+        const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+        this.sql.exec(
+          `INSERT INTO ${quote(table)} (${present.map(quote).join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
+          ...present.map((column) => fromDump(row[column])),
+        );
+        rows++;
+      }
+    };
+    for (const [table, given] of Object.entries(site.tables ?? {})) {
+      if (reserved(table) || !Array.isArray(given))
+        throw new DataError(
+          400,
+          `The dump's table ${table} is not the site's.`,
+        );
+      insert(table, given);
+    }
+    insert("_naru_migrations", site.migrations ?? []);
+    return rows;
   }
 
   /** Erases the site, for account deletion. */

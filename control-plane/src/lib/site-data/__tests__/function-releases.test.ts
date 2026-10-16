@@ -153,3 +153,51 @@ integration(
     ).toBe("2");
   },
 );
+
+integration(
+  "a release whose migration fails is refused, its files go, and the active release stays",
+  async () => {
+    mockObjects.set(
+      `${site}/_naru/functions/shop.js`,
+      "export function buy() { return 3; }",
+    );
+    mockObjects.set(
+      `${site}/_naru/migrations/0001_items.sql`,
+      "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT);",
+    );
+    const active = await publishSiteFunctions(site);
+    mockObjects.set(
+      `${site}/_naru/migrations/0002_broken.sql`,
+      "INSERT INTO missing VALUES (1);",
+    );
+    await expect(publishSiteFunctions(site)).rejects.toMatchObject({
+      status: 422,
+      details: { reason: "migration_failed", migration: "0002_broken.sql" },
+    });
+    const tasks = await sql<{
+      params: FunctionRelease;
+    }>`select params from absurd.t_maintenance where task_name = 'function-release-v1' order by params->>'generation' desc limit 1`.execute(
+      db,
+    );
+    const refusedRelease = tasks.rows[0].params;
+    expect(refusedRelease.retired!.revision).toBe(active.revision);
+    // The durable task gives up on it for good, without retiring the active one.
+    await runFunctionRelease(refusedRelease, context());
+    expect(mockDeletes).toContain(refusedRelease.revision);
+    expect(mockDeletes).not.toContain(active.revision);
+    expect(
+      await db
+        .selectFrom("site_function_releases")
+        .select("revision")
+        .execute(),
+    ).toEqual(expect.arrayContaining([{ revision: active.revision }]));
+    expect(
+      await db
+        .selectFrom("site_function_releases")
+        .select("revision")
+        .where("revision", "=", refusedRelease.revision)
+        .execute(),
+    ).toEqual([]);
+    mockObjects.delete(`${site}/_naru/migrations/0002_broken.sql`);
+  },
+);

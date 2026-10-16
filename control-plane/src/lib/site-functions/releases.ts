@@ -3,6 +3,7 @@ import { db } from "@/lib/database";
 import { callSiteObject } from "@/lib/edge/client";
 import { MAINTENANCE_QUEUE } from "@/lib/maintenance/jobs";
 import { uuidv7 } from "@/lib/uuid";
+import { DataError } from "@/lib/site-data/validation";
 import { FunctionRevisions } from "./revisions";
 import { revisionStorage, deleteRevision } from "./storage";
 import type { TaskContext } from "absurd-sdk";
@@ -83,15 +84,52 @@ export async function activateRelease(release: FunctionRelease) {
   return callSiteObject(release.site, "activateFunctions", {
     revision: release.revision,
     generation: release.generation,
+    // Its SQL migrations (1.1.0), which the object applies on activation.
+    site: release.site,
+    migrations: await new FunctionRevisions(
+      revisionStorage,
+      release.site,
+    ).migrations(release.revision),
   });
 }
+
+/**
+ * Whether the site refused the release for good: a migration that failed or
+ * changed one already applied (422). Retrying would fail the same way.
+ */
+export const refused = (error: unknown) =>
+  error instanceof DataError && error.status === 422;
 
 /** Absurd owns waiting, R2 deletion, and retries; no edge cleanup calls are made. */
 export async function runFunctionRelease(
   release: FunctionRelease,
   ctx: Pick<TaskContext, "step" | "sleepFor" | "heartbeat">,
 ) {
-  await ctx.step("activate", () => activateRelease(release));
+  const activated = await ctx.step("activate", async () => {
+    try {
+      await activateRelease(release);
+      return true;
+    } catch (error) {
+      if (refused(error)) return false;
+      throw error;
+    }
+  });
+  // A refused release never ran: its files go, and the one before it, still
+  // active, stays.
+  if (!activated) {
+    await ctx.step("discard-refused-revision", async () => {
+      await deleteRevision(release.site, release.revision, () =>
+        ctx.heartbeat(),
+      );
+      await db
+        .deleteFrom("site_function_releases")
+        .where("id", "=", release.generation)
+        .where("revision", "=", release.revision)
+        .execute();
+      return null;
+    });
+    return;
+  }
   if (!release.retired) return;
   await ctx.sleepFor("retirement-grace", FUNCTION_RELEASE_GRACE_SECONDS);
   await ctx.step("delete-retired-revision", async () => {

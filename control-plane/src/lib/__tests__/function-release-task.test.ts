@@ -8,6 +8,14 @@ jest.mock("@/lib/site-functions/storage", () => ({
   deleteRevision: jest.fn(),
   revisionStorage: {},
 }));
+// A release without migrations.
+jest.mock("@/lib/site-functions/revisions", () => ({
+  FunctionRevisions: class {
+    async migrations() {
+      return [];
+    }
+  },
+}));
 jest.mock("@/lib/database", () => ({
   db: {
     selectFrom: () => {
@@ -92,6 +100,8 @@ test("activation, grace and deletion are checkpointed; a failed deletion retries
   expect(activate).toHaveBeenCalledWith("alice", "activateFunctions", {
     revision: release.revision,
     generation: release.generation,
+    site: "alice",
+    migrations: [],
   });
   expect(remove).toHaveBeenCalledTimes(2);
   expect(remove).toHaveBeenLastCalledWith(

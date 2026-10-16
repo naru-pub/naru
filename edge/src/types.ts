@@ -75,12 +75,24 @@ export const DUMP_TABLES = [
   "media_refs",
   "rate_limits",
 ] as const;
+/** A row as a dump carries it: a BLOB as { $base64 }. */
+export type DumpRow = Record<
+  string,
+  string | number | null | { $base64: string }
+>;
 /** A site's whole database, as `dump` answers and `restore` takes it. */
 export type Dump = {
-  tables: Record<
-    (typeof DUMP_TABLES)[number],
-    Record<string, string | number | null>[]
-  >;
+  tables: Record<(typeof DUMP_TABLES)[number], DumpRow[]>;
+  /**
+   * The site's own tables (1.1.0): their schema, in the order it is created
+   * again, their rows, and the migrations that made them. A dump without it
+   * is from before site tables, and leaves none.
+   */
+  site?: {
+    schema: string[];
+    tables: Record<string, DumpRow[]>;
+    migrations: DumpRow[];
+  };
 };
 
 export type Snapshot = {

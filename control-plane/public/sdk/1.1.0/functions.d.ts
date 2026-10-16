@@ -216,10 +216,37 @@ export interface Ctx extends ReadCtx {
     id: string,
     secret: string,
   ): Promise<boolean>;
+  /**
+   * One statement of SQL against the site's own tables, which its
+   * `_naru/migrations/*.sql` create. As a tag, ``ctx.sql`... ${value}` ``
+   * binds every interpolated value as a parameter; given text and values,
+   * it runs a query builder's compiled statement. SELECT, INSERT, UPDATE and
+   * DELETE run; a read-only export only reads. Naru's own tables, pragmas,
+   * triggers, transactions and recursion are refused, and so is a statement
+   * whose plan would read a whole table once for every row of another: join
+   * on an indexed column. It returns at most 1,000 rows and 1 MiB (no BLOB
+   * values yet) and counts as one database operation.
+   */
+  sql<Row = Record<string, SqlValue>>(
+    strings: TemplateStringsArray,
+    ...values: SqlValue[]
+  ): Promise<SqlResult<Row>>;
+  sql<Row = Record<string, SqlValue>>(
+    text: string,
+    values?: SqlValue[],
+  ): Promise<SqlResult<Row>>;
   /** Sends `data` to a member's live connections once the call commits. */
   notify(member: string, data?: Json): void;
   /** Sends `data` to every live listener of `topic` once the call commits. */
   broadcast(topic: string, data?: Json): void;
+}
+
+/** A value site SQL binds or returns (a boolean binds as 1 or 0). */
+export type SqlValue = string | number | boolean | null;
+/** What `ctx.sql` answers: the statement's rows, and how many it changed. */
+export interface SqlResult<Row> {
+  rows: Row[];
+  changes: number;
 }
 
 /** A site function: `export async function name(ctx, args)`. */

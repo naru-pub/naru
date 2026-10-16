@@ -49,6 +49,7 @@ const OPERATIONS = [
   "createCollections",
   "configureCollections",
   "mediaReferences",
+  "siteTables",
   "erase",
   "configure",
   "call",
@@ -90,6 +91,8 @@ function dispatch(
       return stub.configureCollections(input);
     case "mediaReferences":
       return stub.mediaReferences(input);
+    case "siteTables":
+      return stub.siteTables();
     case "export":
       return stub.export();
     case "import":

@@ -280,6 +280,12 @@ globalThis.__run = async (name, member, owner, visitor, now, args) => {
     set: __operation("set"),
     secretMatches: __operation("secretMatches"),
     delete: __operation("delete"),
+    // ctx.sql\`SELECT ... WHERE id = \${id}\` binds each value as a parameter;
+    // ctx.sql(text, values) takes a builder's compiled statement.
+    sql: (text, ...values) =>
+      Array.isArray(text) && Object.hasOwn(text, "raw")
+        ? __operation("sql")(text.join("?"), values)
+        : __operation("sql")(String(text), values[0] ?? []),
     notify: (member, data) => __call("notify", member, data ?? null),
     broadcast: (topic, data) => __call("broadcast", topic, data ?? null),
   });
@@ -458,7 +464,13 @@ export function runFunction(
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
         if (invocation.readonly && WRITES.has(name))
           throw failed("read-only functions cannot write.");
-        const out = host(name, values);
+        // Whether site SQL may write is the call's to say, not the code's.
+        const out = host(
+          name,
+          name === "sql"
+            ? [values[0], values[1], invocation.readonly === true]
+            : values,
+        );
         return out === undefined
           ? context.undefined
           : context.newString(JSON.stringify(out));

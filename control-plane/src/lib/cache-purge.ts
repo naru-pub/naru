@@ -29,7 +29,8 @@ export function purgeSiteFiles(loginName: string, paths: string[]) {
 export async function purgeSiteObjects(keys: string[]) {
   const sites = new Set(
     keys.flatMap((key) => {
-      const match = /^([^/]+)\/_naru\/(?:functions|modules|rules)\//.exec(key);
+      const match =
+        /^([^/]+)\/_naru\/(?:functions|modules|rules|migrations)\//.exec(key);
       return match ? [match[1]] : [];
     }),
   );

@@ -25,6 +25,12 @@ export type Row = Record<string, SqlValue>;
 
 export const SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS _naru_migrations (
+    name TEXT PRIMARY KEY,
+    digest TEXT NOT NULL,
+    applied_at INTEGER NOT NULL,
+    generation TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS collections (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -170,6 +176,27 @@ export function documentOf(row: Row) {
     createdBy: (row.created_by ?? null) as string | null,
   };
 }
+
+/**
+ * The site's document count and bytes, kept by triggers on every write path,
+ * so a write's quota check reads one row instead of every document.
+ */
+export const USAGE_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS usage (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    documents INTEGER NOT NULL,
+    bytes INTEGER NOT NULL
+  );
+  CREATE TRIGGER IF NOT EXISTS usage_insert AFTER INSERT ON documents BEGIN
+    UPDATE usage SET documents = documents + 1, bytes = bytes + NEW.size_bytes WHERE id = 1;
+  END;
+  CREATE TRIGGER IF NOT EXISTS usage_delete AFTER DELETE ON documents BEGIN
+    UPDATE usage SET documents = documents - 1, bytes = bytes - OLD.size_bytes WHERE id = 1;
+  END;
+  CREATE TRIGGER IF NOT EXISTS usage_update AFTER UPDATE OF size_bytes ON documents BEGIN
+    UPDATE usage SET bytes = bytes - OLD.size_bytes + NEW.size_bytes WHERE id = 1;
+  END;
+`;
 
 type Query = { sql: string; bindings: SqlValue[] };
 

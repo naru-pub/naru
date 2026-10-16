@@ -37,6 +37,20 @@ type Manifest = {
   /** Each functions module's exports visitors may call, when it declares any. */
   visitors?: Record<string, string[]>;
 };
+/**
+ * A migration's published path: `migrations/<name>.sql`, directly in the
+ * folder. Releases apply them in the byte order of their names.
+ */
+export function migrationPath(value: string) {
+  if (
+    !/^migrations\/[A-Za-z0-9_.-]{1,128}\.sql$/.test(value) ||
+    value.includes("..")
+  )
+    throw new DataError(400, `Invalid migration path _naru/${value}.`);
+  return value;
+}
+const filePath = (value: string) =>
+  value.startsWith("migrations/") ? migrationPath(value) : modulePath(value);
 const hash = (source: string) =>
   createHash("sha256").update(source).digest("hex");
 const conflict = () =>
@@ -102,6 +116,30 @@ export class FunctionRevisions {
         cursor = page.truncated ? page.cursor : undefined;
       } while (cursor);
     }
+    // SQL migrations (1.1.0), released with the code that uses their tables.
+    const prefix = `${this.site}/_naru/migrations/`;
+    let cursor: string | undefined;
+    do {
+      const page = await this.bucket.list({ prefix, cursor });
+      for (const object of page.objects)
+        if (object.key.endsWith(".sql")) {
+          if (object.size > MAX_MODULE_BYTES)
+            throw new DataError(400, "A migration exceeds 256 KiB.");
+          files.push({
+            path: migrationPath(
+              `migrations/${object.key.slice(prefix.length)}`,
+            ),
+            key: object.key,
+            etag: object.etag,
+          });
+          if (files.length > MAX_FILES)
+            throw new DataError(
+              400,
+              "A function revision supports at most 256 files.",
+            );
+        }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
     return files.sort((a, b) => a.path.localeCompare(b.path));
   }
   async publish(): Promise<string> {
@@ -138,7 +176,9 @@ export class FunctionRevisions {
           `Both _naru/${filename.slice(0, -4)}.js and .mjs exist; keep one.`,
         );
     for (const [filename, source] of Object.entries(sources))
-      for (const dependency of moduleImports(source, filename)) {
+      for (const dependency of filename.startsWith("migrations/")
+        ? []
+        : moduleImports(source, filename)) {
         if (!Object.hasOwn(sources, dependency))
           throw new DataError(
             400,
@@ -206,7 +246,7 @@ export class FunctionRevisions {
     )
       throw new DataError(503, "Invalid function manifest.");
     for (const [filename, digest] of Object.entries(manifest.files))
-      if (modulePath(filename) !== filename || !/^[a-f0-9]{64}$/.test(digest))
+      if (filePath(filename) !== filename || !/^[a-f0-9]{64}$/.test(digest))
         throw new DataError(503, "Invalid function manifest.");
     for (const [filename, names] of [
       ...Object.entries(manifest.readOnly ?? {}),
@@ -241,47 +281,63 @@ export class FunctionRevisions {
       visitors: manifest.visitors?.[entry]?.includes(name) ?? false,
     };
   }
+  /** A file of `revision`, from the shared cache or verified from the bucket. */
+  private async source(revision: string, manifest: Manifest, filename: string) {
+    const digest = manifest.files[filename];
+    if (!digest) return null;
+    const cached = shared.sources.get(digest);
+    if (cached !== undefined) {
+      shared.sources.delete(digest);
+      shared.sources.set(digest, cached);
+      return cached;
+    }
+    const object = await this.bucket.get(this.key(revision, filename));
+    if (!object) throw new DataError(503, "Function module is unavailable.");
+    if (object.size > MAX_MODULE_BYTES)
+      throw new DataError(503, "Invalid function module.");
+    const source = await object.text();
+    if (hash(source) !== digest)
+      throw new DataError(
+        503,
+        "Function module failed integrity verification.",
+      );
+    const size = new TextEncoder().encode(source).byteLength;
+    shared.sources.set(digest, source);
+    shared.bytes += size;
+    while (shared.bytes > CACHE_BYTES || shared.sources.size > CACHE_ENTRIES) {
+      const first = shared.sources.keys().next().value!;
+      shared.bytes -= new TextEncoder().encode(
+        shared.sources.get(first)!,
+      ).byteLength;
+      shared.sources.delete(first);
+    }
+    return source;
+  }
+
+  /** The release's SQL migrations, in the order they apply. */
+  async migrations(
+    revision: string,
+  ): Promise<{ name: string; sql: string; digest: string }[]> {
+    const manifest = await this.manifest(revision);
+    const names = Object.keys(manifest.files)
+      .filter((filename) => filename.startsWith("migrations/"))
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return Promise.all(
+      names.map(async (filename) => ({
+        name: filename.slice("migrations/".length),
+        sql: (await this.source(revision, manifest, filename))!,
+        digest: manifest.files[filename],
+      })),
+    );
+  }
+
   async graph(revision: string, entry: string): Promise<ModuleSources> {
     const manifest = await this.manifest(revision);
     if (!Object.hasOwn(manifest.files, entry))
       throw new DataError(404, `This site has no _naru/${entry}.`);
     return loadModuleGraph(
       entry,
-      async (filename) => {
-        const digest = manifest.files[filename];
-        if (!digest) return null;
-        const cached = shared.sources.get(digest);
-        if (cached !== undefined) {
-          shared.sources.delete(digest);
-          shared.sources.set(digest, cached);
-          return cached;
-        }
-        const object = await this.bucket.get(this.key(revision, filename));
-        if (!object)
-          throw new DataError(503, "Function module is unavailable.");
-        if (object.size > MAX_MODULE_BYTES)
-          throw new DataError(503, "Invalid function module.");
-        const source = await object.text();
-        if (hash(source) !== digest)
-          throw new DataError(
-            503,
-            "Function module failed integrity verification.",
-          );
-        const size = new TextEncoder().encode(source).byteLength;
-        shared.sources.set(digest, source);
-        shared.bytes += size;
-        while (
-          shared.bytes > CACHE_BYTES ||
-          shared.sources.size > CACHE_ENTRIES
-        ) {
-          const first = shared.sources.keys().next().value!;
-          shared.bytes -= new TextEncoder().encode(
-            shared.sources.get(first)!,
-          ).byteLength;
-          shared.sources.delete(first);
-        }
-        return source;
-      },
+      (filename) => this.source(revision, manifest, filename),
       (source, filename) => {
         const key = `${filename}:${manifest.files[filename]}`;
         let dependencies = shared.dependencies.get(key);
