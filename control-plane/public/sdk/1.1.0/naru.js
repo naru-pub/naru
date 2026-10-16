@@ -314,44 +314,31 @@ function documents(root, name, send) {
         after = page.nextCursor;
       } while (after);
     },
-    add(data, { secret, signal } = {}) {
+    add(data, { signal } = {}) {
       jsonValue(data);
       return send(path, {
         method: "POST",
-        body: { data, ...secretOf(secret) },
+        body: { data },
         signal,
         touches,
       });
     },
-    set(id, data, { signal, secret, condition: expected } = {}) {
+    set(id, data, { signal, condition: expected } = {}) {
       jsonValue(data);
       return send(`${path}/${segment(id)}${condition(expected)}`, {
         method: "PUT",
-        body: { data, ...secretOf(secret) },
+        body: { data },
         signal,
         touches,
       });
     },
-    async delete(id, { signal, secret, condition: expected } = {}) {
+    async delete(id, { signal, condition: expected } = {}) {
       await send(
         `${path}/${segment(id)}${condition(expected, { deleting: true })}`,
-        {
-          method: "DELETE",
-          ...(secret === undefined ? {} : { body: secretOf(secret) }),
-          signal,
-          touches,
-        },
+        { method: "DELETE", signal, touches },
       );
     },
   });
-}
-
-/** A write secret as the request body carries it; checked before sending. */
-function secretOf(secret) {
-  if (secret === undefined) return {};
-  if (typeof secret !== "string" || !secret || secret.length > 256)
-    throw new TypeError("A secret is 1-256 characters.");
-  return { secret };
 }
 
 /** A collection of the site this page belongs to. Nothing is requested yet. */

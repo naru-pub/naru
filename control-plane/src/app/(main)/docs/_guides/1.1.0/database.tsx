@@ -740,22 +740,33 @@ try {
               <h3 className="font-bold">손님 글과 비밀번호</h3>
               <p>
                 그누보드의 손님 글처럼, 방문자가 비밀번호를 걸어 글을 쓰고
-                나중에 같은 비밀번호로 고치거나 지울 수 있습니다. 쓰기가 ‘누구나
-                생성만’인 컬렉션에서 <code>secret</code>을 넘기세요. 나루는
-                비밀번호를 해시로만 보관하고 돌려주지 않으며, 비밀번호 없이 쓴
-                글은 관리자만 고칠 수 있습니다.
-              </p>
-              <Code>{`const guestbook = naru.collection("guestbook");
-const post = await guestbook.add({ name: "손님", text: "안녕" }, { secret: pw });
-await guestbook.set(post.id, { name: "손님", text: "고침" }, { secret: pw });
-await guestbook.delete(post.id, { secret: pw });`}</Code>
-              <p>
-                비밀번호가 틀리면 <code>ACCESS_DENIED</code>로 실패합니다.
-                컬렉션 규칙이 있으면 규칙의 <code>canWrite</code>가{" "}
-                <code>secret</code>(맞으면 true, 틀리면 false, 없으면 null)을
-                보고 정하고, 서버 함수에서는{" "}
+                나중에 같은 비밀번호로 고치거나 지우게 하려면{" "}
+                <a href="#members">방문자가 부르는 함수</a>를 씁니다.{" "}
+                <code>ctx.add(컬렉션, 데이터, {"{ secret }"})</code>로 저장하면
+                나루가 비밀번호를 해시로만 보관하고 돌려주지 않으며,{" "}
                 <code>ctx.secretMatches(컬렉션, ID, 비밀번호)</code>로
-                확인합니다.
+                확인합니다. 컬렉션의 쓰기는 ‘관리자만’으로 두어 함수로만 바뀌게
+                하세요.
+              </p>
+              <Code language="javascript">{`// _naru/functions/guestbook.js
+export const visitors = ["write", "edit"];
+export async function write(ctx, { name, text, password }) {
+  return (await ctx.add("guestbook", { name, text }, { secret: password })).id;
+}
+export async function edit(ctx, { id, text, password }) {
+  const post = await ctx.get("guestbook", id);
+  if (!post || !(await ctx.secretMatches("guestbook", id, password)))
+    ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
+  await ctx.set("guestbook", id, { ...post.data, text });
+}`}</Code>
+              <p>
+                한 번 부를 때 비밀번호는 세 번까지 확인할 수 있고, 한 글에 틀린
+                비밀번호는 한 시간에 열 번까지입니다. 그 뒤에는 맞는 비밀번호도{" "}
+                <code>RATE_LIMITED</code>로 실패하니, 짧은 비밀번호도 하나씩
+                맞혀 볼 수 없습니다. SDK의 <code>add</code>·<code>set</code>·
+                <code>delete</code>는 비밀번호를 받지 않습니다. ‘누구나
+                생성만’인 컬렉션에서는 방문자가 글을 더할 수만 있고, 고치고
+                지우는 것은 관리자만 할 수 있습니다.
               </p>
             </Section>
 

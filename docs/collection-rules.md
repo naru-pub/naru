@@ -37,14 +37,13 @@ A module exports two functions, which may be `async`:
   and the two times a UTC ISO string. Comparisons match JSON types
   exactly; explicit null does not match a missing field. Inequality includes
   missing fields. This is the same language as a list's `where`.
-- `canWrite(ctx, { collection, operation, before, after, secret })`: return
+- `canWrite(ctx, { collection, operation, before, after })`: return
   exactly `true` to allow `create`, `update` or `delete`. `before`/`after` are
   documents with canonical id/data/createdBy, or null. Before is read from
   storage, and the owner/member author cannot be forged through the request.
   Updates and deletes check the supplied revision before the rule executes,
-  inside the same SQLite transaction as the write. `secret` (1.1.0) is `true`
-  when the request gave the secret the document was added with, `false` when
-  it gave another, and `null` otherwise: a guest's password, checked by Naru.
+  inside the same SQLite transaction as the write. A guest's password is a
+  site function's to check (`ctx.secretMatches`), not a rule's.
 - `present(ctx, { collection, document })` (optional, 1.1.0): returns the data
   a non-owner reads of `document`, for example without its private fields. It
   applies to gets, lists, batch reads and the result of a write. A module that

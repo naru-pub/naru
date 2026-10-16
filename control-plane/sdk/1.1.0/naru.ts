@@ -236,28 +236,20 @@ export interface Collection<T = Json> {
    */
   pages(options?: ListOptions): AsyncIterable<Page<T>>;
   /**
-   * `secret` (1.1.0): whoever later gives the same secret may replace or
-   * delete the document, as a guest's password lets them edit a post. Naru
-   * keeps only a hash and never returns it.
+   * Adds a document under a new ID. A guest's post that its writer may edit
+   * later with a password is a site function's: `ctx.add(collection, data,
+   * { secret })` keeps the password's hash, `ctx.secretMatches` checks it.
    */
-  add(
-    data: T,
-    options?: { secret?: string; signal?: AbortSignal },
-  ): Promise<Document<T>>;
+  add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>;
   /**
    * Replaces the whole document, or creates it, when the collection or its
    * rule allows: the owner always; a member, a document they created or the
-   * one named by their own `member.id`; a guest, with the secret it was
-   * added with (1.1.0).
+   * one named by their own `member.id`.
    */
   set(
     id: string,
     data: T,
-    options?: {
-      condition?: WriteCondition;
-      secret?: string;
-      signal?: AbortSignal;
-    },
+    options?: { condition?: WriteCondition; signal?: AbortSignal },
   ): Promise<Document<T>>;
   /**
    * Deletes a document, as `set` may replace it. Deleting a missing document
@@ -265,11 +257,7 @@ export interface Collection<T = Json> {
    */
   delete(
     id: string,
-    options?: {
-      condition?: { revision: Revision };
-      secret?: string;
-      signal?: AbortSignal;
-    },
+    options?: { condition?: { revision: Revision }; signal?: AbortSignal },
   ): Promise<void>;
 }
 
@@ -874,14 +862,11 @@ function documents<T>(root: string, name: string, send: Send): Collection<T> {
         after = page.nextCursor;
       } while (after);
     },
-    add(
-      data: T,
-      { secret, signal }: { secret?: string; signal?: AbortSignal } = {},
-    ) {
+    add(data: T, { signal }: { signal?: AbortSignal } = {}) {
       jsonValue(data);
       return send<Document<T>>(path, {
         method: "POST",
-        body: { data, ...secretOf(secret) },
+        body: { data },
         signal,
         touches,
       });
@@ -891,18 +876,13 @@ function documents<T>(root: string, name: string, send: Send): Collection<T> {
       data: T,
       {
         signal,
-        secret,
         condition: expected,
-      }: {
-        condition?: WriteCondition;
-        secret?: string;
-        signal?: AbortSignal;
-      } = {},
+      }: { condition?: WriteCondition; signal?: AbortSignal } = {},
     ) {
       jsonValue(data);
       return send<Document<T>>(`${path}/${segment(id)}${condition(expected)}`, {
         method: "PUT",
-        body: { data, ...secretOf(secret) },
+        body: { data },
         signal,
         touches,
       });
@@ -911,33 +891,15 @@ function documents<T>(root: string, name: string, send: Send): Collection<T> {
       id: string,
       {
         signal,
-        secret,
         condition: expected,
-      }: {
-        condition?: { revision: Revision };
-        secret?: string;
-        signal?: AbortSignal;
-      } = {},
+      }: { condition?: { revision: Revision }; signal?: AbortSignal } = {},
     ) {
       await send(
         `${path}/${segment(id)}${condition(expected, { deleting: true })}`,
-        {
-          method: "DELETE",
-          ...(secret === undefined ? {} : { body: secretOf(secret) }),
-          signal,
-          touches,
-        },
+        { method: "DELETE", signal, touches },
       );
     },
   });
-}
-
-/** A write secret as the request body carries it; checked before sending. */
-function secretOf(secret: string | undefined) {
-  if (secret === undefined) return {};
-  if (typeof secret !== "string" || !secret || secret.length > 256)
-    throw new TypeError("A secret is 1-256 characters.");
-  return { secret };
 }
 
 /** A collection of the site this page belongs to. Nothing is requested yet. */

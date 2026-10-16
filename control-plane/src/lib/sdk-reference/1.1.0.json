@@ -170,18 +170,30 @@
         {
           "name": "add",
           "optional": false,
-          "signature": "add(\n  data: T,\n  options?: { secret?: string; signal?: AbortSignal },\n): Promise<Document<T>>",
+          "signature": "add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>",
           "summary": [
             {
               "type": "paragraph",
               "spans": [
                 {
+                  "type": "text",
+                  "value": "Adds a document under a new ID. A guest's post that its writer may edit later with a password is a site function's: "
+                },
+                {
                   "type": "code",
-                  "value": "secret"
+                  "value": "ctx.add(collection, data,\n{ secret })"
                 },
                 {
                   "type": "text",
-                  "value": " (1.1.0): whoever later gives the same secret may replace or delete the document, as a guest's password lets them edit a post. Naru keeps only a hash and never returns it."
+                  "value": " keeps the password's hash, "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.secretMatches"
+                },
+                {
+                  "type": "text",
+                  "value": " checks it."
                 }
               ]
             }
@@ -224,7 +236,7 @@
         {
           "name": "delete",
           "optional": false,
-          "signature": "delete(\n  id: string,\n  options?: {\n    condition?: { revision: Revision };\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<void>",
+          "signature": "delete(\n  id: string,\n  options?: { condition?: { revision: Revision }; signal?: AbortSignal },\n): Promise<void>",
           "summary": [
             {
               "type": "paragraph",
@@ -313,7 +325,7 @@
         {
           "name": "set",
           "optional": false,
-          "signature": "set(\n  id: string,\n  data: T,\n  options?: {\n    condition?: WriteCondition;\n    secret?: string;\n    signal?: AbortSignal;\n  },\n): Promise<Document<T>>",
+          "signature": "set(\n  id: string,\n  data: T,\n  options?: { condition?: WriteCondition; signal?: AbortSignal },\n): Promise<Document<T>>",
           "summary": [
             {
               "type": "paragraph",
@@ -328,7 +340,7 @@
                 },
                 {
                   "type": "text",
-                  "value": "; a guest, with the secret it was added with (1.1.0)."
+                  "value": "."
                 }
               ]
             }
@@ -372,7 +384,31 @@
               "spans": [
                 {
                   "type": "text",
-                  "value": "The member who created the document, by their member ID, which a replacement keeps. Null for one the site's owner or a visitor created."
+                  "value": "The member who created the document, by their member ID, which a replacement keeps. Null for one the site's owner, a visitor or a site function created. Where the collection's rule exports "
+                },
+                {
+                  "type": "code",
+                  "value": "present"
+                },
+                {
+                  "type": "text",
+                  "value": " (1.1.0), a member sees only their own: anyone else's reads as null, and "
+                },
+                {
+                  "type": "code",
+                  "value": "where"
+                },
+                {
+                  "type": "text",
+                  "value": " may ask about it only as "
+                },
+                {
+                  "type": "code",
+                  "value": "{ eq: [{ metadata: \"createdBy\" }, member.id] }"
+                },
+                {
+                  "type": "text",
+                  "value": "."
                 }
               ]
             }
@@ -1198,13 +1234,37 @@
           "spans": [
             {
               "type": "text",
-              "value": "A top-level user field by name, or document metadata."
+              "value": "A top-level user field by name, or document metadata. "
+            },
+            {
+              "type": "code",
+              "value": "createdAt"
+            },
+            {
+              "type": "text",
+              "value": " and "
+            },
+            {
+              "type": "code",
+              "value": "updatedAt"
+            },
+            {
+              "type": "text",
+              "value": " (1.1.0) compare as UTC times written as documents show them, such as "
+            },
+            {
+              "type": "code",
+              "value": "\"2026-10-16T09:00:00.000Z\""
+            },
+            {
+              "type": "text",
+              "value": "."
             }
           ]
         }
       ],
       "throws": [],
-      "signature": "type PredicateField = string | { metadata: \"id\" | \"createdBy\" }"
+      "signature": "type PredicateField =\n  string | { metadata: \"id\" | \"createdBy\" | \"createdAt\" | \"updatedAt\" }"
     },
     {
       "name": "PublicCollection",

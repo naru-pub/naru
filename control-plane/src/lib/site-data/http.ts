@@ -74,10 +74,11 @@ export async function dataRequest(
         : null;
     // PATCH only reaches here from the control panel, to change a collection's
     // permissions; the public route does not export it.
-    // A DELETE may carry a JSON body for a document's write secret (1.1.0).
+    // The control panel's DELETE names the collections it deletes at once.
     let body =
       ["POST", "PUT", "PATCH"].includes(request.method) ||
-      (request.method === "DELETE" &&
+      (admin &&
+        request.method === "DELETE" &&
         request.headers.get("content-type")?.includes("application/json"))
         ? await jsonBody(request)
         : undefined;

@@ -53,6 +53,18 @@ test("public conditional writes decode opaque revisions at the server boundary",
   );
   expect(execute.mock.calls[0][0].ifVersion).toBe(10);
 });
+test("a public DELETE carries no body", async () => {
+  await dataRequest(
+    new Request("https://naru.pub/api/data/v1/alice/posts/one", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "pass1234" }),
+    }),
+    ["posts", "one"],
+    "alice",
+  );
+  expect(execute.mock.calls[0][0].body).toBeUndefined();
+});
 test.each(["https://alice.naru.pub", "https://evil.test", "null", null])(
   "admin writes reject origin %s before auth",
   async (origin) => {

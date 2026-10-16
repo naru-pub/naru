@@ -1334,99 +1334,38 @@ integration("site members", () => {
     }
   });
 
-  test("a guest edits and deletes a document with the secret it was added with", async () => {
+  test("REST writes carry no secret: visitors add to a create collection, and only the owner changes it", async () => {
     await owned("POST", [], { name: "guests", read: "world", write: "create" });
     try {
+      for (const [method, path] of [
+        ["POST", ["guests"]],
+        ["PUT", ["guests", "one"]],
+      ] as const)
+        await expect(
+          as(undefined, method, [...path], {
+            data: { name: "길손" },
+            secret: "pass1234",
+          }),
+        ).rejects.toMatchObject({
+          status: 400,
+          message: expect.stringContaining("secret is set by site functions"),
+        });
       const added = (await as(undefined, "POST", ["guests"], {
         data: { name: "길손", text: "hi" },
-        secret: "pass1234",
-      })) as any;
-      // The hash never comes back, to the writer or to anyone else.
-      expect(JSON.stringify(added)).not.toMatch(/pbkdf2|pass1234/);
-      const read = (await as(undefined, "GET", ["guests", added.id])) as any;
-      expect(JSON.stringify(read)).not.toMatch(/pbkdf2|secret/);
-      // Without the secret, or with a wrong one, a visitor cannot change it.
-      for (const secret of [undefined, "wrong"])
-        await expect(
-          as(undefined, "PUT", ["guests", added.id], {
-            data: { name: "x" },
-            ...(secret ? { secret } : {}),
-          }),
-        ).rejects.toMatchObject({ status: 403 });
-      const edited = (await as(undefined, "PUT", ["guests", added.id], {
-        data: { name: "길손", text: "edited" },
-        secret: "pass1234",
-      })) as any;
-      expect(edited.data.text).toBe("edited");
-      // A document added without a secret stays the owner's to change.
-      const plain = (await as(undefined, "POST", ["guests"], {
-        data: { text: "plain" },
       })) as any;
       await expect(
-        as(undefined, "DELETE", ["guests", plain.id], { secret: "pass1234" }),
-      ).rejects.toMatchObject({ status: 403 });
-      await as(undefined, "DELETE", ["guests", added.id], {
-        secret: "pass1234",
-      });
-      await expect(
-        as(undefined, "GET", ["guests", added.id]),
-      ).rejects.toMatchObject({ status: 404 });
-      await expect(
-        as(undefined, "POST", ["guests"], { data: {}, secret: "" }),
-      ).rejects.toMatchObject({ status: 400 });
-      // Ten wrong secrets an hour: then even the right one waits, so a
-      // short password cannot be guessed by trying them all.
-      const guarded = (await as(undefined, "POST", ["guests"], {
-        data: { name: "PIN" },
-        secret: "4821",
-      })) as any;
-      for (let guess = 0; guess < 10; guess++)
-        await expect(
-          as(undefined, "DELETE", ["guests", guarded.id], {
-            secret: String(guess).padStart(4, "0"),
-          }),
-        ).rejects.toMatchObject({ status: 403 });
-      await expect(
-        as(undefined, "DELETE", ["guests", guarded.id], { secret: "4821" }),
-      ).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED" });
-      // A rule sees whether the secret matched, and decides.
-      await callSiteObject("alice", "putFunctions", {
-        site: "alice",
-        folder: "rules",
-        file: "guests",
-        source: `export function readable() { return true; }
-          export function canWrite(ctx, { before, after, secret }) {
-            if (!before) return typeof after.data.name === "string";
-            return secret === true && (!after || after.data.name === before.data.name);
-          }`,
-      });
-      await owned("PATCH", ["guests"], {
-        read: "world",
-        write: "create",
-        rules: "guests",
-      });
-      const ruled = (await as(undefined, "POST", ["guests"], {
-        data: { name: "손님", text: "a" },
-        secret: "s3cret",
-      })) as any;
-      await expect(
-        as(undefined, "PUT", ["guests", ruled.id], {
-          data: { name: "바꿈", text: "b" },
-          secret: "s3cret",
-        }),
+        as(undefined, "PUT", ["guests", added.id], { data: { name: "x" } }),
       ).rejects.toMatchObject({ status: 403 });
       await expect(
-        as(undefined, "PUT", ["guests", ruled.id], {
-          data: { name: "손님", text: "b" },
-          secret: "s3cret",
-        }),
-      ).resolves.toBeDefined();
+        as(undefined, "DELETE", ["guests", added.id]),
+      ).rejects.toMatchObject({ status: 403 });
+      await owned("DELETE", ["guests", added.id]);
     } finally {
       await owned("DELETE", ["guests"]);
     }
   });
 
-  test("functions store and check a document's secret, shared with native writes", async () => {
+  test("functions keep a guest's secret: edits and deletes check it, and wrong ones are limited per document", async () => {
     await owned("POST", [], {
       name: "secret_book",
       read: "world",
@@ -1435,21 +1374,38 @@ integration("site members", () => {
     await callSiteObject("alice", "putFunctions", {
       site: "alice",
       file: "secretbook",
-      source: `export const visitors = ["post", "check"];
+      source: `export const visitors = ["post", "edit", "remove"];
+        const guard = async (ctx, id, secret) => {
+          if (!(await ctx.secretMatches("secret_book", id, secret)))
+            ctx.fail("ACCESS_DENIED", "비밀번호가 맞지 않습니다.");
+        };
         export async function post(ctx, { text, secret }) {
           return (await ctx.add("secret_book", { text }, { secret })).id;
         }
-        export async function check(ctx, { id, secret }) {
-          return await ctx.secretMatches("secret_book", id, secret);
+        export async function edit(ctx, { id, text, secret }) {
+          await guard(ctx, id, secret);
+          return (await ctx.set("secret_book", id, { text })).data;
+        }
+        export async function remove(ctx, { id, secret }) {
+          await guard(ctx, id, secret);
+          await ctx.delete("secret_book", id);
+        }
+        export async function guess(ctx, { id, secrets }) {
+          const matched = [];
+          for (const secret of secrets)
+            matched.push(await ctx.secretMatches("secret_book", id, secret));
+          return matched;
         }`,
     });
     try {
-      const call = (name: string, args: unknown) =>
+      // A guest's calls are a visitor's; the guesses below are the owner's,
+      // whose calls are not limited, so only the per-document limit counts.
+      const call = (name: string, args: unknown, visitor = true) =>
         callSiteObject<any>("alice", "call", {
           ownerId: String(owner),
           site: "alice",
           member: null,
-          visitor: true,
+          ...(visitor ? { visitor: true } : {}),
           file: "secretbook",
           name,
           args,
@@ -1458,17 +1414,41 @@ integration("site members", () => {
         text: "hi",
         secret: "s3cret",
       });
-      expect((await call("check", { id, secret: "s3cret" })).result).toBe(true);
-      expect((await call("check", { id, secret: "wrong" })).result).toBe(false);
-      // A visitor edits natively with the secret the function stored.
-      await expect(
-        as(undefined, "PUT", ["secret_book", id], {
-          data: { text: "edited" },
-          secret: "s3cret",
-        }),
-      ).resolves.toBeDefined();
       const read = (await as(undefined, "GET", ["secret_book", id])) as any;
-      expect(JSON.stringify(read)).not.toMatch(/pbkdf2/);
+      expect(JSON.stringify(read)).not.toMatch(/pbkdf2|s3cret/);
+      await expect(
+        call("edit", { id, text: "x", secret: "wrong" }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(
+        (await call("edit", { id, text: "edited", secret: "s3cret" })).result,
+      ).toEqual({ text: "edited" });
+      // A set without a secret keeps the one the document has.
+      await call("remove", { id, secret: "s3cret" });
+      await expect(
+        as(undefined, "GET", ["secret_book", id]),
+      ).rejects.toMatchObject({ status: 404 });
+      // Ten wrong secrets an hour: then even the right one waits, so a
+      // short password cannot be guessed by trying them all.
+      const { result: pin } = await call("post", {
+        text: "PIN",
+        secret: "4821",
+      });
+      const guesses = Array.from({ length: 10 }, (_, n) =>
+        String(n).padStart(4, "0"),
+      );
+      for (let at = 0; at < guesses.length; at += 3)
+        expect(
+          (
+            await call(
+              "guess",
+              { id: pin, secrets: guesses.slice(at, at + 3) },
+              false,
+            )
+          ).result,
+        ).toEqual(guesses.slice(at, at + 3).map(() => false));
+      await expect(
+        call("guess", { id: pin, secrets: ["4821"] }, false),
+      ).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED" });
     } finally {
       await owned("DELETE", ["secret_book"]);
     }

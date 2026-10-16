@@ -574,29 +574,30 @@ integration("SDK and data API contract", () => {
     },
   );
 
-  test("SDK 1.1.0 lets a visitor edit and delete with the secret they added with", async () => {
+  test("SDK 1.1.0 visitors add to a create collection, and a REST secret is refused", async () => {
     const guests = createNaru110({ site: "alice" }).collection<{
       text: string;
     }>("guests");
-    const added = await guests.add({ text: "hi" }, { secret: "pass1234" });
+    const added = await guests.add({ text: "hi" });
     await expect(guests.set(added.id, { text: "x" })).rejects.toMatchObject({
       code: "ACCESS_DENIED",
     });
-    await expect(
-      guests.set(added.id, { text: "x" }, { secret: "wrong" }),
-    ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
-    const edited = await guests.set(
-      added.id,
-      { text: "edited" },
-      { secret: "pass1234", condition: { revision: added.revision } },
-    );
-    expect(edited.data.text).toBe("edited");
     await expect(guests.delete(added.id)).rejects.toMatchObject({
       code: "ACCESS_DENIED",
     });
-    await guests.delete(added.id, { secret: "pass1234" });
-    await expect(guests.get(added.id)).rejects.toMatchObject({
-      code: "NOT_FOUND",
+    // A guest's password is a site function's (ctx.add's secret,
+    // ctx.secretMatches): the wire says so rather than ignore it.
+    const response = await nativeFetch(`${origin}/api/data/v1/alice/guests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({ data: { text: "hi" }, secret: "pass1234" }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "INVALID_REQUEST",
+        message: expect.stringContaining("secret is set by site functions"),
+      },
     });
   });
 

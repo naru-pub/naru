@@ -333,10 +333,12 @@ database methods, which return promises of what the SDK would, so `await` them:
   writes: a mismatch fails the call with `CONFLICT`;
 - `media.delete(uploadId)`: deletes one of the site's uploads once the call
   commits (see below);
-- `add` and `set` take `{ secret }` (1.1.0), as a visitor's `add` does, and
-  `secretMatches(collection, id, secret)` resolves whether a secret is the
-  document's: a guest's password, without the app storing a hash. It counts
-  toward the three password operations a call may make.
+- `add` and `set` take `{ secret }` (1.1.0), a guest's password, which Naru
+  keeps beside the document as a hash (a `set` without one keeps the
+  document's), and `secretMatches(collection, id, secret)` resolves whether a
+  secret is the document's, without the app storing a hash. It counts toward
+  the three password operations a call may make, and a document accepts ten
+  wrong secrets an hour: then every check of it fails with `RATE_LIMITED`.
 
 `notify(memberId, data)` and `broadcast(topic, data)` send live messages
 (see Live connections); they return nothing and need no `await`. Functions
@@ -417,26 +419,10 @@ A visitor's calls are limited by their address: 20 a minute that may write and
 count against the site's monthly budget. A visitor's call cannot delete uploads
 (`ctx.media.delete`). Everything else, limits included, is as for members.
 
-## Guest edits with a secret (1.1.0)
-
-A visitor who adds a document can give it a secret, as guests give a password
-to a board post, and later change or delete it with the same secret, without
-a site function:
-
-```js
-const posts = naru.collection("guestbook"); // write access: create
-const post = await posts.add({ name: "Visitor", text: "Hi" }, { secret: pw });
-await posts.set(post.id, { name: "Visitor", text: "Edited" }, { secret: pw });
-await posts.delete(post.id, { secret: pw });
-```
-
-Naru keeps only a salted PBKDF2 hash, never returned or readable. In a
-`create` collection, the matching secret is what lets a visitor replace or
-delete a document; a document added without one stays the owner's. A
-collection rule decides itself: `canWrite` receives `secret`, `true` when the
-request's secret matched the document's, `false` when it did not, and `null`
-when either has none. A secret is 1–256 characters; member and owner handles
-take it too.
+A document's secret is set and checked only by site functions: a REST write
+whose body has `secret` is refused with `INVALID_REQUEST`. In a `create`
+collection visitors add documents and only the owner changes them; a guest
+edits their own through a visitor function, as above.
 
 ## Managed uploads (1.1.0)
 

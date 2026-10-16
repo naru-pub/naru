@@ -303,7 +303,8 @@ export class SiteData extends DurableObject<Env> {
       )
     )
       this.sql.exec("ALTER TABLE documents ADD COLUMN created_by TEXT");
-    // A document's write secret (1.1.0), hashed; never read back out.
+    // A document's write secret (1.1.0), hashed; never read back out. Only
+    // site functions set and check it.
     if (
       !this.rows("PRAGMA table_info(documents)").some(
         (column) => column.name === "secret_hash",
@@ -573,8 +574,8 @@ export class SiteData extends DurableObject<Env> {
    * Wrong write secrets a document allows an hour, counted in memory: a
    * failed write rolls its transaction back, so a stored count would be
    * undone by the very guess it counts. A four-digit PIN then takes about
-   * a thousand hours to guess, whichever way the guesses come (REST writes
-   * or a function's ctx.secretMatches).
+   * a thousand hours to guess, however many calls the guesses are spread
+   * over (ctx.secretMatches checks three a call).
    */
   private secretFailures = new Map<string, { hour: number; count: number }>();
   private checkSecret(
@@ -684,13 +685,12 @@ export class SiteData extends DurableObject<Env> {
     encoded: string,
     size: number,
     author: string | null,
-    secretHash: string | null = null,
   ) {
     this.trackMedia(collectionId, id, encoded);
     const now = Date.now();
     this.sql.exec(
-      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at, created_by, secret_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO documents (collection_id, id, data, size_bytes, created_at, updated_at, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (collection_id, id) DO UPDATE SET data = excluded.data,
          size_bytes = excluded.size_bytes, updated_at = excluded.updated_at,
          version = documents.version + 1`,
@@ -701,7 +701,6 @@ export class SiteData extends DurableObject<Env> {
       now,
       now,
       author,
-      secretHash,
     );
   }
 
@@ -1143,7 +1142,6 @@ export class SiteData extends DurableObject<Env> {
         before,
         after,
         operation,
-        secret: secretMatches,
       });
       if (answer !== true)
         throw new DataError(
@@ -1234,27 +1232,14 @@ export class SiteData extends DurableObject<Env> {
     }
     const creating = method === "POST" && path.length === 1;
     const level = collection.write_access;
-    // A write secret (1.1.0): given when adding, it lets whoever knows it
-    // replace or delete the document later, as a guest's password does.
-    const secret = body.secret;
-    if (
-      secret !== undefined &&
-      (typeof secret !== "string" || !secret || secret.length > 256)
-    )
-      throw new DataError(400, "A secret is 1–256 characters.");
-    const stored =
-      path.length === 2 && !creating
-        ? (this.rows(
-            "SELECT secret_hash FROM documents WHERE collection_id = ? AND id = ?",
-            collection.id,
-            path[1],
-          )[0]?.secret_hash as string | null | undefined)
-        : undefined;
-    // true or false when a secret was given for a document that has one.
-    const secretMatches =
-      typeof secret === "string" && stored
-        ? this.checkSecret(collection.id, path[1], secret, stored)
-        : null;
+    // A document's write secret is a site function's to set and check
+    // (ctx.add's secret, ctx.secretMatches), with its own limits; a REST
+    // write never carries one.
+    if (Object.hasOwn(body, "secret"))
+      throw new DataError(
+        400,
+        "secret is set by site functions: ctx.add(collection, data, { secret }) and ctx.secretMatches.",
+      );
     // Adding is open to anyone in `create` and to members in `member`.
     // Replacing and deleting there is the owner's, and in `member` also the
     // author's, checked against the document below.
@@ -1262,7 +1247,7 @@ export class SiteData extends DurableObject<Env> {
     if (!(
       admin ||
       level === "world" ||
-      (level === "create" && (creating || secretMatches === true)) ||
+      (level === "create" && creating) ||
       (level === "member" && member)
     ))
       throw new DataError(
@@ -1338,14 +1323,7 @@ export class SiteData extends DurableObject<Env> {
       },
       existing ? "update" : "create",
     );
-    this.upsert(
-      collection.id,
-      id,
-      encoded,
-      size,
-      admin ? null : member,
-      creating && typeof secret === "string" ? hashPassword(secret) : null,
-    );
+    this.upsert(collection.id, id, encoded, size, admin ? null : member);
     // A writer sees what they wrote as a reader would.
     const [result] = present([{ id, ...this.written(collection.id, id) }]);
     return { result, publicRead };
@@ -1522,7 +1500,8 @@ export class SiteData extends DurableObject<Env> {
           : "condition must contain revision or absent.",
       );
     };
-    // A document's write secret (1.1.0), as a visitor's add({ secret }) sets it.
+    // A document's write secret (1.1.0): ctx.add or ctx.set's { secret },
+    // a guest's password that ctx.secretMatches checks later.
     const secretOption = (options: unknown) => {
       if (!options || typeof options !== "object") return undefined;
       const secret = (options as { secret?: unknown }).secret;

@@ -21,7 +21,10 @@ export interface Document<T = Json> {
   revision: Revision;
   /**
    * The member who created the document, by their member ID, which a
-   * replacement keeps. Null for one the site's owner or a visitor created.
+   * replacement keeps. Null for one the site's owner, a visitor or a site
+   * function created. Where the collection's rule exports `present` (1.1.0),
+   * a member sees only their own: anyone else's reads as null, and `where`
+   * may ask about it only as `{ eq: [{ metadata: "createdBy" }, member.id] }`.
    */
   createdBy: string | null;
 }
@@ -81,8 +84,13 @@ export type Filter = Record<
     }
 >;
 
-/** A top-level user field by name, or document metadata. */
-export type PredicateField = string | { metadata: "id" | "createdBy" };
+/**
+ * A top-level user field by name, or document metadata. `createdAt` and
+ * `updatedAt` (1.1.0) compare as UTC times written as documents show them,
+ * such as `"2026-10-16T09:00:00.000Z"`.
+ */
+export type PredicateField =
+  string | { metadata: "id" | "createdBy" | "createdAt" | "updatedAt" };
 
 /**
  * A condition on documents, as a collection rule's `readable` returns: `true`,
@@ -178,28 +186,20 @@ export interface Collection<T = Json> {
    */
   pages(options?: ListOptions): AsyncIterable<Page<T>>;
   /**
-   * `secret` (1.1.0): whoever later gives the same secret may replace or
-   * delete the document, as a guest's password lets them edit a post. Naru
-   * keeps only a hash and never returns it.
+   * Adds a document under a new ID. A guest's post that its writer may edit
+   * later with a password is a site function's: `ctx.add(collection, data,
+   * { secret })` keeps the password's hash, `ctx.secretMatches` checks it.
    */
-  add(
-    data: T,
-    options?: { secret?: string; signal?: AbortSignal },
-  ): Promise<Document<T>>;
+  add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>;
   /**
    * Replaces the whole document, or creates it, when the collection or its
    * rule allows: the owner always; a member, a document they created or the
-   * one named by their own `member.id`; a guest, with the secret it was
-   * added with (1.1.0).
+   * one named by their own `member.id`.
    */
   set(
     id: string,
     data: T,
-    options?: {
-      condition?: WriteCondition;
-      secret?: string;
-      signal?: AbortSignal;
-    },
+    options?: { condition?: WriteCondition; signal?: AbortSignal },
   ): Promise<Document<T>>;
   /**
    * Deletes a document, as `set` may replace it. Deleting a missing document
@@ -207,11 +207,7 @@ export interface Collection<T = Json> {
    */
   delete(
     id: string,
-    options?: {
-      condition?: { revision: Revision };
-      secret?: string;
-      signal?: AbortSignal;
-    },
+    options?: { condition?: { revision: Revision }; signal?: AbortSignal },
   ): Promise<void>;
 }
 
