@@ -24,8 +24,10 @@ A module exports two functions, which may be `async`:
 - `readable(ctx, { collection, operation, id, filter, where })`: which
   documents this reader may read, as a condition, not a yes or no for one
   document: Naru adds it to the query, so pages and counts hold only what the
-  reader sees. `operation` is
-  `get` or `list`; `where` is the caller's own predicate, or null. Return
+  reader sees. `operation` is `get` (with its `id`), `getMany` (1.1.0, with
+  `ids`, the batch read's IDs) or `list`; `filter` is the caller's filter
+  (`{}` when none) and `where` their own predicate, or null. `ctx.visitor`
+  (1.1.0) is true when no one is signed in. Return
   `true`, `false`, or a predicate built from `all` and `any` of comparisons:
   `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
   `[field, [1 to 100 values]]`, `has` takes `[field, value]` (an array field
@@ -50,6 +52,10 @@ A module exports two functions, which may be `async`:
   `where` and sort on (`export const queryable = ["board", "tags"]`); other
   fields are refused with `INVALID_REQUEST`, so a hidden value cannot be found
   by asking which documents match it. Rows still come from `readable`.
+  `createdBy` is trimmed too: a member reads only their own (anyone else's is
+  null), and `where` may name it only as equal to their own member ID
+  (`{ eq: [{ metadata: "createdBy" }, member.id] }`), so an anonymous post's
+  author cannot be found by asking.
 
 Rules use the function sandbox's read methods (`await ctx.get(...)`,
 `await ctx.list(...)`) and `ctx.member` (null for visitors). Writes and live

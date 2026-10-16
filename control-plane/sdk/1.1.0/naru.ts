@@ -28,7 +28,10 @@ export interface Document<T = Json> {
   revision: Revision;
   /**
    * The member who created the document, by their member ID, which a
-   * replacement keeps. Null for one the site's owner or a visitor created.
+   * replacement keeps. Null for one the site's owner, a visitor or a site
+   * function created. Where the collection's rule exports `present` (1.1.0),
+   * a member sees only their own: anyone else's reads as null, and `where`
+   * may ask about it only as `{ eq: [{ metadata: "createdBy" }, member.id] }`.
    */
   createdBy: string | null;
 }

@@ -20,7 +20,13 @@ import {
   publicResult,
 } from "../../control-plane/src/lib/site-data/protocol";
 import { runFunction, type Host } from "./functions";
-import { presented, queriedFields, ruleEntry, rulePredicate } from "./rules";
+import {
+  authorQueries,
+  presented,
+  queriedFields,
+  ruleEntry,
+  rulePredicate,
+} from "./rules";
 
 /** What each rule hook is in the owner's file, for errors. */
 const HOOKS: Record<string, string> = {
@@ -1008,6 +1014,7 @@ export class SiteData extends DurableObject<Env> {
         publicRead,
       };
     }
+    const member = access.member ?? null;
     const ruleFile = this.meta(`rules:${collection.id}`);
     if (!admin && ruleFile && rules?.file !== ruleFile)
       throw new DataError(503, "Collection rules changed; retry the request.");
@@ -1043,6 +1050,8 @@ export class SiteData extends DurableObject<Env> {
             name: hook,
             args,
             member: access.member ?? null,
+            // Rules never run for the owner: anyone else unsigned is a visitor.
+            visitor: !access.member,
             now: Date.now(),
             readonly: true,
             // A page of trimmed documents can be as large as the page itself.
@@ -1066,7 +1075,11 @@ export class SiteData extends DurableObject<Env> {
             : null;
       return view;
     };
-    const present = <T extends { id: string; data: unknown } | null>(
+    // createdBy too: a rule that hides who wrote a post (an anonymous one,
+    // say) could not otherwise, so a reader sees only their own authorship.
+    const present = <
+      T extends { id: string; data: unknown; createdBy: string | null } | null,
+    >(
       documents: T[],
     ): T[] => {
       if (!ruleView()) return documents;
@@ -1082,16 +1095,41 @@ export class SiteData extends DurableObject<Env> {
       return documents.map((document) =>
         document === null
           ? document
-          : { ...document, data: byId.get(document.id) },
+          : {
+              ...document,
+              data: byId.get(document.id),
+              createdBy:
+                member && document.createdBy === member ? member : null,
+            },
       );
     };
+    // A batch read's IDs, as asked: readable() sees them, as a get its id.
+    let requested: string[] | undefined;
+    if (reading && input.ids !== undefined) {
+      if (path.length !== 1)
+        throw new DataError(400, "Batch reads target a collection.");
+      let values: unknown;
+      try {
+        values = JSON.parse(input.ids);
+      } catch {
+        throw new DataError(400, "Invalid IDs.");
+      }
+      if (!Array.isArray(values) || values.length > 100)
+        throw new DataError(400, "Batch reads need at most 100 IDs.");
+      requested = values.map(name);
+    }
     const authorization =
       reading && !admin && ruleFile
         ? rulePredicate(
             invokeRule("__naruReadable", {
               collection: collection.name,
-              operation: path.length === 2 ? "get" : "list",
+              operation: requested
+                ? "getMany"
+                : path.length === 2
+                  ? "get"
+                  : "list",
               id: path[1] ?? null,
+              ...(requested ? { ids: [...new Set(requested)] } : {}),
               filter: input.filter ?? {},
               where: input.where ?? null,
             }),
@@ -1114,7 +1152,6 @@ export class SiteData extends DurableObject<Env> {
           "ACCESS_DENIED",
         );
     };
-    const member = access.member ?? null;
     if (method === "GET" && ruleView()) {
       const allowed = ruleView()!;
       const asked = queriedFields(input).filter(
@@ -1124,6 +1161,18 @@ export class SiteData extends DurableObject<Env> {
         throw new DataError(
           400,
           `Collection ${collection.name} can be queried only on ${allowed.join(", ") || "its metadata"}; not ${asked.join(", ")}.`,
+        );
+      // Authorship is presented only to its author, so it is asked about
+      // only as "mine": anything else would tell whose a document is.
+      if (
+        authorQueries(input.where).some(
+          ([operator, value]) =>
+            operator !== "eq" || !member || value !== member,
+        )
+      )
+        throw new DataError(
+          400,
+          `Collection ${collection.name} can be queried on createdBy only as { eq: [{ metadata: "createdBy" }, <your own member ID>] }.`,
         );
     }
     if (method === "GET") {
@@ -1137,18 +1186,8 @@ export class SiteData extends DurableObject<Env> {
         );
       // Identical rows for any stranger, so a shared cache may hold them.
       publicRead = level === "world" && access.anonymous && !ruleFile;
-      if (input.ids !== undefined) {
-        if (path.length !== 1)
-          throw new DataError(400, "Batch reads target a collection.");
-        let values: unknown;
-        try {
-          values = JSON.parse(input.ids);
-        } catch {
-          throw new DataError(400, "Invalid IDs.");
-        }
-        if (!Array.isArray(values) || values.length > 100)
-          throw new DataError(400, "Batch reads need at most 100 IDs.");
-        const ids = values.map(name);
+      if (requested) {
+        const ids = requested;
         const unique = [...new Set(ids)];
         const rows = unique.length
           ? this.rows(

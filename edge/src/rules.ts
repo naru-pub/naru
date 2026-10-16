@@ -257,6 +257,31 @@ export function queriedFields(input: {
   return [...fields];
 }
 
+/**
+ * The comparisons a `where` makes on `{ metadata: "createdBy" }`, as
+ * [operator, value]; `in` gives its list. A rule that trims documents allows
+ * only a reader's own ID, since it presents no one else's.
+ */
+export function authorQueries(where: unknown) {
+  const found: [string, unknown][] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    for (const [operator, value] of Object.entries(node)) {
+      if (operator === "all" || operator === "any") {
+        if (Array.isArray(value)) value.forEach(walk);
+      } else if (
+        Array.isArray(value) &&
+        value[0] &&
+        typeof value[0] === "object" &&
+        (value[0] as { metadata?: unknown }).metadata === "createdBy"
+      )
+        found.push([operator, value[1]]);
+    }
+  };
+  walk(where);
+  return found;
+}
+
 /** What `present` returned for one document: its data as the caller sees it. */
 export function presented(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value))

@@ -1193,6 +1193,147 @@ integration("site members", () => {
     }
   });
 
+  test("a rule's present shows each reader only their own authorship", async () => {
+    const bob = await signIn("bob");
+    const dave = await signIn("dave");
+    await owned("POST", [], { name: "masks", read: "member", write: "member" });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "rules",
+      file: "masks",
+      source: `export const queryable = ["text"];
+        export function readable() { return true; }
+        export function canWrite() { return true; }
+        export function present(ctx, { document }) { return document.data; }`,
+    });
+    await owned("PATCH", ["masks"], {
+      read: "member",
+      write: "member",
+      rules: "masks",
+    });
+    try {
+      const mine = (await as(bob.accessToken, "POST", ["masks"], {
+        data: { text: "bob's" },
+      })) as any;
+      expect(mine.createdBy).toBe(bob.memberId);
+      const theirs = (await as(dave.accessToken, "POST", ["masks"], {
+        data: { text: "dave's" },
+      })) as any;
+      const authors = async (extra = {}) =>
+        Object.fromEntries(
+          (
+            (await as(
+              bob.accessToken,
+              "GET",
+              ["masks"],
+              undefined,
+              extra,
+            )) as any
+          ).documents.map((d: any) => [d.id, d.createdBy]),
+        );
+      expect(await authors()).toEqual({
+        [mine.id]: bob.memberId,
+        [theirs.id]: null,
+      });
+      expect(
+        ((await as(bob.accessToken, "GET", ["masks", theirs.id])) as any)
+          .document.createdBy,
+      ).toBeNull();
+      expect(
+        (
+          (await as(bob.accessToken, "GET", ["masks"], undefined, {
+            ids: JSON.stringify([theirs.id, mine.id]),
+          })) as any
+        ).documents.map((d: any) => d.createdBy),
+      ).toEqual([null, bob.memberId]);
+      // "Mine" may be asked; anyone else's authorship may not.
+      expect(
+        await authors({
+          where: { eq: [{ metadata: "createdBy" }, bob.memberId] },
+        }),
+      ).toEqual({ [mine.id]: bob.memberId });
+      for (const where of [
+        { eq: [{ metadata: "createdBy" }, dave.memberId] },
+        { ne: [{ metadata: "createdBy" }, bob.memberId] },
+        { in: [{ metadata: "createdBy" }, [bob.memberId]] },
+        { eq: [{ metadata: "createdBy" }, null] },
+        {
+          any: [{ eq: ["text", "x"] }, { gt: [{ metadata: "createdBy" }, ""] }],
+        },
+      ])
+        await expect(
+          as(bob.accessToken, "GET", ["masks"], undefined, { where }),
+        ).rejects.toMatchObject({
+          status: 400,
+          message: expect.stringContaining("createdBy only as"),
+        });
+      await expect(
+        as(bob.accessToken, "GET", ["masks"], undefined, {
+          sort: JSON.stringify([[{ metadata: "createdBy" }, "asc"]]),
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      // The owner sees every author.
+      expect(
+        ((await owned("GET", ["masks", theirs.id])) as any).document.createdBy,
+      ).toBe(dave.memberId);
+    } finally {
+      await owned("DELETE", ["masks"]);
+    }
+  });
+
+  test("a rule's readable sees a batch read's IDs, and whether a visitor reads", async () => {
+    const bob = await signIn("bob");
+    await owned("POST", [], { name: "seen", read: "world", write: "admin" });
+    for (const id of ["open", "closed", "other"])
+      await owned("PUT", ["seen", id], { data: {} });
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "rules",
+      file: "seen",
+      source: `export function readable(ctx, { operation, ids, id }) {
+          if (operation === "getMany") {
+            if (ids.includes("other")) ctx.fail("ACCESS_DENIED", "그건 안 됩니다.");
+            return { in: [{ metadata: "id" }, ids.filter((x) => x !== "closed")] };
+          }
+          if (operation === "get") return { eq: [{ metadata: "id" }, id] };
+          return ctx.visitor ? { eq: [{ metadata: "id" }, "open"] } : true;
+        }
+        export function canWrite() { return false; }`,
+    });
+    await owned("PATCH", ["seen"], {
+      read: "world",
+      write: "admin",
+      rules: "seen",
+    });
+    try {
+      const ids = (token: string | undefined, list: string[]) =>
+        as(token, "GET", ["seen"], undefined, {
+          ids: JSON.stringify(list),
+        }).then((page: any) => page.documents.map((d: any) => d?.id ?? null));
+      expect(await ids(bob.accessToken, ["closed", "open", "open"])).toEqual([
+        null,
+        "open",
+        "open",
+      ]);
+      await expect(ids(undefined, ["open", "other"])).rejects.toMatchObject({
+        status: 403,
+        message: "그건 안 됩니다.",
+      });
+      const listed = async (token?: string) =>
+        ((await as(token, "GET", ["seen"])) as any).documents.map(
+          (d: any) => d.id,
+        );
+      expect(await listed()).toEqual(["open"]);
+      expect(await listed(bob.accessToken)).toEqual([
+        "closed",
+        "open",
+        "other",
+      ]);
+    } finally {
+      await owned("DELETE", ["seen"]);
+    }
+  });
+
   test("a guest edits and deletes a document with the secret it was added with", async () => {
     await owned("POST", [], { name: "guests", read: "world", write: "create" });
     try {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SQLInputValue } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
-import { predicate, rulePredicate } from "./rules";
+import { authorQueries, predicate, rulePredicate } from "./rules";
 import { SCHEMA, listQuery } from "./query";
 import { filters } from "../../control-plane/src/lib/site-data/filters";
 
@@ -214,5 +214,27 @@ describe("rule predicates", () => {
       ids({ eq: [{ metadata: "createdAt" }, new Date(at(5)).toISOString()] }),
     ).toEqual(["b"]);
     db.close();
+  });
+  it("finds every comparison a where makes on createdBy", () => {
+    expect(
+      authorQueries({
+        all: [
+          { eq: ["board", "free"] },
+          { eq: [{ metadata: "createdBy" }, "m-1"] },
+          {
+            any: [
+              { ne: [{ metadata: "createdBy" }, null] },
+              { in: [{ metadata: "createdBy" }, ["m-2"]] },
+              { eq: [{ metadata: "id" }, "x"] },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([
+      ["eq", "m-1"],
+      ["ne", null],
+      ["in", ["m-2"]],
+    ]);
+    expect(authorQueries(undefined)).toEqual([]);
   });
 });
