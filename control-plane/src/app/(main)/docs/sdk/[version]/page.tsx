@@ -200,7 +200,7 @@ export default async function SdkReference(props: {
             <a href={`/sdk/${version}/naru.d.ts`}>naru.d.ts 보기 ↗</a>
             {version !== "1.0.0" && (
               <a href={`/sdk/${version}/functions.d.ts`}>
-                서버 함수·규칙 타입(functions.d.ts) 보기 ↗
+                쿼리·뮤테이션 타입(functions.d.ts) 보기 ↗
               </a>
             )}
           </div>
