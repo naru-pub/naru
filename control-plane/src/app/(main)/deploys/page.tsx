@@ -134,10 +134,10 @@ export default async function DeploysPage({
     finalizedAt: deployment.finalized_at?.toISOString() ?? null,
   }));
 
-  // An account that deploys with an Actions workflow sees that first, with
-  // the App connection collapsed under it; otherwise workflow deploys are
-  // kept out of the way, for sites with a build step. Either way the
-  // deployment log, which covers both, follows the one in use.
+  // The way the account deploys comes first, then the deployment log, which
+  // covers both ways, and last the other way, collapsed: workflow deploys are
+  // for sites with a build step, and accounts that use one see the App
+  // connection there instead.
   const usesWorkflow = githubDeployTargets.length > 0;
   const appCard = (
     <GitHubAppCard
@@ -163,8 +163,8 @@ export default async function DeploysPage({
         {usesWorkflow ? (
           <>
             {workflowCard}
-            {appCard}
             {deploymentsCard}
+            {appCard}
           </>
         ) : (
           <>
