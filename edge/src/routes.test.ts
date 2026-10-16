@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   matchRoute,
   routeAnswer,
+  validRoute,
   withHead,
 } from "../../control-plane/src/lib/site-functions/routes";
 import { servePage, type PagesEnv, type RenderRoute } from "./pages";
@@ -18,6 +19,7 @@ describe("matching", () => {
     "posts/_id",
     "posts/new",
     "boards/_board/_post",
+    "feed.xml",
   ];
   test("a path finds its route, fixed segments before parameters", () => {
     expect(matchRoute(routes, "/")).toEqual({ route: "index", params: {} });
@@ -44,6 +46,10 @@ describe("matching", () => {
     expect(matchRoute(routes, "/posts/%EA%B8%80")).toEqual({
       route: "posts/_id",
       params: { id: "글" },
+    });
+    expect(matchRoute(routes, "/feed.xml")).toEqual({
+      route: "feed.xml",
+      params: {},
     });
     expect(matchRoute(routes, "/boards/free/7")).toEqual({
       route: "boards/_board/_post",
@@ -83,6 +89,30 @@ describe("answers", () => {
       redirect: "/posts/1",
     });
   });
+  test("text such as a feed, as one of the types that cannot run as the site", () => {
+    expect(
+      routeAnswer({ body: "<rss/>", type: "application/rss+xml", cache: 300 }),
+    ).toEqual({
+      status: 200,
+      cache: 300,
+      body: "<rss/>",
+      type: "application/rss+xml",
+    });
+    for (const type of [
+      "text/html",
+      "image/svg+xml",
+      "application/javascript",
+      undefined,
+    ])
+      expect(() => routeAnswer({ body: "x", type })).toThrow(
+        /whose type is not one of/,
+      );
+    expect(validRoute("feed.xml")).toBe(true);
+    expect(validRoute("posts/_id")).toBe(true);
+    for (const route of ["..", "a/./b", "a b", "a/", ""])
+      expect(validRoute(route), route).toBe(false);
+  });
+
   test("anything else is the route's mistake", () => {
     for (const value of [
       null,
@@ -177,6 +207,19 @@ describe("serving", () => {
     expect(await (await get("/posts/42")).text()).toBe(
       '<html><head><title>앱</title><meta property="og:title" content="글"></head><body>app</body></html>',
     );
+  });
+
+  test("a feed with its own type", async () => {
+    answer = {
+      ok: true,
+      value: { result: { body: "<rss/>", type: "application/rss+xml" } },
+    };
+    const feed = await get("/go");
+    expect(feed.headers.get("Content-Type")).toBe(
+      "application/rss+xml; charset=utf-8",
+    );
+    expect(feed.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(await feed.text()).toBe("<rss/>");
   });
 
   test("redirects, refusals, and the files when the site's object is away", async () => {

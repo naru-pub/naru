@@ -18,6 +18,40 @@ export function routeOf(filename: string) {
   return filename.replace(/^routes\//, "").replace(/\.m?js$/, "");
 }
 
+/**
+ * Whether `route` names a route: segments of letters, digits, _, - and
+ * dots (feed.xml.js answers /feed.xml), never "." or "..".
+ */
+export const validRoute = (route: string) =>
+  route
+    .split("/")
+    .every(
+      (part) =>
+        /^[A-Za-z0-9_.-]{1,64}$/.test(part) && part !== "." && part !== "..",
+    );
+
+/** `route`, checked, as the site's object is asked to render it. */
+export function routeModule(value: unknown): string {
+  if (typeof value !== "string" || !validRoute(value))
+    throw new DataError(400, "Invalid route.");
+  return value;
+}
+
+/**
+ * What `{ body, type }` may be served as: text the browser shows or a
+ * reader parses, never anything that runs as the site (HTML is `html`).
+ */
+const BODY_TYPES = [
+  "text/plain",
+  "text/css",
+  "text/calendar",
+  "text/xml",
+  "application/xml",
+  "application/rss+xml",
+  "application/atom+xml",
+  "application/json",
+];
+
 /** The route matching `pathname`, preferring fixed segments to parameters. */
 export function matchRoute(routes: readonly string[], pathname: string) {
   let segments: string[];
@@ -72,21 +106,29 @@ export type RouteAnswer = {
   status: number;
   /** Seconds the edge may keep the page, 0–300. */
   cache: number;
-} & ({ html: string } | { file: string; head: string } | { redirect: string });
+} & (
+  | { html: string }
+  | { body: string; type: string }
+  | { file: string; head: string }
+  | { redirect: string }
+);
 
 const invalid = (message: string) =>
   new DataError(500, `The route answered ${message}`);
 
 /**
- * A route's answer, checked: a string of HTML, or `{ html }`, `{ file, head }`
- * (a site file with `head` added to its <head>, for link previews of a
- * page the browser renders) or `{ redirect }`, each with an optional
- * `status` and `cache` (seconds).
+ * A route's answer, checked: a string of HTML, or `{ html }`, `{ body, type }`
+ * (text such as a feed, served as `type`), `{ file, head }` (a site file
+ * with `head` added to its <head>, for link previews of a page the browser
+ * renders) or `{ redirect }`, each with an optional `status` and `cache`
+ * (seconds).
  */
 export function routeAnswer(value: unknown): RouteAnswer {
   if (typeof value === "string") return { status: 200, cache: 0, html: value };
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw invalid("neither HTML nor { html }, { file } or { redirect }.");
+    throw invalid(
+      "neither HTML nor { html }, { body }, { file } or { redirect }.",
+    );
   const answer = value as Record<string, unknown>;
   const status = answer.status ?? (answer.redirect !== undefined ? 302 : 200);
   if (
@@ -104,6 +146,13 @@ export function routeAnswer(value: unknown): RouteAnswer {
     throw invalid("a cache other than 0–300 seconds.");
   const base = { status: status as number, cache: cache as number };
   if (typeof answer.html === "string") return { ...base, html: answer.html };
+  if (typeof answer.body === "string") {
+    if (typeof answer.type !== "string" || !BODY_TYPES.includes(answer.type))
+      throw invalid(
+        `a body whose type is not one of ${BODY_TYPES.join(", ")}.`,
+      );
+    return { ...base, body: answer.body, type: answer.type };
+  }
   if (typeof answer.file === "string") {
     const file = answer.file.replace(/^\/+/, "");
     if (!file || file.split("/").some((part) => part === ".." || part === "."))
@@ -119,7 +168,9 @@ export function routeAnswer(value: unknown): RouteAnswer {
       throw invalid("a redirect to neither a path nor an https URL.");
     return { ...base, redirect: answer.redirect };
   }
-  throw invalid("neither HTML nor { html }, { file } or { redirect }.");
+  throw invalid(
+    "neither HTML nor { html }, { body }, { file } or { redirect }.",
+  );
 }
 
 /** `head` added to an HTML file's <head>, or before it when it has none. */

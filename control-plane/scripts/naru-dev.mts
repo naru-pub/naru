@@ -45,6 +45,7 @@ import {
   matchRoute,
   routeAnswer,
   routeOf,
+  validRoute,
   withHead,
 } from "../src/lib/site-functions/routes";
 
@@ -746,9 +747,7 @@ async function route(res: ServerResponse, url: URL) {
     .map((path) =>
       routeOf(relative(join(folder, "_naru"), path).split(sep).join("/")),
     )
-    .filter((name) =>
-      name.split("/").every((part) => /^[A-Za-z0-9_-]{1,64}$/.test(part)),
-    );
+    .filter(validRoute);
   const match = matchRoute(routes, url.pathname);
   if (!match) return false;
   const html = (status: number, body: string, headers = {}) =>
@@ -775,6 +774,13 @@ async function route(res: ServerResponse, url: URL) {
     if ("redirect" in answer)
       res.writeHead(answer.status, { location: answer.redirect }).end();
     else if ("html" in answer) html(answer.status, answer.html);
+    else if ("body" in answer)
+      res
+        .writeHead(answer.status, {
+          "content-type": `${answer.type}; charset=utf-8`,
+          "cache-control": "no-store",
+        })
+        .end(answer.body);
     else {
       let file = resolve(folder, answer.file);
       if (existsSync(file) && (await stat(file)).isDirectory())

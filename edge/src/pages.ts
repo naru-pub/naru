@@ -361,6 +361,15 @@ async function serveRoute(
       status: answer.status,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
+  else if ("body" in answer)
+    response = new Response(answer.body, {
+      status: answer.status,
+      headers: {
+        "Content-Type": `${answer.type}; charset=utf-8`,
+        // A feed is not a page the site's scripts run in.
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   else {
     const path = resolvePath(answer.file);
     const file = await readFile(env, ctx, login, `${login}/${path}`);

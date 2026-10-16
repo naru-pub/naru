@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { routeOf } from "./routes";
+import { routeOf, validRoute } from "./routes";
 import { DataError } from "../site-data/validation";
 import {
   loadModuleGraph,
@@ -331,16 +331,11 @@ export class FunctionRevisions {
   /** The routes `revision` serves: "posts/_id" for routes/posts/_id.js. */
   async routes(revision: string): Promise<string[]> {
     const manifest = await this.manifest(revision);
-    return (
-      Object.keys(manifest.files)
-        .filter((filename) => filename.startsWith("routes/"))
-        .map(routeOf)
-        // A route is called by name, so each segment is one (no dots).
-        .filter((route) =>
-          route.split("/").every((part) => /^[A-Za-z0-9_-]{1,64}$/.test(part)),
-        )
-        .sort()
-    );
+    return Object.keys(manifest.files)
+      .filter((filename) => filename.startsWith("routes/"))
+      .map(routeOf)
+      .filter(validRoute)
+      .sort();
   }
 
   /** The release's SQL migrations, in the order they apply. */

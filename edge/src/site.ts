@@ -1,5 +1,6 @@
 import { callerKey } from "./addresses";
 import { FunctionRevisions, migrationPath } from "./function-revisions";
+import { routeModule } from "../../control-plane/src/lib/site-functions/routes";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -2284,7 +2285,8 @@ export class SiteData extends DurableObject<Env> {
     const kind = input.kind ?? "function";
     let filename: string, sources, readonly;
     try {
-      functionModule(input.file);
+      if (kind === "route") routeModule(input.file);
+      else functionModule(input.file);
       name(input.name);
       if (!["function", "query", "mutation", "route"].includes(kind))
         throw new DataError(400, "Invalid call.");
@@ -2659,7 +2661,7 @@ export class SiteData extends DurableObject<Env> {
     const key =
       folder === "migrations"
         ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
-        : `${input.site}/_naru/${folder}/${folder !== "rules" ? functionModule(input.file) : name(input.file)}.js`;
+        : `${input.site}/_naru/${folder}/${folder === "rules" ? name(input.file) : folder === "routes" ? routeModule(input.file) : functionModule(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
     if (input.publish === false) return { ok: true, value: null };

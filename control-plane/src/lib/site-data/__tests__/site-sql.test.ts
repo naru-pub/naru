@@ -493,5 +493,25 @@ integration("routes", () => {
       status: 404,
       message: "그런 글은 없어요.",
     });
+    // A route with a dot in its name, answering text of its own type.
+    await put(
+      "routes",
+      "feed.xml",
+      `export default async function (ctx) {
+         const { rows } = await ctx.sql\`SELECT title FROM posts ORDER BY id LIMIT 2\`;
+         return { body: \`<rss>\${rows.map((row) => row.title).join(",")}</rss>\`, type: "application/rss+xml" };
+       }`,
+    );
+    expect(
+      await callSiteObject(site, "render", {
+        site,
+        route: "feed.xml",
+        path: "/feed.xml",
+        params: {},
+        query: {},
+      }),
+    ).toEqual({
+      result: { body: "<rss>첫 글,둘째</rss>", type: "application/rss+xml" },
+    });
   });
 });
