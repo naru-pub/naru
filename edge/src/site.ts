@@ -26,6 +26,7 @@ import {
   classify,
   MAX_ROW_BYTES,
   MAX_ROWS,
+  MAX_ROWS_READ,
   reserved,
   statements,
   type PlanStep,
@@ -1356,7 +1357,12 @@ export class SiteData extends DurableObject<Env> {
    * Returns its rows, at most MAX_ROWS of them and MAX_ROW_BYTES as JSON,
    * and how many rows it changed.
    */
-  private siteSql(text: unknown, values: unknown, readonly: boolean) {
+  private siteSql(
+    text: unknown,
+    values: unknown,
+    readonly: boolean,
+    budget: { rowsRead: number },
+  ) {
     if (typeof text !== "string" || text.length > 64 * 1024)
       throw new DataError(400, "ctx.sql takes a statement of at most 64 KiB.");
     const parsed = statements(text);
@@ -1388,6 +1394,13 @@ export class SiteData extends DurableObject<Env> {
           `ctx.sql returns at most ${MAX_ROWS} rows and 1 MiB; add a LIMIT.`,
         );
     }
+    // Each statement is held to one pass by its plan; a call, to a few.
+    budget.rowsRead += cursor.rowsRead;
+    if (budget.rowsRead > MAX_ROWS_READ)
+      throw new DataError(
+        400,
+        `A call reads at most ${MAX_ROWS_READ.toLocaleString("en")} rows; read less, or by an index.`,
+      );
     if (kind === "write") this.checkDatabaseSize();
     return { rows, changes: kind === "write" ? cursor.rowsWritten : 0 };
   }
@@ -1691,6 +1704,7 @@ export class SiteData extends DurableObject<Env> {
     messages: Message[] = [],
   ): Host {
     const cachedCollections = new Map<string, Collection>();
+    const sqlBudget = { rowsRead: 0 };
     const collection = (value: unknown) => {
       const key = name(value);
       const cached = cachedCollections.get(key);
@@ -1779,7 +1793,7 @@ export class SiteData extends DurableObject<Env> {
           return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
         case "sql":
           // [text, values, read-only], the last from the call, not the code.
-          return this.siteSql(args[0], args[1], args[2] === true);
+          return this.siteSql(args[0], args[1], args[2] === true, sqlBudget);
         case "get": {
           const row = document(collection(args[0]).id, name(args[1]));
           return row ? publicResult(documentOf(row)) : null;
@@ -1923,29 +1937,43 @@ export class SiteData extends DurableObject<Env> {
     readOnlyOnly?: boolean;
     /** A visitor's address, which their calls are limited by. */
     clientIp?: string;
-    /** The module, _naru/functions/<file>.js. */
+    /** The module, _naru/functions/<file>.js (queries/, mutations/). */
     file: string;
     name: string;
     args: unknown;
+    /**
+     * A site function (the default), or a query or mutation (1.1.0's new
+     * design): anyone may call those, and their code says who may do what.
+     */
+    kind?: "function" | "query" | "mutation";
   }): Promise<Outcome<{ result: unknown; written: string[] }>> {
     const visitor = input.member === null && input.visitor === true;
+    const kind = input.kind ?? "function";
     let filename: string, sources, readonly;
     try {
       functionModule(input.file);
       name(input.name);
+      if (!["function", "query", "mutation"].includes(kind))
+        throw new DataError(400, "Invalid call.");
       const revision = this.meta("functions_revision");
       if (!revision) throw unpublished();
       const revisions = this.revisions(input.site);
-      filename = await revisions.entry(revision, `functions/${input.file}`);
+      const folder =
+        kind === "query"
+          ? "queries"
+          : kind === "mutation"
+            ? "mutations"
+            : "functions";
+      filename = await revisions.entry(revision, `${folder}/${input.file}`);
       sources = await revisions.graph(revision, filename);
       const declared = await revisions.declarations(
         revision,
         filename,
         input.name,
       );
-      readonly = declared.readOnly;
+      readonly = kind === "function" ? declared.readOnly : kind === "query";
       if (input.readOnlyOnly && !readonly) throw readOnlyStandby();
-      if (visitor && !declared.visitors)
+      if (visitor && kind === "function" && !declared.visitors)
         throw new DataError(
           401,
           "Sign in as a member to use this function.",
@@ -1993,6 +2021,10 @@ export class SiteData extends DurableObject<Env> {
               visitor,
               now: Date.now(),
               readonly,
+              kind,
+              // A query's rows, a page of them, can be larger than a
+              // function's answer.
+              ...(kind !== "function" ? { maxResultBytes: MAX_ROW_BYTES } : {}),
             },
             this.functionHost(written, messages),
           ),
@@ -2028,6 +2060,7 @@ export class SiteData extends DurableObject<Env> {
     args: unknown;
     clientIp?: string;
     readOnlyOnly?: boolean;
+    kind?: "function" | "query" | "mutation";
   }): Promise<
     Outcome<
       { pass: true } | { pass?: undefined; result: unknown; written: string[] }
@@ -2205,18 +2238,25 @@ export class SiteData extends DurableObject<Env> {
     site: string;
     file: string;
     source: string | null;
-    folder?: "functions" | "rules" | "modules" | "migrations";
+    folder?:
+      | "functions"
+      | "rules"
+      | "modules"
+      | "migrations"
+      | "queries"
+      | "mutations";
     /** False stores the file only, for a batch published by its last file. */
     publish?: boolean;
   }) {
-    const folder =
-      input.folder === "rules"
-        ? "rules"
-        : input.folder === "modules"
-          ? "modules"
-          : input.folder === "migrations"
-            ? "migrations"
-            : "functions";
+    const folder = [
+      "rules",
+      "modules",
+      "migrations",
+      "queries",
+      "mutations",
+    ].includes(input.folder ?? "")
+      ? input.folder!
+      : "functions";
     const key =
       folder === "migrations"
         ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`

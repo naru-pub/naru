@@ -368,6 +368,30 @@ test("call posts its arguments to the function, and resolves with its result", a
   });
 });
 
+test("query and mutate post to the site's queries and mutations, signed in or not", async () => {
+  await browser(async ({ calls, respond, local }) => {
+    const naru = createNaru();
+    respond(() => Response.json({ result: [{ id: 1 }] }));
+    assert.deepEqual(await naru.query("board:recent", { board: "free" }), [
+      { id: 1 },
+    ]);
+    assert.equal(
+      calls[0].url.href,
+      "https://sdk.naru.pub/api/data/v1/alice/_query/board:recent",
+    );
+    assert.equal(calls[0].headers.Authorization, undefined);
+    saveMember(local);
+    const member = await naru.members.session();
+    respond(() => Response.json({ result: 4 }));
+    assert.equal(await member.mutate("board:write", { title: "넷째" }), 4);
+    assert.equal(
+      calls[1].url.href,
+      "https://sdk.naru.pub/api/data/v1/alice/_mutate/board:write",
+    );
+    assert.equal(calls[1].headers.Authorization, `Bearer ${TOKEN}`);
+  });
+});
+
 test("call refuses a malformed name or non-JSON arguments before sending", async () => {
   await browser(async ({ calls, local }) => {
     saveMember(local);

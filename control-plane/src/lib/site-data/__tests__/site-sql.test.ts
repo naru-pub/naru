@@ -171,3 +171,95 @@ integration("site SQL", () => {
     await callSiteObject(copy, "erase", {});
   });
 });
+
+integration("queries and mutations", () => {
+  const code = (
+    kind: "query" | "mutation",
+    name: string,
+    args: unknown,
+    member: string | null = null,
+  ) =>
+    callSiteObject<{ result: unknown }>(site, "call", {
+      ownerId,
+      site,
+      member,
+      ...(member === null ? { visitor: true } : {}),
+      kind,
+      file: "board",
+      name,
+      args,
+    }).then((answer) => answer.result);
+
+  test("anyone may call them, their code decides, and a query cannot write", async () => {
+    await put(
+      "queries",
+      "board",
+      `export async function recent(ctx, { board }) {
+         return (await ctx.sql\`SELECT id, title FROM posts WHERE board = \${board} ORDER BY id\`).rows;
+       }
+       export async function whoami(ctx) { return { member: ctx.member, visitor: ctx.visitor }; }
+       export async function sneak(ctx) { await ctx.sql\`DELETE FROM posts\`; }`,
+      false,
+    );
+    await put(
+      "mutations",
+      "board",
+      `export async function write(ctx, { title }) {
+         if (!ctx.member) ctx.fail("AUTH_REQUIRED", "회원만 글을 쓸 수 있어요.");
+         const { rows } = await ctx.sql\`INSERT INTO posts (title, board, author) VALUES (\${title}, 'free', \${ctx.member.id}) RETURNING id\`;
+         return rows[0].id;
+       }`,
+    );
+    expect(await code("query", "whoami", null)).toEqual({
+      member: null,
+      visitor: true,
+    });
+    await expect(
+      code("mutation", "write", { title: "몰래" }),
+    ).rejects.toMatchObject({
+      status: 401,
+      code: "AUTH_REQUIRED",
+    });
+    expect(await code("mutation", "write", { title: "넷째" }, "member-2")).toBe(
+      4,
+    );
+    expect(await code("query", "recent", { board: "free" })).toEqual([
+      { id: 1, title: "첫 글" },
+      { id: 2, title: "둘째" },
+      { id: 4, title: "넷째" },
+    ]);
+    await expect(code("query", "sneak", null)).rejects.toMatchObject({
+      message: expect.stringMatching(/read-only query cannot write/),
+    });
+    // A query or mutation file is not a function, and the other way round.
+    await expect(
+      callSiteObject(site, "call", {
+        ownerId,
+        site,
+        member: "member-2",
+        file: "board",
+        name: "recent",
+        args: null,
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    // A visitor's query and mutation at the edge, as browsers reach it.
+    await callSiteObject(site, "configure", {
+      ownerId,
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    const atEdge = (path: string, args: unknown) =>
+      fetch(`${process.env.EDGE_WORKER_URL}/api/data/v1/${site}/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ args }),
+      });
+    const query = await atEdge("_query/board:whoami", null);
+    expect(query.status).toBe(200);
+    expect(await query.json()).toMatchObject({
+      result: { member: null, visitor: true },
+    });
+    const mutation = await atEdge("_mutate/board:write", { title: "x" });
+    expect(mutation.status).toBe(401);
+  });
+});

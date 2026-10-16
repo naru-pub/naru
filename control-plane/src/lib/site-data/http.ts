@@ -17,6 +17,7 @@ import { isIP } from "node:net";
 import { executeMedia } from "./media";
 import {
   batchBody,
+  CALLS,
   OWNER_EXPIRES,
   OWNER_EXPIRES_IN,
   PUBLIC_READ_CACHE,
@@ -118,14 +119,19 @@ export async function dataRequest(
         ? await executeMedia(command)
         : path[0] === "_batch"
           ? await executeBatch({ ...command, path: [] })
-          : path[0] === "_call" && !admin
-            ? await executeCall({ ...command, path: path.slice(1) })
+          : Object.hasOwn(CALLS, path[0]) && !admin
+            ? await executeCall({
+                ...command,
+                path: path.slice(1),
+                kind: CALLS[path[0]],
+              })
             : path[0] === "_live" && !admin
               ? await executeLiveTicket(command)
               : await executeData(command);
     // A function's result is its own JSON, not documents to translate; the
     // documents its ctx returned were translated as they were read.
-    const calling = ["_call", "_live"].includes(path[0]) && !admin;
+    const calling =
+      (Object.hasOwn(CALLS, path[0]) || path[0] === "_live") && !admin;
     return Response.json(admin || calling ? result : publicResult(result), {
       headers: {
         ...headers,

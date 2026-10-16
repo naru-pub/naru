@@ -4,7 +4,9 @@ import type {
   CanWrite,
   Ctx,
   Filter,
+  Mutation,
   Predicate,
+  Query,
   Present,
   Queryable,
   Readable,
@@ -72,5 +74,26 @@ export const present: Present = (ctx, { document }) => {
 };
 
 export const queryable: Queryable = ["board"];
+
+// A query reads the site's tables; it has no collections.
+export const posts: Query<{ board: string }, { id: number }[]> = async (
+  ctx,
+  { board },
+) => {
+  // @ts-expect-error Queries reach tables through sql only.
+  await ctx.get("posts", "1");
+  const { rows } = await ctx.sql<{
+    id: number;
+  }>`SELECT id FROM posts WHERE board = ${board}`;
+  return rows;
+};
+export const write: Mutation<{ title: string }, number> = async (
+  ctx,
+  { title },
+) => {
+  if (!ctx.member) ctx.fail("AUTH_REQUIRED", "로그인해 주세요.");
+  return (await ctx.sql("INSERT INTO posts (title) VALUES (?)", [title]))
+    .changes;
+};
 
 export const checks = { samePredicate, sameFilter, sameSort, typed };

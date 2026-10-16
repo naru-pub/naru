@@ -759,27 +759,32 @@ function live(root, options, ticket) {
 // handle's token. The server says which collections the call changed, so only
 // their later reads skip caches; a call whose answer was lost may have changed
 // any of them.
-function functions(root, send) {
+function functions(root, send, path = "_call") {
   return async function call(name, args = null, { signal } = {}) {
     const parts = typeof name === "string" ? name.split(":") : [];
     if (parts.length !== 2)
-      throw new TypeError('call() names "<module/path>:<function>".');
+      throw new TypeError('Calls name "<module/path>:<function>".');
     parts[0].split("/").forEach(segment);
     segment(parts[1]);
     jsonValue(args, undefined, "args");
     let answer;
     try {
-      answer = await send(`${root}/_call/${parts[0]}:${parts[1]}`, {
+      answer = await send(`${root}/${path}/${parts[0]}:${parts[1]}`, {
         method: "POST",
         body: { args },
         signal,
         touches: [],
       });
     } catch (error) {
-      if (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
+      if (
+        path === "_call" &&
+        (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
+      )
         written.add("*");
       throw error;
     }
+    // Queries and mutations write tables, not collections.
+    if (path !== "_call") return answer.result;
     for (const collection of answer.written ?? ["*"])
       written.add(collection === "*" ? "*" : `${root}/${collection}`);
     return answer.result;
@@ -830,6 +835,8 @@ function admin(context, token, expiresAt) {
       );
     },
     call: functions(root, send),
+    query: functions(root, send, "_query"),
+    mutate: functions(root, send, "_mutate"),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });
@@ -842,6 +849,8 @@ function member(context, token, expiresAt, id) {
     id,
     collection: (name) => documents(root, name, send),
     call: functions(root, send),
+    query: functions(root, send, "_query"),
+    mutate: functions(root, send, "_mutate"),
     live: (options) =>
       live(root, options, async () => {
         const { ticket } = await send(`${root}/_live`, {
@@ -1061,6 +1070,8 @@ export function createNaru(options) {
     collection: (name) => publicDocuments(context.root, name),
     live: (options) => live(context.root, options),
     call: functions(context.root, request),
+    query: functions(context.root, request, "_query"),
+    mutate: functions(context.root, request, "_mutate"),
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({ collections, mediaDelete }) =>

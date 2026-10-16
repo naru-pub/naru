@@ -339,3 +339,5 @@ export function bindings(values: unknown): SqlValue[] {
 /** Rows a statement may return, and their size as JSON. */
 export const MAX_ROWS = 1000;
 export const MAX_ROW_BYTES = 1024 * 1024;
+/** Rows a call's statements may read in all: five passes over a full table. */
+export const MAX_ROWS_READ = 500_000;

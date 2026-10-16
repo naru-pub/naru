@@ -3,6 +3,7 @@ import {
   parseWhereQuery,
 } from "../../control-plane/src/lib/site-data/filters";
 import {
+  CALLS,
   PUBLIC_READ_CACHE,
   publicResult,
   websiteCondition,
@@ -144,6 +145,7 @@ async function visit(
     const stub = env.SITES.get(env.SITES.idFromName(site));
     const outcome = (await stub.visit({
       site,
+      kind: CALLS[path[0]],
       file,
       name: fn,
       args: body?.args ?? null,
@@ -201,8 +203,10 @@ export async function website(
   // the mini, so a page holding an older SDK still works; a live connection
   // would attach to this copy, so it is refused and the SDK retries.
   if (env.READ_ONLY === "1") {
+    // A mutation always changes the site; the object refuses a function
+    // that is not read-only.
     const visitorCall =
-      path[0] === "_call" &&
+      (path[0] === "_call" || path[0] === "_query") &&
       request.method === "POST" &&
       !request.headers.has("authorization");
     if (
@@ -229,9 +233,10 @@ export async function website(
     request.headers.get("Upgrade")?.toLowerCase() === "websocket"
   )
     return live(request, env, site);
-  // A visitor's function call: answered here, like a visitor's read.
+  // A visitor's function call, query or mutation: answered here, like a
+  // visitor's read.
   if (
-    path[0] === "_call" &&
+    Object.hasOwn(CALLS, path[0]) &&
     request.method === "POST" &&
     !request.headers.has("authorization") &&
     NAME.test(site)
@@ -243,7 +248,7 @@ export async function website(
     !path.length ||
     path[0] === "_files" ||
     path[0] === "_batch" ||
-    path[0] === "_call" ||
+    Object.hasOwn(CALLS, path[0]) ||
     !METHODS.includes(request.method)
   )
     return passOn(request, env, headers);

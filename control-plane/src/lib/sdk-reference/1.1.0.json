@@ -29,10 +29,54 @@
     {
       "name": "Admin",
       "kind": "interface",
-      "summary": [],
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The site's queries and mutations (1.1.0's new design): its own code over its own tables, which its "
+            },
+            {
+              "type": "code",
+              "value": "_naru/migrations/"
+            },
+            {
+              "type": "text",
+              "value": " create. Anyone may call them, signed in or not; the code decides what each caller may see and do from "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": ", "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": " and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.visitor"
+            },
+            {
+              "type": "text",
+              "value": "."
+            }
+          ]
+        }
+      ],
       "throws": [],
-      "signature": "interface Admin",
-      "extends": [],
+      "signature": "interface Admin extends SiteCode",
+      "extends": [
+        "SiteCode"
+      ],
       "members": [
         {
           "name": "media",
@@ -651,8 +695,10 @@
         }
       ],
       "throws": [],
-      "signature": "interface Member",
-      "extends": [],
+      "signature": "interface Member extends SiteCode",
+      "extends": [
+        "SiteCode"
+      ],
       "members": [
         {
           "name": "id",
@@ -821,10 +867,54 @@
     {
       "name": "NaruClient",
       "kind": "interface",
-      "summary": [],
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The site's queries and mutations (1.1.0's new design): its own code over its own tables, which its "
+            },
+            {
+              "type": "code",
+              "value": "_naru/migrations/"
+            },
+            {
+              "type": "text",
+              "value": " create. Anyone may call them, signed in or not; the code decides what each caller may see and do from "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": ", "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": " and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.visitor"
+            },
+            {
+              "type": "text",
+              "value": "."
+            }
+          ]
+        }
+      ],
       "throws": [],
-      "signature": "interface NaruClient",
-      "extends": [],
+      "signature": "interface NaruClient extends SiteCode",
+      "extends": [
+        "SiteCode"
+      ],
       "members": [
         {
           "name": "auth",
@@ -960,6 +1050,132 @@
           "optional": true,
           "signature": "totalCount?: number",
           "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "SiteCode",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The site's queries and mutations (1.1.0's new design): its own code over its own tables, which its "
+            },
+            {
+              "type": "code",
+              "value": "_naru/migrations/"
+            },
+            {
+              "type": "text",
+              "value": " create. Anyone may call them, signed in or not; the code decides what each caller may see and do from "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": ", "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": " and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.visitor"
+            },
+            {
+              "type": "text",
+              "value": "."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface SiteCode",
+      "extends": [],
+      "members": [
+        {
+          "name": "mutate",
+          "optional": false,
+          "signature": "mutate<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Runs an export of "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/mutations/<module/path>.js"
+                },
+                {
+                  "type": "text",
+                  "value": " in one transaction: what it wrote is kept only if it returns, and a throw, "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.fail"
+                },
+                {
+                  "type": "text",
+                  "value": " or a limit changes nothing."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "query",
+          "optional": false,
+          "signature": "query<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Runs "
+                },
+                {
+                  "type": "code",
+                  "value": "\"<module/path>:<name>\""
+                },
+                {
+                  "type": "text",
+                  "value": ", an export of the site's "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/queries/<module/path>.js"
+                },
+                {
+                  "type": "text",
+                  "value": ", and resolves with what it returned. A query only reads ("
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.sql"
+                },
+                {
+                  "type": "text",
+                  "value": "), so it counts against the caller's read budget and answers even while the site's database is on its standby."
+                }
+              ]
+            }
+          ],
           "throws": []
         }
       ]

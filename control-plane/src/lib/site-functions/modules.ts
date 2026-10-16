@@ -10,12 +10,15 @@ const invalid = (message: string) =>
 
 /**
  * Canonical paths below _naru. Import-only modules cannot be called as RPCs;
- * collection rules are their own entry points.
+ * collection rules are their own entry points; queries and mutations (1.1.0)
+ * are called by name like functions.
  */
 export function modulePath(value: string): string {
   const parts = value.split("/");
   if (
-    !["functions", "modules", "rules"].includes(parts[0]) ||
+    !["functions", "modules", "rules", "queries", "mutations"].includes(
+      parts[0],
+    ) ||
     parts.length < 2 ||
     parts.some(
       (part) =>
@@ -135,8 +138,7 @@ export function declaredExports(
       if ((specifier.exported.name ?? specifier.exported.value) === list)
         throw wrong();
     const declaration = node.declaration as
-      | (Node & Record<string, unknown>)
-      | null;
+      (Node & Record<string, unknown>) | null;
     if (!declaration) continue;
     if (declaration.type !== "VariableDeclaration") {
       if ((declaration.id as { name?: string } | null)?.name === list)

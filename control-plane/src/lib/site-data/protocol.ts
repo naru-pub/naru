@@ -130,3 +130,13 @@ export function batchBody(body: Record<string, unknown>) {
     }),
   };
 }
+
+/**
+ * The paths that call site code, and what each calls: a site function
+ * (`_call`), or a query or mutation (`_query`, `_mutate`; 1.1.0's new design).
+ */
+export const CALLS: Record<string, "function" | "query" | "mutation"> = {
+  _call: "function",
+  _query: "query",
+  _mutate: "mutation",
+};

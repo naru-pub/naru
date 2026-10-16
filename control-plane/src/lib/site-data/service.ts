@@ -219,7 +219,9 @@ export async function executeBatch(command: DataCommand) {
  * owner's access to every collection whatever collections the owner's
  * sign-in approved, as it has for members.
  */
-export async function executeCall(command: DataCommand) {
+export async function executeCall(
+  command: DataCommand & { kind?: "function" | "query" | "mutation" },
+) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
   const { file, fn } = functionReference(command.path.join("/"));
@@ -230,6 +232,7 @@ export async function executeCall(command: DataCommand) {
       "Site functions are called by signed-in members or the site's owner.",
     );
   const visitor = memberId === undefined && allowedIds === undefined;
+  const kind = command.kind ?? "function";
   return withRevision(command.site, () =>
     callSiteObject<{ result: unknown; written: string[] }>(
       command.site,
@@ -242,6 +245,7 @@ export async function executeCall(command: DataCommand) {
         file,
         name: fn,
         args: command.body?.args ?? null,
+        ...(kind !== "function" ? { kind } : {}),
       },
       command.signal,
     ),

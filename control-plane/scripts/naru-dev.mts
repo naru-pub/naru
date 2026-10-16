@@ -35,7 +35,11 @@ import {
   parseWhereQuery,
 } from "../src/lib/site-data/filters";
 import { signLiveTicket } from "../src/lib/site-data/live-ticket";
-import { publicResult, websiteCondition } from "../src/lib/site-data/protocol";
+import {
+  CALLS,
+  publicResult,
+  websiteCondition,
+} from "../src/lib/site-data/protocol";
 import { DataError, functionReference } from "../src/lib/site-data/validation";
 
 const args = process.argv.slice(2);
@@ -161,7 +165,14 @@ await object("configure", {
 
 /* ----------------------------------------------- _naru/ publication --- */
 
-const FOLDERS = ["functions", "modules", "rules", "migrations"] as const;
+const FOLDERS = [
+  "functions",
+  "modules",
+  "rules",
+  "migrations",
+  "queries",
+  "mutations",
+] as const;
 async function files(dir: string): Promise<string[]> {
   if (!existsSync(dir)) return [];
   const found: string[] = [];
@@ -616,8 +627,9 @@ async function signed(
     });
     return json(res, 201, publicResult(result));
   }
-  if (path[0] === "_call") {
+  if (Object.hasOwn(CALLS, path[0])) {
     const { file, fn } = functionReference(path.slice(1).join("/"));
+    const kind = CALLS[path[0]];
     const answer = await object<{ result: unknown; written: string[] }>(
       "call",
       {
@@ -628,6 +640,7 @@ async function signed(
         file,
         name: fn,
         args: body?.args ?? null,
+        ...(kind !== "function" ? { kind } : {}),
       },
     );
     return json(res, 200, answer);

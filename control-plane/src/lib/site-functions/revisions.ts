@@ -93,7 +93,13 @@ export class FunctionRevisions {
   }
   private async files() {
     const files: Array<{ path: string; key: string; etag: string }> = [];
-    for (const folder of ["functions", "modules", "rules"]) {
+    for (const folder of [
+      "functions",
+      "modules",
+      "rules",
+      "queries",
+      "mutations",
+    ]) {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
       do {

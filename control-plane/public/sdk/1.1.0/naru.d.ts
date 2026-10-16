@@ -219,7 +219,7 @@ export type PublicCollection<T = Json> = Collection<T>;
 export type AdminCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
-export interface Member {
+export interface Member extends SiteCode {
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.
@@ -284,7 +284,37 @@ export interface Member {
   signOut(): Promise<void>;
 }
 
-export interface Admin {
+/**
+ * The site's queries and mutations (1.1.0's new design): its own code over
+ * its own tables, which its `_naru/migrations/` create. Anyone may call them,
+ * signed in or not; the code decides what each caller may see and do from
+ * `ctx.member`, `ctx.owner` and `ctx.visitor`.
+ */
+export interface SiteCode {
+  /**
+   * Runs `"<module/path>:<name>"`, an export of the site's
+   * `_naru/queries/<module/path>.js`, and resolves with what it returned. A
+   * query only reads (`ctx.sql`), so it counts against the caller's read
+   * budget and answers even while the site's database is on its standby.
+   */
+  query<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
+  /**
+   * Runs an export of `_naru/mutations/<module/path>.js` in one transaction:
+   * what it wrote is kept only if it returns, and a throw, `ctx.fail` or a
+   * limit changes nothing.
+   */
+  mutate<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
+}
+
+export interface Admin extends SiteCode {
   collection<T = Json>(name: string): Collection<T>;
   /**
    * Calls one of the site's functions as the owner, as `Member.call` does
@@ -391,7 +421,7 @@ export interface Live {
   close(): void;
 }
 
-export interface NaruClient {
+export interface NaruClient extends SiteCode {
   /** Visitor access, even when signed in. */
   collection<T = Json>(name: string): Collection<T>;
   /**

@@ -269,7 +269,7 @@ export type PublicCollection<T = Json> = Collection<T>;
 export type AdminCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
-export interface Member {
+export interface Member extends SiteCode {
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.
@@ -334,7 +334,37 @@ export interface Member {
   signOut(): Promise<void>;
 }
 
-export interface Admin {
+/**
+ * The site's queries and mutations (1.1.0's new design): its own code over
+ * its own tables, which its `_naru/migrations/` create. Anyone may call them,
+ * signed in or not; the code decides what each caller may see and do from
+ * `ctx.member`, `ctx.owner` and `ctx.visitor`.
+ */
+export interface SiteCode {
+  /**
+   * Runs `"<module/path>:<name>"`, an export of the site's
+   * `_naru/queries/<module/path>.js`, and resolves with what it returned. A
+   * query only reads (`ctx.sql`), so it counts against the caller's read
+   * budget and answers even while the site's database is on its standby.
+   */
+  query<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
+  /**
+   * Runs an export of `_naru/mutations/<module/path>.js` in one transaction:
+   * what it wrote is kept only if it returns, and a throw, `ctx.fail` or a
+   * limit changes nothing.
+   */
+  mutate<R = Json>(
+    name: string,
+    args?: Json,
+    options?: { signal?: AbortSignal },
+  ): Promise<R>;
+}
+
+export interface Admin extends SiteCode {
   collection<T = Json>(name: string): Collection<T>;
   /**
    * Calls one of the site's functions as the owner, as `Member.call` does
@@ -443,7 +473,7 @@ export interface Live {
   close(): void;
 }
 
-export interface NaruClient {
+export interface NaruClient extends SiteCode {
   /** Visitor access, even when signed in. */
   collection<T = Json>(name: string): Collection<T>;
   /**
@@ -1364,7 +1394,7 @@ function live(
 // handle's token. The server says which collections the call changed, so only
 // their later reads skip caches; a call whose answer was lost may have changed
 // any of them.
-function functions(root: string, send: Send) {
+function functions(root: string, send: Send, path = "_call") {
   return async function call<R = Json>(
     name: string,
     args: Json = null,
@@ -1372,21 +1402,26 @@ function functions(root: string, send: Send) {
   ): Promise<R> {
     const parts = typeof name === "string" ? name.split(":") : [];
     if (parts.length !== 2)
-      throw new TypeError('call() names "<module/path>:<function>".');
+      throw new TypeError('Calls name "<module/path>:<function>".');
     parts[0].split("/").forEach(segment);
     segment(parts[1]);
     jsonValue(args, undefined, "args");
     let answer;
     try {
       answer = await send<{ result: R; written?: string[] }>(
-        `${root}/_call/${parts[0]}:${parts[1]}`,
+        `${root}/${path}/${parts[0]}:${parts[1]}`,
         { method: "POST", body: { args }, signal, touches: [] },
       );
     } catch (error) {
-      if (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
+      if (
+        path === "_call" &&
+        (!(error instanceof NaruError) || error.code === "UNAVAILABLE")
+      )
         written.add("*");
       throw error;
     }
+    // Queries and mutations write tables, not collections.
+    if (path !== "_call") return answer.result;
     for (const collection of answer.written ?? ["*"])
       written.add(collection === "*" ? "*" : `${root}/${collection}`);
     return answer.result;
@@ -1443,6 +1478,8 @@ function admin(context: Context, token: string, expiresAt: number): Admin {
       );
     },
     call: functions(root, send),
+    query: functions(root, send, "_query"),
+    mutate: functions(root, send, "_mutate"),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });
@@ -1461,6 +1498,8 @@ function member(
     collection: <T = Json>(name: string): Collection<T> =>
       documents<T>(root, name, send),
     call: functions(root, send),
+    query: functions(root, send, "_query"),
+    mutate: functions(root, send, "_mutate"),
     live: (options: LiveOptions) =>
       live(root, options, async () => {
         const { ticket } = await send<{ ticket: string }>(`${root}/_live`, {
@@ -1694,6 +1733,8 @@ export function createNaru(options?: { site?: string }): NaruClient {
       publicDocuments<T>(context.root, name),
     live: (options: LiveOptions) => live(context.root, options),
     call: functions(context.root, request),
+    query: functions(context.root, request, "_query"),
+    mutate: functions(context.root, request, "_mutate"),
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({

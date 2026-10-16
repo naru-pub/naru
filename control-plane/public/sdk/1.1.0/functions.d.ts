@@ -249,6 +249,34 @@ export interface SqlResult<Row> {
   changes: number;
 }
 
+/**
+ * A query's or mutation's `ctx` (1.1.0's new design): who calls, and the
+ * site's own tables through `sql`. Anyone may call one, signed in or not, so
+ * its code decides what each caller may see and do. A query's `sql` only
+ * reads. A call runs in one transaction, within the same CPU and memory as a
+ * function's, and reads at most 500,000 rows in all.
+ */
+export interface QueryCtx {
+  /** The signed-in member, or null for the owner and visitors. */
+  readonly member: { readonly id: string } | null;
+  /** The site's owner called. */
+  readonly owner: boolean;
+  /** No one is signed in. */
+  readonly visitor: boolean;
+  /** The call's time in milliseconds, fixed for the whole call. */
+  readonly now: number;
+  /** Refuses the request, as `ReadCtx.fail` does: nothing written is kept. */
+  fail(code: ErrorCode, message: string, details?: Json): never;
+  sql: Ctx["sql"];
+}
+
+/** `export async function name(ctx, args)` in `_naru/queries/` or `_naru/mutations/`. */
+export type Query<Args = Json, Result = Json> = (
+  ctx: QueryCtx,
+  args: Args,
+) => Result | Promise<Result>;
+export type Mutation<Args = Json, Result = Json> = Query<Args, Result>;
+
 /** A site function: `export async function name(ctx, args)`. */
 export type SiteFunction<Args = Json, Result = Json> = (
   ctx: Ctx,

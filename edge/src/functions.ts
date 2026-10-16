@@ -112,6 +112,11 @@ export type Invocation = {
   readonly?: boolean;
   /** A larger result cap, for rules presenting a page of documents. */
   maxResultBytes?: number;
+  /**
+   * What is called: a site function (the default) or, from 1.1.0's new
+   * design, a query or mutation, whose ctx holds only who calls and `sql`.
+   */
+  kind?: "function" | "query" | "mutation";
 };
 
 const failed = (message: string) =>
@@ -263,8 +268,19 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, visitor, now, args) => {
-  const ctx = Object.freeze({
+globalThis.__run = async (name, member, owner, visitor, now, args, kind) => {
+  const sql = (text, ...values) =>
+    Array.isArray(text) && Object.hasOwn(text, "raw")
+      ? __operation("sql")(text.join("?"), values)
+      : __operation("sql")(String(text), values[0] ?? []);
+  const ctx = kind !== "function" ? Object.freeze({
+    member: member === null ? null : Object.freeze({ id: member }),
+    owner,
+    visitor,
+    now,
+    fail: (...args) => __call("fail", ...args),
+    sql,
+  }) : Object.freeze({
     member: member === null ? null : Object.freeze({ id: member }),
     owner,
     visitor,
@@ -282,10 +298,7 @@ globalThis.__run = async (name, member, owner, visitor, now, args) => {
     delete: __operation("delete"),
     // ctx.sql\`SELECT ... WHERE id = \${id}\` binds each value as a parameter;
     // ctx.sql(text, values) takes a builder's compiled statement.
-    sql: (text, ...values) =>
-      Array.isArray(text) && Object.hasOwn(text, "raw")
-        ? __operation("sql")(text.join("?"), values)
-        : __operation("sql")(String(text), values[0] ?? []),
+    sql,
     notify: (member, data) => __call("notify", member, data ?? null),
     broadcast: (topic, data) => __call("broadcast", topic, data ?? null),
   });
@@ -436,6 +449,10 @@ export function runFunction(
           );
         }
         const values = JSON.parse(context.getString(args));
+        // A query or mutation reaches the site's tables through sql alone.
+        const kind = invocation.kind ?? "function";
+        if (kind !== "function" && name !== "sql" && name !== "random")
+          throw failed(`a ${kind} has no ctx.${name}.`);
         if (MESSAGES.has(name)) {
           if (invocation.readonly)
             throw failed("read-only functions cannot send messages.");
@@ -522,6 +539,7 @@ export function runFunction(
         invocation.visitor === true,
         invocation.now,
         JSON.stringify(invocation.args ?? null),
+        invocation.kind ?? "function",
       ]
         .map((value) => JSON.stringify(value))
         .join(", ")})`,

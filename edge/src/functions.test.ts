@@ -16,11 +16,9 @@ import {
 // The engine in plain Node: the Worker's metered QuickJS build (engine.ts),
 // with an in-memory host standing in for the site's object.
 // (Workers' types declare no WebAssembly.Module constructor; Node has one.)
-const metered = new (WebAssembly.Module as unknown as new (
-  bytes: Uint8Array,
-) => WebAssembly.Module)(
-  readFileSync(new URL("../quickjs/metered.wasm", import.meta.url)),
-);
+const metered = new (
+  WebAssembly.Module as unknown as new (bytes: Uint8Array) => WebAssembly.Module
+)(readFileSync(new URL("../quickjs/metered.wasm", import.meta.url)));
 const engine = () => newEngine(metered);
 
 let module: QuickJSWASMModule;
@@ -398,6 +396,49 @@ describe("calling", () => {
     module = await engine();
     expect(run("export function f() { return 1 + 1; }", "f")).toBe(2);
     expect(retired.has(module)).toBe(false);
+  });
+
+  test("a query or mutation's ctx holds who calls and sql, and nothing else", () => {
+    const call = (
+      source: string,
+      kind: "query" | "mutation",
+      readonly = false,
+    ) =>
+      runFunction(
+        module,
+        {
+          source,
+          name: "f",
+          args: null,
+          member: null,
+          visitor: true,
+          now: 1_700_000_000_000,
+          kind,
+          readonly,
+        } as Invocation,
+        host,
+      );
+    expect(
+      call(
+        "export function f(ctx) { return Object.keys(ctx); }",
+        "query",
+        true,
+      ),
+    ).toEqual(["member", "owner", "visitor", "now", "fail", "sql"]);
+    // Nor through the host entry point the ctx methods use.
+    expect(() =>
+      call(
+        "export function f() { return __call('get', 'posts', '1'); }",
+        "mutation",
+      ),
+    ).toThrow(/a mutation has no ctx.get/);
+    expect(() =>
+      call(
+        "export function f(ctx) { ctx.fail('NOT_FOUND', 'no'); }",
+        "query",
+        true,
+      ),
+    ).toThrow(expect.objectContaining({ status: 404, message: "no" }));
   });
 
   test("a function can catch its own stack overflow and carry on", () => {
