@@ -1856,7 +1856,15 @@ export class SiteData extends DurableObject<Env> {
    */
   private referencedMedia(encoded: string | null) {
     const owner = this.meta("owner_id");
-    if (!encoded || !owner || !/^\d+$/.test(owner)) return [];
+    // Owners are UUIDs (once numbers, before every table took UUIDv7 keys).
+    if (
+      !encoded ||
+      !owner ||
+      !/^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.test(
+        owner,
+      )
+    )
+      return [];
     const pattern = new RegExp(
       `https?://[^"\\\\\\s]+?/${owner}/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`,
       "g",
@@ -1942,8 +1950,20 @@ export class SiteData extends DurableObject<Env> {
         `SELECT id FROM managed_media m WHERE registered_at < ?
          AND NOT EXISTS (SELECT 1 FROM media_refs r WHERE r.upload_id = m.id) LIMIT 500`,
         cutoff,
-      ))
+      )) {
+        // A document may name it without a reference on record: uploads
+        // made while UUID owners went unmatched. Record those first.
+        for (const document of this.rows(
+          "SELECT collection_id, id, data FROM documents WHERE instr(data, ?) > 0",
+          row.id as string,
+        ))
+          this.trackMedia(
+            document.collection_id as string,
+            document.id as string,
+            document.data as string,
+          );
         this.releaseIfUnused(row.id as string);
+      }
       return this.pendingMedia().mediaReleases ?? 0;
     });
   }
