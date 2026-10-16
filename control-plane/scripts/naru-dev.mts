@@ -434,8 +434,7 @@ self.addEventListener("fetch", (event) => {
 });`;
 
 /** Deletes uploads the site's object let go of (references, ctx.media.delete). */
-async function drainMedia(sweep = false) {
-  if (sweep) await object("sweepMedia", {});
+async function drainMedia() {
   const ids = await object<string[]>("mediaReleases", { limit: 100 });
   if (!ids.length) return;
   for (const id of ids) {
@@ -447,7 +446,6 @@ async function drainMedia(sweep = false) {
   await object("releasedMedia", { ids });
   console.log(`deleted ${ids.length} released upload(s)`);
 }
-setInterval(() => void drainMedia(true).catch(() => {}), 60_000);
 
 async function executeMedia(
   method: string,

@@ -1940,31 +1940,36 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * Queues managed uploads no document has used for an hour after they were
-   * registered; returns how many uploads wait for deletion.
+   * Which of `ids` (managed uploads) a document uses. Unreferenced uploads
+   * stay until deleted (the control panel's media library marks them).
+   * A document may name one without a reference on record (uploads made
+   * while UUID owners went unmatched): those are recorded first.
    */
-  async sweepMedia(input: { now?: number } = {}) {
+  async mediaReferences(input: { ids?: unknown }) {
     return this.run(() => {
-      const cutoff = (input.now ?? Date.now()) - 60 * 60 * 1000;
-      for (const row of this.rows(
-        `SELECT id FROM managed_media m WHERE registered_at < ?
-         AND NOT EXISTS (SELECT 1 FROM media_refs r WHERE r.upload_id = m.id) LIMIT 500`,
-        cutoff,
-      )) {
-        // A document may name it without a reference on record: uploads
-        // made while UUID owners went unmatched. Record those first.
-        for (const document of this.rows(
-          "SELECT collection_id, id, data FROM documents WHERE instr(data, ?) > 0",
-          row.id as string,
-        ))
-          this.trackMedia(
-            document.collection_id as string,
-            document.id as string,
-            document.data as string,
-          );
-        this.releaseIfUnused(row.id as string);
+      const ids = Array.isArray(input.ids)
+        ? input.ids
+            .filter((id): id is string => typeof id === "string")
+            .slice(0, 100)
+        : [];
+      const referenced = (id: string) =>
+        this.rows("SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1", id)
+          .length > 0;
+      const used: string[] = [];
+      for (const id of ids) {
+        if (!referenced(id))
+          for (const document of this.rows(
+            "SELECT collection_id, id, data FROM documents WHERE instr(data, ?) > 0",
+            id,
+          ))
+            this.trackMedia(
+              document.collection_id as string,
+              document.id as string,
+              document.data as string,
+            );
+        if (referenced(id)) used.push(id);
       }
-      return this.pendingMedia().mediaReleases ?? 0;
+      return used;
     });
   }
 

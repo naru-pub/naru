@@ -221,8 +221,22 @@ export async function executeMedia(command: MediaCommand) {
     const rows = await query.execute();
     const page = rows.slice(0, limit);
     const last = page.at(-1);
+    // A managed upload no document names is marked, not deleted: the owner
+    // decides (the control panel's media library shows it).
+    const managed = page.filter((file) => file.managed).map((file) => file.id);
+    const used = new Set(
+      managed.length
+        ? await callSiteObject<string[]>(command.site, "mediaReferences", {
+            ids: managed,
+          })
+        : [],
+    );
     return {
-      files: page.map(output),
+      files: page.map((file) => ({
+        ...output(file),
+        managed: file.managed,
+        ...(file.managed ? { referenced: used.has(file.id) } : {}),
+      })),
       nextCursor:
         rows.length > limit && last
           ? encodeCursor(

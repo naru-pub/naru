@@ -126,8 +126,10 @@ await admin.collection("posts").set("hello", {
                 가장 쉬운 방법은 <code>managed: true</code>로 올리는 것입니다.
                 그러면 파일을 따로 지울 필요가 없습니다. 어느 문서든 파일의
                 URL을 담고 있는 동안 파일이 남고, 글을 고치거나 지워 URL을 담은
-                문서가 하나도 없게 되면 나루가 15분 안팎에 지웁니다. 올린 뒤 한
-                시간이 지나도록 어떤 문서에도 쓰이지 않은 파일도 지웁니다.
+                문서가 하나도 없게 되면 나루가 15분 안팎에 지웁니다. 올린 뒤
+                어떤 문서에도 쓰이지 않은 파일은 지우지 않고, 미디어
+                라이브러리에 &lsquo;참조 없음&rsquo;으로 표시합니다. 필요 없으면
+                그곳에서 지우세요.
               </p>
               <Code>{`const image = await member.media.upload(file, { managed: true });
 await posts.add({ title: "사진", image: image.url });

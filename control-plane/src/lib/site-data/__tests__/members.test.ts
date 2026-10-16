@@ -1668,13 +1668,19 @@ integration("site members", () => {
         expect(await released()).toEqual([swapped.id]);
         await owned("DELETE", ["posts_m", "b"]);
         expect(await released()).toEqual([kept.id, swapped.id].sort());
-        // Never used: swept an hour after it was registered.
-        await callSiteObject("alice", "sweepMedia", { now: Date.now() });
-        expect(await released()).not.toContain(unused.id);
-        await callSiteObject("alice", "sweepMedia", {
-          now: Date.now() + 61 * 60 * 1000,
-        });
-        expect(await released()).toContain(unused.id);
+        // Never used: not deleted, but marked as no document's.
+        expect(
+          await callSiteObject<string[]>("alice", "mediaReferences", {
+            ids: [unused.id],
+          }),
+        ).toEqual([]);
+        await owned("PUT", ["posts_m", "c"], { data: { image: unused.url } });
+        expect(
+          await callSiteObject<string[]>("alice", "mediaReferences", {
+            ids: [unused.id],
+          }),
+        ).toEqual([unused.id]);
+        await owned("DELETE", ["posts_m", "c"]);
         // An unmanaged upload is never released by references.
         expect(await released()).not.toContain(plain.id);
         await runMediaRelease({ site: "alice" }, {
