@@ -45,9 +45,9 @@ test("migrations and routes publish like queries, since they ride in revisions",
 });
 test("publication failures reach the caller so saves cannot report activation", async () => {
   publish.mockRejectedValue(new Error("Missing import"));
-  await expect(
-    purgeSiteFiles("alice", ["_naru/queries/a.js"]),
-  ).rejects.toThrow("Missing import");
+  await expect(purgeSiteFiles("alice", ["_naru/queries/a.js"])).rejects.toThrow(
+    "Missing import",
+  );
 });
 
 test("a site change is purged at once and again after reads in flight have stored", async () => {

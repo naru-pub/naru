@@ -809,8 +809,7 @@ export class SiteData extends DurableObject<Env> {
         "RATE_LIMITED",
       );
     const matches = verifyPassword(password, hash) === true;
-    if (!matches)
-      this.passwordFailures.set(key, { hour, count: failures + 1 });
+    if (!matches) this.passwordFailures.set(key, { hour, count: failures + 1 });
     return matches;
   }
 
@@ -1707,9 +1706,11 @@ export class SiteData extends DurableObject<Env> {
       const revision = this.meta("functions_revision");
       if (!revision) throw unpublished();
       const revisions = this.revisions(input.site);
-      const folder = { query: "queries", mutation: "mutations", route: "routes" }[
-        kind
-      ];
+      const folder = {
+        query: "queries",
+        mutation: "mutations",
+        route: "routes",
+      }[kind];
       filename = await revisions.entry(revision, `${folder}/${input.file}`);
       sources = await revisions.graph(revision, filename);
     } catch (error) {
