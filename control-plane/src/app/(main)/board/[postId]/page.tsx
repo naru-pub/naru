@@ -243,7 +243,16 @@ export default async function PostPage({
                       v{latest.version} · {formatDate(latest.createdAt)}
                     </dd>
                     <dt className="text-muted-foreground">라이선스</dt>
-                    <dd>{LICENSES[template.license]}</dd>
+                    <dd>
+                      <a
+                        href={LICENSES[template.license].url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        {LICENSES[template.license].name}
+                      </a>
+                    </dd>
                     <dt className="text-muted-foreground">크기</dt>
                     <dd>
                       파일 {latest.fileCount}개 ·{" "}

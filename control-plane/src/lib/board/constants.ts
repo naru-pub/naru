@@ -33,11 +33,98 @@ export const MAX_REPLY_DEPTH = 4;
 export const MAX_THREAD_REPLIES = 500;
 export const POSTS_PER_PAGE = 20;
 
-export const LICENSES = {
-  "cc-by-4.0": "CC BY 4.0",
-  "cc-by-sa-4.0": "CC BY-SA 4.0",
-  "cc0-1.0": "CC0 1.0",
+// Templates may be shared only under licenses that let anyone redistribute
+// and modify them (free-culture or OSI/FSF-approved). Ids are lowercased SPDX
+// identifiers; adding one also needs a migration widening
+// board_templates_license_check.
+export const LICENSE_KINDS = {
+  "public-domain": {
+    label: "권리 포기",
+    summary:
+      "누구나 출처 표시 없이 복사하거나 수정할 수 있고, 상업적으로도 쓸 수 있어요.",
+  },
+  permissive: {
+    label: "출처 표시",
+    summary:
+      "누구나 복사하거나 수정할 수 있고, 상업적으로도 쓸 수 있어요. 대신 저작권 표시와 라이선스를 함께 남겨야 해요.",
+  },
+  copyleft: {
+    label: "동일 조건 공개",
+    summary:
+      "누구나 복사하거나 수정할 수 있고, 상업적으로도 쓸 수 있어요. 대신 저작권 표시를 남기고, 고친 결과물도 같은 라이선스로 공개해야 해요.",
+  },
 } as const;
+export type LicenseKind = keyof typeof LICENSE_KINDS;
+
+const spdx = (id: string) => `https://spdx.org/licenses/${id}.html`;
+
+export const LICENSES = {
+  "cc0-1.0": {
+    name: "CC0 1.0",
+    kind: "public-domain",
+    url: "https://creativecommons.org/publicdomain/zero/1.0/deed.ko",
+  },
+  unlicense: {
+    name: "Unlicense",
+    kind: "public-domain",
+    url: spdx("Unlicense"),
+  },
+  "0bsd": { name: "0BSD", kind: "public-domain", url: spdx("0BSD") },
+  "cc-by-4.0": {
+    name: "CC BY 4.0",
+    kind: "permissive",
+    url: "https://creativecommons.org/licenses/by/4.0/deed.ko",
+  },
+  mit: { name: "MIT", kind: "permissive", url: spdx("MIT") },
+  "apache-2.0": {
+    name: "Apache 2.0",
+    kind: "permissive",
+    url: spdx("Apache-2.0"),
+  },
+  "bsd-2-clause": {
+    name: "BSD 2-Clause",
+    kind: "permissive",
+    url: spdx("BSD-2-Clause"),
+  },
+  "bsd-3-clause": {
+    name: "BSD 3-Clause",
+    kind: "permissive",
+    url: spdx("BSD-3-Clause"),
+  },
+  isc: { name: "ISC", kind: "permissive", url: spdx("ISC") },
+  zlib: { name: "zlib", kind: "permissive", url: spdx("Zlib") },
+  "cc-by-sa-4.0": {
+    name: "CC BY-SA 4.0",
+    kind: "copyleft",
+    url: "https://creativecommons.org/licenses/by-sa/4.0/deed.ko",
+  },
+  "mpl-2.0": { name: "MPL 2.0", kind: "copyleft", url: spdx("MPL-2.0") },
+  "lgpl-3.0-or-later": {
+    name: "LGPL 3.0 이상",
+    kind: "copyleft",
+    url: spdx("LGPL-3.0-or-later"),
+  },
+  "gpl-2.0-or-later": {
+    name: "GPL 2.0 이상",
+    kind: "copyleft",
+    url: spdx("GPL-2.0-or-later"),
+  },
+  "gpl-3.0-or-later": {
+    name: "GPL 3.0 이상",
+    kind: "copyleft",
+    url: spdx("GPL-3.0-or-later"),
+  },
+  "agpl-3.0-or-later": {
+    name: "AGPL 3.0 이상",
+    kind: "copyleft",
+    url: spdx("AGPL-3.0-or-later"),
+  },
+  "eupl-1.2": { name: "EUPL 1.2", kind: "copyleft", url: spdx("EUPL-1.2") },
+  "ofl-1.1": { name: "SIL OFL 1.1", kind: "copyleft", url: spdx("OFL-1.1") },
+} as const satisfies Record<
+  string,
+  { name: string; kind: LicenseKind; url: string }
+>;
 export type License = keyof typeof LICENSES;
 
 export function isLicense(value: unknown): value is License {

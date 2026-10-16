@@ -57,6 +57,7 @@ const { getUserFeatures } = require("@/lib/entitlements") as {
 };
 const { db } = require("@/lib/database") as typeof import("@/lib/database");
 const { BoardError } = require("../errors") as typeof import("../errors");
+const { LICENSES } = require("../constants") as typeof import("../constants");
 const {
   createPost,
   deletePost,
@@ -381,7 +382,8 @@ integration("board", () => {
         title: "템플릿",
         body: "",
         slug: "mod-tpl",
-        cc0Accepted: true,
+        license: "cc0-1.0",
+        licenseAccepted: true,
         files: ["tpl/index.html"],
         collections: [],
       });
@@ -412,22 +414,31 @@ integration("board", () => {
         title: "레트로 홈",
         body: "설명",
         slug: `retro-${Math.random().toString(36).slice(2, 8)}`,
-        cc0Accepted: true,
+        license: "cc0-1.0",
+        licenseAccepted: true,
         files: aliceFiles(),
         collections: [],
         ...overrides,
       });
     }
 
-    test("requires explicit CC0 consent and fixes the license server-side", async () => {
+    test("requires a known license and explicit consent to it", async () => {
       put("alice/retro/index.html");
-      for (const cc0Accepted of [undefined, false, "true", 1]) {
-        await expect(publish({ cc0Accepted })).rejects.toMatchObject({
+      for (const licenseAccepted of [undefined, false, "true", 1]) {
+        await expect(publish({ licenseAccepted })).rejects.toMatchObject({
           status: 400,
         });
       }
-      const { postId } = await publish({ license: "cc-by-4.0" });
-      expect((await getTemplateForPost(postId))?.license).toBe("cc0-1.0");
+      for (const license of [undefined, "cc-by-nc-4.0", "MIT", "toString"]) {
+        await expect(publish({ license })).rejects.toMatchObject({
+          status: 400,
+        });
+      }
+      // Every license the app offers is one the database accepts.
+      for (const license of Object.keys(LICENSES)) {
+        const { postId } = await publish({ license });
+        expect((await getTemplateForPost(postId))?.license).toBe(license);
+      }
     });
 
     test("publishing a version preserves an existing template's license", async () => {
@@ -521,7 +532,7 @@ integration("board", () => {
       ]) {
         await expect(publish({ files })).rejects.toMatchObject({ status: 400 });
       }
-      await expect(publish({ cc0Accepted: false })).rejects.toMatchObject({
+      await expect(publish({ licenseAccepted: false })).rejects.toMatchObject({
         status: 400,
       });
     });

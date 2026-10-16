@@ -21,8 +21,10 @@ import {
   MAX_TEMPLATE_SLUG_LENGTH,
   TEMPLATE_MAX_BYTES,
   TEMPLATE_MAX_FILES,
+  LICENSES,
   TEMPLATE_SLUG_REGEX,
   formatBytes,
+  isLicense,
   type License,
 } from "./constants";
 import { BoardError } from "./errors";
@@ -272,7 +274,8 @@ export interface PublishTemplateInput {
   title: unknown;
   body: unknown;
   slug: unknown;
-  cc0Accepted: unknown;
+  license: unknown;
+  licenseAccepted: unknown;
   files: unknown;
   collections: unknown;
 }
@@ -285,10 +288,16 @@ export async function publishTemplatePost(
   const title = validateTitle(input.title);
   const body = validatePostBody(input.body);
   const slug = validateSlug(input.slug);
-  if (input.cc0Accepted !== true) {
-    throw new BoardError(400, "CC0 1.0으로 공개하는 데 동의해 주세요.");
+  if (!isLicense(input.license)) {
+    throw new BoardError(400, "라이선스를 골라 주세요.");
   }
-  const license = "cc0-1.0" as const;
+  const license = input.license;
+  if (input.licenseAccepted !== true) {
+    throw new BoardError(
+      400,
+      `${LICENSES[license].name} 라이선스로 공개하는 데 동의해 주세요.`,
+    );
+  }
   const selection = validateSelection(input.files);
   await assertCanPost(user.id);
 

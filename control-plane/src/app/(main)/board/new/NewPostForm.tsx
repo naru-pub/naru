@@ -6,12 +6,18 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  LICENSES,
+  LICENSE_KINDS,
   MAX_POST_BODY_LENGTH,
   MAX_TITLE_LENGTH,
   POST_KINDS,
   POST_KIND_LABELS,
+  isLicense,
+  type License,
+  type LicenseKind,
   type PostKind,
 } from "@/lib/board/constants";
 import { boardRequest } from "../_components/api";
@@ -41,7 +47,8 @@ export function NewPostForm({
   const [selection, setSelection] = useState<string[]>([]);
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
-  const [cc0Accepted, setCc0Accepted] = useState(false);
+  const [license, setLicense] = useState<License>("cc0-1.0");
+  const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [chosenCollections, setChosenCollections] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -61,7 +68,8 @@ export function NewPostForm({
               title,
               body,
               slug: effectiveSlug,
-              cc0Accepted,
+              license,
+              licenseAccepted,
               files: selection,
               collections: chosenCollections,
             }
@@ -154,32 +162,64 @@ export function NewPostForm({
           </div>
 
           <div className="space-y-3">
+            <label htmlFor="template-license" className="text-sm font-bold">
+              라이선스
+            </label>
+            <Select
+              id="template-license"
+              wrapperClassName="flex"
+              className="h-12 md:text-base"
+              value={license}
+              onChange={(event) => {
+                if (isLicense(event.target.value)) {
+                  setLicense(event.target.value);
+                  setLicenseAccepted(false);
+                }
+              }}
+            >
+              {(Object.keys(LICENSE_KINDS) as LicenseKind[]).map((kind) => (
+                <optgroup key={kind} label={LICENSE_KINDS[kind].label}>
+                  {(Object.keys(LICENSES) as License[])
+                    .filter((value) => LICENSES[value].kind === kind)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {LICENSES[value].name}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </Select>
             <p className="text-sm">
               템플릿은{" "}
               <a
-                href="https://creativecommons.org/publicdomain/zero/1.0/deed.ko"
+                href={LICENSES[license].url}
                 target="_blank"
                 rel="noreferrer"
                 className="underline"
               >
-                CC0 1.0
-              </a>
-              으로 공개돼요. 누구나 출처 표시 없이 복사하거나 수정할 수 있고,
-              상업적으로도 쓸 수 있어요.
+                {LICENSES[license].name}
+              </a>{" "}
+              라이선스로 공개돼요.{" "}
+              {LICENSE_KINDS[LICENSES[license].kind].summary}
             </p>
             <p className="text-xs text-muted-foreground">
-              직접 만든 부분에 대해서만 권리를 포기할 수 있어요. 다른 사람이
-              만든 코드, 글꼴, 이미지의 라이선스와 저작권 표시는 유지하고, 함께
-              공유할 수 있는 자료만 포함해 주세요.
+              누구나 자유롭게 배포하고 고칠 수 있는 라이선스만 고를 수 있어요.
+              직접 만든 부분에만 라이선스를 정할 수 있으니, 다른 사람이 만든
+              코드, 글꼴, 이미지의 라이선스와 저작권 표시는 유지하고 함께 공유할
+              수 있는 자료만 포함해 주세요. 한 번 게시하면 라이선스를 바꿀 수
+              없어요.
             </p>
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <Checkbox
-                checked={cc0Accepted}
-                onCheckedChange={(checked) => setCc0Accepted(checked === true)}
+                checked={licenseAccepted}
+                onCheckedChange={(checked) =>
+                  setLicenseAccepted(checked === true)
+                }
                 required
                 className="mt-0.5"
               />
-              내가 만든 부분을 CC0 1.0으로 공개하는 데 동의해요.
+              내가 만든 부분을 {LICENSES[license].name} 라이선스로 공개하는 데
+              동의해요.
             </label>
           </div>
 

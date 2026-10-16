@@ -259,7 +259,7 @@ export interface BoardTemplates {
   apply_count: Generated<number>;
   id: Generated<string>;
   latest_version_id: string | null;
-  license: "cc-by-4.0" | "cc-by-sa-4.0" | "cc0-1.0";
+  license: "cc0-1.0" | "unlicense" | "0bsd" | "cc-by-4.0" | "mit" | "apache-2.0" | "bsd-2-clause" | "bsd-3-clause" | "isc" | "zlib" | "cc-by-sa-4.0" | "mpl-2.0" | "lgpl-3.0-or-later" | "gpl-2.0-or-later" | "gpl-3.0-or-later" | "agpl-3.0-or-later" | "eupl-1.2" | "ofl-1.1";
   post_id: string;
   slug: string;
   user_id: string;
