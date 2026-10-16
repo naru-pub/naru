@@ -31,6 +31,10 @@ type MediaFile = {
   managed?: boolean;
   /** For a managed upload: whether any of the site's documents names it. */
   referenced?: boolean;
+  /** An upload that was started but never finished. */
+  unfinished?: boolean;
+  /** Until when the unfinished upload's signed address still accepts it. */
+  uploadExpiresAt?: string;
 };
 type Usage = {
   bytes: number;
@@ -436,7 +440,7 @@ export default function MediaLibrary() {
               rel="noopener noreferrer"
               className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/40"
             >
-              {file.contentType.startsWith("image/") ? (
+              {file.contentType.startsWith("image/") && !file.unfinished ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={file.url}
@@ -461,6 +465,17 @@ export default function MediaLibrary() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   {new Date(file.createdAt).toLocaleString("ko-KR")}
                 </p>
+                {file.unfinished && (
+                  <p
+                    className="mt-2 inline-block border border-warning px-1.5 py-0.5 text-xs text-warning"
+                    title="올리기를 시작했지만 끝내지 않은 파일입니다. 나루는 지우지 않습니다. 필요 없으면 삭제하세요."
+                  >
+                    {file.uploadExpiresAt &&
+                    new Date(file.uploadExpiresAt) > new Date()
+                      ? "올리는 중"
+                      : "업로드 미완료"}
+                  </p>
+                )}
                 {/* Not deleted automatically: the owner decides. */}
                 {file.managed && file.referenced === false && (
                   <p

@@ -1665,6 +1665,31 @@ integration("site members", () => {
           data: { html: `<img src="${kept.url}">`, other: plain.url },
         });
         expect(await referenced()).toEqual([kept.id, swapped.id].sort());
+        // The owner's library marks what no document names, and lists
+        // uploads never finished, which stay until deleted.
+        const started = await media(bob.accessToken, "POST", [], file);
+        const listed = (
+          (await executeMedia({
+            site: "alice",
+            path: [],
+            method: "GET",
+            body: {},
+            adminUserId: owner,
+            size: 100,
+          })) as { files: Record<string, unknown>[] }
+        ).files;
+        const shown = (id: string) => listed.find((entry) => entry.id === id);
+        expect(shown(kept.id)).toMatchObject({
+          managed: true,
+          referenced: true,
+        });
+        expect(shown(unused.id)).toMatchObject({
+          managed: true,
+          referenced: false,
+        });
+        expect(shown(plain.id)).toMatchObject({ managed: false });
+        expect(shown(plain.id)).not.toHaveProperty("referenced");
+        expect(shown(started.id)).toMatchObject({ unfinished: true });
         // Editing out an upload, or deleting what named it, only unmarks it:
         // media may be linked from anywhere, so nothing is released.
         await owned("PUT", ["posts_m", "a"], { data: { image: kept.url } });

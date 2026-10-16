@@ -201,8 +201,10 @@ export async function executeMedia(command: MediaCommand) {
       undefined,
       "f",
     );
+    // Unfinished uploads too: their address may already be in use, so
+    // they stay until the owner deletes them, and the library marks them.
     let query = files()
-      .where("status", "=", "ready")
+      .where("status", "in", ["ready", "pending"])
       .where("deleted_at", "is", null)
       .selectAll()
       .select(
@@ -223,7 +225,9 @@ export async function executeMedia(command: MediaCommand) {
     const last = page.at(-1);
     // A managed upload no document names is marked, not deleted: the owner
     // decides (the control panel's media library shows it).
-    const managed = page.filter((file) => file.managed).map((file) => file.id);
+    const managed = page
+      .filter((file) => file.managed && file.status === "ready")
+      .map((file) => file.id);
     const used = new Set(
       managed.length
         ? await callSiteObject<string[]>(command.site, "mediaReferences", {
@@ -235,7 +239,17 @@ export async function executeMedia(command: MediaCommand) {
       files: page.map((file) => ({
         ...output(file),
         managed: file.managed,
-        ...(file.managed ? { referenced: used.has(file.id) } : {}),
+        ...(file.managed && file.status === "ready"
+          ? { referenced: used.has(file.id) }
+          : {}),
+        ...(file.status === "pending"
+          ? {
+              unfinished: true,
+              uploadExpiresAt:
+                file.upload_expires_at ??
+                new Date(new Date(file.created_at).getTime() + 60 * 60 * 1000),
+            }
+          : {}),
       })),
       nextCursor:
         rows.length > limit && last
