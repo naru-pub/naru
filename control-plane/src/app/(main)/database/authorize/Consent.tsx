@@ -72,51 +72,70 @@ export default function Consent({
       <p className="break-all rounded bg-muted p-3 font-mono text-sm">
         {input.redirectUri}
       </p>
-      {/* Folded: a site can ask for dozens of collections. */}
-      <details className="space-y-2">
-        <summary className="cursor-pointer font-bold">
-          허용할 컬렉션 ({collections.length})
-        </summary>
-        <div className="mt-2 overflow-x-auto border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>컬렉션</TableHead>
-                <TableHead>지금 읽기</TableHead>
-                <TableHead>지금 쓰기</TableHead>
-                <TableHead>규칙</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {collections.map((collection) => (
-                <TableRow key={collection.name}>
-                  <TableCell className="font-mono">{collection.name}</TableCell>
-                  <TableCell>
-                    {ACCESS[collection.read] ?? collection.read}
-                  </TableCell>
-                  <TableCell>
-                    {ACCESS[collection.write] ?? collection.write}
-                  </TableCell>
-                  <TableCell className="font-mono">
-                    {collection.rules || "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </details>
-      <p>
-        이 웹사이트에서 위 컬렉션의 모든 문서를 읽고, 생성하고, 덮어쓰고, 삭제할
-        수 있습니다. 비공개 문서도 포함됩니다. 이 사이트의 서버 함수도 사이트
-        소유자로 실행할 수 있고, 함수는 위 컬렉션 밖의 문서도 다룰 수 있습니다.
-        계정 설정이나 컬렉션 권한은 변경할 수 없습니다. 또한 나루 미디어
-        라이브러리에 파일을 올릴 수 있습니다. 올린 파일 목록은 나루 제어판에서만
-        볼 수 있습니다.
-        {input.mediaDelete
-          ? " 이 웹사이트는 사이트에 저장된 모든 파일을 삭제할 수도 있습니다. 다른 회원이 올린 파일도 포함됩니다."
-          : " 파일 삭제는 허용하지 않습니다."}
-      </p>
+      {collections.length > 0 && (
+        <>
+          {/* Folded: a site can ask for dozens of collections. */}
+          <details className="space-y-2">
+            <summary className="cursor-pointer font-bold">
+              허용할 컬렉션 ({collections.length})
+            </summary>
+            <div className="mt-2 overflow-x-auto border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>컬렉션</TableHead>
+                    <TableHead>지금 읽기</TableHead>
+                    <TableHead>지금 쓰기</TableHead>
+                    <TableHead>규칙</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {collections.map((collection) => (
+                    <TableRow key={collection.name}>
+                      <TableCell className="font-mono">
+                        {collection.name}
+                      </TableCell>
+                      <TableCell>
+                        {ACCESS[collection.read] ?? collection.read}
+                      </TableCell>
+                      <TableCell>
+                        {ACCESS[collection.write] ?? collection.write}
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {collection.rules || "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </details>
+        </>
+      )}
+      {collections.length === 0 ? (
+        <p>
+          이 웹사이트에서 사이트의 쿼리와 뮤테이션을 사이트 소유자로 실행할 수
+          있습니다. 이 사이트의 서버 함수도 사이트 소유자로 실행할 수 있습니다.
+          계정 설정이나 컬렉션 권한은 변경할 수 없습니다. 또한 나루 미디어
+          라이브러리에 파일을 올릴 수 있습니다. 올린 파일 목록은 나루
+          제어판에서만 볼 수 있습니다.
+          {input.mediaDelete
+            ? " 이 웹사이트는 사이트에 저장된 모든 파일을 삭제할 수도 있습니다. 다른 회원이 올린 파일도 포함됩니다."
+            : " 파일 삭제는 허용하지 않습니다."}
+        </p>
+      ) : (
+        <p>
+          이 웹사이트에서 위 컬렉션의 모든 문서를 읽고, 생성하고, 덮어쓰고,
+          삭제할 수 있습니다. 비공개 문서도 포함됩니다. 이 사이트의 서버 함수도
+          사이트 소유자로 실행할 수 있고, 함수는 위 컬렉션 밖의 문서도 다룰 수
+          있습니다. 계정 설정이나 컬렉션 권한은 변경할 수 없습니다. 또한 나루
+          미디어 라이브러리에 파일을 올릴 수 있습니다. 올린 파일 목록은 나루
+          제어판에서만 볼 수 있습니다.
+          {input.mediaDelete
+            ? " 이 웹사이트는 사이트에 저장된 모든 파일을 삭제할 수도 있습니다. 다른 회원이 올린 파일도 포함됩니다."
+            : " 파일 삭제는 허용하지 않습니다."}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         웹사이트에 포함된 외부 스크립트도 이 권한을 사용할 수 있습니다. 신뢰하는
         편집 페이지에서만 승인하세요.

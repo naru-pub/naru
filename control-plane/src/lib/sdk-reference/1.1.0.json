@@ -681,6 +681,83 @@
       ]
     },
     {
+      "name": "LiveQueries",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "Live queries: a query's answer, kept current."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface LiveQueries",
+      "extends": [],
+      "members": [
+        {
+          "name": "subscribe",
+          "optional": false,
+          "signature": "subscribe<R = Json>(\n  name: string,\n  args: Json,\n  onResult: (result: R) => void,\n  options?: { onError(error: NaruError): void },\n): Live",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Runs "
+                },
+                {
+                  "type": "code",
+                  "value": "\"<module/path>:<query>\""
+                },
+                {
+                  "type": "text",
+                  "value": " from the site's "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/queries/"
+                },
+                {
+                  "type": "text",
+                  "value": " as "
+                },
+                {
+                  "type": "code",
+                  "value": "query()"
+                },
+                {
+                  "type": "text",
+                  "value": " does, calls "
+                },
+                {
+                  "type": "code",
+                  "value": "onResult"
+                },
+                {
+                  "type": "text",
+                  "value": " with its answer, and again whenever a write changes a table it read and the answer with it, until closed. After the connection drops it is asked again, so the latest answer arrives once it is back. A failure, now or later, goes to "
+                },
+                {
+                  "type": "code",
+                  "value": "onError"
+                },
+                {
+                  "type": "text",
+                  "value": ". A connection holds at most 20."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
       "name": "Member",
       "kind": "interface",
       "summary": [
@@ -695,9 +772,10 @@
         }
       ],
       "throws": [],
-      "signature": "interface Member extends SiteCode",
+      "signature": "interface Member extends SiteCode, LiveQueries",
       "extends": [
-        "SiteCode"
+        "SiteCode",
+        "LiveQueries"
       ],
       "members": [
         {
@@ -911,15 +989,16 @@
         }
       ],
       "throws": [],
-      "signature": "interface NaruClient extends SiteCode",
+      "signature": "interface NaruClient extends SiteCode, LiveQueries",
       "extends": [
-        "SiteCode"
+        "SiteCode",
+        "LiveQueries"
       ],
       "members": [
         {
           "name": "auth",
           "optional": false,
-          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options: {\n    collections: readonly string[];\n    mediaDelete?: boolean;\n  }): Promise<void>;\n}",
+          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options?: {\n    collections?: readonly string[];\n    mediaDelete?: boolean;\n  }): Promise<void>;\n}",
           "summary": [],
           "throws": []
         },

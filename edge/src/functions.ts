@@ -274,6 +274,11 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
   const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
   const rolesOf = __operation("rolesOf");
   const setRoles = __operation("setRoles");
+  // A guest's password, kept by the site as a hash (1.1.0's new kinds).
+  const passwords = Object.freeze({
+    hash: __operation("passwordHash"),
+    verify: __operation("passwordVerify"),
+  });
   const sql = (text, ...values) =>
     Array.isArray(text) && Object.hasOwn(text, "raw")
       ? __operation("sql")(text.join("?"), values)
@@ -286,6 +291,7 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
     fail: (...args) => __call("fail", ...args),
     sql,
     rolesOf,
+    passwords: kind === "mutation" ? passwords : Object.freeze({ verify: passwords.verify }),
     ...(kind === "mutation" ? { setRoles } : {}),
   }) : Object.freeze({
     member: who,
@@ -462,8 +468,11 @@ export function runFunction(
         const kind = invocation.kind ?? "function";
         if (
           kind !== "function" &&
-          !["sql", "random", "rolesOf"].includes(name) &&
-          !(kind === "mutation" && name === "setRoles")
+          !["sql", "random", "rolesOf", "passwordVerify"].includes(name) &&
+          !(
+            kind === "mutation" &&
+            (name === "setRoles" || name === "passwordHash")
+          )
         )
           throw failed(`a ${kind} has no ctx.${name}.`);
         if (MESSAGES.has(name)) {
@@ -484,7 +493,10 @@ export function runFunction(
             `getMany needs an array of at most ${MAX_OPERATIONS} IDs.`,
           );
         // A document secret is checked with a slow hash, on the host.
-        if (name === "secretMatches" && ++passwords > MAX_PASSWORD_OPERATIONS)
+        if (
+          ["secretMatches", "passwordHash", "passwordVerify"].includes(name) &&
+          ++passwords > MAX_PASSWORD_OPERATIONS
+        )
           throw failed(
             `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
           );

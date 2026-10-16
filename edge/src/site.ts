@@ -2188,6 +2188,33 @@ export class SiteData extends DurableObject<Env> {
             condition(args[3]),
             secretOption(args[3]),
           );
+        case "passwordHash": {
+          const password = args[0];
+          if (
+            typeof password !== "string" ||
+            password.length < 1 ||
+            password.length > 256
+          )
+            throw new DataError(400, "A password is 1–256 characters.");
+          return hashPassword(password);
+        }
+        case "passwordVerify": {
+          // [password, hash, key]: ten wrong guesses an hour for each key,
+          // such as the post the password opens, whoever guesses.
+          const [password, hash, key] = args;
+          if (
+            typeof password !== "string" ||
+            typeof hash !== "string" ||
+            typeof key !== "string" ||
+            !key ||
+            key.length > 256
+          )
+            throw new DataError(
+              400,
+              "ctx.passwords.verify takes a password, its hash and a key.",
+            );
+          return this.checkSecret("passwords", key, password, hash);
+        }
         case "secretMatches": {
           const secret = secretOption({ secret: args[2] });
           const target = collection(args[0]);
@@ -2624,11 +2651,36 @@ export class SiteData extends DurableObject<Env> {
             .filter((id): id is string => typeof id === "string")
             .slice(0, 100)
         : [];
-      return ids.filter(
-        (id) =>
-          this.rows("SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1", id)
-            .length > 0,
+      const used = new Set(
+        ids.filter(
+          (id) =>
+            this.rows(
+              "SELECT 1 FROM media_refs WHERE upload_id = ? LIMIT 1",
+              id,
+            ).length > 0,
+        ),
       );
+      // The site's own tables (1.1.0) keep upload URLs in text columns,
+      // which no reference is recorded for: searched for the rest.
+      let rest = ids.filter((id) => !used.has(id));
+      const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+      for (const table of this.siteObjects())
+        if (table.type === "table")
+          for (const column of this.rows(
+            "SELECT name, type FROM pragma_table_info(?)",
+            table.name,
+          ))
+            if (rest.length && /TEXT|CHAR|CLOB|^$/i.test(String(column.type))) {
+              const col = quote(String(column.name));
+              for (const row of this.rows(
+                `SELECT ${col} AS v FROM ${quote(table.name)} WHERE ${rest.map(() => `instr(${col}, ?) > 0`).join(" OR ")} LIMIT 1000`,
+                ...rest,
+              ))
+                for (const id of rest)
+                  if (String(row.v).includes(id)) used.add(id);
+              rest = rest.filter((id) => !used.has(id));
+            }
+      return ids.filter((id) => used.has(id));
     });
   }
 

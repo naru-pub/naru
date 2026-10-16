@@ -424,7 +424,16 @@ describe("calling", () => {
         "query",
         true,
       ),
-    ).toEqual(["member", "owner", "visitor", "now", "fail", "sql", "rolesOf"]);
+    ).toEqual([
+      "member",
+      "owner",
+      "visitor",
+      "now",
+      "fail",
+      "sql",
+      "rolesOf",
+      "passwords",
+    ]);
     // A mutation may grant roles too.
     expect(
       call("export function f(ctx) { return Object.keys(ctx); }", "mutation"),
@@ -436,6 +445,7 @@ describe("calling", () => {
       "fail",
       "sql",
       "rolesOf",
+      "passwords",
       "setRoles",
     ]);
     // The caller's roles ride on ctx.member, frozen.

@@ -1139,7 +1139,7 @@ export function createNaru(options) {
     mutate: functions(context.root, request, "_mutate"),
     auth: Object.freeze({
       session: () => adminSession(context),
-      signIn: ({ collections, mediaDelete }) =>
+      signIn: ({ collections = [], mediaDelete } = {}) =>
         signIn(context, collections, mediaDelete),
     }),
     members: Object.freeze({

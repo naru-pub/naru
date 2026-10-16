@@ -14,7 +14,8 @@ import Setup from "./Setup";
 async function authorizationStep(userId: string, query: URLSearchParams) {
   const input = authorizationInput({
     ...Object.fromEntries(query),
-    collections: query.get("collections")?.split(","),
+    // "" asks for none: a page that manages the site by queries and mutations.
+    collections: query.get("collections")?.split(",").filter(Boolean),
     ...(query.has("mediaDelete")
       ? {
           mediaDelete:

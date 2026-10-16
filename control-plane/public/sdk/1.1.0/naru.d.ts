@@ -466,8 +466,12 @@ export interface NaruClient extends SiteCode, LiveQueries {
      */
     session(): Promise<Admin | null>;
     /** Redirects to Naru for approval. */
-    signIn(options: {
-      collections: readonly string[];
+    signIn(options?: {
+      /**
+       * The collections this page manages directly. None, for a page that
+       * manages the site through its queries and mutations as the owner.
+       */
+      collections?: readonly string[];
       /** Request explicit permission to delete all of this site's media. */
       mediaDelete?: boolean;
     }): Promise<void>;

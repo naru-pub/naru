@@ -515,3 +515,81 @@ integration("routes", () => {
     });
   });
 });
+
+integration("guest passwords and uploads in tables", () => {
+  const code = (kind: "query" | "mutation", name: string, args: unknown) =>
+    callSiteObject<{ result: unknown }>(site, "call", {
+      ownerId,
+      site,
+      member: null,
+      visitor: true,
+      clientIp: "203.0.113.9",
+      kind,
+      file: "guest",
+      name,
+      args,
+    }).then((answer) => answer.result);
+
+  test("a mutation keeps a guest's password hash; a query checks it, ten wrong tries an hour", async () => {
+    await put(
+      "migrations",
+      "0003_guest",
+      "CREATE TABLE guest_posts (id INTEGER PRIMARY KEY, body TEXT NOT NULL, password TEXT NOT NULL);",
+      false,
+    );
+    await put(
+      "queries",
+      "guest",
+      `export async function open(ctx, { id, password }) {
+         const [post] = (await ctx.sql\`SELECT body, password FROM guest_posts WHERE id = \${id}\`).rows;
+         if (!(await ctx.passwords.verify(password, post.password, \`post:\${id}\`)))
+           ctx.fail("ACCESS_DENIED", "비밀번호가 달라요.");
+         return post.body;
+       }
+       export async function sneak(ctx) { return typeof ctx.passwords.hash; }`,
+      false,
+    );
+    await put(
+      "mutations",
+      "guest",
+      `export async function write(ctx, { body, password }) {
+         const hash = await ctx.passwords.hash(password);
+         return (await ctx.sql\`INSERT INTO guest_posts (body, password) VALUES (\${body}, \${hash}) RETURNING id\`).rows[0].id;
+       }`,
+    );
+    const id = await code("mutation", "write", {
+      body: "비밀글",
+      password: "1234",
+    });
+    expect(await code("query", "open", { id, password: "1234" })).toBe(
+      "비밀글",
+    );
+    // A query can check a password but not make one.
+    expect(await code("query", "sneak", null)).toBe("undefined");
+    for (let i = 0; i < 10; i++)
+      await expect(
+        code("query", "open", { id, password: "0000" }),
+      ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      code("query", "open", { id, password: "1234" }),
+    ).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED" });
+  });
+
+  test("an upload named in a table counts as used", async () => {
+    const used = "0190f5a0-0000-7000-8000-00000000abcd";
+    const unused = "0190f5a0-0000-7000-8000-00000000dcba";
+    await put(
+      "mutations",
+      "guest",
+      `export async function image(ctx, { url }) {
+         await ctx.sql\`INSERT INTO guest_posts (body, password) VALUES (\${url}, 'x')\`;
+       }`,
+    );
+    await code("mutation", "image", {
+      url: `https://media.naru.pub/${ownerId}/${used}.png`,
+    });
+    expect(
+      await callSiteObject(site, "mediaReferences", { ids: [used, unused] }),
+    ).toEqual([used]);
+  });
+});

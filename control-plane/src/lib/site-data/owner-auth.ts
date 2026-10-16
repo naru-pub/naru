@@ -52,9 +52,13 @@ function text(value: unknown, max = 2048): string {
     throw new DataError(400, "Invalid authorization request.");
   return value;
 }
+/**
+ * The collections an owner sign-in asks for: up to 100, or none for a page
+ * that manages the site through its queries and mutations (1.1.0).
+ */
 export function collectionNames(value: unknown): string[] {
-  if (!Array.isArray(value) || !value.length || value.length > 100)
-    throw new DataError(400, "Choose 1–100 collections.");
+  if (!Array.isArray(value) || value.length > 100)
+    throw new DataError(400, "Choose at most 100 collections.");
   const names = value.map(name);
   if (new Set(names).size !== names.length)
     throw new DataError(400, "Duplicate collections.");

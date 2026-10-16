@@ -281,10 +281,22 @@ export interface QueryCtx {
   sql: Ctx["sql"];
   /** Members' roles, by ID: at most 100 IDs a call; a member without any has []. */
   rolesOf(members: string[]): Promise<Record<string, string[]>>;
+  /**
+   * Guests' passwords, kept by the site as hashes. `verify` allows ten wrong
+   * passwords an hour for each `key` (such as "post:42"), whoever tries,
+   * then fails with RATE_LIMITED. A call makes at most 3 password checks.
+   */
+  passwords: {
+    verify(password: string, hash: string, key: string): Promise<boolean>;
+  };
 }
 
 /** A mutation's `ctx`: a query's, and granting roles. */
 export interface MutationCtx extends QueryCtx {
+  passwords: QueryCtx["passwords"] & {
+    /** A hash of `password` (1–256 characters) to keep in a table. */
+    hash(password: string): Promise<string>;
+  };
   /**
    * Replaces a member's roles with these (at most 16 names); [] clears
    * them. Kept only if the mutation returns.

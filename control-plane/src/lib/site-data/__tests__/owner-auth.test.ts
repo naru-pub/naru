@@ -5,8 +5,8 @@ import { db } from "@/lib/database";
 import { executeMedia } from "../media";
 import { mediaDeletionStorage } from "../media-deletion";
 import { jest } from "@jest/globals";
-import { executeData, listCollections } from "../service";
-import { eraseSiteData } from "@/lib/edge/client";
+import { executeCall, executeData, listCollections } from "../service";
+import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
 import {
   approveAuthorization,
   authorizationInput,
@@ -262,6 +262,31 @@ integration("website owner authorization", () => {
     );
     await data(access, ["posts", "hello"], "DELETE");
   });
+  test("a sign-in may ask for no collections: the owner's page runs queries and mutations", async () => {
+    const access = (await exchange(await issue({ collections: [] })))
+      .accessToken;
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "queries",
+      file: "whoami",
+      source:
+        "export function me(ctx) { return { owner: ctx.owner, member: ctx.member }; }",
+    });
+    expect(
+      await executeCall({
+        site: "alice",
+        method: "POST",
+        path: ["whoami:me"],
+        kind: "query",
+        bearer: { token: access, origin },
+      }),
+    ).toMatchObject({ result: { owner: true, member: null } });
+    // No collection comes with it.
+    await expect(data(access, ["posts"])).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
   test("deleted and recreated collections do not inherit old grants", async () => {
     const code = new URL(
       (

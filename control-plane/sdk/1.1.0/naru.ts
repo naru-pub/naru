@@ -551,8 +551,12 @@ export interface NaruClient extends SiteCode, LiveQueries {
      */
     session(): Promise<Admin | null>;
     /** Redirects to Naru for approval. */
-    signIn(options: {
-      collections: readonly string[];
+    signIn(options?: {
+      /**
+       * The collections this page manages directly. None, for a page that
+       * manages the site through its queries and mutations as the owner.
+       */
+      collections?: readonly string[];
       /** Request explicit permission to delete all of this site's media. */
       mediaDelete?: boolean;
     }): Promise<void>;
@@ -1862,12 +1866,12 @@ export function createNaru(options?: { site?: string }): NaruClient {
     auth: Object.freeze({
       session: () => adminSession(context),
       signIn: ({
-        collections,
+        collections = [],
         mediaDelete,
       }: {
-        collections: readonly string[];
+        collections?: readonly string[];
         mediaDelete?: boolean;
-      }) => signIn(context, collections, mediaDelete),
+      } = {}) => signIn(context, collections, mediaDelete),
     }),
     members: Object.freeze({
       session: () => memberSession(context),
