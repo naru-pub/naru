@@ -315,8 +315,12 @@ export function checkPlan(plan: PlanStep[]) {
     children.set(step.parent, list);
   }
   const access = (step: PlanStep) => /^(SCAN|SEARCH) /.test(step.detail);
+  // A virtual table here is json_each or json_tree (site SQL creates
+  // none): it reads one JSON value, so its cost is that value's size.
   const scans = (step: PlanStep) =>
-    /^SCAN /.test(step.detail) && step.detail !== "SCAN CONSTANT ROW";
+    /^SCAN /.test(step.detail) &&
+    step.detail !== "SCAN CONSTANT ROW" &&
+    !/^SCAN \S+ VIRTUAL TABLE\b/.test(step.detail);
   const table = (step: PlanStep) => step.detail.split(" ")[1];
   const within = (id: number): PlanStep[] =>
     (children.get(id) ?? []).flatMap((child) => [child, ...within(child.id)]);
@@ -328,7 +332,7 @@ export function checkPlan(plan: PlanStep[]) {
           `it would read all of ${table(step)} for every row before it; give ${table(step)} an index on the column it joins on.`,
         );
       // A range or pattern on a later table can still read most of it.
-      if (!/=/.test(step.detail))
+      if (!/=/.test(step.detail) && !/ VIRTUAL TABLE\b/.test(step.detail))
         throw invalid(
           `it would search ${table(step)} by a range for every row before it; join it on equal values.`,
         );

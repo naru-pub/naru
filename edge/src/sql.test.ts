@@ -158,6 +158,12 @@ describe("site SQL", () => {
     // Comments have no index on post: SQLite would build one per statement
     // (an automatic index), which is one pass, so it is allowed.
     ok("SELECT * FROM posts JOIN comments ON comments.post = posts.id");
+    // json_each reads one value of the row: as cheap as the value is long.
+    db.exec("CREATE TABLE visits (day TEXT PRIMARY KEY, hours TEXT)");
+    ok(
+      "SELECT j.key, sum(j.value) FROM visits, json_each(visits.hours) AS j GROUP BY j.key",
+    );
+    ok("SELECT * FROM json_each('[1,2]') j JOIN posts ON posts.id = j.value");
     refused(
       "SELECT * FROM posts, members WHERE members.level > posts.at",
       /members|posts/,
