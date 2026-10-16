@@ -30,6 +30,7 @@ import {
   MAX_ROWS,
   MAX_ROWS_READ,
   reserved,
+  sqlFailure,
   statements,
   type PlanStep,
   type Tables,
@@ -1638,26 +1639,34 @@ export class SiteData extends DurableObject<Env> {
       for (const table of seen.target ? [seen.target] : seen.tables)
         budget.tables.written.add(table);
     const bound = bindings(values ?? []);
-    checkPlan(
-      this.rows(
-        `EXPLAIN QUERY PLAN ${text}`,
-        ...bound,
-      ) as unknown as PlanStep[],
-    );
-    const cursor = this.sql.exec(text, ...bound);
     const rows: Record<string, SqlValue>[] = [];
     let bytes = 0;
-    for (const row of cursor) {
-      for (const value of Object.values(row))
-        if (value instanceof ArrayBuffer)
-          throw new DataError(400, "ctx.sql does not return BLOB values yet.");
-      bytes += JSON.stringify(row).length;
-      rows.push(row as Record<string, SqlValue>);
-      if (rows.length > MAX_ROWS || bytes > MAX_ROW_BYTES)
-        throw new DataError(
-          400,
-          `ctx.sql returns at most ${MAX_ROWS} rows and 1 MiB; add a LIMIT.`,
-        );
+    let cursor: SqlStorageCursor<Record<string, SqlStorageValue>>;
+    try {
+      checkPlan(
+        this.rows(
+          `EXPLAIN QUERY PLAN ${text}`,
+          ...bound,
+        ) as unknown as PlanStep[],
+      );
+      cursor = this.sql.exec(text, ...bound);
+      for (const row of cursor) {
+        for (const value of Object.values(row))
+          if (value instanceof ArrayBuffer)
+            throw new DataError(
+              400,
+              "ctx.sql does not return BLOB values yet.",
+            );
+        bytes += JSON.stringify(row).length;
+        rows.push(row as Record<string, SqlValue>);
+        if (rows.length > MAX_ROWS || bytes > MAX_ROW_BYTES)
+          throw new DataError(
+            400,
+            `ctx.sql returns at most ${MAX_ROWS} rows and 1 MiB; add a LIMIT.`,
+          );
+      }
+    } catch (error) {
+      throw sqlFailure(error);
     }
     // Each statement is held to one pass by its plan; a call, to a few.
     budget.rowsRead += cursor.rowsRead;

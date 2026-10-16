@@ -593,3 +593,52 @@ integration("guest passwords and uploads in tables", () => {
     ).toEqual([used]);
   });
 });
+
+integration("SQLite's refusals", () => {
+  test("a value a UNIQUE column holds is a CONFLICT naming it; other mistakes say what SQLite said", async () => {
+    await put(
+      "migrations",
+      "0004_nicks",
+      "CREATE TABLE nicks (member TEXT PRIMARY KEY, nick TEXT NOT NULL UNIQUE);",
+      false,
+    );
+    await put(
+      "mutations",
+      "nicks",
+      `export async function claim(ctx, { nick }) {
+         await ctx.sql\`INSERT INTO nicks (member, nick) VALUES (\${ctx.member.id}, \${nick})\`;
+       }
+       export async function typo(ctx) { await ctx.sql\`INSERT INTO nicks (membr) VALUES (1)\`; }`,
+    );
+    const claim = (member: string, nick: string) =>
+      callSiteObject(site, "call", {
+        ownerId,
+        site,
+        member,
+        kind: "mutation",
+        file: "nicks",
+        name: "claim",
+        args: { nick },
+      });
+    await claim("member-1", "아보");
+    await expect(claim("member-2", "아보")).rejects.toMatchObject({
+      status: 409,
+      code: "CONFLICT",
+      details: { unique: "nick" },
+    });
+    await expect(
+      callSiteObject(site, "call", {
+        ownerId,
+        site,
+        member: "member-1",
+        kind: "mutation",
+        file: "nicks",
+        name: "typo",
+        args: null,
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/SQL failed: .*no column named membr/),
+    });
+  });
+});

@@ -234,7 +234,9 @@ export interface Ctx extends ReadCtx {
    * triggers, transactions and recursion are refused, and so is a statement
    * whose plan would read a whole table once for every row of another: join
    * on an indexed column. It returns at most 1,000 rows and 1 MiB (no BLOB
-   * values yet) and counts as one database operation.
+   * values yet) and counts as one database operation. A value a UNIQUE
+   * column already holds fails the call with CONFLICT, `details.unique`
+   * naming the column; any other mistake SQLite refuses, with its message.
    */
   sql<Row = Record<string, SqlValue>>(
     strings: TemplateStringsArray,

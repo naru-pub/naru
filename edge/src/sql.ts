@@ -361,3 +361,31 @@ export const MAX_ROWS = 1000;
 export const MAX_ROW_BYTES = 1024 * 1024;
 /** Rows a call's statements may read in all: five passes over a full table. */
 export const MAX_ROWS_READ = 500_000;
+
+/**
+ * What SQLite's own refusal of a statement means to the caller: a value a
+ * UNIQUE constraint already holds is a CONFLICT naming its columns (as a
+ * collection's unique fields are), anything else the statement's mistake.
+ */
+export function sqlFailure(error: unknown) {
+  if (error instanceof DataError) return error;
+  const message = String((error as Error)?.message ?? error).replace(
+    // The runtime's code, as ": SQLITE_CONSTRAINT (extended: ...)".
+    /:\s*SQLITE_[A-Z_]+(\s*\(extended: [A-Z_]+\))?$/,
+    "",
+  );
+  const unique = /UNIQUE constraint failed: (.+)$/.exec(message);
+  if (unique) {
+    const columns = unique[1]
+      .split(",")
+      .map((column) => column.trim().split(".").at(-1)!)
+      .join(", ");
+    return new DataError(
+      409,
+      `A row already holds that value (${columns}).`,
+      "CONFLICT",
+      { unique: columns },
+    );
+  }
+  return new DataError(400, `SQL failed: ${message}`, "INVALID_REQUEST");
+}
