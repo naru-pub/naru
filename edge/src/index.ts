@@ -5,7 +5,13 @@ import {
   type DomainsEnv,
   type DomainTable,
 } from "./domains";
-import { notFound, servePage, siteOf, type PagesEnv } from "./pages";
+import {
+  notFound,
+  servePage,
+  siteOf,
+  type PagesEnv,
+  type RenderRoute,
+} from "./pages";
 import type { PageviewLog } from "./pageview-log";
 import { serveSdk, type SdkEnv } from "./sdk";
 import type { SiteData } from "./site";
@@ -25,6 +31,11 @@ export interface Env
   SITES: DurableObjectNamespace<SiteData>;
   /** Shared with the control plane, the only caller of /v1/sites. */
   EDGE_WORKER_SECRET: string;
+  /**
+   * The mini's own /v1/sites secret (its EDGE_WORKER_SECRET), for rendering
+   * a site's routes there. Without it, routes are served as files.
+   */
+  SDK_ORIGIN_SECRET?: string;
   /** The default monthly budget of anonymous requests per site. */
   SITE_MONTHLY_REQUESTS?: string;
   /**
@@ -52,6 +63,7 @@ const OPERATIONS = [
   "siteTables",
   "rolesOfMembers",
   "setMemberRoles",
+  "render",
   "erase",
   "configure",
   "call",
@@ -97,6 +109,8 @@ function dispatch(
       return stub.siteTables();
     case "rolesOfMembers":
       return stub.rolesOfMembers(input);
+    case "render":
+      return stub.render(input);
     case "setMemberRoles":
       return stub.setMemberRoles(input);
     case "export":
@@ -158,16 +172,64 @@ async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
     ? siteOf(host, env)
     : await domainSite(host, env);
   if (!login) return notFound();
-  return servePage(request, env, login, ctx, (event) =>
-    ctx.waitUntil(
-      pageviews(env)
-        .record(event)
-        .catch((error) =>
-          // Analytics is best effort: a page is never refused over it.
-          console.error(`Recording a pageview for ${login} failed`, error),
-        ),
+  return servePage(
+    request,
+    env,
+    login,
+    ctx,
+    (event) =>
+      ctx.waitUntil(
+        pageviews(env)
+          .record(event)
+          .catch((error) =>
+            // Analytics is best effort: a page is never refused over it.
+            console.error(`Recording a pageview for ${login} failed`, error),
+          ),
+      ),
+    (input) => renderRoute(env, input),
+  );
+}
+
+/**
+ * A route's page from the site's object: on the mini while it is up, through
+ * the standby's object as sdk.naru.pub's requests go, else from the
+ * standby's copy, which only reads, as a route does. A Worker with no
+ * standby (local runs) holds the objects itself.
+ */
+async function renderRoute(
+  env: Env,
+  input: Parameters<RenderRoute>[0],
+): ReturnType<RenderRoute> {
+  const standby = standbyObject(env);
+  if (!standby || (await currentMode(env)) === "standby")
+    return env.SITES.get(env.SITES.idFromName(input.site)).render(input);
+  if (!env.SDK_ORIGIN_SECRET)
+    return {
+      ok: false,
+      error: { status: 503, message: "Routes are not set up here." },
+    };
+  const response = await standby.forward(
+    new Request(
+      `https://sdk.${env.PLATFORM_DOMAIN}/v1/sites/${encodeURIComponent(input.site)}/render`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.SDK_ORIGIN_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+      },
     ),
   );
+  const body = (await response.json().catch(() => null)) as {
+    value?: { result: unknown };
+    error?: { status: number; message: string };
+  } | null;
+  if (response.ok && body?.value) return { ok: true, value: body.value };
+  return {
+    ok: false,
+    error: body?.error ?? { status: 503, message: "The site did not answer." },
+  };
 }
 
 async function pageviewOperation(

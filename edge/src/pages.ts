@@ -5,6 +5,14 @@ import {
   encodedObjectPath,
 } from "../../control-plane/src/lib/edge/file-cache";
 import type { PageviewEvent } from "./pageview-log";
+import {
+  matchRoute,
+  routeAnswer,
+  withHead,
+  type RouteAnswer,
+} from "../../control-plane/src/lib/site-functions/routes";
+import { routesKey } from "../../control-plane/src/lib/site-functions/revisions";
+import { DataError } from "../../control-plane/src/lib/site-data/validation";
 
 // Hosted sites, <login>.naru.pub or a custom domain (domains.ts), answered at
 // the edge from the site bucket, so they stay up while the control plane is
@@ -233,6 +241,161 @@ function fileOf(body: ReadableStream, object: R2Object): SiteFile {
   return { body, contentType: object.httpMetadata?.contentType ?? "" };
 }
 
+/**
+ * Renders a route in the site's object (wherever it lives: index.ts), as
+ * `render` answers: what the route returned, or why it could not.
+ */
+export type RenderRoute = (input: {
+  site: string;
+  route: string;
+  path: string;
+  params: Record<string, string>;
+  query: Record<string, string>;
+  clientIp?: string;
+}) => Promise<
+  | { ok: true; value: { result: unknown } }
+  | { ok: false; error: { status: number; message: string } }
+>;
+
+/** Each site's routes, as its active release lists them, kept a little while. */
+const ROUTES_SECONDS = 30;
+const knownRoutes = new Map<string, { until: number; routes: string[] }>();
+async function siteRoutes(env: PagesEnv, login: string) {
+  const known = knownRoutes.get(login);
+  if (known && known.until > Date.now()) return known.routes;
+  let routes: string[] = [];
+  try {
+    const object = await env.SITE_FILES.get(routesKey(login));
+    const listed = object
+      ? ((await object.json()) as { routes?: unknown }).routes
+      : [];
+    if (Array.isArray(listed))
+      routes = listed.filter(
+        (route): route is string => typeof route === "string",
+      );
+  } catch (error) {
+    // A site whose routes cannot be read is served as files.
+    console.error(`Reading ${login}'s routes failed`, error);
+  }
+  knownRoutes.set(login, { until: Date.now() + ROUTES_SECONDS * 1000, routes });
+  if (knownRoutes.size > 10_000)
+    knownRoutes.delete(knownRoutes.keys().next().value!);
+  return routes;
+}
+
+const escape = (value: string) =>
+  value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+const routeError = (status: number, message: string) =>
+  new Response(
+    `<!doctype html><meta charset="utf-8"><title>${status}</title><p>${escape(message)}</p>`,
+    {
+      status,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+
+/**
+ * A page one of the site's routes answers (routes.ts), or null when no route
+ * matches or the site's object cannot be reached, so the site's files answer
+ * instead. A route's page is kept in this data center's cache for the
+ * seconds it asked for.
+ */
+async function serveRoute(
+  request: Request,
+  env: PagesEnv,
+  login: string,
+  ctx: Pick<ExecutionContext, "waitUntil">,
+  render: RenderRoute,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  const routes = await siteRoutes(env, login);
+  if (!routes.length) return null;
+  const match = matchRoute(routes, url.pathname);
+  if (!match) return null;
+  const cache = (globalThis as { caches?: { default: Cache } }).caches?.default;
+  const key = new Request(url.toString());
+  const hit = await cache?.match(key);
+  if (hit) {
+    const response = new Response(hit.body, hit);
+    response.headers.set("Cache-Control", SITE_CACHE_CONTROL);
+    return response;
+  }
+  let outcome: Awaited<ReturnType<RenderRoute>>;
+  try {
+    outcome = await render({
+      site: login,
+      route: match.route,
+      path: url.pathname,
+      params: match.params,
+      query: Object.fromEntries(url.searchParams),
+      clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+    });
+  } catch (error) {
+    console.error(`Rendering ${login}'s ${match.route} failed`, error);
+    return null;
+  }
+  if (!outcome.ok)
+    return outcome.error.status === 503
+      ? null
+      : routeError(outcome.error.status, outcome.error.message);
+  let answer: RouteAnswer;
+  try {
+    answer = routeAnswer(outcome.value.result);
+  } catch (error) {
+    return routeError(
+      500,
+      error instanceof DataError ? error.message : "The route failed.",
+    );
+  }
+  let response: Response;
+  if ("redirect" in answer)
+    response = new Response(null, {
+      status: answer.status,
+      headers: { Location: answer.redirect },
+    });
+  else if ("html" in answer)
+    response = new Response(answer.html, {
+      status: answer.status,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  else {
+    const path = resolvePath(answer.file);
+    const file = await readFile(env, ctx, login, `${login}/${path}`);
+    if (!file)
+      return routeError(404, `The route's file ${answer.file} is not there.`);
+    const html = /\.html?$/.test(path);
+    response = new Response(
+      html
+        ? withHead(await new Response(file.body).text(), answer.head)
+        : file.body,
+      {
+        status: answer.status,
+        headers: {
+          "Content-Type": file.contentType || "text/html; charset=utf-8",
+        },
+      },
+    );
+  }
+  if (answer.cache > 0 && cache && answer.status < 400) {
+    const stored = response.clone();
+    stored.headers.set("Cache-Control", `public, max-age=${answer.cache}`);
+    stored.headers.set("Cache-Tag", edgeSiteCacheTag(login));
+    ctx.waitUntil(
+      cache
+        .put(key, stored)
+        .catch((error) => console.error(`Caching ${url} failed`, error)),
+    );
+  }
+  response.headers.set(
+    "Cache-Control",
+    answer.cache > 0 ? SITE_CACHE_CONTROL : "no-store",
+  );
+  return response;
+}
+
 /** Answers a request for one of the sites `siteOf` names. */
 export async function servePage(
   request: Request,
@@ -240,10 +403,26 @@ export async function servePage(
   login: string,
   ctx: Pick<ExecutionContext, "waitUntil">,
   record: RecordPageview,
+  render?: RenderRoute,
 ): Promise<Response> {
   const kind = classify(request);
   const timestamp = Date.now();
   const url = new URL(request.url);
+  if (render && (request.method === "GET" || request.method === "HEAD")) {
+    const routed = await serveRoute(request, env, login, ctx, render);
+    if (routed) {
+      if (kind === "navigation" && routed.status === 200)
+        record({
+          login,
+          timestamp,
+          path: pageviewPath(decodePath(url.pathname.replace(/^\/+/, ""))),
+          ip: request.headers.get("cf-connecting-ip") ?? "",
+          referrer: truncate(request.headers.get("referer")),
+          userAgent: truncate(request.headers.get("user-agent")),
+        });
+      return routed;
+    }
+  }
   const decoded = decodePath(url.pathname.replace(/^\/+/, ""));
   const path = resolvePath(decoded);
   const extension = path.split(".").at(-1) ?? "";

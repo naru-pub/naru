@@ -466,3 +466,32 @@ integration("live queries", () => {
     }
   });
 });
+
+integration("routes", () => {
+  test("a route renders as a visitor's query, with its path and parameters", async () => {
+    await put(
+      "routes",
+      "posts/_id",
+      `export default async function (ctx, { path, params, query }) {
+         const [post] = (await ctx.sql\`SELECT title FROM posts WHERE id = \${Number(params.id)}\`).rows;
+         if (!post) ctx.fail("NOT_FOUND", "그런 글은 없어요.");
+         return { html: \`<h1>\${post.title}</h1><p>\${path} \${query.tab ?? ""} \${ctx.visitor}</p>\`, cache: 30 };
+       }`,
+    );
+    const render = (id: string) =>
+      callSiteObject<{ result: unknown }>(site, "render", {
+        site,
+        route: "posts/_id",
+        path: `/posts/${id}`,
+        params: { id },
+        query: { tab: "c" },
+      });
+    expect(await render("1")).toEqual({
+      result: { html: "<h1>첫 글</h1><p>/posts/1 c true</p>", cache: 30 },
+    });
+    await expect(render("999")).rejects.toMatchObject({
+      status: 404,
+      message: "그런 글은 없어요.",
+    });
+  });
+});

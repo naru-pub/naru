@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { routeOf } from "./routes";
 import { DataError } from "../site-data/validation";
 import {
   loadModuleGraph,
@@ -37,6 +38,12 @@ type Manifest = {
   /** Each functions module's exports visitors may call, when it declares any. */
   visitors?: Record<string, string[]>;
 };
+
+/**
+ * The routes a release serves (routes.ts), as the edge Worker reads them:
+ * written beside the site's releases when one activates.
+ */
+export const routesKey = (site: string) => `_naru-runtime/${site}/routes.json`;
 /**
  * A migration's published path: `migrations/<name>.sql`, directly in the
  * folder. Releases apply them in the byte order of their names.
@@ -99,6 +106,7 @@ export class FunctionRevisions {
       "rules",
       "queries",
       "mutations",
+      "routes",
     ]) {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
@@ -318,6 +326,21 @@ export class FunctionRevisions {
       shared.sources.delete(first);
     }
     return source;
+  }
+
+  /** The routes `revision` serves: "posts/_id" for routes/posts/_id.js. */
+  async routes(revision: string): Promise<string[]> {
+    const manifest = await this.manifest(revision);
+    return (
+      Object.keys(manifest.files)
+        .filter((filename) => filename.startsWith("routes/"))
+        .map(routeOf)
+        // A route is called by name, so each segment is one (no dots).
+        .filter((route) =>
+          route.split("/").every((part) => /^[A-Za-z0-9_-]{1,64}$/.test(part)),
+        )
+        .sort()
+    );
   }
 
   /** The release's SQL migrations, in the order they apply. */

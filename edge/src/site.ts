@@ -2271,7 +2271,7 @@ export class SiteData extends DurableObject<Env> {
      * A site function (the default), or a query or mutation (1.1.0's new
      * design): anyone may call those, and their code says who may do what.
      */
-    kind?: "function" | "query" | "mutation";
+    kind?: "function" | "query" | "mutation" | "route";
     /**
      * A live query's run (internal): its answer says the tables it read,
      * and a re-run after a write ("refresh") is not counted as a call.
@@ -2286,17 +2286,17 @@ export class SiteData extends DurableObject<Env> {
     try {
       functionModule(input.file);
       name(input.name);
-      if (!["function", "query", "mutation"].includes(kind))
+      if (!["function", "query", "mutation", "route"].includes(kind))
         throw new DataError(400, "Invalid call.");
       const revision = this.meta("functions_revision");
       if (!revision) throw unpublished();
       const revisions = this.revisions(input.site);
-      const folder =
-        kind === "query"
-          ? "queries"
-          : kind === "mutation"
-            ? "mutations"
-            : "functions";
+      const folder = {
+        function: "functions",
+        query: "queries",
+        mutation: "mutations",
+        route: "routes",
+      }[kind];
       filename = await revisions.entry(revision, `${folder}/${input.file}`);
       sources = await revisions.graph(revision, filename);
       const declared = await revisions.declarations(
@@ -2304,7 +2304,10 @@ export class SiteData extends DurableObject<Env> {
         filename,
         input.name,
       );
-      readonly = kind === "function" ? declared.readOnly : kind === "query";
+      readonly =
+        kind === "function"
+          ? declared.readOnly
+          : kind === "query" || kind === "route";
       if (input.readOnlyOnly && !readonly) throw readOnlyStandby();
       if (visitor && kind === "function" && !declared.visitors)
         throw new DataError(
@@ -2430,6 +2433,56 @@ export class SiteData extends DurableObject<Env> {
     if (!outcome.ok) return outcome;
     const { result, written } = outcome.value;
     return { ok: true, value: { result, written } };
+  }
+
+  /**
+   * A route's page (1.1.0), for the edge Worker serving the site (pages.ts):
+   * its module's default export, run as a visitor's query with the path, its
+   * parameters and the query string. Refused (503) while the edge may not
+   * answer the site's visitors, as `visit` passes them on.
+   */
+  async render(input: {
+    site: string;
+    route: string;
+    path: string;
+    params: Record<string, string>;
+    query: Record<string, string>;
+    clientIp?: string;
+  }): Promise<Outcome<{ result: unknown }>> {
+    const ownerId = this.meta("owner_id");
+    const until = this.meta("entitled_until");
+    const now = Date.now();
+    if (
+      ownerId === null ||
+      until === null ||
+      Number(this.meta("confirmed_until") ?? 0) <= now ||
+      (until !== "forever" && Number(until) <= now)
+    )
+      return {
+        ok: false,
+        error: {
+          status: 503,
+          message: "Routes are unavailable.",
+          code: "UNAVAILABLE",
+        },
+      };
+    const outcome = await this.call({
+      ownerId,
+      site: input.site,
+      member: null,
+      visitor: true,
+      clientIp: input.clientIp,
+      file: input.route,
+      name: "default",
+      args: {
+        path: String(input.path),
+        params: input.params ?? {},
+        query: input.query ?? {},
+      },
+      kind: "route",
+    });
+    if (!outcome.ok) return outcome;
+    return { ok: true, value: { result: outcome.value.result } };
   }
 
   /** A visitor's calls a minute, by address and for the whole site. */
@@ -2588,7 +2641,8 @@ export class SiteData extends DurableObject<Env> {
       | "modules"
       | "migrations"
       | "queries"
-      | "mutations";
+      | "mutations"
+      | "routes";
     /** False stores the file only, for a batch published by its last file. */
     publish?: boolean;
   }) {
@@ -2598,6 +2652,7 @@ export class SiteData extends DurableObject<Env> {
       "migrations",
       "queries",
       "mutations",
+      "routes",
     ].includes(input.folder ?? "")
       ? input.folder!
       : "functions";

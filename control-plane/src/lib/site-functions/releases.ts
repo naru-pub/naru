@@ -4,7 +4,7 @@ import { callSiteObject } from "@/lib/edge/client";
 import { MAINTENANCE_QUEUE } from "@/lib/maintenance/jobs";
 import { uuidv7 } from "@/lib/uuid";
 import { DataError } from "@/lib/site-data/validation";
-import { FunctionRevisions } from "./revisions";
+import { FunctionRevisions, routesKey } from "./revisions";
 import { revisionStorage, deleteRevision } from "./storage";
 import type { TaskContext } from "absurd-sdk";
 
@@ -81,16 +81,28 @@ export async function activateRelease(release: FunctionRelease) {
     .executeTakeFirst();
   // A cleaned release or deleted account must not be reactivated by a late task.
   if (!owner) return null;
-  return callSiteObject(release.site, "activateFunctions", {
-    revision: release.revision,
-    generation: release.generation,
-    // Its SQL migrations (1.1.0), which the object applies on activation.
-    site: release.site,
-    migrations: await new FunctionRevisions(
-      revisionStorage,
-      release.site,
-    ).migrations(release.revision),
-  });
+  const revisions = new FunctionRevisions(revisionStorage, release.site);
+  const active = await callSiteObject<{ revision: string }>(
+    release.site,
+    "activateFunctions",
+    {
+      revision: release.revision,
+      generation: release.generation,
+      // Its SQL migrations (1.1.0), which the object applies on activation.
+      site: release.site,
+      migrations: await revisions.migrations(release.revision),
+    },
+  );
+  // The routes the active release serves, for the edge Worker (routes.ts),
+  // whichever release that is.
+  await revisionStorage.put(
+    routesKey(release.site),
+    JSON.stringify({
+      revision: active.revision,
+      routes: await revisions.routes(active.revision),
+    }),
+  );
+  return active;
 }
 
 /**

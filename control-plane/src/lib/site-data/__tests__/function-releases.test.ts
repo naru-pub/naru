@@ -201,3 +201,30 @@ integration(
     mockObjects.delete(`${site}/_naru/migrations/0002_broken.sql`);
   },
 );
+
+integration(
+  "activating a release lists its routes for the edge, and only valid ones",
+  async () => {
+    mockObjects.set(
+      `${site}/_naru/routes/posts/_id.js`,
+      "export default function () { return 'x'; }",
+    );
+    mockObjects.set(
+      `${site}/_naru/routes/feed.xml.js`,
+      "export default function () { return 'x'; }",
+    );
+    const { revision } = await publishSiteFunctions(site);
+    expect(
+      JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!),
+    ).toEqual({
+      revision,
+      routes: ["posts/_id"],
+    });
+    mockObjects.delete(`${site}/_naru/routes/posts/_id.js`);
+    mockObjects.delete(`${site}/_naru/routes/feed.xml.js`);
+    await publishSiteFunctions(site);
+    expect(
+      JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!).routes,
+    ).toEqual([]);
+  },
+);

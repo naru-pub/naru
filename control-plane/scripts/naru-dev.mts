@@ -41,6 +41,12 @@ import {
   websiteCondition,
 } from "../src/lib/site-data/protocol";
 import { DataError, functionReference } from "../src/lib/site-data/validation";
+import {
+  matchRoute,
+  routeAnswer,
+  routeOf,
+  withHead,
+} from "../src/lib/site-functions/routes";
 
 const args = process.argv.slice(2);
 const option = (flag: string) => {
@@ -172,6 +178,7 @@ const FOLDERS = [
   "migrations",
   "queries",
   "mutations",
+  "routes",
 ] as const;
 async function files(dir: string): Promise<string[]> {
   if (!existsSync(dir)) return [];
@@ -730,6 +737,63 @@ async function sdk(res: ServerResponse, path: string) {
     .end(source);
 }
 
+/**
+ * A path one of `_naru/routes/` answers (1.1.0), rendered by the site's
+ * object as Naru's edge renders it; false when no route matches.
+ */
+async function route(res: ServerResponse, url: URL) {
+  const routes = (await files(join(folder, "_naru", "routes")))
+    .map((path) =>
+      routeOf(relative(join(folder, "_naru"), path).split(sep).join("/")),
+    )
+    .filter((name) =>
+      name.split("/").every((part) => /^[A-Za-z0-9_-]{1,64}$/.test(part)),
+    );
+  const match = matchRoute(routes, url.pathname);
+  if (!match) return false;
+  const html = (status: number, body: string, headers = {}) =>
+    res
+      .writeHead(status, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        ...headers,
+      })
+      .end(
+        /<head[^>]*>/i.test(body)
+          ? body.replace(/<head[^>]*>/i, (head) => `${head}${importMap}`)
+          : importMap + body,
+      );
+  try {
+    const { result } = await object<{ result: unknown }>("render", {
+      site,
+      route: match.route,
+      path: url.pathname,
+      params: match.params,
+      query: Object.fromEntries(url.searchParams),
+    });
+    const answer = routeAnswer(result);
+    if ("redirect" in answer)
+      res.writeHead(answer.status, { location: answer.redirect }).end();
+    else if ("html" in answer) html(answer.status, answer.html);
+    else {
+      let file = resolve(folder, answer.file);
+      if (existsSync(file) && (await stat(file)).isDirectory())
+        file = join(file, "index.html");
+      if (!file.startsWith(folder) || !existsSync(file))
+        html(404, `The route's file ${answer.file} is not there.`);
+      else
+        html(
+          answer.status,
+          withHead(await readFile(file, "utf8"), answer.head),
+        );
+    }
+  } catch (error) {
+    const status = error instanceof DataError ? error.status : 500;
+    html(status, `<p>${(error as Error).message.replace(/</g, "&lt;")}</p>`);
+  }
+  return true;
+}
+
 async function page(res: ServerResponse, path: string) {
   let file = resolve(folder, `.${decodeURIComponent(path)}`);
   if (!file.startsWith(folder) || file.includes(`${sep}.naru-dev`))
@@ -859,6 +923,8 @@ const server = createServer(async (req, res) => {
         return await toWorker(req, res, url);
       return await signed(req, res, url, path);
     }
+    if (["GET", "HEAD"].includes(req.method!) && (await route(res, url)))
+      return;
     return await page(res, url.pathname);
   } catch (error) {
     return failure(res, error);

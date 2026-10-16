@@ -16,9 +16,14 @@ const invalid = (message: string) =>
 export function modulePath(value: string): string {
   const parts = value.split("/");
   if (
-    !["functions", "modules", "rules", "queries", "mutations"].includes(
-      parts[0],
-    ) ||
+    ![
+      "functions",
+      "modules",
+      "rules",
+      "queries",
+      "mutations",
+      "routes",
+    ].includes(parts[0]) ||
     parts.length < 2 ||
     parts.some(
       (part) =>

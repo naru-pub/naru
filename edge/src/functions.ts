@@ -116,7 +116,7 @@ export type Invocation = {
    * What is called: a site function (the default) or, from 1.1.0's new
    * design, a query or mutation, whose ctx holds only who calls and `sql`.
    */
-  kind?: "function" | "query" | "mutation";
+  kind?: "function" | "query" | "mutation" | "route";
   /** The calling member's roles (`ctx.member.roles`). */
   roles?: string[];
 };

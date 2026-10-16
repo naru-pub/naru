@@ -6,15 +6,19 @@ const mockDeletedRows: string[] = [];
 jest.mock("@/lib/edge/client", () => ({ callSiteObject: jest.fn() }));
 jest.mock("@/lib/site-functions/storage", () => ({
   deleteRevision: jest.fn(),
-  revisionStorage: {},
+  revisionStorage: { put: async () => {} },
 }));
-// A release without migrations.
+// A release without migrations or routes.
 jest.mock("@/lib/site-functions/revisions", () => ({
   FunctionRevisions: class {
     async migrations() {
       return [];
     }
+    async routes() {
+      return [];
+    }
   },
+  routesKey: (site: string) => `_naru-runtime/${site}/routes.json`,
 }));
 jest.mock("@/lib/database", () => ({
   db: {
@@ -82,7 +86,7 @@ function context() {
 }
 beforeEach(() => {
   activate.mockReset();
-  activate.mockResolvedValue({});
+  activate.mockResolvedValue({ revision: release.revision });
   remove.mockReset();
   remove.mockResolvedValue();
   mockDeletedRows.length = 0;
