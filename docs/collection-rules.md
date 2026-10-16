@@ -30,8 +30,9 @@ A module exports two functions, which may be `async`:
   `eq`, `ne`, `gt`, `gte`, `lt` and `lte` take `[field, value]`, `in` takes
   `[field, [1 to 100 values]]`, `has` takes `[field, value]` (an array field
   holding it) and `contains` takes `[field, text]` (a string field with it). Fields name top-level JSON data fields or
-  `{ metadata: "id" | "createdBy" }`. Values are string, finite number, boolean
-  or null; ranges compare strings or numbers. Comparisons match JSON types
+  `{ metadata: "id" | "createdBy" | "createdAt" | "updatedAt" }`. Values are
+  string, finite number, boolean or null; ranges compare strings or numbers,
+  and the two times a UTC ISO string. Comparisons match JSON types
   exactly; explicit null does not match a missing field. Inequality includes
   missing fields. This is the same language as a list's `where`.
 - `canWrite(ctx, { collection, operation, before, after, secret })`: return
@@ -60,8 +61,10 @@ for its existing ten-second TTL when rules are first enabled.
 
 The `readable` predicate is intersected with the caller's filters in SQL before
 sorting, pagination and count. Hidden secrets cannot create short pages, inflate
-totals or contribute cursor values. Cursors bind to the predicate's fingerprint;
-if a role or board change changes it, start pagination again. Hidden get
+totals or contribute cursor values. Cursors bind to the caller's filter,
+`where` and sort, not to the predicate: it is applied again on every page, so
+one that depends on data (a reader's own items, say) can change mid-paging
+without invalidating the cursor; later pages follow the new predicate. Hidden get
 requests return NOT_FOUND. A `false` from `readable` makes a list empty with a zero
 count. A denied write returns ACCESS_DENIED. Predicates are limited to 100 nodes
 and ten nesting levels; sandbox CPU, memory and read budgets remain bounded.

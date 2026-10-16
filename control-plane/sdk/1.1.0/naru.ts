@@ -131,8 +131,13 @@ export type Filter = Record<
     }
 >;
 
-/** A top-level user field by name, or document metadata. */
-export type PredicateField = string | { metadata: "id" | "createdBy" };
+/**
+ * A top-level user field by name, or document metadata. `createdAt` and
+ * `updatedAt` (1.1.0) compare as UTC times written as documents show them,
+ * such as `"2026-10-16T09:00:00.000Z"`.
+ */
+export type PredicateField =
+  string | { metadata: "id" | "createdBy" | "createdAt" | "updatedAt" };
 
 /**
  * A condition on documents, as a collection rule's `readable` returns: `true`,

@@ -171,8 +171,48 @@ describe("rule predicates", () => {
       { in: ["tag", Array(101).fill("x")] },
       { like: ["tag", "x"] },
       { eq: [{ metadata: "createdAt" }, "x"] },
+      { gt: [{ metadata: "updatedAt" }, 0] },
+      { gt: [{ metadata: "createdAt" }, "2026-10-16"] },
+      { eq: [{ metadata: "version" }, "1"] },
     ])
       expect(() => predicate(bad, "where")).toThrow(/^where: /);
+    db.close();
+  });
+  it("where compares createdAt and updatedAt as the times documents show", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(SCHEMA);
+    const insert = db.prepare(
+      "INSERT INTO documents VALUES ('c', ?, '{}', 1, 1, ?, ?, NULL)",
+    );
+    const at = (day: number) => Date.UTC(2026, 9, day);
+    insert.run("a", at(1), at(9));
+    insert.run("b", at(5), at(5));
+    insert.run("c", at(9), at(9));
+    const ids = (where: unknown) => {
+      const q = listQuery("c", { where });
+      return q
+        .page(
+          db
+            .prepare(q.select.sql)
+            .all(...(q.select.bindings as SQLInputValue[])) as never[],
+        )
+        .documents.map((d) => d.id);
+    };
+    expect(
+      ids({ gte: [{ metadata: "createdAt" }, "2026-10-05T00:00:00.000Z"] }),
+    ).toEqual(["b", "c"]);
+    expect(
+      ids({
+        all: [
+          { lt: [{ metadata: "createdAt" }, "2026-10-09T00:00:00Z"] },
+          { gt: [{ metadata: "updatedAt" }, "2026-10-05T00:00:00.000000Z"] },
+        ],
+      }),
+    ).toEqual(["a"]);
+    // A document's own createdAt, as reads show it, finds it again.
+    expect(
+      ids({ eq: [{ metadata: "createdAt" }, new Date(at(5)).toISOString()] }),
+    ).toEqual(["b"]);
     db.close();
   });
 });

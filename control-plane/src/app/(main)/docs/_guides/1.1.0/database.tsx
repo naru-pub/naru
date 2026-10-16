@@ -865,6 +865,14 @@ const found = await posts.list({
                     </code>,
                     "그 회원이 만든 문서",
                   ],
+                  [
+                    <code key="c">
+                      {
+                        '{ gte: [{ metadata: "createdAt" }, "2026-10-01T00:00:00Z"] }'
+                      }
+                    </code>,
+                    "그 시각 뒤에 만든 문서 (updatedAt도 됩니다)",
+                  ],
                 ]}
               />
               <p>

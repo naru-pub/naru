@@ -538,7 +538,9 @@ matches a string data field with that text in it, 1–100 characters, A–Z in
 either case (1.1.0): `{ contains: ["title", "spring"] }`, a board's search.
 `contains` reads every document the rest of the query leaves, so narrow it
 with a `filter` on a large collection. A field is a top-level data field,
-or `{ metadata: "id" | "createdBy" }`. Values match only their own JSON type, a
+or `{ metadata: "id" | "createdBy" | "createdAt" | "updatedAt" }`; the two
+times (1.1.0) take a UTC ISO string, `"2026-10-16T09:00:00.000Z"`, and use the
+collection's time indexes. Values match only their own JSON type, a
 missing field matches only `ne`, and ranges compare strings or numbers. At most
 100 nodes, ten levels deep, and 4 KiB as sent. `count({ filter, where })` takes
 it too, and so do `ctx.list` and `ctx.count`. Sorting accepts one or

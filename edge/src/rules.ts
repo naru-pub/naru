@@ -5,6 +5,16 @@ import {
 } from "../../control-plane/src/lib/site-data/validation";
 import type { SqlValue } from "./query";
 
+/** Metadata a predicate may name, by its column. createdAt and updatedAt
+ * are indexed with the collection, so a range over them reads only its rows. */
+const METADATA: Record<string, string> = {
+  id: "id",
+  createdBy: "created_by",
+  createdAt: "created_at",
+  updatedAt: "updated_at",
+};
+const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+
 const COMPARE: Record<string, string> = {
   gt: ">",
   gte: ">=",
@@ -19,9 +29,10 @@ const COMPARE: Record<string, string> = {
  * `[field, [value, ...]]`, `has` takes `[field, value]` and matches an
  * array field holding that value, and `contains` takes `[field, text]` and
  * matches a string field with that text in it (A–Z in either case). A field is a top-level data field by name, or
- * `{ metadata: "id" | "createdBy" }`. Values are strings, finite numbers,
- * booleans or null, and match only their own JSON type; ranges take strings or
- * numbers. SQL applies it before paging and counting.
+ * `{ metadata: "id" | "createdBy" | "createdAt" | "updatedAt" }`. Values are
+ * strings, finite numbers, booleans or null, and match only their own JSON
+ * type; ranges take strings or numbers, and the two times a UTC ISO string.
+ * SQL applies it before paging and counting.
  */
 export function predicate(value: unknown, what = "Rule predicate") {
   const bindings: SqlValue[] = [];
@@ -54,10 +65,26 @@ export function predicate(value: unknown, what = "Rule predicate") {
       const metadata = (field as { metadata?: unknown }).metadata;
       if (
         Object.keys(field).length !== 1 ||
-        (metadata !== "id" && metadata !== "createdBy")
+        typeof metadata !== "string" ||
+        !Object.hasOwn(METADATA, metadata)
       )
-        throw invalid('metadata fields are "id" and "createdBy".');
-      const column = metadata === "id" ? "id" : "created_by";
+        throw invalid(
+          'metadata fields are "id", "createdBy", "createdAt" and "updatedAt".',
+        );
+      const column = METADATA[metadata];
+      if (metadata === "createdAt" || metadata === "updatedAt") {
+        // Stored as milliseconds; compared as the times documents show.
+        const time =
+          typeof bound === "string" && TIME.test(bound)
+            ? Date.parse(bound)
+            : NaN;
+        if (!Number.isFinite(time))
+          throw invalid(
+            `${metadata} takes a UTC time such as "2026-10-16T09:00:00.000Z".`,
+          );
+        bindings.push(time);
+        return `${column} ${sign} ?`;
+      }
       if (bound === null && operator === "eq") return `${column} IS NULL`;
       if (typeof bound !== "string")
         throw invalid("metadata values are strings.");
