@@ -27,7 +27,7 @@ flowchart LR
     worker["엣지 Worker<br/>사이트 페이지, SDK 파일"]
     standby["Standby 객체<br/>상태 확인 cron, 장애 전환"]
     copies[("Durable Objects<br/>사이트 데이터 대기본, 페이지뷰")]
-    r2[("R2<br/>사이트 파일, 미디어, 함수 소스")]
+    r2[("R2<br/>사이트 파일, 미디어, 사이트 코드")]
     tunnel["Cloudflare Tunnel"]
   end
 
@@ -91,7 +91,7 @@ flowchart LR
 - **위치**: `edge/src/seoul.ts`, `edge/seoul/` (같은 Worker 코드를 workerd로 실행)
 - **주요 기능**:
   - 사이트마다 SQLite 데이터베이스 하나(`SiteData`)
-  - 데이터 API, 사이트 함수, 실시간 연결
+  - 데이터 API, 사이트 코드(쿼리, 뮤테이션, 라우트)와 사이트 테이블, 실시간 쿼리
   - 한국에서 한 번 왕복에 수십 ms (Cloudflare 경유 때는 약 1초)
 
 ### Data SDK 요청이 지나는 길

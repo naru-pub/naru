@@ -1,49 +1,50 @@
 # What Naru SDK 1.1.0 is missing for AvocadoEdition-class sites
 
-## Current status (2026-10-13)
+## Current status (2026-10-17)
 
 neo-avocado is an SDK test case, not a feature-parity target. The assessment below
-is historical; these gaps have since been addressed:
+is historical; the gaps it lists are now addressed this way:
 
-- Native site membership gates collection, function and media operations.
-- Collection rules handle board permissions and secret posts; neo-avocado's
-  post/comment reads now use native collections. Rules run from the function
-  revision and may import `_naru/modules/`, so they share code with functions.
-- Modules declare read-only exports (`export const readOnly = [...]`), which
-  run without writes on a separate budget; there is one `call()`. The owner
-  calls functions too (`admin.call`, `ctx.owner`).
-- SDK 1.1.0 uploads return IDs and media deletion supports explicit owner grants
-  and an optional uploader guard. Naru records which documents name every
-  upload, and the media library marks those none does; functions do not
-  delete uploads.
-- `ctx.fail(code, message, details)` aborts functions transactionally and reaches
+- Native site membership (approval, bans, a supporter plan) gates members'
+  queries, mutations, live queries and media operations.
+- Collections are exactly SDK 1.0.0's, the owner's and visitors'. A community's
+  data lives in the site's own SQLite tables, created by `_naru/migrations/*.sql`
+  and reached through its queries (`_naru/queries/`) and mutations
+  (`_naru/mutations/`), which anyone may call and which decide what each caller
+  (`ctx.member`, `ctx.owner`, `ctx.visitor`) may see and do. Board permissions,
+  secret posts, levels and moderators are code over those tables, with member
+  roles (`ctx.member.roles`, `ctx.setRoles`) for levels and moderators.
+- Queries only read and are limited as reads (600 a minute); mutations write in
+  one transaction (30 a minute per member). The owner calls both too
+  (`ctx.owner`). Shared code lives in `_naru/modules/`.
+- Guests call queries and mutations as visitors, and edit their own posts with
+  passwords the site keeps as hashes (`ctx.passwords.hash`/`verify`).
+- SQL answers what filters could not: OR, `IN`, joins, counts, unique
+  constraints, counters and sequences.
+- `ctx.fail(code, message, details)` aborts calls transactionally and reaches
   callers as a `NaruError` whose `details` carries the app's own reason.
-- `ctx.getMany` batches up to 100 lookups; `ctx.count` counts without reading
-  bodies; `ctx.set`/`ctx.delete` take revision conditions. Browsers have
-  `getMany` too.
-- Richer filters (#6): `where` predicates (`any`, `ne`, `in`, ranges,
-  `createdBy`) on client and function lists and counts.
-- Unique constraints (#7): up to three unique fields per collection. Counters and
-  sequences remain function work.
-- Realtime (#8): live connections hear `ctx.notify`/`ctx.broadcast` from
-  functions, replacing polling. Plain writes do not notify.
-- Functions have `URL` and `URLSearchParams`, and modules may be `.mjs`.
-
-- Guest function calls (#3): modules open exports to visitors
-  (`export const visitors`), with document secrets (`ctx.secretMatches`) for guest edit and delete.
+- Realtime (#8): live queries (`subscribe()`) keep a query's answer current,
+  re-run when a mutation writes a table it read, replacing polling.
+- Server-rendered pages: `_naru/routes/` for link previews and feeds.
+- SDK 1.1.0 uploads return IDs and media deletion supports explicit owner grants;
+  members delete their own uploads. Naru records which documents name every
+  upload, and the media library marks those none does; site code does not
+  delete uploads.
+- A local emulator: `pnpm naru-dev`.
 
 Still open: background and scheduled jobs (#4, #9, deliberately not planned),
-export/import (#10), storage quotas (#2) and a local emulator. Revisit quotas
-with actual usage before raising ceilings. Keep cascading deletes and economy
-operations in transactional functions. UI parity is outside this SDK refinement
-work.
+export/import (#10) and storage quotas (#2). Revisit quotas with actual usage
+before raising ceilings. Keep cascading deletes and economy operations in
+transactional mutations. UI parity is outside this SDK refinement work.
 
-See [media deletion](media-deletion.md), [collection rules](collection-rules.md)
-and [site functions](sdk-v1-api.md#site-functions-110).
+See [media deletion](media-deletion.md), [site membership](site-membership.md)
+and [site code](sdk-v1-api.md#site-code-110).
 
 ## Original assessment
 
-_Historical snapshot, 2026-10-12. Based on neo-avocado as of `dc814e4`, the AvocadoEdition reference
+_Historical snapshot, 2026-10-12, describing an SDK that has since changed:
+its site functions (`member.call`, `_naru/functions/`) and the collection rule
+hooks it proposes are gone. Based on neo-avocado as of `dc814e4`, the AvocadoEdition reference
 and naru-pub `main` (`b54952a0`) plus the unmerged
 `codex/sdk-110-readonly-functions` branch. Paths such as `app.js`,
 `_naru/functions/neo-avocado.js` and `admin-*.js` are in the neo-avocado

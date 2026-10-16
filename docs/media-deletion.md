@@ -6,7 +6,10 @@ SDK 1.0.0 bytes and upload results are unchanged.
 
 ```js
 const uploaded = await member.media.upload(file);
-await posts.add({ image: uploaded.url, imageId: uploaded.id });
+await member.mutate("posts:write", {
+  image: uploaded.url,
+  imageId: uploaded.id,
+});
 // After the post no longer references the image:
 await member.media.delete(uploaded.id, { signal });
 ```

@@ -24,7 +24,7 @@ with these in the environment:
 |---|---|
 | `EDGE_WORKER_SECRET` | What the control plane sends for site operations (its `SITE_DATA_SECRET`) and signs live tickets with |
 | `PASSTHROUGH_ORIGIN` | The control plane on this host, for requests with a token, such as `http://127.0.0.1:40000` |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | The site bucket, where site functions' sources are: a key that can read and write it |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | The site bucket, where sites' code and its releases are: a key that can read and write it |
 
 How it differs from Cloudflare:
 
