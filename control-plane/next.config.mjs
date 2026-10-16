@@ -21,6 +21,16 @@ const nextConfig = {
   },
   async headers() {
     return [
+      // No other site frames a control-plane page: a *.naru.pub site is the
+      // same site as naru.pub, so a frame would carry the visitor's session
+      // and a click on, say, the member sign-in could be borrowed.
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+        ],
+      },
       {
         source: "/sdk/:path*",
         headers: [
