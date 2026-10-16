@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { describe, expect, test } from "@jest/globals";
+import { describe, expect, jest, test } from "@jest/globals";
 import { callSiteObject } from "@/lib/edge/client";
 
 // Site SQL (1.1.0) end to end in the site's Durable Object
@@ -347,5 +347,122 @@ integration("member roles", () => {
       "member-1",
       "member-3",
     ]);
+  });
+});
+
+integration("live queries", () => {
+  test("a subscription answers now, and again when a mutation changes what it read", async () => {
+    jest.setTimeout?.(30_000);
+    await callSiteObject(site, "configure", {
+      ownerId,
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    await put(
+      "queries",
+      "board",
+      `export async function recent(ctx, { board }) {
+         return (await ctx.sql\`SELECT title FROM posts WHERE board = \${board} ORDER BY id\`).rows.map((row) => row.title);
+       }
+       export async function count(ctx) {
+         return (await ctx.sql\`SELECT count(*) AS n FROM posts\`).rows[0].n;
+       }`,
+    );
+    const socket = new WebSocket(
+      `${process.env.EDGE_WORKER_URL!.replace(/^http/, "ws")}/api/data/v1/${site}/_live`,
+    );
+    const heard: { type: string; id: string; result?: unknown }[] = [];
+    const waiting: (() => void)[] = [];
+    socket.onmessage = (event) => {
+      heard.push(JSON.parse(String(event.data)));
+      waiting.splice(0).forEach((done) => done());
+    };
+    const until = async (count: number) => {
+      const deadline = Date.now() + 5000;
+      while (heard.length < count && Date.now() < deadline)
+        await new Promise<void>((done) => {
+          waiting.push(done);
+          setTimeout(done, 100);
+        });
+      expect(heard.length).toBeGreaterThanOrEqual(count);
+    };
+    try {
+      await new Promise((done, fail) => {
+        const timer = setTimeout(
+          () => fail(new Error("The live connection did not open.")),
+          5000,
+        );
+        socket.onopen = () => {
+          clearTimeout(timer);
+          done(null);
+        };
+        socket.onerror = () => fail(new Error("The live connection failed."));
+      });
+      socket.send(
+        JSON.stringify({
+          type: "subscribe",
+          id: "a",
+          query: "board:recent",
+          args: { board: "notice" },
+        }),
+      );
+      socket.send(
+        JSON.stringify({
+          type: "subscribe",
+          id: "b",
+          query: "board:count",
+          args: null,
+        }),
+      );
+      await until(2);
+      const first = Object.fromEntries(heard.map((m) => [m.id, m.result]));
+      expect(first.a).toEqual(["공지"]);
+      const before = first.b as number;
+      // A member's mutation adds to the free board: the count changes, the
+      // notice board's answer does not, so only "b" hears.
+      await callSiteObject(site, "call", {
+        ownerId,
+        site,
+        member: "member-2",
+        kind: "mutation",
+        file: "board",
+        name: "write",
+        args: { title: "다섯째" },
+      });
+      await until(3);
+      expect(heard[2]).toEqual({ type: "result", id: "b", result: before + 1 });
+      // Unsubscribed, it hears nothing more.
+      socket.send(JSON.stringify({ type: "unsubscribe", id: "b" }));
+      await new Promise((done) => setTimeout(done, 100));
+      await callSiteObject(site, "call", {
+        ownerId,
+        site,
+        member: "member-2",
+        kind: "mutation",
+        file: "board",
+        name: "write",
+        args: { title: "여섯째" },
+      });
+      await new Promise((done) => setTimeout(done, 300));
+      expect(heard).toHaveLength(3);
+      // A query that does not exist is an error for that subscription alone.
+      socket.send(
+        JSON.stringify({
+          type: "subscribe",
+          id: "c",
+          query: "board:nope",
+          args: null,
+        }),
+      );
+      await until(4);
+      expect(heard[3]).toMatchObject({
+        type: "error",
+        id: "c",
+        error: { status: 404 },
+      });
+    } finally {
+      // An open socket would keep the test run from ending.
+      socket.close();
+    }
   });
 });

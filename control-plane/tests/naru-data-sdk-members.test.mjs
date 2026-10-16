@@ -774,3 +774,77 @@ test("nested module references use colon endpoints and reject ambiguous paths", 
     assert.equal(calls.length, 1);
   });
 });
+
+test("live queries share one connection, are asked again on reconnect, and close with the last", async () => {
+  const sockets = [];
+  class FakeSocket {
+    constructor(url) {
+      this.url = new URL(url);
+      this.sent = [];
+      sockets.push(this);
+      queueMicrotask(() => this.onopen?.());
+    }
+    send(text) {
+      this.sent.push(text);
+    }
+    close(code) {
+      this.closedWith = code;
+    }
+  }
+  const saved = globalThis.WebSocket;
+  globalThis.WebSocket = FakeSocket;
+  try {
+    await browser(async () => {
+      const naru = createNaru();
+      const results = [];
+      const errors = [];
+      const recent = naru.subscribe(
+        "board:recent",
+        { board: "free" },
+        (result) => results.push(result),
+        { onError: (error) => errors.push(error) },
+      );
+      const mine = naru.subscribe("board:mine", null, () => {});
+      await new Promise((done) => setTimeout(done, 0));
+      assert.equal(sockets.length, 1);
+      assert.equal(
+        sockets[0].url.href,
+        "wss://sdk.naru.pub/api/data/v1/alice/_live",
+      );
+      const asked = () =>
+        sockets
+          .at(-1)
+          .sent.filter((text) => text !== "ping")
+          .map((text) => JSON.parse(text));
+      assert.deepEqual(asked(), [
+        {
+          type: "subscribe",
+          id: "1",
+          query: "board:recent",
+          args: { board: "free" },
+        },
+        { type: "subscribe", id: "2", query: "board:mine", args: null },
+      ]);
+      sockets[0].onmessage({ data: '{"type":"result","id":"1","result":[1]}' });
+      sockets[0].onmessage({
+        data: '{"type":"error","id":"1","error":{"status":403,"code":"ACCESS_DENIED","message":"운영진만","site":true}}',
+      });
+      assert.deepEqual(results, [[1]]);
+      assert.equal(errors[0].code, "ACCESS_DENIED");
+      assert.equal(errors[0].message, "운영진만");
+      // Reconnecting asks for both again.
+      sockets[0].onclose({ code: 1006 });
+      await new Promise((done) => setTimeout(done, 1100));
+      assert.equal(sockets.length, 2);
+      assert.equal(asked().length, 2);
+      recent.close();
+      assert.deepEqual(asked().at(-1), { type: "unsubscribe", id: "1" });
+      assert.equal(sockets[1].closedWith, undefined);
+      mine.close();
+      assert.equal(sockets[1].closedWith, 1000);
+      assert.throws(() => naru.subscribe("recent", null, () => {}), TypeError);
+    });
+  } finally {
+    globalThis.WebSocket = saved;
+  }
+});

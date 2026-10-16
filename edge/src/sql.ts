@@ -183,12 +183,22 @@ const CLAUSES = [
 export type Kind = "read" | "write" | "schema";
 
 /**
+ * The tables a statement names, for live queries: every one, and the first
+ * (a write's own table, unless a WITH comes before it).
+ */
+export type Tables = { tables: Set<string>; target?: string };
+
+/**
  * What one statement is, refused unless `allowed` has its kind: `read`
  * (SELECT, VALUES), `write` (INSERT, REPLACE, UPDATE, DELETE) or `schema`
  * (CREATE, ALTER and DROP of tables, indexes and views; full-text tables
  * with fts5).
  */
-export function classify(tokens: Token[], allowed: Kind[]): Kind {
+export function classify(
+  tokens: Token[],
+  allowed: Kind[],
+  seen?: Tables,
+): Kind {
   const refuse = (name: string | undefined) => {
     if (name !== undefined && reserved(name))
       throw invalid(`${name} is Naru's.`);
@@ -196,11 +206,19 @@ export function classify(tokens: Token[], allowed: Kind[]): Kind {
   /** Checks the table named at `index` (name or schema.name); returns past it. */
   const table = (index: number) => {
     refuse(nameOf(tokens[index]));
+    let name = nameOf(tokens[index]);
+    let next = index + 1;
     if (tokens[index + 1]?.text === ".") {
       refuse(nameOf(tokens[index + 2]));
-      return index + 3;
+      name = nameOf(tokens[index + 2]);
+      next = index + 3;
     }
-    return index + 1;
+    // ON CONFLICT DO UPDATE SET: no table follows.
+    if (seen && name !== undefined && !is(tokens[index], "SET")) {
+      seen.tables.add(name.toLowerCase());
+      seen.target ??= name.toLowerCase();
+    }
+    return next;
   };
   const virtual = is(tokens[1], "VIRTUAL");
   for (let index = 0; index < tokens.length; index++) {
@@ -269,6 +287,8 @@ export function classify(tokens: Token[], allowed: Kind[]): Kind {
   else if (verb === "DROP" && is(tokens[1], "TABLE", "INDEX", "VIEW"))
     kind = "schema";
   if (!kind) throw invalid(`${first.text} is not a statement site SQL runs.`);
+  // A write after WITH may write any table it names.
+  if (seen && first.upper === "WITH") seen.target = undefined;
   if (!allowed.includes(kind))
     throw invalid(
       kind === "schema"

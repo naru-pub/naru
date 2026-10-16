@@ -25,6 +25,16 @@ export type Row = Record<string, SqlValue>;
 
 export const SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS _naru_subscriptions (
+    socket TEXT NOT NULL,
+    id TEXT NOT NULL,
+    member TEXT,
+    query TEXT NOT NULL,
+    args TEXT NOT NULL,
+    tables TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    PRIMARY KEY (socket, id)
+  );
   CREATE TABLE IF NOT EXISTS _naru_roles (
     member TEXT PRIMARY KEY,
     roles TEXT NOT NULL,

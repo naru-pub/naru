@@ -121,6 +121,39 @@ function naruError(
   );
 }
 
+/** The NaruError for what the server answered: `error` with its HTTP `status`. */
+function failure(
+  status: number,
+  error:
+    | { code?: string; message?: unknown; details?: Json; site?: boolean }
+    | undefined,
+) {
+  const code = errorCode(status, error?.code);
+  const account =
+    typeof error?.message === "string"
+      ? error.message
+      : `Database request failed (HTTP ${status}).`;
+  // A site function's ctx.fail message is already written for visitors. A
+  // value a unique field already holds is no concurrent change, as other
+  // conflicts are: it is worded on its own.
+  const unique = (error?.details as { unique?: unknown } | undefined)?.unique;
+  const failed = naruError(code, account, {
+    words:
+      error?.site === true
+        ? account
+        : code === "CONFLICT" && typeof unique === "string"
+          ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
+          : undefined,
+  });
+  // What a site function passed to ctx.fail, for the page to branch on.
+  if (error?.details !== undefined)
+    Object.defineProperty(failed, "details", {
+      value: error.details,
+      enumerable: true,
+    });
+  return failed;
+}
+
 /** Top-level user fields, combined with AND. */
 export type Filter = Record<
   string,
@@ -269,7 +302,7 @@ export type PublicCollection<T = Json> = Collection<T>;
 export type AdminCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
-export interface Member extends SiteCode {
+export interface Member extends SiteCode, LiveQueries {
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.
@@ -473,7 +506,25 @@ export interface Live {
   close(): void;
 }
 
-export interface NaruClient extends SiteCode {
+/** Live queries: a query's answer, kept current. */
+export interface LiveQueries {
+  /**
+   * Runs `"<module/path>:<query>"` from the site's `_naru/queries/` as
+   * `query()` does, calls `onResult` with its answer, and again whenever a
+   * write changes a table it read and the answer with it, until closed.
+   * After the connection drops it is asked again, so the latest answer
+   * arrives once it is back. A failure, now or later, goes to `onError`.
+   * A connection holds at most 20.
+   */
+  subscribe<R = Json>(
+    name: string,
+    args: Json,
+    onResult: (result: R) => void,
+    options?: { onError?(error: NaruError): void },
+  ): Live;
+}
+
+export interface NaruClient extends SiteCode, LiveQueries {
   /** Visitor access, even when signed in. */
   collection<T = Json>(name: string): Collection<T>;
   /**
@@ -758,32 +809,7 @@ async function request<Result>(
   if (renew && renewed !== null && Number.isFinite(Number(renewed)))
     renew(Date.now() + Number(renewed) * 1000);
   const result = await response.json().catch(() => null);
-  if (!response.ok) {
-    const code = errorCode(response.status, result?.error?.code);
-    const account =
-      typeof result?.error?.message === "string"
-        ? result.error.message
-        : `Database request failed (HTTP ${response.status}).`;
-    // A site function's ctx.fail message is already written for visitors. A
-    // value a unique field already holds is no concurrent change, as other
-    // conflicts are: it is worded on its own.
-    const unique = result?.error?.details?.unique;
-    const error = naruError(code, account, {
-      words:
-        result?.error?.site === true
-          ? account
-          : code === "CONFLICT" && typeof unique === "string"
-            ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
-            : undefined,
-    });
-    // What a site function passed to ctx.fail, for the page to branch on.
-    if (result?.error?.details !== undefined)
-      Object.defineProperty(error, "details", {
-        value: result.error.details,
-        enumerable: true,
-      });
-    throw error;
-  }
+  if (!response.ok) throw failure(response.status, result?.error);
   // A proxy or challenge page can answer 200 with HTML. Handing that back as
   // an empty result would make a missing document look like a present one.
   if (result === null || typeof result !== "object")
@@ -1309,10 +1335,18 @@ function guarded<A extends unknown[]>(
 // with growing pauses while the network or the site is away, and stops for
 // good when closed, or when the server ends the member's access (4003). A
 // member's connection opens with a fresh ticket each time (`ticket`).
+/** What live queries hook into a live connection (`subscriptions`). */
+type LiveHooks = {
+  open(send: (message: unknown) => void): void;
+  message(message: unknown): boolean;
+  closed(): void;
+};
+
 function live(
   root: string,
   options: LiveOptions,
   ticket?: () => Promise<string>,
+  hooks?: LiveHooks,
 ): Live {
   if (!options || typeof options.onMessage !== "function")
     throw new TypeError("live() needs an onMessage function.");
@@ -1360,6 +1394,7 @@ function live(
       status("open");
       // Answered by the server without waking the site's object.
       keepalive = setInterval(() => current.send("ping"), 50_000);
+      hooks?.open((message) => current.send(JSON.stringify(message)));
     };
     current.onmessage = (event) => {
       if (event.data === "pong") return;
@@ -1369,10 +1404,12 @@ function live(
       } catch {
         return;
       }
+      if (hooks?.message(message)) return;
       guarded(options.onMessage, message);
     };
     current.onclose = (event) => {
       clearInterval(keepalive);
+      hooks?.closed();
       if (socket === current) socket = undefined;
       if (closed) return;
       if (event.code === 4003) stop();
@@ -1388,6 +1425,91 @@ function live(
       socket?.close(1000);
     },
   });
+}
+
+// Live queries: one connection a handle shares among them, opened with the
+// first and closed with the last. On every (re)connect each is asked again,
+// so a result missed while the connection was down arrives then.
+function subscriptions(root: string, ticket?: () => Promise<string>) {
+  const active = new Map<
+    string,
+    {
+      query: string;
+      args: Json;
+      onResult(result: never): void;
+      onError?(error: NaruError): void;
+    }
+  >();
+  let connection: Live | undefined;
+  let send: ((message: unknown) => void) | undefined;
+  let next = 0;
+  const ask = (id: string) => {
+    const { query, args } = active.get(id)!;
+    send?.({ type: "subscribe", id, query, args });
+  };
+  return function subscribe<R = Json>(
+    name: string,
+    args: Json,
+    onResult: (result: R) => void,
+    options: { onError?(error: NaruError): void } = {},
+  ): Live {
+    const parts = typeof name === "string" ? name.split(":") : [];
+    if (parts.length !== 2)
+      throw new TypeError('Live queries name "<module/path>:<query>".');
+    parts[0].split("/").forEach(segment);
+    segment(parts[1]);
+    jsonValue(args, undefined, "args");
+    if (typeof onResult !== "function")
+      throw new TypeError("subscribe() needs an onResult function.");
+    const id = String(++next);
+    active.set(id, {
+      query: name,
+      args,
+      onResult: onResult as (result: never) => void,
+      onError: options.onError,
+    });
+    connection ??= live(root, { onMessage: () => {} }, ticket, {
+      open(sender) {
+        send = sender;
+        for (const id of active.keys()) ask(id);
+      },
+      message(message) {
+        const { type, id, result, error } = (message ?? {}) as {
+          type?: string;
+          id?: string;
+          result?: never;
+          error?: {
+            status: number;
+            code?: string;
+            message?: string;
+            details?: Json;
+            site?: boolean;
+          };
+        };
+        const subscription = id === undefined ? undefined : active.get(id);
+        if (type === "result" && subscription)
+          guarded(subscription.onResult, result!);
+        else if (type === "error" && subscription)
+          guarded(subscription.onError, failure(error?.status ?? 400, error));
+        else return false;
+        return true;
+      },
+      closed() {
+        send = undefined;
+      },
+    });
+    ask(id);
+    return Object.freeze({
+      close() {
+        if (!active.delete(id)) return;
+        send?.({ type: "unsubscribe", id });
+        if (active.size) return;
+        connection?.close();
+        connection = undefined;
+        send = undefined;
+      },
+    });
+  };
 }
 
 // Calling a site function, as a member or the owner: the same request with the
@@ -1493,6 +1615,14 @@ function member(
 ): Member {
   const { origin, root } = context;
   const { send, signOut } = credential(memberPlace(context), token, expiresAt);
+  const liveTicket = async () => {
+    const { ticket } = await send<{ ticket: string }>(`${root}/_live`, {
+      method: "POST",
+      body: {},
+      touches: [],
+    });
+    return ticket;
+  };
   return Object.freeze({
     id,
     collection: <T = Json>(name: string): Collection<T> =>
@@ -1500,15 +1630,8 @@ function member(
     call: functions(root, send),
     query: functions(root, send, "_query"),
     mutate: functions(root, send, "_mutate"),
-    live: (options: LiveOptions) =>
-      live(root, options, async () => {
-        const { ticket } = await send<{ ticket: string }>(`${root}/_live`, {
-          method: "POST",
-          body: {},
-          touches: [],
-        });
-        return ticket;
-      }),
+    live: (options: LiveOptions) => live(root, options, liveTicket),
+    subscribe: subscriptions(root, liveTicket),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
   });
@@ -1732,6 +1855,7 @@ export function createNaru(options?: { site?: string }): NaruClient {
     collection: <T = Json>(name: string) =>
       publicDocuments<T>(context.root, name),
     live: (options: LiveOptions) => live(context.root, options),
+    subscribe: subscriptions(context.root),
     call: functions(context.root, request),
     query: functions(context.root, request, "_query"),
     mutate: functions(context.root, request, "_mutate"),

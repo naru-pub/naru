@@ -44,6 +44,34 @@ function naruError(code, account, { words, cause } = {}) {
   );
 }
 
+/** The NaruError for what the server answered: `error` with its HTTP `status`. */
+function failure(status, error) {
+  const code = errorCode(status, error?.code);
+  const account =
+    typeof error?.message === "string"
+      ? error.message
+      : `Database request failed (HTTP ${status}).`;
+  // A site function's ctx.fail message is already written for visitors. A
+  // value a unique field already holds is no concurrent change, as other
+  // conflicts are: it is worded on its own.
+  const unique = error?.details?.unique;
+  const failed = naruError(code, account, {
+    words:
+      error?.site === true
+        ? account
+        : code === "CONFLICT" && typeof unique === "string"
+          ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
+          : undefined,
+  });
+  // What a site function passed to ctx.fail, for the page to branch on.
+  if (error?.details !== undefined)
+    Object.defineProperty(failed, "details", {
+      value: error.details,
+      enumerable: true,
+    });
+  return failed;
+}
+
 // The server names the code. Only the codes this version knows are passed on,
 // so a code added later reads as the nearest one this version has.
 const CODES = new Set([
@@ -204,32 +232,7 @@ async function request(
   if (renew && renewed !== null && Number.isFinite(Number(renewed)))
     renew(Date.now() + Number(renewed) * 1000);
   const result = await response.json().catch(() => null);
-  if (!response.ok) {
-    const code = errorCode(response.status, result?.error?.code);
-    const account =
-      typeof result?.error?.message === "string"
-        ? result.error.message
-        : `Database request failed (HTTP ${response.status}).`;
-    // A site function's ctx.fail message is already written for visitors. A
-    // value a unique field already holds is no concurrent change, as other
-    // conflicts are: it is worded on its own.
-    const unique = result?.error?.details?.unique;
-    const error = naruError(code, account, {
-      words:
-        result?.error?.site === true
-          ? account
-          : code === "CONFLICT" && typeof unique === "string"
-            ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
-            : undefined,
-    });
-    // What a site function passed to ctx.fail, for the page to branch on.
-    if (result?.error?.details !== undefined)
-      Object.defineProperty(error, "details", {
-        value: result.error.details,
-        enumerable: true,
-      });
-    throw error;
-  }
+  if (!response.ok) throw failure(response.status, result?.error);
   // A proxy or challenge page can answer 200 with HTML. Handing that back as
   // an empty result would make a missing document look like a present one.
   if (result === null || typeof result !== "object")
@@ -675,11 +678,7 @@ function guarded(fn, ...args) {
   }
 }
 
-// A live connection to the site's object, through the edge. It reconnects
-// with growing pauses while the network or the site is away, and stops for
-// good when closed, or when the server ends the member's access (4003). A
-// member's connection opens with a fresh ticket each time (`ticket`).
-function live(root, options, ticket) {
+function live(root, options, ticket, hooks) {
   if (!options || typeof options.onMessage !== "function")
     throw new TypeError("live() needs an onMessage function.");
   const topics = [...(options.topics ?? [])];
@@ -725,6 +724,7 @@ function live(root, options, ticket) {
       status("open");
       // Answered by the server without waking the site's object.
       keepalive = setInterval(() => current.send("ping"), 50_000);
+      hooks?.open((message) => current.send(JSON.stringify(message)));
     };
     current.onmessage = (event) => {
       if (event.data === "pong") return;
@@ -734,10 +734,12 @@ function live(root, options, ticket) {
       } catch {
         return;
       }
+      if (hooks?.message(message)) return;
       guarded(options.onMessage, message);
     };
     current.onclose = (event) => {
       clearInterval(keepalive);
+      hooks?.closed();
       if (socket === current) socket = undefined;
       if (closed) return;
       if (event.code === 4003) stop();
@@ -753,6 +755,67 @@ function live(root, options, ticket) {
       socket?.close(1000);
     },
   });
+}
+
+// Live queries: one connection a handle shares among them, opened with the
+// first and closed with the last. On every (re)connect each is asked again,
+// so a result missed while the connection was down arrives then.
+function subscriptions(root, ticket) {
+  const active = new Map();
+  let connection;
+  let send;
+  let next = 0;
+  const ask = (id) => {
+    const { query, args } = active.get(id);
+    send?.({ type: "subscribe", id, query, args });
+  };
+  return function subscribe(name, args, onResult, options = {}) {
+    const parts = typeof name === "string" ? name.split(":") : [];
+    if (parts.length !== 2)
+      throw new TypeError('Live queries name "<module/path>:<query>".');
+    parts[0].split("/").forEach(segment);
+    segment(parts[1]);
+    jsonValue(args, undefined, "args");
+    if (typeof onResult !== "function")
+      throw new TypeError("subscribe() needs an onResult function.");
+    const id = String(++next);
+    active.set(id, {
+      query: name,
+      args,
+      onResult: onResult,
+      onError: options.onError,
+    });
+    connection ??= live(root, { onMessage: () => {} }, ticket, {
+      open(sender) {
+        send = sender;
+        for (const id of active.keys()) ask(id);
+      },
+      message(message) {
+        const { type, id, result, error } = message ?? {};
+        const subscription = id === undefined ? undefined : active.get(id);
+        if (type === "result" && subscription)
+          guarded(subscription.onResult, result);
+        else if (type === "error" && subscription)
+          guarded(subscription.onError, failure(error?.status ?? 400, error));
+        else return false;
+        return true;
+      },
+      closed() {
+        send = undefined;
+      },
+    });
+    ask(id);
+    return Object.freeze({
+      close() {
+        if (!active.delete(id)) return;
+        send?.({ type: "unsubscribe", id });
+        if (active.size) return;
+        connection?.close();
+        connection = undefined;
+        send = undefined;
+      },
+    });
+  };
 }
 
 // Calling a site function, as a member or the owner: the same request with the
@@ -845,21 +908,22 @@ function admin(context, token, expiresAt) {
 function member(context, token, expiresAt, id) {
   const { origin, root } = context;
   const { send, signOut } = credential(memberPlace(context), token, expiresAt);
+  const liveTicket = async () => {
+    const { ticket } = await send(`${root}/_live`, {
+      method: "POST",
+      body: {},
+      touches: [],
+    });
+    return ticket;
+  };
   return Object.freeze({
     id,
     collection: (name) => documents(root, name, send),
     call: functions(root, send),
     query: functions(root, send, "_query"),
     mutate: functions(root, send, "_mutate"),
-    live: (options) =>
-      live(root, options, async () => {
-        const { ticket } = await send(`${root}/_live`, {
-          method: "POST",
-          body: {},
-          touches: [],
-        });
-        return ticket;
-      }),
+    live: (options) => live(root, options, liveTicket),
+    subscribe: subscriptions(root, liveTicket),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/member-revoke`),
   });
@@ -1069,6 +1133,7 @@ export function createNaru(options) {
   return Object.freeze({
     collection: (name) => publicDocuments(context.root, name),
     live: (options) => live(context.root, options),
+    subscribe: subscriptions(context.root),
     call: functions(context.root, request),
     query: functions(context.root, request, "_query"),
     mutate: functions(context.root, request, "_mutate"),

@@ -219,7 +219,7 @@ export type PublicCollection<T = Json> = Collection<T>;
 export type AdminCollection<T = Json> = Collection<T>;
 
 /** A visitor signed in to this site with their Naru account. */
-export interface Member extends SiteCode {
+export interface Member extends SiteCode, LiveQueries {
   /**
    * This member's ID on this site, the same on every visit. Documents they
    * create carry it as `createdBy`. It is not their Naru account name.
@@ -421,7 +421,25 @@ export interface Live {
   close(): void;
 }
 
-export interface NaruClient extends SiteCode {
+/** Live queries: a query's answer, kept current. */
+export interface LiveQueries {
+  /**
+   * Runs `"<module/path>:<query>"` from the site's `_naru/queries/` as
+   * `query()` does, calls `onResult` with its answer, and again whenever a
+   * write changes a table it read and the answer with it, until closed.
+   * After the connection drops it is asked again, so the latest answer
+   * arrives once it is back. A failure, now or later, goes to `onError`.
+   * A connection holds at most 20.
+   */
+  subscribe<R = Json>(
+    name: string,
+    args: Json,
+    onResult: (result: R) => void,
+    options?: { onError?(error: NaruError): void },
+  ): Live;
+}
+
+export interface NaruClient extends SiteCode, LiveQueries {
   /** Visitor access, even when signed in. */
   collection<T = Json>(name: string): Collection<T>;
   /**

@@ -10,6 +10,7 @@ import {
   MAX_SITE_BYTES,
   name,
   functionModule,
+  functionReference,
   permission,
   unreservedName,
   writePermission,
@@ -30,7 +31,30 @@ import {
   reserved,
   statements,
   type PlanStep,
+  type Tables,
 } from "./sql";
+
+/** A live connection, as its attachment keeps it across hibernation. */
+type LiveSocket = {
+  id: string;
+  member: string | null;
+  site: string;
+  clientIp?: string;
+};
+/** The tables a call's site SQL read and wrote, for live queries. */
+type SqlTables = { read: Set<string>; written: Set<string> };
+/** Live queries a connection may hold, and a site in all. */
+const MAX_SOCKET_SUBSCRIPTIONS = 20;
+const MAX_SITE_SUBSCRIPTIONS = 5000;
+/** Distinct queries one refresh re-runs; the rest wait for the next write. */
+const MAX_REFRESH_RUNS = 200;
+const liveSend = (socket: WebSocket, message: unknown) => {
+  try {
+    socket.send(JSON.stringify(message));
+  } catch {
+    /* closing already */
+  }
+};
 
 /** One of a release's SQL migrations (FunctionRevisions.migrations). */
 type Migration = { name: string; sql: string; digest: string };
@@ -278,20 +302,252 @@ export class SiteData extends DurableObject<Env> {
       .split(",")
       .filter(Boolean);
     const pair = new WebSocketPair();
+    const socket: LiveSocket = {
+      id: randomUUID(),
+      member,
+      site: request.headers.get("X-Naru-Site") ?? "",
+      clientIp: request.headers.get("X-Naru-Client-Ip") ?? undefined,
+    };
     this.ctx.acceptWebSocket(pair[1], [
       "live",
+      `socket:${socket.id}`,
       ...(member ? [`member:${member}`] : []),
       ...topics.map((topic) => `topic:${topic}`),
     ]);
+    pair[1].serializeAttachment(socket);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
-  async webSocketMessage() {
-    // Listeners only listen; "ping" is answered without reaching here.
+  /**
+   * A live query (1.1.0): `{ type: "subscribe", id, query, args }` runs the
+   * query now, as the socket's member or a visitor, and again whenever a
+   * write changes a table it read, sending `{ type: "result", id, result }`
+   * when the answer changed (or `{ type: "error", id, error }`).
+   * `{ type: "unsubscribe", id }` ends it. "ping" is answered without
+   * reaching here.
+   */
+  async webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    if (typeof data !== "string" || data.length > 32 * 1024) return;
+    let message: {
+      type?: unknown;
+      id?: unknown;
+      query?: unknown;
+      args?: unknown;
+    };
+    try {
+      message = JSON.parse(data);
+    } catch {
+      return;
+    }
+    const me = socket.deserializeAttachment() as LiveSocket | null;
+    const id = message?.id;
+    if (!me || typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id))
+      return;
+    if (message.type === "unsubscribe") {
+      this.sql.exec(
+        "DELETE FROM _naru_subscriptions WHERE socket = ? AND id = ?",
+        me.id,
+        id,
+      );
+      return;
+    }
+    if (message.type !== "subscribe") return;
+    const refuse = (error: unknown) =>
+      liveSend(socket, {
+        type: "error",
+        id,
+        error:
+          error instanceof DataError
+            ? { status: error.status, message: error.message, code: error.code }
+            : { status: 400, message: String(error) },
+      });
+    let file: string, fn: string;
+    try {
+      ({ file, fn } = functionReference(String(message.query)));
+      const existing = this.rows(
+        "SELECT id FROM _naru_subscriptions WHERE socket = ?",
+        me.id,
+      );
+      if (
+        existing.length >= MAX_SOCKET_SUBSCRIPTIONS &&
+        !existing.some((row) => row.id === id)
+      )
+        throw new DataError(
+          429,
+          `A connection holds at most ${MAX_SOCKET_SUBSCRIPTIONS} live queries.`,
+          "RATE_LIMITED",
+        );
+      if (
+        Number(
+          this.rows("SELECT count(*) AS n FROM _naru_subscriptions")[0].n,
+        ) >= MAX_SITE_SUBSCRIPTIONS
+      )
+        throw new DataError(
+          503,
+          "The site holds as many live queries as it can.",
+          "UNAVAILABLE",
+        );
+    } catch (error) {
+      refuse(error);
+      return;
+    }
+    const args = message.args ?? null;
+    const outcome = await this.liveRun(me, file, fn, args, false);
+    if (!outcome.ok) {
+      liveSend(socket, { type: "error", id, error: outcome.error });
+      return;
+    }
+    this.sql.exec(
+      `INSERT INTO _naru_subscriptions (socket, id, member, query, args, tables, hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (socket, id) DO UPDATE SET query = excluded.query, args = excluded.args,
+         tables = excluded.tables, hash = excluded.hash`,
+      me.id,
+      id,
+      me.member,
+      `${file}:${fn}`,
+      JSON.stringify(args),
+      JSON.stringify(outcome.value.tables),
+      outcome.value.hash,
+    );
+    liveSend(socket, { type: "result", id, result: outcome.value.result });
   }
 
   async webSocketClose(socket: WebSocket, code: number) {
+    const me = socket.deserializeAttachment() as LiveSocket | null;
+    if (me)
+      this.sql.exec("DELETE FROM _naru_subscriptions WHERE socket = ?", me.id);
     socket.close(code === 1005 ? 1000 : code);
+  }
+
+  /**
+   * Runs a live query as `me`: a subscription's first run is a query call
+   * like any other, counted and limited; a re-run after a write is the
+   * site's doing and only metered. Answers what it returned, the tables it
+   * read (["*"] when it read a view, which could be any), and a hash of the
+   * answer to tell whether it changed.
+   */
+  private async liveRun(
+    me: LiveSocket,
+    file: string,
+    fn: string,
+    args: unknown,
+    refresh: boolean,
+  ): Promise<Outcome<{ result: unknown; tables: string[]; hash: string }>> {
+    const ownerId = this.meta("owner_id");
+    if (!ownerId)
+      return {
+        ok: false,
+        error: {
+          status: 503,
+          message: "Live queries are unavailable.",
+          code: "UNAVAILABLE",
+        },
+      };
+    const outcome = await this.call({
+      ownerId,
+      site: me.site,
+      member: me.member,
+      ...(me.member ? {} : { visitor: true }),
+      clientIp: me.clientIp,
+      file,
+      name: fn,
+      args,
+      kind: "query",
+      live: refresh ? "refresh" : "subscribe",
+    });
+    if (!outcome.ok) return outcome;
+    const read = outcome.value.tables ?? [];
+    const views = new Set(
+      this.rows("SELECT name FROM sqlite_master WHERE type = 'view'").map(
+        (row) => String(row.name).toLowerCase(),
+      ),
+    );
+    return {
+      ok: true,
+      value: {
+        result: outcome.value.result,
+        tables: read.some((table) => views.has(table)) ? ["*"] : read,
+        hash: createHash("sha256")
+          .update(JSON.stringify(outcome.value.result) ?? "null")
+          .digest("base64url"),
+      },
+    };
+  }
+
+  /** Tables written since the last refresh, re-run together on the next turn. */
+  private refreshing?: Set<string>;
+  private scheduleRefresh(tables: Iterable<string>) {
+    const scheduled = this.refreshing !== undefined;
+    this.refreshing ??= new Set();
+    for (const table of tables) this.refreshing.add(table);
+    if (!scheduled) setTimeout(() => void this.refresh(), 0);
+  }
+
+  /**
+   * Re-runs the live queries that read a table written since the last
+   * refresh ("*": all of them), once for each query, arguments and member
+   * that share it, and sends each subscription a changed answer.
+   */
+  private async refresh() {
+    const written = this.refreshing ?? new Set<string>();
+    this.refreshing = undefined;
+    const groups = new Map<string, Row[]>();
+    for (const row of this.rows("SELECT * FROM _naru_subscriptions")) {
+      const tables = JSON.parse(String(row.tables)) as string[];
+      if (
+        !written.has("*") &&
+        !tables.includes("*") &&
+        !tables.some((table) => written.has(table))
+      )
+        continue;
+      if (!this.ctx.getWebSockets(`socket:${row.socket}`).length) {
+        this.sql.exec(
+          "DELETE FROM _naru_subscriptions WHERE socket = ?",
+          row.socket,
+        );
+        continue;
+      }
+      const key = JSON.stringify([row.query, row.args, row.member]);
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    }
+    let runs = 0;
+    for (const rows of groups.values()) {
+      if (++runs > MAX_REFRESH_RUNS) break;
+      const first = rows[0];
+      const socket = this.ctx.getWebSockets(`socket:${first.socket}`)[0];
+      const me = socket?.deserializeAttachment() as LiveSocket | null;
+      if (!me) continue;
+      const [file, fn] = String(first.query).split(":");
+      this.tally("live_refresh");
+      const outcome = await this.liveRun(
+        me,
+        file,
+        fn,
+        JSON.parse(String(first.args)),
+        true,
+      );
+      const hash = outcome.ok
+        ? outcome.value.hash
+        : `error:${outcome.error.message}`;
+      for (const row of rows) {
+        if (row.hash === hash) continue;
+        this.sql.exec(
+          "UPDATE _naru_subscriptions SET hash = ?, tables = ? WHERE socket = ? AND id = ?",
+          hash,
+          outcome.ok ? JSON.stringify(outcome.value.tables) : row.tables,
+          row.socket,
+          row.id,
+        );
+        for (const target of this.ctx.getWebSockets(`socket:${row.socket}`))
+          liveSend(
+            target,
+            outcome.ok
+              ? { type: "result", id: row.id, result: outcome.value.result }
+              : { type: "error", id: row.id, error: outcome.error },
+          );
+      }
+    }
   }
 
   /** Sends what a call's function sent, once the call has committed. */
@@ -1361,17 +1617,25 @@ export class SiteData extends DurableObject<Env> {
     text: unknown,
     values: unknown,
     readonly: boolean,
-    budget: { rowsRead: number },
+    budget: { rowsRead: number; tables: SqlTables },
   ) {
     if (typeof text !== "string" || text.length > 64 * 1024)
       throw new DataError(400, "ctx.sql takes a statement of at most 64 KiB.");
     const parsed = statements(text);
     if (parsed.length !== 1)
       throw new DataError(400, "ctx.sql runs one statement at a time.");
+    const seen: Tables = { tables: new Set() };
     const kind = classify(
       parsed[0].tokens,
       readonly ? ["read"] : ["read", "write"],
+      seen,
     );
+    // What live queries read, and what a write changes for them.
+    if (kind === "read")
+      for (const table of seen.tables) budget.tables.read.add(table);
+    else
+      for (const table of seen.target ? [seen.target] : seen.tables)
+        budget.tables.written.add(table);
     const bound = bindings(values ?? []);
     checkPlan(
       this.rows(
@@ -1541,15 +1805,20 @@ export class SiteData extends DurableObject<Env> {
         );
       }
     }
-    return this.run(() => {
-      if (newer()) {
+    const activated = this.run(() => {
+      const switching = newer();
+      if (switching) {
         for (const migration of this.pendingMigrations(migrations))
           this.applyMigration(migration, input.generation);
         this.setMeta("functions_revision", input.revision);
         this.setMeta("functions_generation", input.generation);
       }
-      return { revision: this.meta("functions_revision") };
+      return { revision: this.meta("functions_revision"), switching };
     });
+    if (!activated.ok) return activated;
+    // New code may answer live queries differently: every one runs again.
+    if (activated.value.switching) this.scheduleRefresh(["*"]);
+    return { ok: true, value: { revision: activated.value.revision } };
   }
 
   /**
@@ -1753,9 +2022,10 @@ export class SiteData extends DurableObject<Env> {
   private functionHost(
     written = new Set<string>(),
     messages: Message[] = [],
+    tables: SqlTables = { read: new Set(), written: new Set() },
   ): Host {
     const cachedCollections = new Map<string, Collection>();
-    const sqlBudget = { rowsRead: 0 };
+    const sqlBudget = { rowsRead: 0, tables };
     const collection = (value: unknown) => {
       const key = name(value);
       const cached = cachedCollections.get(key);
@@ -2002,7 +2272,14 @@ export class SiteData extends DurableObject<Env> {
      * design): anyone may call those, and their code says who may do what.
      */
     kind?: "function" | "query" | "mutation";
-  }): Promise<Outcome<{ result: unknown; written: string[] }>> {
+    /**
+     * A live query's run (internal): its answer says the tables it read,
+     * and a re-run after a write ("refresh") is not counted as a call.
+     */
+    live?: "subscribe" | "refresh";
+  }): Promise<
+    Outcome<{ result: unknown; written: string[]; tables?: string[] }>
+  > {
     const visitor = input.member === null && input.visitor === true;
     const kind = input.kind ?? "function";
     let filename: string, sources, readonly;
@@ -2044,6 +2321,7 @@ export class SiteData extends DurableObject<Env> {
     }
     const admitted = this.run(() => {
       this.claim(input.ownerId);
+      if (input.live === "refresh") return;
       if (visitor || input.member !== null) this.admitWork();
       if (visitor) {
         this.spend(readonly ? "visitor_read_call" : "visitor_call");
@@ -2058,8 +2336,10 @@ export class SiteData extends DurableObject<Env> {
     const engine = await quickjs();
     const written = new Set<string>();
     const messages: Message[] = [];
+    const tables: SqlTables = { read: new Set(), written: new Set() };
     try {
-      const counted = visitor || input.member !== null;
+      const counted =
+        input.live !== "refresh" && (visitor || input.member !== null);
       const outcome = this.run(() => ({
         result: (counted
           ? <T>(work: () => T) => this.metered(work)
@@ -2086,12 +2366,16 @@ export class SiteData extends DurableObject<Env> {
               // function's answer.
               ...(kind !== "function" ? { maxResultBytes: MAX_ROW_BYTES } : {}),
             },
-            this.functionHost(written, messages),
+            this.functionHost(written, messages, tables),
           ),
         ),
         written: [...written].sort(),
+        ...(input.live ? { tables: [...tables.read].sort() } : {}),
       }));
-      if (outcome.ok) this.deliver(messages);
+      if (outcome.ok) {
+        this.deliver(messages);
+        if (tables.written.size) this.scheduleRefresh(tables.written);
+      }
       return outcome;
     } catch (error) {
       // Not the function's doing: the engine itself failed. The call retired

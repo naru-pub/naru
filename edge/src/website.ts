@@ -120,6 +120,10 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
       headers: {
         Upgrade: "websocket",
         "X-Naru-Topics": topics.join(","),
+        // For the connection's live queries: whose site, and whose address
+        // a visitor's are limited by.
+        "X-Naru-Site": site,
+        "X-Naru-Client-Ip": request.headers.get("cf-connecting-ip") ?? "",
         ...(member ? { "X-Naru-Member": member } : {}),
       },
     }),
