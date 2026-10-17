@@ -857,3 +857,93 @@ integration("BLOB values", () => {
     ).toEqual({ isBytes: true, bytes, type: "blob", size: 7 });
   });
 });
+
+integration("statement plans", () => {
+  test("ordered aggregates, JSON lists and keyset paging run; unbounded reads are refused", async () => {
+    await put(
+      "migrations",
+      "0008_plans",
+      `CREATE TABLE chars (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+       CREATE TABLE titles (ch TEXT NOT NULL, title TEXT NOT NULL, ord INTEGER NOT NULL);
+       CREATE INDEX titles_ch ON titles (ch, ord);
+       CREATE TABLE visits (day TEXT PRIMARY KEY, hours TEXT NOT NULL);
+       CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL);`,
+      false,
+    );
+    await put(
+      "mutations",
+      "plans",
+      `export async function seed(ctx) {
+         await ctx.sql\`INSERT INTO chars (id, name) VALUES ('a', 'A'), ('b', 'B')\`;
+         await ctx.sql\`INSERT INTO titles (ch, title, ord) VALUES ('a', 'second', 2), ('a', 'first', 1), ('b', 'only', 1)\`;
+         await ctx.sql\`INSERT INTO visits (day, hours) VALUES ('d1', '{"9":2,"10":1}'), ('d2', '{"9":3}')\`;
+         for (let start = 1; start <= 1500; start += 100) {
+           const ids = Array.from({ length: 100 }, (_, i) => start + i);
+           await ctx.sql("INSERT INTO items (id, name) SELECT value, 'item ' || value FROM json_each(?)", [JSON.stringify(ids)]);
+         }
+       }`,
+      false,
+    );
+    await put(
+      "queries",
+      "plans",
+      `export async function titles(ctx) {
+         return (await ctx.sql\`SELECT c.id, (SELECT json_group_array(title) FROM (SELECT title FROM titles WHERE titles.ch = c.id ORDER BY ord)) AS titles FROM chars c ORDER BY c.id\`).rows;
+       }
+       export async function unindexed(ctx) {
+         return (await ctx.sql\`SELECT c.id, (SELECT json_group_array(title) FROM (SELECT title FROM titles WHERE titles.title = c.id ORDER BY ord)) AS titles FROM chars c\`).rows;
+       }
+       export async function cross(ctx) {
+         return (await ctx.sql\`SELECT count(*) AS n FROM items, (SELECT ch, count(*) AS n FROM titles GROUP BY ch)\`).rows;
+       }
+       export async function hours(ctx) {
+         return (await ctx.sql\`SELECT j.key AS hour, sum(j.value) AS n FROM visits, json_each(visits.hours) j GROUP BY j.key ORDER BY j.key\`).rows;
+       }
+       export async function some(ctx, { ids }) {
+         return (await ctx.sql("SELECT count(*) AS n FROM items WHERE id IN (SELECT value FROM json_each(?))", [JSON.stringify(ids)])).rows[0].n;
+       }
+       export async function page(ctx, { after }) {
+         return (await ctx.sql\`SELECT id FROM items WHERE id > \${after} ORDER BY id LIMIT 1000\`).rows.map((row) => row.id);
+       }`,
+    );
+    const call = (kind: string, name: string, args: unknown = null) =>
+      callSiteObject<{ result: unknown }>(site, "call", {
+        ownerId,
+        site,
+        member: "member-1",
+        kind,
+        file: "plans",
+        name,
+        args,
+      }).then((answer) => answer.result);
+    await call("mutation", "seed");
+    // A correlated subquery's ordered co-routine, found by key.
+    expect(await call("query", "titles")).toEqual([
+      { id: "a", titles: '["first","second"]' },
+      { id: "b", titles: '["only"]' },
+    ]);
+    await expect(call("query", "unindexed")).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/subquery would read all of titles/),
+    });
+    await expect(call("query", "cross")).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(
+        /read all of \(subquery-1\) for every row/,
+      ),
+    });
+    // Patterns allowed before stay allowed.
+    expect(await call("query", "hours")).toEqual([
+      { hour: "10", n: 1 },
+      { hour: "9", n: 5 },
+    ]);
+    const ids = Array.from({ length: 500 }, (_, i) => i * 3 + 1);
+    expect(await call("query", "some", { ids })).toBe(500);
+    const first = (await call("query", "page", { after: 0 })) as number[];
+    expect(first).toHaveLength(1000);
+    const next = (await call("query", "page", {
+      after: first.at(-1),
+    })) as number[];
+    expect([next[0], next.at(-1), next.length]).toEqual([1001, 1500, 500]);
+  });
+});

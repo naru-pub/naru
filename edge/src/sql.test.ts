@@ -210,4 +210,82 @@ describe("site SQL", () => {
       /subquery would read all of comments/,
     );
   });
+
+  test("a subquery's own result is read as its steps found it", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE chars (id TEXT PRIMARY KEY, name TEXT);
+      CREATE TABLE titles (ch TEXT, title TEXT, ord INTEGER);
+      CREATE INDEX titles_ch ON titles (ch, ord);
+      CREATE TABLE big1 (id INTEGER PRIMARY KEY, x TEXT);
+      CREATE TABLE big2 (id INTEGER PRIMARY KEY, y TEXT);
+    `);
+    const details = (sql: string) => plan(db, sql).map((step) => step.detail);
+    const ok = (sql: string) =>
+      expect(() => checkPlan(plan(db, sql)), sql).not.toThrow();
+    const refused = (sql: string, message: RegExp) =>
+      expect(() => checkPlan(plan(db, sql)), sql).toThrow(message);
+    // An ordered aggregate per row: the co-routine finds titles by key, and
+    // the subquery reads only what it found.
+    const ordered =
+      "SELECT c.id, (SELECT json_group_array(title) FROM (SELECT title FROM titles WHERE titles.ch = c.id ORDER BY ord)) FROM chars c";
+    expect(details(ordered)).toEqual([
+      "SCAN c USING COVERING INDEX sqlite_autoindex_chars_1",
+      "CORRELATED SCALAR SUBQUERY 2",
+      "CO-ROUTINE (subquery-1)",
+      "SEARCH titles USING INDEX titles_ch (ch=?)",
+      "SCAN (subquery-1)",
+    ]);
+    ok(ordered);
+    ok(
+      "SELECT c.id, (SELECT group_concat(t, ', ') FROM (SELECT DISTINCT title AS t FROM titles WHERE ch = c.id ORDER BY ord LIMIT 3)) FROM chars c",
+    );
+    // Its co-routine's steps are checked: titles has no index on title.
+    refused(
+      "SELECT c.id, (SELECT json_group_array(title) FROM (SELECT title FROM titles WHERE titles.title = c.id ORDER BY ord)) FROM chars c",
+      /subquery would read all of titles/,
+    );
+    // A materialized result read whole for every outer row is refused, in a
+    // correlated subquery ...
+    const cte = "WITH s AS MATERIALIZED (SELECT y FROM big2)";
+    expect(
+      details(
+        `${cte} SELECT c.id, (SELECT group_concat(y) FROM s WHERE y > c.id) FROM chars c`,
+      ),
+    ).toEqual([
+      "SCAN c USING COVERING INDEX sqlite_autoindex_chars_1",
+      "CORRELATED SCALAR SUBQUERY 2",
+      "MATERIALIZE s",
+      "SCAN big2",
+      "SCAN s",
+    ]);
+    refused(
+      `${cte} SELECT c.id, (SELECT group_concat(y) FROM s WHERE y > c.id) FROM chars c`,
+      /subquery would read all of big2/,
+    );
+    // ... and as a later table, a cross product with what comes before it.
+    refused("SELECT * FROM big1, (SELECT * FROM big2)", /read all of big2/);
+    refused(
+      "SELECT * FROM big1, (SELECT y, count(*) AS n FROM big2 GROUP BY y)",
+      /read all of \(subquery-1\) for every row/,
+    );
+    refused(`${cte} SELECT * FROM big1, s`, /read all of s for every row/);
+    refused(
+      "SELECT * FROM (SELECT y FROM big2 ORDER BY y LIMIT 5) a, (SELECT y FROM big2 ORDER BY y LIMIT 5) b",
+      /read all of b for every row/,
+    );
+    // Read first, or found by key, it is one pass.
+    ok(
+      "SELECT * FROM (SELECT y, count(*) AS n FROM big2 GROUP BY y) s JOIN big1 ON big1.id = s.n",
+    );
+    ok(
+      "SELECT * FROM big1, (SELECT y, count(*) AS n FROM big2 GROUP BY y) s WHERE s.y = big1.x",
+    );
+    // A materialization inside a correlated subquery is checked as part of
+    // it, even one SQLite would make once.
+    refused(
+      `${cte} SELECT c.id, (SELECT count(*) FROM s WHERE s.y = c.id) FROM chars c`,
+      /subquery would read all of big2/,
+    );
+  });
 });

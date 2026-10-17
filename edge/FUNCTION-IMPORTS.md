@@ -83,7 +83,10 @@ with its digest), writes a dump of the database to
 then applies them in name order and switches the pointer in one transaction.
 A migration's statements may create, alter and drop tables, indexes and views
 and write rows; each passes the checks of `ctx.sql` (`edge/src/sql.ts`), and a
-write the plan check as well. A refusal is a 422 with `details.reason`
+write the plan check as well (`checkPlan`: one full pass over a table per
+statement, every other table by key, no scan in a correlated subquery; a
+subquery's co-routine or materialization is checked by its own steps; the
+limits and patterns are in `docs/sdk-v1-api.md`, **SQL limits**). A refusal is a 422 with `details.reason`
 `migration_failed`; the release task then deletes the refused revision and
 its row instead of retrying, and leaves the active release.
 

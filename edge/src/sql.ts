@@ -320,6 +320,14 @@ export type PlanStep = { id: number; parent: number; detail: string };
  * each step's children, only the first table access may be a full scan, a
  * later one must find its rows by key (an equality on an index or the row
  * ID), and a correlated subquery, run once per outer row, may not scan.
+ *
+ * A subquery or common table expression SQLite runs as a co-routine or
+ * materializes ("CO-ROUTINE (subquery-1)", "MATERIALIZE recent") has its own
+ * steps, checked as any others; reading its result ("SCAN (subquery-1)")
+ * reads only the rows those steps found. In a correlated subquery, whose
+ * co-routine runs again for every outer row, that read is not a scan of a
+ * table. Anywhere as a later table it still is: it would be read again for
+ * every row before it, unless found by key ("SEARCH s USING AUTOMATIC ...").
  */
 export function checkPlan(plan: PlanStep[]) {
   const children = new Map<number, PlanStep[]>();
@@ -340,6 +348,13 @@ export function checkPlan(plan: PlanStep[]) {
     step.detail !== "SCAN CONSTANT ROW" &&
     (!/^SCAN \S+ VIRTUAL TABLE\b/.test(step.detail) ||
       /VIRTUAL TABLE INDEX 0:$/.test(step.detail));
+  // The result of a co-routine or materialization among the same steps.
+  const produced = (step: PlanStep) =>
+    (children.get(step.parent) ?? []).some(
+      (sibling) =>
+        sibling.detail === `CO-ROUTINE ${step.detail.slice(5)}` ||
+        sibling.detail === `MATERIALIZE ${step.detail.slice(5)}`,
+    );
   const table = (step: PlanStep) => step.detail.split(" ")[1];
   const within = (id: number): PlanStep[] =>
     (children.get(id) ?? []).flatMap((child) => [child, ...within(child.id)]);
@@ -359,7 +374,9 @@ export function checkPlan(plan: PlanStep[]) {
   }
   for (const step of plan)
     if (/^CORRELATED /.test(step.detail)) {
-      const scan = within(step.id).find(scans);
+      const scan = within(step.id).find(
+        (inner) => scans(inner) && !produced(inner),
+      );
       if (scan)
         throw invalid(
           `a subquery would read all of ${table(scan)} for every row; give ${table(scan)} an index on the column it compares.`,

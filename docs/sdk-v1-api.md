@@ -345,7 +345,8 @@ whole call), `fail()`, and these methods, which return promises:
   migrations. Naru's own tables, pragmas, attaching, triggers, transactions
   and recursive queries are refused, and so is a statement whose plan would
   read a whole table once for every row of another: join on an indexed
-  column. It returns at most 1,000 rows and 1 MiB; a `Uint8Array` binds as a
+  column (see **SQL limits**). It binds at most 100 values and returns at
+  most 1,000 rows and 1 MiB; a `Uint8Array` binds as a
   BLOB, and BLOB columns come back as `Uint8Array`s. A
   value a `UNIQUE` column already holds fails the call with `CONFLICT`,
   `details.unique` naming the column; any other mistake is SQLite's refusal,
@@ -404,6 +405,36 @@ make 30 mutations a minute; visitors 20 a minute per address and 300 a minute
 for the whole site. Members' and visitors' calls count against the site's
 monthly budget; the owner's do not. The files under `_naru/` are served like
 any other file of the site, so do not put secrets in them.
+
+**SQL limits.** Each `ctx.sql` statement is checked against its plan before
+it runs:
+
+| Limit                                          | Value                                                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Full passes over a table                       | One per statement; every other table is reached by key (an equality on an index or the row ID) |
+| Correlated subqueries (run once per outer row) | May not scan a table; they find rows by key                                                    |
+| Bound values                                   | 100 per statement                                                                              |
+| Rows and size returned                         | 1,000 rows and 1 MiB per statement                                                             |
+| Rows read                                      | 500,000 per call, all statements together                                                      |
+
+A subquery's or common table expression's own result counts as what its steps
+read: reading it first, inside a correlated subquery, or by key is fine;
+reading it whole again for every row before it is refused. Patterns that fit:
+
+```js
+// A list as one bound value, however long.
+await ctx.sql`SELECT * FROM members WHERE id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`;
+// A row's JSON column, opened in SQL.
+await ctx.sql`SELECT j.key, sum(j.value) AS n FROM visits, json_each(visits.hours) j GROUP BY j.key`;
+// An ordered aggregate per row: a correlated subquery over an ordered one.
+await ctx.sql`SELECT c.id, (SELECT json_group_array(title) FROM
+  (SELECT title FROM titles WHERE titles.ch = c.id ORDER BY ord)) AS titles FROM chars c`;
+// Past 1,000 rows: keyset paging, the next page after the last key.
+await ctx.sql`SELECT * FROM items WHERE id > ${after} ORDER BY id LIMIT 1000`;
+```
+
+The ordered aggregate needs an index on `titles (ch, ord)`; without one its
+subquery would scan `titles` for every row and is refused.
 
 **Caching.** Queries and mutations use the site's tables, not collections:
 a mutation leaves every collection's cache as it was, and a query's answer is
