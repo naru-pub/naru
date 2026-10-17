@@ -268,7 +268,7 @@ export async function executeLiveTicket(command: DataCommand) {
       "Live tickets are for signed-in members and the site's owner; visitors connect without one.",
     );
   // Checked by the Worker that holds the site's object (edge/client.ts).
-  const { secret } = siteDataWorker(command.site);
+  const { secret } = siteDataWorker();
   if (!secret) throw new DataError(503, "Live connections are unavailable.");
   return {
     ticket: await signLiveTicket(

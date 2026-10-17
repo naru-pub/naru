@@ -14,10 +14,9 @@ import {
   type DumpRow,
 } from "@/lib/site-data/dump-format";
 
-// Whole site databases between Workers (edge/src/site.ts `dump` and
-// `restore`): NDJSON streams (lib/site-data/dump-format.ts), piped from one
-// Worker's answer into the other's request, so the control plane never holds
-// a dump; at most a chunk of it.
+// Whole site databases (edge/src/site.ts `dump` and `restore`): NDJSON
+// streams (lib/site-data/dump-format.ts), sent and read as they arrive, so
+// the control plane never holds a dump; at most a chunk of it.
 
 /** How long a dump or restore may take: a whole site is read and written. */
 export const DUMP_TIMEOUT_MS = 15 * 60_000;
@@ -75,38 +74,7 @@ export async function sendDump(
 }
 
 /**
- * Copies a site from one Worker to another, the dump piped straight
- * through. `seen`, when given, reads each chunk on the way (DumpSummary).
- */
-export async function copySiteData(
-  from: WorkerTarget,
-  to: WorkerTarget,
-  site: string,
-  seen?: (chunk: Uint8Array) => void,
-  /** Another site to fill, in tests; the same site otherwise. */
-  toSite = site,
-): Promise<{ rows: number }> {
-  const controller = new AbortController();
-  let dump = await fetchDump(from, site, controller.signal);
-  if (seen)
-    dump = dump.pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, out) {
-          seen(chunk);
-          out.enqueue(chunk);
-        },
-      }),
-    );
-  try {
-    return await sendDump(to, toSite, dump, controller.signal);
-  } finally {
-    // A refused restore stops reading the dump: let the source go too.
-    controller.abort();
-  }
-}
-
-/**
- * What a dump holds, table by table: rows and an order-free digest of them
+ * Tests only: what a dump holds, table by table: rows and an order-free digest of them
  * (the sum of each row's SHA-256, its keys sorted), so two dumps of the same
  * data compare equal however their rows are ordered. Fed a chunk at a time.
  */
@@ -158,7 +126,7 @@ const rowDigest = (row: DumpRow) =>
     )
     .digest("hex");
 
-/** A site's dump read through DumpSummary, never held. */
+/** Tests only: a site's dump read through DumpSummary, never held. */
 export async function summarizeDump(
   target: WorkerTarget,
   site: string,
@@ -183,7 +151,9 @@ export async function summarizeDump(
  * migrations and roles under `site`.
  */
 export async function readSiteDump(site: string) {
-  const text = await new Response(await fetchDump(siteDataWorker(site), site)).text();
+  const text = await new Response(
+    await fetchDump(siteDataWorker(), site),
+  ).text();
   const dump = await collectDump(
     new Response(text).body as ReadableStream<Uint8Array>,
   );
@@ -215,4 +185,4 @@ export async function readSiteDump(site: string) {
 export const restoreSiteDump = (
   site: string,
   dump: ReadableStream<Uint8Array> | string,
-) => sendDump(siteDataWorker(site), site, dump);
+) => sendDump(siteDataWorker(), site, dump);

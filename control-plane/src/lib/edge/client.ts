@@ -4,10 +4,11 @@ import { DataError, type ErrorCode } from "@/lib/site-data/validation";
 // root), reached over HTTPS with a shared secret: operations on a site's
 // Durable Object, the pageview log, and the custom domain table.
 //
-// Site objects can run elsewhere than Cloudflare: the same Worker under
-// workerd beside this control plane (edge/src/seoul.ts), at SITE_DATA_URL.
-// Pageviews and custom domains belong to the hosted pages, which stay on
-// Cloudflare at EDGE_WORKER_URL.
+// Site objects run on the mini: the same Worker under workerd beside this
+// control plane (edge/src/seoul.ts), at SITE_DATA_URL. Pageviews and custom
+// domains belong to the hosted pages, which stay on Cloudflare at
+// EDGE_WORKER_URL. Local runs and tests have one Worker, at EDGE_WORKER_URL,
+// for both (edge/src/local.ts).
 
 const WORKER_TIMEOUT_MS = 10_000;
 
@@ -31,12 +32,12 @@ export function callSiteObject<T>(
   signal?: AbortSignal,
   timeoutMs?: number,
 ): Promise<T> {
-  return callSiteObjectAt<T>(
-    siteDataWorker(site),
-    site,
-    operation,
+  return callWorker<T>(
+    `/v1/sites/${encodeURIComponent(site)}/${operation}`,
+    `${operation} on ${site}`,
     input,
     signal,
+    siteDataWorker(),
     timeoutMs,
   );
 }
@@ -49,39 +50,16 @@ export const edgeWorker = (): WorkerTarget => ({
   secret: process.env.EDGE_WORKER_SECRET,
 });
 /**
- * Where a site's object lives: the mini's workerd when SITE_DATA_URL is set,
- * else Cloudflare. SITE_DATA_SITES, when set, names the only sites moved so
- * far (comma-separated), as during a rehearsal; the rest stay on Cloudflare.
+ * Where site objects live: the mini's workerd at SITE_DATA_URL, or, where
+ * that is not set (local runs and tests), the one local Worker.
  */
-export const siteDataWorker = (site?: string): WorkerTarget => {
-  const moved = process.env.SITE_DATA_SITES?.split(",").map((s) => s.trim());
-  return process.env.SITE_DATA_URL &&
-    (!moved || (site !== undefined && moved.includes(site)))
+export const siteDataWorker = (): WorkerTarget =>
+  process.env.SITE_DATA_URL
     ? {
         base: process.env.SITE_DATA_URL,
         secret: process.env.SITE_DATA_SECRET ?? process.env.EDGE_WORKER_SECRET,
       }
     : edgeWorker();
-};
-
-/** callSiteObject on a given Worker, for moving a site between two. */
-export function callSiteObjectAt<T>(
-  target: WorkerTarget,
-  site: string,
-  operation: string,
-  input: unknown,
-  signal?: AbortSignal,
-  timeoutMs?: number,
-): Promise<T> {
-  return callWorker<T>(
-    `/v1/sites/${encodeURIComponent(site)}/${operation}`,
-    `${operation} on ${site}`,
-    input,
-    signal,
-    target,
-    timeoutMs,
-  );
-}
 
 /**
  * How long the edge may rely on what a sync last told it: a site's paid
@@ -164,7 +142,10 @@ export async function requestWorker(
 }
 
 /** A Worker's JSON answer: its `value`, or the DataError it refused with. */
-export async function answerOf<T>(response: Response, what: string): Promise<T> {
+export async function answerOf<T>(
+  response: Response,
+  what: string,
+): Promise<T> {
   const body = (await response.json().catch(() => null)) as {
     value?: T;
     error?: {

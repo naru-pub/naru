@@ -4,11 +4,10 @@ import { gzipSync } from "node:zlib";
 import { describe, expect, test } from "@jest/globals";
 import { callSiteObject, siteDataWorker } from "@/lib/edge/client";
 import {
-  copySiteData,
-  DumpSummary,
   fetchDump,
   readSiteDump,
   restoreSiteDump,
+  sendDump,
   summarizeDump,
 } from "@/lib/edge/dumps";
 
@@ -95,19 +94,15 @@ integration("dumps", () => {
       `[dumps] snapshot of ${(Buffer.byteLength(dump.text) / 1048576).toFixed(1)} MiB took ${snapshotMs} ms`,
     );
 
-    // Piped from one site's answer into the other's request, summarized on
-    // the way, as move-site-data does.
-    const sent = new DumpSummary();
-    const worker = siteDataWorker(site);
-    const { rows } = await copySiteData(
+    // Piped from one site's answer into the other's request.
+    const worker = siteDataWorker();
+    const { rows } = await sendDump(
       worker,
-      worker,
-      site,
-      (chunk) => sent.push(chunk),
       copy,
+      await fetchDump(worker, site),
     );
     expect(rows).toBe(dump.rows);
-    const original = sent.finish();
+    const original = (await summarizeDump(worker, site)).tables;
     expect(original.documents.rows).toBe(DOCUMENTS);
     expect((await summarizeDump(worker, copy)).tables).toEqual(original);
     // A site with data is never restored over.
@@ -120,7 +115,7 @@ integration("dumps", () => {
   }, 120_000);
 
   test("a write while a dump streams lands after its snapshot, not in it", async () => {
-    const stream = await fetchDump(siteDataWorker(site), site);
+    const stream = await fetchDump(siteDataWorker(), site);
     const reader = stream.getReader();
     const first = await reader.read();
     expect(first.done).toBe(false);
@@ -153,7 +148,7 @@ integration("dumps", () => {
   }, 120_000);
 
   test("a dump its reader gives up leaves no snapshot behind, nor does a failed upload", async () => {
-    const reader = (await fetchDump(siteDataWorker(site), site)).getReader();
+    const reader = (await fetchDump(siteDataWorker(), site)).getReader();
     await reader.read();
     await reader.cancel();
     let left: string[] = [];
@@ -177,7 +172,7 @@ integration("dumps", () => {
     const dump = await readSiteDump(site);
     const lines = dump.text.trimEnd().split("\n");
     await callSiteObject(copy, "erase", {});
-    const before = await summarizeDump(siteDataWorker(copy), copy);
+    const before = await summarizeDump(siteDataWorker(), copy);
     for (const [given, message] of [
       // No end line.
       [`${lines.slice(0, -1).join("\n")}\n`, /incomplete/],
@@ -198,11 +193,11 @@ integration("dumps", () => {
         status: 400,
         message: expect.stringMatching(message),
       });
-    expect(await summarizeDump(siteDataWorker(copy), copy)).toEqual(before);
+    expect(await summarizeDump(siteDataWorker(), copy)).toEqual(before);
     expect((await internals(copy)).tables).toEqual([]);
 
     // Nor does a restore point cut short; nothing of the present is kept.
-    const original = await summarizeDump(siteDataWorker(site), site);
+    const original = await summarizeDump(siteDataWorker(), site);
     const name = "before-restore-1000.ndjson.gz";
     await callSiteObject(site, "putRestorePoint", {
       site,
@@ -214,12 +209,12 @@ integration("dumps", () => {
     await expect(
       callSiteObject(site, "restoreFrom", { name }),
     ).rejects.toMatchObject({ status: 400 });
-    expect(await summarizeDump(siteDataWorker(site), site)).toEqual(original);
+    expect(await summarizeDump(siteDataWorker(), site)).toEqual(original);
     expect((await internals(site)).tables).toEqual([]);
   }, 120_000);
 
   test("a restore point larger than a part is written in parts and read back", async () => {
-    const big = await summarizeDump(siteDataWorker(site), site);
+    const big = await summarizeDump(siteDataWorker(), site);
     // A small restore point, so the one kept of the present is the big one.
     const small = `${"0190f5a0-0000-7000-8000-000000000001"}.ndjson.gz`;
     const smallLines = [
@@ -272,7 +267,7 @@ integration("dumps", () => {
 
     // What was replaced, more than a part, comes back whole.
     await callSiteObject(site, "restoreFrom", { name: restored.saved });
-    const back = await summarizeDump(siteDataWorker(site), site);
+    const back = await summarizeDump(siteDataWorker(), site);
     expect(back.schema).toEqual(big.schema);
     for (const table of ["collections", "documents", "media_refs"])
       expect(back.tables[table]).toEqual(big.tables[table]);
@@ -285,7 +280,7 @@ integration("dumps", () => {
   test("restore points are gzip NDJSON; a cut-short one changes nothing, and earlier formats are refused", async () => {
     await seed();
     const text = (await readSiteDump(site)).text;
-    const original = await summarizeDump(siteDataWorker(site), site);
+    const original = await summarizeDump(siteDataWorker(), site);
     const gzipped = gzipSync(Buffer.from(text));
     // Cut short: refused, and the site is as it was.
     await callSiteObject(site, "putRestorePoint", {
@@ -298,7 +293,7 @@ integration("dumps", () => {
         name: "before-restore-2000.ndjson.gz",
       }),
     ).rejects.toMatchObject({ status: 400 });
-    expect(await summarizeDump(siteDataWorker(site), site)).toEqual(original);
+    expect(await summarizeDump(siteDataWorker(), site)).toEqual(original);
     expect((await internals(site)).tables).toEqual([]);
     // Whole, it restores.
     const name = "before-restore-3000.ndjson.gz";
@@ -308,7 +303,7 @@ integration("dumps", () => {
       base64: gzipped.toString("base64"),
     });
     await callSiteObject(site, "restoreFrom", { name });
-    const restored = await summarizeDump(siteDataWorker(site), site);
+    const restored = await summarizeDump(siteDataWorker(), site);
     for (const table of ["collections", "documents", "media_refs"])
       expect(restored.tables[table]).toEqual(original.tables[table]);
     // Uncompressed NDJSON and the JSON before it are no restore points.

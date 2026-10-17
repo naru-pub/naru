@@ -172,7 +172,7 @@ Admission, before the code runs and counted even if the call then fails: a membe
 
 Calls share one QuickJS WebAssembly instance per Worker isolate (`edge/src/quickjs.ts`), each in its own runtime and context, freed with all its handles before the call returns. A call that runs out of CPU or memory, fails inside the engine, or does not free cleanly retires the instance, and one is replaced after 1,000 calls regardless. The instance's memory is capped at 32 MiB, and each call has a 128 KiB interpreter stack, a CPU budget of 2,000 interrupt checks (about 70 ms on Cloudflare; Workers stop the clock while code runs, so time cannot be measured) backed by a fuel meter that also counts work in built-ins (`edge/src/engine.ts`), 10,000 promise jobs (async steps too small to reach an interrupt check), at most 100 `ctx` operations (each `ctx.sql` statement, writes included), three password operations, 1,000 URL parses (`URL` is the host's, reached through a counted host call), 500,000 rows read by its SQL, and a 1 MiB result; each statement returns at most 1,000 rows and 1 MiB. These are the measurements of `spikes/quickjs-functions/`. Failures are 400 `INVALID_REQUEST` ("Function failed: …"), 404 for a missing module or export, 503 `UNAVAILABLE` while the site has published no code, and the operation's own code for a failed `ctx` operation (`QUOTA_EXCEEDED`, or `CONFLICT` with `details.unique` for a value a `UNIQUE` column already holds).
 
-The site's tables live in the site's SQLite database beside Naru's own (`edge/src/sql.ts`'s `INTERNAL`, and anything named `_naru…`), which site SQL cannot name. `_naru/migrations/*.sql` create them: a release's migrations are sent with `activateFunctions`, and the object refuses a release that edits, removes or names a migration before one already applied (recorded in `_naru_migrations` with its digest), writes a dump of the database to `_naru-runtime/<site>/restore-points/<generation>.ndjson.gz` in R2 when any are pending, then applies them in name order and switches to the release in one transaction; the owner can return the site to a restore point (`restoreFrom`, edge/FUNCTION-IMPORTS.md). Restore points are gzip-compressed NDJSON (`application/gzip`, no Content-Encoding) and are kept for seven days: the site's object deletes its expired ones whenever it writes a new one, and the daily `restore-point-retention` job does so for every site, deleting nothing outside `restore-points/`. The nightly B2 backup keeps a deleted point as a hidden version for about 30 more days. A refusal is a 422 with `details.reason` `migration_failed`. The tables count toward the site's 100 MiB with its documents (`checkDatabaseSize`), and dumps and `move-site-data` carry them. A dump is NDJSON (a header with the schema, a line per row, an end line with the count), written from a snapshot a part at a time and restored through staging tables, so neither side holds a whole site (edge/FUNCTION-IMPORTS.md, "Dumps"). Files in earlier formats (`.ndjson`, `.json`) under `restore-points/` are neither listed nor restored, and expire by their upload time.
+The site's tables live in the site's SQLite database beside Naru's own (`edge/src/sql.ts`'s `INTERNAL`, and anything named `_naru…`), which site SQL cannot name. `_naru/migrations/*.sql` create them: a release's migrations are sent with `activateFunctions`, and the object refuses a release that edits, removes or names a migration before one already applied (recorded in `_naru_migrations` with its digest), writes a dump of the database to `_naru-runtime/<site>/restore-points/<generation>.ndjson.gz` in R2 when any are pending, then applies them in name order and switches to the release in one transaction; the owner can return the site to a restore point (`restoreFrom`, edge/FUNCTION-IMPORTS.md). Restore points are gzip-compressed NDJSON (`application/gzip`, no Content-Encoding) and are kept for seven days: the site's object deletes its expired ones whenever it writes a new one, and the daily `restore-point-retention` job does so for every site, deleting nothing outside `restore-points/`. The nightly B2 backup keeps a deleted point as a hidden version for about 30 more days. A refusal is a 422 with `details.reason` `migration_failed`. The tables count toward the site's 100 MiB with its documents (`checkDatabaseSize`), and dumps carry them. A dump is NDJSON (a header with the schema, a line per row, an end line with the count), written from a snapshot a part at a time and restored through staging tables, so neither side holds a whole site (edge/FUNCTION-IMPORTS.md, "Dumps"). Files in earlier formats (`.ndjson`, `.json`) under `restore-points/` are neither listed nor restored, and expire by their upload time.
 
 Routes are the site's opt-in server-rendered pages: `_naru/routes/<path>.js`, whose default export the edge Worker serving the site (`edge/src/pages.ts`) runs through the object's `render` as a visitor's query with `{ path, origin, params, query }` (`origin`: the subdomain or custom domain the page was asked on, for absolute URLs). Activation writes the release's routes to `_naru-runtime/<site>/routes.json` in R2, which the Worker reads (kept 30 seconds per isolate) and matches before the site's files (`control-plane/src/lib/site-functions/routes.ts`: fixed segments before `_param` ones). A route answers HTML, `{ html }`, `{ body, type }` with a text type, `{ file, head }` or `{ redirect }`, with an optional `status` and `cache` of 0–300 seconds in the data center's cache. A 503 from the object (the site's paid status unconfirmed) serves the files instead; any other failure is a short error page.
 
@@ -421,8 +421,8 @@ cache: a visitor's read is a local query.
   (`EDGE_WORKER_URL`, `EDGE_WORKER_SECRET`).
 - `naru.pub/api/data/v1`, which 1.0.0 still calls, is the control plane's
   own: naru.pub is DNS-only, straight to Caddy on the mini, and the control
-  plane calls the site's object there. (The edge Worker's `MOVED_SITES=*`,
-  for when naru.pub was proxied, no longer sees such a request.)
+  plane calls the site's object there. The edge Worker on Cloudflare serves
+  neither the SDK nor a data API.
 
 PostgreSQL retains accounts, entitlements, website registrations,
 authorization codes and tokens, and media metadata. Media bytes remain in R2.
@@ -455,19 +455,17 @@ The mini holds the only copy of each site's database; there is no standby
   route renders to the mini, since Cloudflare's Los Angeles location could
   not connect to the home line directly in a drill.
 
-### Backups and moving sites
+### Backups
 
 The nightly `backup-postgres-r2.zsh` on the mini copies each site database
 with `sqlite3 .backup` into the backup set in B2. The Cloudflare copies from
 before the move are archived in B2 under `cutover/`.
 
-`node dist/cli/move-site-data.mjs [--site <login>]` copies sites from the
-objects on Cloudflare to the mini (`dump` piped into `restore`, which refuses
-a site that has collections or tables) and compares the copy table by table,
-by an order-free digest of each table's rows read on the way.
-`SITE_DATA_MAINTENANCE=1` makes the control plane refuse every data
-request while databases move, and `SITE_DATA_SITES` limits `SITE_DATA_URL` to
-the sites named.
+A site's whole database still goes between objects as a dump (`dump` and
+`restore`, which refuses a site that has collections or tables;
+`control-plane/src/lib/edge/dumps.ts`), for tests and `edge/seoul/smoke.mjs`.
+`SITE_DATA_MAINTENANCE=1` makes the control plane refuse every data request,
+for a future move between hosts.
 
 ### Answering visitors at the edge
 

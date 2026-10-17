@@ -41,7 +41,7 @@ export async function dataRequest(
     return new Response(null, { status: 204, headers });
   try {
     // While site databases move between hosts, nothing may write to either
-    // copy (cli/move-site-data.ts): every request is refused, briefly.
+    // copy: every request is refused, briefly.
     if (process.env.SITE_DATA_MAINTENANCE === "1")
       throw new DataError(
         503,
