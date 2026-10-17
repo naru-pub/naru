@@ -48,7 +48,10 @@ export const INTERRUPT_BUDGET = 2000;
 /**
  * The fuel a call may spend, setup included. A plain loop spends about 780
  * million in INTERRUPT_BUDGET's checks, so the interrupt still ends one first;
- * this catches the rest, a few hundred milliseconds at worst.
+ * this catches the rest. Measured 2026-10-17: the meter costs 14–36% of a
+ * call's time on Cloudflare (1.14× a loop, 1.22× JSON and regular
+ * expressions, 1.33–1.36× objects and strings), where a billion units are
+ * 130–450 ms; on the mini, 70–110 ms.
  */
 export const FUEL = 1_000_000_000n;
 export const STACK_BYTES = 128 * 1024;
