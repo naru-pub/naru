@@ -307,9 +307,7 @@ throws, calls `ctx.fail`, or exceeds a limit, nothing it wrote is kept, and
 the call fails with `INVALID_REQUEST` (`NOT_FOUND` for a missing module or
 export, and a failed `ctx` operation's own code, such as `QUOTA_EXCEEDED`). A
 query's `ctx.sql` only reads; a write in a query fails it. While Naru's
-server is away and the site is read from its standby, visitors' queries still
-answer; mutations, and members' and the owner's calls, fail with
-`UNAVAILABLE`.
+server is away, every call fails with `UNAVAILABLE`.
 
 **Failing on purpose.** `ctx.fail(code, message, details?)` aborts the call
 with one of the v1 error codes and a nonblank message of at most 1,000

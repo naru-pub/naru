@@ -172,7 +172,7 @@ Admission, before the code runs and counted even if the call then fails: a membe
 
 Calls share one QuickJS WebAssembly instance per Worker isolate (`edge/src/quickjs.ts`), each in its own runtime and context, freed with all its handles before the call returns. A call that runs out of CPU or memory, fails inside the engine, or does not free cleanly retires the instance, and one is replaced after 1,000 calls regardless. The instance's memory is capped at 32 MiB, and each call has a 128 KiB interpreter stack, a CPU budget of 2,000 interrupt checks (about 70 ms on Cloudflare; Workers stop the clock while code runs, so time cannot be measured) backed by a fuel meter that also counts work in built-ins (`edge/src/engine.ts`), 10,000 promise jobs (async steps too small to reach an interrupt check), at most 100 `ctx` operations (each `ctx.sql` statement, writes included), three password operations, 1,000 URL parses (`URL` is the host's, reached through a counted host call), 500,000 rows read by its SQL, and a 1 MiB result; each statement returns at most 1,000 rows and 1 MiB. These are the measurements of `spikes/quickjs-functions/`. Failures are 400 `INVALID_REQUEST` ("Function failed: …"), 404 for a missing module or export, 503 `UNAVAILABLE` while the site has published no code, and the operation's own code for a failed `ctx` operation (`QUOTA_EXCEEDED`, or `CONFLICT` with `details.unique` for a value a `UNIQUE` column already holds).
 
-The site's tables live in the site's SQLite database beside Naru's own (`edge/src/sql.ts`'s `INTERNAL`, and anything named `_naru…`), which site SQL cannot name. `_naru/migrations/*.sql` create them: a release's migrations are sent with `activateFunctions`, and the object refuses a release that edits, removes or names a migration before one already applied (recorded in `_naru_migrations` with its digest), writes a dump of the database to `_naru-runtime/<site>/restore-points/<generation>.ndjson` in R2 when any are pending, then applies them in name order and switches to the release in one transaction; the owner can return the site to a restore point (`restoreFrom`, edge/FUNCTION-IMPORTS.md). A refusal is a 422 with `details.reason` `migration_failed`. The tables count toward the site's 100 MiB with its documents (`checkDatabaseSize`), and dumps, the standby copy and `move-site-data` carry them. A dump is NDJSON (a header with the schema, a line per row, an end line with the count), written from a snapshot a part at a time and restored through staging tables, so neither side holds a whole site (edge/FUNCTION-IMPORTS.md, "Dumps"); restore points from before NDJSON (`.json`) are still read.
+The site's tables live in the site's SQLite database beside Naru's own (`edge/src/sql.ts`'s `INTERNAL`, and anything named `_naru…`), which site SQL cannot name. `_naru/migrations/*.sql` create them: a release's migrations are sent with `activateFunctions`, and the object refuses a release that edits, removes or names a migration before one already applied (recorded in `_naru_migrations` with its digest), writes a dump of the database to `_naru-runtime/<site>/restore-points/<generation>.ndjson` in R2 when any are pending, then applies them in name order and switches to the release in one transaction; the owner can return the site to a restore point (`restoreFrom`, edge/FUNCTION-IMPORTS.md). A refusal is a 422 with `details.reason` `migration_failed`. The tables count toward the site's 100 MiB with its documents (`checkDatabaseSize`), and dumps and `move-site-data` carry them. A dump is NDJSON (a header with the schema, a line per row, an end line with the count), written from a snapshot a part at a time and restored through staging tables, so neither side holds a whole site (edge/FUNCTION-IMPORTS.md, "Dumps"); restore points from before NDJSON (`.json`) are still read.
 
 Routes are the site's opt-in server-rendered pages: `_naru/routes/<path>.js`, whose default export the edge Worker serving the site (`edge/src/pages.ts`) runs through the object's `render` as a visitor's query with `{ path, origin, params, query }` (`origin`: the subdomain or custom domain the page was asked on, for absolute URLs). Activation writes the release's routes to `_naru-runtime/<site>/routes.json` in R2, which the Worker reads (kept 30 seconds per isolate) and matches before the site's files (`control-plane/src/lib/site-functions/routes.ts`: fixed segments before `_param` ones). A route answers HTML, `{ html }`, `{ body, type }` with a text type, `{ file, head }` or `{ redirect }`, with an optional `status` and `cache` of 0–300 seconds in the data center's cache. A 503 from the object (the site's paid status unconfirmed) serves the files instead; any other failure is a short error page.
 
@@ -186,7 +186,7 @@ On the connection the page sends `{ type: "subscribe", id, query, args }` (`quer
 
 ### What early 1.1.0 left behind
 
-Each site's SQLite keeps three things from the first 1.1.0 design, which had collection rules, site functions under `_naru/functions/`, document secrets and members writing collections: `documents.created_by` (null for every write now, still sent as `createdBy` because 1.0.0 pages receive it), `documents.secret_hash` (unused, still added to new objects so every object's documents have the same columns for dumps and standby fingerprints), and meta `rules:<id>` entries (cleared when their collection is deleted). A collection still marked with the old `member` read or write level is treated as `admin`. A release manifest that lists `functions/` or `rules/` files no longer validates, so a site whose code was published then must publish it again.
+Each site's SQLite keeps three things from the first 1.1.0 design, which had collection rules, site functions under `_naru/functions/`, document secrets and members writing collections: `documents.created_by` (null for every write now, still sent as `createdBy` because 1.0.0 pages receive it), `documents.secret_hash` (unused, still added to new objects so every object's documents have the same columns for dumps), and meta `rules:<id>` entries (cleared when their collection is deleted). A collection still marked with the old `member` read or write level is treated as `admin`. A release manifest that lists `functions/` or `rules/` files no longer validates, so a site whose code was published then must publish it again.
 
 ## SDK releases
 
@@ -429,44 +429,28 @@ operations in synchronous SQLite transactions. Public-write rate limits are
 counted in the object. Timestamps have millisecond precision, collection names
 are listed in byte order, and JSON object key order has no contract meaning.
 
-### The read-only standby
+### When the mini is away
 
-Cloudflare keeps a copy of every site, in its own `SiteData` objects, for
-when the mini is away (`edge/src/standby.ts`,
-`control-plane/src/lib/edge/standby.ts`):
+The mini holds the only copy of each site's database; there is no standby
+(nightly backups, below, are what recovers it). While it is away:
 
-- The control plane's `standby-sync` job, each minute, asks the mini for each
-  site's fingerprint (a hash of what it holds, without counters every read
-  moves), copies the sites whose fingerprint differs from the one the standby
-  last received (`replace`, allowed only on Cloudflare: the mini's `dump`
-  response piped into Cloudflare's request, never held by the control
-  plane, `lib/edge/dumps.ts`), and reports the mini
-  as up, with each site's counts.
-- The edge Worker's cron runs the `Standby` object each minute. It probes
-  `https://origin.sdk.naru.pub/healthz/deep`, the mini's own name, which never
-  fails over. After three failed minutes, and only if the mini has also not
-  reported in for three (and has ever), it turns on Cloudflare's proxy for
-  `sdk.naru.pub`: the Worker then serves visitors read-only from the copies,
-  runs only visitors' queries, and refuses sign-ins, writes,
-  mutations, uploads and live connections as `UNAVAILABLE`. Those refusals carry
-  `details.standby`; SDK 1.1.0 then asks a signed-in member's or owner's
-  read again without the token, which the standby cannot check, so their
-  pages still show what visitors may see. After five healthy minutes,
-  once the mini reports in holding at least the standby's collections and
-  documents for every site, it turns the proxy off again. While the mini is
-  up, what reaches Cloudflare for `sdk.naru.pub` (resolvers holding the
-  proxied record) is forwarded to the mini through the `Standby` object:
-  Cloudflare's Los Angeles location could not connect to the home line
-  directly in the first drill.
-- Each change of mode, and a mini that answers but has stopped reporting in
-  for ten minutes, is posted to Discord.
-
-Drills and status, with `EDGE_WORKER_SECRET`, on `https://edge.naru.pub`:
-`POST /v1/standby/status` reads the state; `POST /v1/standby/force` with
-`{"mode":"standby"}` fails over by hand. The check switches back on its own
-after five healthy minutes, or force `{"mode":"mini"}`. Every site is
-read-only meanwhile, and the mini's host-check reports `sdk.naru.pub` as
-failing while it points away. The first drill was on 2026-10-15.
+- Hosted sites' static files are still served from R2 by the edge Worker on
+  Cloudflare, and `naru.pub/sdk/` still serves the SDK.
+- Data calls fail: `sdk.naru.pub` does not answer, nor does the control
+  plane on the same host, and the SDK rejects each call with `UNAVAILABLE`
+  as it does any other failure. Nothing serves site data meanwhile.
+- A route path (`_naru/routes/`) cannot be rendered, so a page's navigation
+  to one gets the site's own `index.html` with status 503 (`Cache-Control:
+  no-store`, `Retry-After: 60`), for the app's shell to load and say so.
+  Other requests to a route path, and sites without `index.html`, are
+  answered as if the site had no routes (`edge/src/pages.ts`).
+- The edge Worker's cron runs the `Standby` object each minute
+  (`edge/src/standby.ts`, named for the standby it once was). It probes
+  `https://origin.sdk.naru.pub/healthz/deep`, the mini's own name, and posts
+  to Discord when the mini has failed three minutes in a row, and again when
+  it answers. It only alerts: nothing changes over. The same object forwards
+  route renders to the mini, since Cloudflare's Los Angeles location could
+  not connect to the home line directly in a drill.
 
 ### Backups and moving sites
 
@@ -477,16 +461,15 @@ before the move are archived in B2 under `cutover/`.
 `node dist/cli/move-site-data.mjs [--site <login>]` copies sites from the
 objects on Cloudflare to the mini (`dump` piped into `restore`, which refuses
 a site that has collections or tables) and compares the copy table by table,
-by an order-free digest of each table's rows read on the way;
-`erase-cloudflare-site-data.mjs` erases Cloudflare's copies of sites the mini
-holds. `SITE_DATA_MAINTENANCE=1` makes the control plane refuse every data
+by an order-free digest of each table's rows read on the way.
+`SITE_DATA_MAINTENANCE=1` makes the control plane refuse every data
 request while databases move, and `SITE_DATA_SITES` limits `SITE_DATA_URL` to
 the sites named.
 
 ### Answering visitors at the edge
 
-`edge/src/website.ts`, on the mini at `sdk.naru.pub` (and on Cloudflare while
-it serves as the standby), answers anonymous document requests, visitors' queries and
+`edge/src/website.ts`, on the mini at `sdk.naru.pub`, answers anonymous
+document requests, visitors' queries and
 mutations, and live connections from that site's object using shared headers
 and errors. It forwards requests with owner or member tokens, `_files`, `_batch`, and requests the object cannot
 serve to the control plane. That fallback still uses the same Durable Object

@@ -25,8 +25,8 @@ flowchart LR
 
   subgraph cf["Cloudflare (한국에서는 LAX 경유)"]
     worker["엣지 Worker<br/>사이트 페이지, SDK 파일"]
-    standby["Standby 객체<br/>상태 확인 cron, 장애 전환"]
-    copies[("Durable Objects<br/>사이트 데이터 대기본, 페이지뷰")]
+    standby["Standby 객체<br/>상태 확인 cron, 알림, 라우트 전달"]
+    copies[("Durable Objects<br/>페이지뷰")]
     r2[("R2<br/>사이트 파일, 미디어, 사이트 코드")]
     tunnel["Cloudflare Tunnel"]
   end
@@ -52,14 +52,14 @@ flowchart LR
   user -->|"naru.pub (관리 화면)"| tunnel
   worker --> r2
   worker --> copies
-  standby --> copies
+  worker --> standby
+  standby -->|"상태 확인, 라우트 렌더"| caddy
   tunnel --> gateway --> cp
   caddy --> workerd
   workerd -->|"로그인한 요청"| gateway
   cp --> workerd
   cp --> pg
   jobs --> pg
-  jobs -->|"바뀐 사이트 복사, 생존 신호"| copies
   workerd --> r2
   toss -->|"웹훅"| tunnel
   github -->|"배포"| cp
@@ -83,7 +83,7 @@ flowchart LR
 - **기술 스택**: Cloudflare Workers, R2, Durable Objects, TypeScript
 - **주요 기능**:
   - 서브도메인(`<login>.naru.pub`)과 커스텀 도메인 사이트를 R2에서 바로 서빙
-  - 사이트 데이터베이스의 읽기 전용 대기본(standby): 맥 미니가 멈추면 `sdk.naru.pub`을 넘겨받아 방문자에게 읽기만 제공
+  - 맥 미니 상태 확인: 매분 확인해 멈추거나 되살아나면 Discord로 알림 (장애 전환은 하지 않음)
   - 페이지뷰 기록(control plane이 매분 가져가 저장)
 
 ### 3. 사이트 데이터베이스와 Data SDK (맥 미니, `sdk.naru.pub`)
@@ -117,20 +117,16 @@ sequenceDiagram
   C-->>B: 결과
 ```
 
-### 맥 미니가 멈추면: 읽기 전용 대기본
+### 맥 미니가 멈추면
 
-control plane의 `standby-sync` 작업이 매분 바뀐 사이트를 Cloudflare의 Durable Objects에 복사하고 생존 신호를 보냅니다. 엣지 Worker의 cron이 매분 `origin.sdk.naru.pub`을 확인해, 3분 동안 응답도 생존 신호도 없으면 `sdk.naru.pub`의 Cloudflare 프록시를 켭니다. 그동안 방문자는 대기본에서 읽기만 할 수 있고, 쓰기와 로그인은 `UNAVAILABLE`로 거절됩니다. 맥 미니가 5분 동안 정상이고 대기본만큼의 데이터를 갖고 있으면 저절로 되돌아갑니다. 자세한 내용과 훈련 방법은 [사이트 데이터베이스](docs/database.md#where-site-data-lives) 문서에 있습니다.
+사이트 데이터베이스는 맥 미니에만 있습니다. 대기본은 없고, 맥 미니를 잃으면 B2의 야간 백업으로 복구합니다. 맥 미니가 멈춘 동안에는:
 
-```mermaid
-stateDiagram-v2
-  direction LR
-  Mini: 맥 미니가 서비스<br/>sdk.naru.pub은 DNS만 (프록시 끔)
-  Standby: Cloudflare 대기본이 서비스<br/>읽기 전용 (프록시 켬)
-  [*] --> Mini
-  Mini --> Standby: 3분 무응답, 생존 신호도 없음
-  Standby --> Mini: 5분 정상, 데이터가 대기본 이상
-  Mini --> Mini: 맥 미니는 응답 없지만 생존 신호 있음 (전환 안 함)
-```
+- 사이트의 정적 파일은 엣지 Worker가 R2에서 계속 서빙합니다.
+- 데이터 호출은 실패합니다. SDK는 `UNAVAILABLE` 오류로 알립니다. control plane도 같은 맥 미니에 있어 로그인과 관리 화면도 멈춥니다.
+- 라우트 경로로 들어온 페이지 이동에는 사이트의 `index.html`을 상태 503으로 돌려줍니다(`Cache-Control: no-store`, `Retry-After: 60`). 앱의 껍데기는 뜨고, 잠시 뒤에 다시 시도할 수 있습니다.
+- 엣지 Worker의 cron이 매분 `origin.sdk.naru.pub`을 확인해, 3분 연속 응답이 없으면 Discord로 알리고, 다시 응답하면 한 번 더 알립니다.
+
+자세한 내용은 [사이트 데이터베이스](docs/database.md#when-the-mini-is-away) 문서에 있습니다.
 
 ## 📚 문서
 

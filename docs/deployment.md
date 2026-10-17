@@ -44,8 +44,9 @@ What a release does that the code has to allow for:
 ## Edge Worker
 
 The edge Worker ([`edge/`](../edge), deployed as `naru-edge`) serves
-hosted sites and the Data SDK's script, and keeps every site's database
-([database.md](database.md#durable-objects-backend)). It is not part of the
+hosted sites, their pageviews and custom domains, and the Data SDK's script;
+site databases live on the mini
+([database.md](database.md#where-site-data-lives)). It is not part of the
 images and deploys on its own: Cloudflare Workers Builds deploys it from
 `main` (root directory `edge`), on an account on the Workers Paid plan. To set
 it up, or deploy by hand from the development machine:
@@ -60,18 +61,20 @@ openssl rand -base64 32 | tr -d '\n' | pnpm exec wrangler secret put EDGE_WORKER
 
 Set `EDGE_WORKER_URL=https://edge.naru.pub` and the same
 `EDGE_WORKER_SECRET` in the server's `.env`, then deploy the control
-plane so application and background processes read them: pageviews, the
-custom domain table and the standby use them. Change the secret in both
+plane so application and background processes read them: pageviews and the
+custom domain table use them. Change the secret in both
 places together; private `/v1/*` operations require it.
 
 Site databases themselves run on the mini, not here: the same Worker under
 workerd, released with `mise run deploy naru-sdk` from infra once CI's
 `build-sdk-seoul` job has built it (`edge/seoul/README.md`), and reached by
-the control plane at `SITE_DATA_URL` with `SITE_DATA_SECRET`. This Worker
-keeps the read-only standby of every site, and its cron runs the standby's
-health check; it needs the secrets `CLOUDFLARE_DNS_TOKEN` (edits naru.pub's
-DNS: the proxy on `sdk.naru.pub`) and `DISCORD_WEBHOOK`. See
-[database.md](database.md#where-site-data-lives).
+the control plane at `SITE_DATA_URL` with `SITE_DATA_SECRET`. `sdk.naru.pub`
+is DNS-only, straight to the mini, and never reaches this Worker. The Worker
+renders sites' routes there, at `origin.sdk.naru.pub` (secret
+`SDK_ORIGIN_SECRET`, the mini's `EDGE_WORKER_SECRET`), and its cron probes
+the mini each minute and posts to `DISCORD_WEBHOOK` (secret) when it is down
+and when it is back: it alerts, and fails nothing over. See
+[database.md](database.md#when-the-mini-is-away).
 
 `wrangler.jsonc` declares the `edge.naru.pub` custom domain, the
 public `naru.pub/api/data/v1/*` and `naru.pub/sdk/*` routes, and the
