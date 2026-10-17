@@ -9,6 +9,8 @@ import {
 } from "../../control-plane/src/lib/site-data/dump-format";
 import {
   dumpStream,
+  gunzip,
+  gzip,
   LineBuffer,
   PartPacker,
   uploadDump,
@@ -74,9 +76,7 @@ describe("the dump's line reader", () => {
           "😀x",
         ]);
     // One byte a chunk, from a stream.
-    const single = [...encoder.encode(text)].map((byte) =>
-      Uint8Array.of(byte),
-    );
+    const single = [...encoder.encode(text)].map((byte) => Uint8Array.of(byte));
     expect(await collect(lines(streamOf(single)))).toEqual(["가한", "😀x"]);
   });
 
@@ -131,9 +131,9 @@ describe("the dump's line reader", () => {
     await expect(
       refused(ndjson(header, { type: "end", rows: 0 }, row(1))),
     ).rejects.toThrow(/after its end line/);
-    await expect(refused(ndjson(row(1), { type: "end", rows: 1 }))).rejects.toThrow(
-      /header/,
-    );
+    await expect(
+      refused(ndjson(row(1), { type: "end", rows: 1 })),
+    ).rejects.toThrow(/header/);
     await expect(
       refused(ndjson({ ...header, version: 1 }, { type: "end", rows: 0 })),
     ).rejects.toThrow(/header/);
@@ -213,7 +213,12 @@ describe("the dump's writer", () => {
         puts[key] = value;
       },
       createMultipartUpload: async (key) => {
-        const upload = { key, parts: [] as Uint8Array[], completed: false, aborted: false };
+        const upload = {
+          key,
+          parts: [] as Uint8Array[],
+          completed: false,
+          aborted: false,
+        };
         uploads.push(upload);
         return {
           uploadPart: async (partNumber, value) => {
@@ -294,6 +299,68 @@ describe("the dump's writer", () => {
     expect(broken.puts).toEqual({});
   });
 
+  test("gzips a dump into parts of one size, typed and not encoded, that read back whole", async () => {
+    const { store, uploads } = bucket();
+    const options: unknown[] = [];
+    const typed: DumpBucket = {
+      ...store,
+      createMultipartUpload: async (key, given) => {
+        options.push(given);
+        return store.createMultipartUpload(key);
+      },
+    };
+    // Random bytes, which do not compress: several 64 KiB parts' worth.
+    const source = Array.from({ length: 40 }, () => {
+      const piece = new Uint8Array(8 * 1024);
+      crypto.getRandomValues(piece);
+      return piece;
+    });
+    const total = source.reduce((n, piece) => n + piece.byteLength, 0);
+    const written = await uploadDump(
+      typed,
+      "k.ndjson.gz",
+      gzip(from(source)),
+      64 * 1024,
+      "application/gzip",
+    );
+    expect(options).toEqual([
+      { httpMetadata: { contentType: "application/gzip" } },
+    ]);
+    const parts = uploads[0].parts;
+    expect(parts.length).toBeGreaterThan(2);
+    expect(
+      parts.slice(0, -1).every((part) => part.byteLength === 64 * 1024),
+    ).toBe(true);
+    expect(written).toBe(parts.reduce((n, part) => n + part.byteLength, 0));
+    const compressed = new Blob(parts).stream();
+    const back: Uint8Array[] = [];
+    for await (const chunk of gunzip(compressed, () => new Error("bad")))
+      back.push(chunk);
+    const joined = new Uint8Array(await new Blob(back).arrayBuffer());
+    expect(joined.byteLength).toBe(total);
+    expect(joined).toEqual(
+      new Uint8Array(await new Blob(source).arrayBuffer()),
+    );
+  });
+
+  test("a gzip file cut short fails as not whole", async () => {
+    const parts: Uint8Array[] = [];
+    for await (const chunk of gzip(
+      from([new TextEncoder().encode('{"type":"header"}\n'.repeat(1000))]),
+    ))
+      parts.push(chunk);
+    const whole = new Uint8Array(await new Blob(parts).arrayBuffer());
+    const cut = new Blob([whole.slice(0, whole.byteLength - 12)]).stream();
+    await expect(
+      (async () => {
+        for await (const _ of gunzip(
+          cut,
+          () => new DumpFormatError("not whole"),
+        ));
+      })(),
+    ).rejects.toThrow("not whole");
+  });
+
   test("collects lines and hands them on as bytes", () => {
     const buffer = new LineBuffer();
     buffer.add(header);
@@ -326,7 +393,9 @@ describe("the dump's writer", () => {
       yield encoder.encode("a\n");
       throw new Error("no");
     }
-    await expect(new Response(dumpStream(failing(), failed)).text()).rejects.toThrow();
+    await expect(
+      new Response(dumpStream(failing(), failed)).text(),
+    ).rejects.toThrow();
     expect(failed).toHaveBeenCalledTimes(1);
   });
 

@@ -1,10 +1,10 @@
 import { AwsClient } from "aws4fetch";
 
 // The site bucket through R2's S3 API, where there is no R2 binding: the
-// Worker under workerd on the mini (seoul.ts). Only what SiteData uses: list,
-// get (as text or a stream), put (optionally only where nothing is yet),
-// delete and multipart uploads (dumps, dump.ts), shaped as the binding
-// answers them.
+// Worker under workerd on the mini (seoul.ts). Only what SiteData uses: list
+// (with upload times), get (as text or a stream), put (optionally only where
+// nothing is yet, optionally with a content type), delete (a key or several)
+// and multipart uploads (dumps, dump.ts), shaped as the binding answers them.
 
 export interface S3Env {
   R2_ACCOUNT_ID: string;
@@ -32,6 +32,14 @@ const text = (xml: string, tag: string) =>
     (entity) => ENTITIES[entity],
   );
 
+/** The Content-Type header for a binding's httpMetadata, if any. */
+const contentType = (options?: {
+  httpMetadata?: { contentType?: string };
+}): Record<string, string> =>
+  options?.httpMetadata?.contentType
+    ? { "Content-Type": options.httpMetadata.contentType }
+    : {};
+
 export function s3Bucket(env: S3Env) {
   const client = new AwsClient({
     accessKeyId: env.R2_ACCESS_KEY_ID,
@@ -55,11 +63,15 @@ export function s3Bucket(env: S3Env) {
       if (!response.ok) throw failed(`a list of ${prefix}`, response);
       const xml = await response.text();
       return {
-        objects: elements(xml, "Contents").map((object) => ({
-          key: text(object, "Key")!,
-          etag: text(object, "ETag")!,
-          size: Number(text(object, "Size")),
-        })),
+        objects: elements(xml, "Contents").map((object) => {
+          const modified = text(object, "LastModified");
+          return {
+            key: text(object, "Key")!,
+            etag: text(object, "ETag")!,
+            size: Number(text(object, "Size")),
+            ...(modified ? { uploaded: new Date(modified) } : {}),
+          };
+        }),
         truncated: text(xml, "IsTruncated") === "true",
         cursor: text(xml, "NextContinuationToken"),
       };
@@ -79,15 +91,18 @@ export function s3Bucket(env: S3Env) {
     async put(
       key: string,
       body: string | Uint8Array,
-      options?: { onlyIf?: { etagDoesNotMatch?: string } },
+      options?: {
+        onlyIf?: { etagDoesNotMatch?: string };
+        httpMetadata?: { contentType?: string };
+      },
     ) {
+      const headers: Record<string, string> = contentType(options);
+      if (options?.onlyIf?.etagDoesNotMatch === "*")
+        headers["If-None-Match"] = "*";
       const response = await client.fetch(url(key), {
         method: "PUT",
         body,
-        headers:
-          options?.onlyIf?.etagDoesNotMatch === "*"
-            ? { "If-None-Match": "*" }
-            : {},
+        headers,
       });
       // The binding answers null when the condition fails.
       if (response.status === 412) return null;
@@ -95,9 +110,13 @@ export function s3Bucket(env: S3Env) {
       return { key };
     },
     /** As the binding's: parts of at least 5 MiB, all but the last the same size. */
-    async createMultipartUpload(key: string) {
+    async createMultipartUpload(
+      key: string,
+      options?: { httpMetadata?: { contentType?: string } },
+    ) {
       const created = await client.fetch(`${url(key)}?uploads`, {
         method: "POST",
+        headers: contentType(options),
       });
       if (!created.ok) throw failed(`a multipart upload of ${key}`, created);
       const uploadId = text(await created.text(), "UploadId");
@@ -146,10 +165,13 @@ export function s3Bucket(env: S3Env) {
         },
       };
     },
-    async delete(key: string) {
-      const response = await client.fetch(url(key), { method: "DELETE" });
-      if (!response.ok && response.status !== 404)
-        throw failed(`a deletion of ${key}`, response);
+    /** One key, or several, one request each, as callers batch them. */
+    async delete(keys: string | string[]) {
+      for (const key of typeof keys === "string" ? [keys] : keys) {
+        const response = await client.fetch(url(key), { method: "DELETE" });
+        if (!response.ok && response.status !== 404)
+          throw failed(`a deletion of ${key}`, response);
+      }
     },
   };
 }

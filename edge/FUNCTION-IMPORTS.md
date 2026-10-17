@@ -79,7 +79,7 @@ modules. The control plane sends a release's migrations with
 `activateFunctions`; the object refuses a release that edits, removes or
 names a migration before one already applied (recorded in `_naru_migrations`
 with its digest), writes a dump of the database to
-`_naru-runtime/<site>/restore-points/<generation>.ndjson` when any are pending,
+`_naru-runtime/<site>/restore-points/<generation>.ndjson.gz` when any are pending,
 then applies them in name order and switches the pointer in one transaction.
 A migration's statements may create, alter and drop tables, indexes and views
 and write rows; each passes the checks of `ctx.sql` (`edge/src/sql.ts`), and a
@@ -89,10 +89,18 @@ its row instead of retrying, and leaves the active release.
 
 ### Restore points
 
-`_naru-runtime/<site>/restore-points/` holds `<generation>.ndjson`, kept
-before a release's migrations, and `before-restore-<ms>.ndjson`, kept before
-a restore (names: `control-plane/src/lib/site-functions/restore-points.ts`).
-Each is a dump (below). Those written before dumps were NDJSON end in `.json`
+`_naru-runtime/<site>/restore-points/` holds `<generation>.ndjson.gz`, kept
+before a release's migrations, and `before-restore-<ms>.ndjson.gz`, kept
+before a restore (names: `control-plane/src/lib/site-functions/restore-points.ts`).
+Each is a dump (below), gzip-compressed: the NDJSON writer is piped through
+`CompressionStream("gzip")` (`gzip`, `edge/src/dump.ts`) and the compressed
+bytes packed into the multipart parts, stored as `application/gzip` with no
+Content-Encoding, so nothing on the way decompresses it; a restore reads it
+through `DecompressionStream` (`gunzip`), and a file that is not whole gzip is
+refused before anything changes. Moving a site between runtimes (`dump` and
+`restore`) stays uncompressed. Uncompressed `.ndjson`, written before
+restore points were compressed, are restored too. Those written before dumps
+were NDJSON end in `.json`
 and hold the whole dump as one JSON object (`tables` and `site`); they are
 listed and restored as well, read whole and converted to lines
 (`legacyDumpLines`). The owner lists and restores them on the control panel
@@ -101,7 +109,7 @@ the object's `restoreFrom({ name })`; index.ts sets `site` from the URL, so an
 object only reads its own site's prefix. Under `blockConcurrencyWhile`, the
 object reads the restore point into staging tables, so one that is not a
 whole dump is refused before anything is kept or changed; dumps the present
-to `before-restore-<ms>.ndjson`; then in one transaction empties and refills
+to `before-restore-<ms>.ndjson.gz`; then in one transaction empties and refills
 DUMP_TABLES and the site's tables, migrations and roles from the staging
 tables, and re-runs every live query. What describes the
 present stays: the meta keys of the owner, paid status and limits, the
@@ -113,6 +121,16 @@ minutes after), and `rate_limits`. The rest of meta (`unique:`, `indexes:`,
 the restore point had not applied are pending again and apply with the next
 release. The control plane then writes `routes.json` for the active release
 again; nothing cached is purged, as releases purge nothing.
+
+Restore points are kept for seven days (`RESTORE_POINT_DAYS`): a point's age
+is the time in its name (a UUIDv7's milliseconds, or `before-restore-<ms>`),
+or, for a name that is not a restore point's, when it was uploaded.
+`pruneRestorePoints` deletes the expired ones under a site's
+`restore-points/`, and nothing outside it, in batches of 50: the site's object
+runs it after writing each new point, and the control plane's daily
+`restore-point-retention` job (`cli/prune-restore-points.ts`) for every site
+in the bucket. The nightly backup to B2 keeps what is deleted as a hidden
+version for about 30 more days (infra `kr-seongsu-m4/bin/backup-postgres-r2.zsh`).
 
 ### Dumps
 

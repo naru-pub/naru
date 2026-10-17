@@ -7,10 +7,20 @@
 /** R2's least part but the last: every part but the last is this size. */
 export const PART_BYTES = 5 * 1024 * 1024;
 
+/** How a dump is stored: its type, and never a Content-Encoding. */
+export type DumpObjectOptions = { httpMetadata?: { contentType?: string } };
+
 /** The part of a bucket a dump is written through: R2's binding, or r2-s3.ts. */
 export interface DumpBucket {
-  put(key: string, value: string | Uint8Array): Promise<unknown>;
-  createMultipartUpload(key: string): Promise<{
+  put(
+    key: string,
+    value: string | Uint8Array,
+    options?: DumpObjectOptions,
+  ): Promise<unknown>;
+  createMultipartUpload(
+    key: string,
+    options?: DumpObjectOptions,
+  ): Promise<{
     uploadPart(
       partNumber: number,
       value: Uint8Array,
@@ -71,7 +81,11 @@ export async function uploadDump(
   key: string,
   source: AsyncIterable<Uint8Array>,
   partBytes = PART_BYTES,
+  contentType?: string,
 ): Promise<number> {
+  const options: DumpObjectOptions | undefined = contentType
+    ? { httpMetadata: { contentType } }
+    : undefined;
   const packer = new PartPacker(partBytes);
   let upload: Awaited<ReturnType<DumpBucket["createMultipartUpload"]>> | null =
     null;
@@ -81,13 +95,13 @@ export async function uploadDump(
     for await (const piece of source) {
       bytes += piece.byteLength;
       for (const part of packer.push(piece)) {
-        upload ??= await bucket.createMultipartUpload(key);
+        upload ??= await bucket.createMultipartUpload(key, options);
         parts.push(await upload.uploadPart(parts.length + 1, part));
       }
     }
     const last = packer.rest();
     if (!upload) {
-      await bucket.put(key, last);
+      await bucket.put(key, last, options);
       return bytes;
     }
     if (last.byteLength)
@@ -97,6 +111,80 @@ export async function uploadDump(
   } catch (error) {
     if (upload) await upload.abort().catch(() => {});
     throw error;
+  }
+}
+
+/** A stream's chunks, as an iterable; leaving early cancels the stream. */
+async function* chunksOf(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<Uint8Array> {
+  const reader = stream.getReader();
+  let done = false;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) {
+        done = true;
+        return;
+      }
+      yield next.value;
+    }
+  } finally {
+    if (!done) await reader.cancel().catch(() => {});
+  }
+}
+
+/** `source` as a stream, read as the stream is pulled. */
+function streamOf(source: AsyncIterable<Uint8Array>) {
+  const iterator = source[Symbol.asyncIterator]();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const next = await iterator.next();
+      if (next.done) controller.close();
+      else controller.enqueue(next.value);
+    },
+    async cancel() {
+      await iterator.return?.();
+    },
+  });
+}
+
+/**
+ * `source` gzip-compressed (CompressionStream, in workerd and on
+ * Cloudflare alike), read a piece at a time: what restore points are
+ * written as.
+ */
+export function gzip(
+  source: AsyncIterable<Uint8Array>,
+): AsyncIterable<Uint8Array> {
+  return chunksOf(
+    streamOf(source).pipeThrough(
+      new CompressionStream("gzip") as unknown as ReadableWritablePair<
+        Uint8Array,
+        Uint8Array
+      >,
+    ),
+  );
+}
+
+/**
+ * A gzip file's bytes, decompressed as they are read. A file that is not
+ * whole gzip, cut short or corrupt, fails as `invalid` says.
+ */
+export async function* gunzip(
+  stream: ReadableStream<Uint8Array>,
+  invalid: () => Error,
+): AsyncGenerator<Uint8Array> {
+  const decompressed = stream.pipeThrough(
+    new DecompressionStream("gzip") as unknown as ReadableWritablePair<
+      Uint8Array,
+      Uint8Array
+    >,
+  );
+  try {
+    yield* chunksOf(decompressed);
+  } catch {
+    throw invalid();
   }
 }
 
@@ -138,7 +226,8 @@ export function dumpStream(
     },
     async pull(controller) {
       clearTimeout(idle);
-      if (finished) return controller.error(new Error("The dump was left unread."));
+      if (finished)
+        return controller.error(new Error("The dump was left unread."));
       try {
         const next = await source.next();
         if (next.done) {

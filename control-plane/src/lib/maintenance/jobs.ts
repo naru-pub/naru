@@ -167,6 +167,18 @@ export const MAINTENANCE_JOBS = [
     payment: true,
   },
   {
+    // Deletes restore points older than a week (lib/site-functions/
+    // restore-points.ts). A missed run only keeps them a day longer: report
+    // only failures that last two days.
+    name: "restore-point-retention",
+    script: "prune-restore-points.ts",
+    minutes: 1440,
+    hour: 18,
+    minute: 30,
+    timeout: 1800,
+    alertAfterMinutes: 2880,
+  },
+  {
     name: "payment-invariant-check",
     script: "check-payment-invariants.ts",
     minutes: 1440,

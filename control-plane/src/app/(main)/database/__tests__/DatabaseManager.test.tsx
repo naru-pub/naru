@@ -165,6 +165,11 @@ test("a restore point is restored after a confirmation that says what happens", 
   });
   const row = (await screen.findByText(/릴리스 직전/)).closest("tr")!;
   expect(row).toHaveTextContent("2 KB");
+  // Kept a week from when it was made.
+  expect(row).toHaveTextContent(
+    `${new Date(0x019a2b3c4d5e + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("ko-KR", { dateStyle: "medium" })} 삭제 예정`,
+  );
+  expect(screen.getByText(/7일 동안 보관/)).toBeInTheDocument();
   fireEvent.click(within(row).getByRole("button", { name: "복원" }));
   const dialog = await screen.findByRole("alertdialog");
   expect(dialog).toHaveTextContent(/그 뒤에 생기거나 바뀐 데이터는/);

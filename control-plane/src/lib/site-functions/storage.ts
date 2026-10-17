@@ -6,6 +6,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 import type { RevisionBucket } from "./revisions";
+import type { RestorePointBucket } from "./restore-points";
 const bucket = () => process.env.S3_BUCKET_NAME!;
 export const revisionStorage: RevisionBucket = {
   async list({ prefix, cursor }) {
@@ -77,4 +78,63 @@ export async function deleteRevision(
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
+}
+
+/**
+ * The site bucket as restore-point pruning needs it (restore-points.ts):
+ * listed with upload times, deleted a batch at a time.
+ */
+export const restorePointStorage: RestorePointBucket = {
+  async list({ prefix, cursor }) {
+    const page = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket(),
+        Prefix: prefix,
+        ContinuationToken: cursor,
+      }),
+    );
+    return {
+      objects: (page.Contents ?? []).map((object) => ({
+        key: object.Key!,
+        uploaded: object.LastModified,
+      })),
+      truncated: !!page.IsTruncated,
+      cursor: page.NextContinuationToken,
+    };
+  },
+  async delete(keys) {
+    if (!keys.length) return;
+    const response = await s3Client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket(),
+        Delete: { Objects: keys.map((key) => ({ Key: key })) },
+      }),
+    );
+    if (response.Errors?.length)
+      throw new Error(
+        `Deleting restore points failed: ${response.Errors[0].Key} ${response.Errors[0].Code}`,
+      );
+  },
+};
+
+/** The site names with a `_naru-runtime/<site>/` folder in the bucket. */
+export async function runtimeSites(): Promise<string[]> {
+  const sites: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket(),
+        Prefix: "_naru-runtime/",
+        Delimiter: "/",
+        ContinuationToken: cursor,
+      }),
+    );
+    for (const { Prefix } of page.CommonPrefixes ?? []) {
+      const site = Prefix?.slice("_naru-runtime/".length, -1);
+      if (site && /^[a-zA-Z0-9_-]{1,64}$/.test(site)) sites.push(site);
+    }
+    cursor = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (cursor);
+  return sites;
 }

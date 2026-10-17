@@ -100,7 +100,7 @@ integration("restore points", () => {
       "CREATE TABLE tags (name TEXT PRIMARY KEY); INSERT INTO tags VALUES ('a');",
     );
     const release = (await exported()).functions!;
-    const point = `${release.generation}.ndjson`;
+    const point = `${release.generation}.ndjson.gz`;
     await call("mutation", "add", { body: "셋" });
     await callSiteObject(site, "setMemberRoles", {
       member: "member-1",
@@ -120,7 +120,7 @@ integration("restore points", () => {
 
     // A site named in the body is not the one restored: the URL's is.
     const restored = await restoreFrom(point, { site: other });
-    expect(restored.saved).toMatch(/^before-restore-\d+\.ndjson$/);
+    expect(restored.saved).toMatch(/^before-restore-\d+\.ndjson\.gz$/);
     // The active release stays.
     expect(restored.revision).toBe(release.revision);
     expect((await exported()).functions).toEqual(release);
@@ -165,6 +165,19 @@ integration("restore points", () => {
     expect((await dumped()).site.migrations).toHaveLength(1);
   });
 
+  test("writing a restore point deletes the site's points past their week", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const old = `before-restore-${Date.now() - 8 * DAY}.ndjson`;
+    const recent = `before-restore-${Date.now() - 6 * DAY}.ndjson`;
+    const source = (await dumped()).text;
+    for (const name of [old, recent])
+      await callSiteObject(site, "putRestorePoint", { site, name, source });
+    // Restoring the recent one writes a new point, then prunes.
+    await restoreFrom(recent);
+    await expect(restoreFrom(old)).rejects.toMatchObject({ status: 404 });
+    expect((await restoreFrom(recent)).saved).toMatch(/\.ndjson\.gz$/);
+  });
+
   test("a restore point outside the site's own is refused", async () => {
     // Another site's restore point, under its own prefix.
     await callSiteObject(other, "erase", {});
@@ -176,7 +189,7 @@ integration("restore points", () => {
     );
     const theirs = (await callSiteObject<Exported>(other, "export", {}))
       .functions!.generation!;
-    await expect(restoreFrom(`${theirs}.ndjson`)).rejects.toMatchObject({
+    await expect(restoreFrom(`${theirs}.ndjson.gz`)).rejects.toMatchObject({
       status: 404,
     });
     for (const name of [

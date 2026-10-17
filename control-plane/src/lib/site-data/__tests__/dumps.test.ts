@@ -1,4 +1,6 @@
 /** @jest-environment node */
+import { randomBytes } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { describe, expect, test } from "@jest/globals";
 import { callSiteObject, siteDataWorker } from "@/lib/edge/client";
 import {
@@ -21,7 +23,10 @@ const site = "dumpsite";
 const copy = "dumpsite-copy";
 const ownerId = "0190f5a0-0000-7000-8000-0000000000cc";
 const collectionId = "0190f5a0-0000-7000-8000-00000000c011";
-/** About 7 MiB of documents, Korean text included: more than one 5 MiB part. */
+/**
+ * About 11 MiB of documents, Korean text included, and random text, so that
+ * even gzip-compressed (restore points) they are more than one 5 MiB part.
+ */
 const DOCUMENTS = 4000;
 const internals = (target: string, input: Record<string, unknown> = {}) =>
   callSiteObject<{
@@ -57,7 +62,7 @@ async function seed() {
     documents: Array.from({ length: DOCUMENTS }, (_, n) => {
       const data = JSON.stringify({
         title: `글 ${n}`,
-        body: `${"아보카도 ".repeat(150)}${"x".repeat(1000)}`,
+        body: `${"아보카도 ".repeat(50)}${randomBytes(1500).toString("base64")}`,
       });
       return {
         collection_id: collectionId,
@@ -246,7 +251,7 @@ integration("dumps", () => {
       "restoreFrom",
       { name: legacy },
     );
-    expect(restored.saved).toMatch(/^before-restore-\d+\.ndjson$/);
+    expect(restored.saved).toMatch(/^before-restore-\d+\.ndjson\.gz$/);
     const old = await readSiteDump(site);
     expect(old.tables.collections.map((row) => row.name)).toEqual(["old"]);
     expect(old.tables.documents).toEqual([]);
@@ -266,5 +271,38 @@ integration("dumps", () => {
     expect((await internals(site)).tables).toEqual([]);
     await callSiteObject(site, "erase", {});
     await callSiteObject(copy, "erase", {});
+  }, 180_000);
+
+  test("restore points are gzip NDJSON; a cut-short one changes nothing, and uncompressed NDJSON still restores", async () => {
+    await seed();
+    const text = (await readSiteDump(site)).text;
+    const original = await summarizeDump(siteDataWorker(site), site);
+    const gzipped = gzipSync(Buffer.from(text));
+    // Cut short: refused, and the site is as it was.
+    await callSiteObject(site, "putRestorePoint", {
+      site,
+      name: "before-restore-2000.ndjson.gz",
+      base64: gzipped.subarray(0, gzipped.byteLength - 64).toString("base64"),
+    });
+    await expect(
+      callSiteObject(site, "restoreFrom", {
+        name: "before-restore-2000.ndjson.gz",
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(await summarizeDump(siteDataWorker(site), site)).toEqual(original);
+    expect((await internals(site)).tables).toEqual([]);
+    // Whole, it restores; so does the same dump uncompressed, as written
+    // before restore points were compressed.
+    for (const [name, point] of [
+      ["before-restore-3000.ndjson.gz", { base64: gzipped.toString("base64") }],
+      ["before-restore-4000.ndjson", { source: text }],
+    ] as const) {
+      await callSiteObject(site, "putRestorePoint", { site, name, ...point });
+      await callSiteObject(site, "restoreFrom", { name });
+      const restored = await summarizeDump(siteDataWorker(site), site);
+      for (const table of ["collections", "documents", "media_refs"])
+        expect(restored.tables[table]).toEqual(original.tables[table]);
+    }
+    await callSiteObject(site, "erase", {});
   }, 180_000);
 });

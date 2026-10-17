@@ -2,6 +2,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
+import {
+  RESTORE_POINT_DAYS,
+  RESTORE_POINT_KEEP_MS,
+} from "@/lib/site-functions/restore-points";
 
 type RestorePoint = {
   name: string;
@@ -16,6 +20,8 @@ const when = (ms: number) =>
     dateStyle: "medium",
     timeStyle: "medium",
   });
+const day = (ms: number) =>
+  new Date(ms).toLocaleDateString("ko-KR", { dateStyle: "medium" });
 const size = (bytes: number) =>
   bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024)).toLocaleString("ko-KR")} KB`
@@ -112,6 +118,10 @@ export default function RestorePoints() {
         회원 역할이 그 시점으로 돌아갑니다. 사이트 코드, 요금제와 이용 한도는
         그대로입니다.
       </p>
+      <p className="text-sm text-muted-foreground">
+        복원 지점은 만든 때부터 {RESTORE_POINT_DAYS}일 동안 보관하고, 그 뒤에
+        삭제합니다.
+      </p>
       {error && (
         <p role="alert" className="text-destructive">
           {error}
@@ -127,6 +137,7 @@ export default function RestorePoints() {
                 <th className="py-2">만든 때</th>
                 <th>남긴 까닭</th>
                 <th>크기</th>
+                <th>보관</th>
                 <th>
                   <span className="sr-only">복원</span>
                 </th>
@@ -149,6 +160,9 @@ export default function RestorePoints() {
                     )}
                   </td>
                   <td>{size(point.size)}</td>
+                  <td>
+                    {day(point.createdAt + RESTORE_POINT_KEEP_MS)} 삭제 예정
+                  </td>
                   <td className="py-2 text-right">
                     <Button
                       variant="outline"

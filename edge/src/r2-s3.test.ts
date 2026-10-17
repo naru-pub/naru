@@ -30,7 +30,7 @@ describe("the site bucket through R2's S3 API", () => {
         `<?xml version="1.0"?><ListBucketResult>
           <IsTruncated>true</IsTruncated>
           <Contents><Key>a/_naru/queries/x&amp;y.js</Key><ETag>&quot;e1&quot;</ETag><Size>12</Size></Contents>
-          <Contents><Key>a/_naru/queries/z.js</Key><ETag>&quot;e2&quot;</ETag><Size>3</Size></Contents>
+          <Contents><Key>a/_naru/queries/z.js</Key><LastModified>2026-10-10T01:02:03.000Z</LastModified><ETag>&quot;e2&quot;</ETag><Size>3</Size></Contents>
           <NextContinuationToken>next+page</NextContinuationToken>
         </ListBucketResult>`,
       ),
@@ -42,7 +42,12 @@ describe("the site bucket through R2's S3 API", () => {
     expect(page).toEqual({
       objects: [
         { key: "a/_naru/queries/x&y.js", etag: '"e1"', size: 12 },
-        { key: "a/_naru/queries/z.js", etag: '"e2"', size: 3 },
+        {
+          key: "a/_naru/queries/z.js",
+          etag: '"e2"',
+          size: 3,
+          uploaded: new Date("2026-10-10T01:02:03.000Z"),
+        },
       ],
       truncated: true,
       cursor: "next+page",
@@ -93,6 +98,23 @@ describe("the site bucket through R2's S3 API", () => {
     expect(seen[0].url).toBe(`${BASE}/r/manifest.json`);
   });
 
+  test("stores the content type it is given, and no encoding", async () => {
+    const seen = answering(
+      new Response(null, { status: 200 }),
+      new Response(
+        `<?xml version="1.0"?><InitiateMultipartUploadResult><UploadId>u</UploadId></InitiateMultipartUploadResult>`,
+      ),
+    );
+    const bucket = s3Bucket(env);
+    const gzip = { httpMetadata: { contentType: "application/gzip" } };
+    await bucket.put("s/r/a.ndjson.gz", new Uint8Array([31, 139]), gzip);
+    await bucket.createMultipartUpload("s/r/b.ndjson.gz", gzip);
+    for (const request of seen) {
+      expect(request.headers.get("content-type")).toBe("application/gzip");
+      expect(request.headers.get("content-encoding")).toBeNull();
+    }
+  });
+
   test("deletes, and refuses to hide a failure", async () => {
     answering(
       new Response(null, { status: 204 }),
@@ -106,6 +128,18 @@ describe("the site bucket through R2's S3 API", () => {
     await expect(bucket.delete("a/_naru/queries/x.js")).rejects.toThrow(
       "R2 answered 500",
     );
+  });
+
+  test("deletes several keys, one request each", async () => {
+    const seen = answering(
+      new Response(null, { status: 204 }),
+      new Response(null, { status: 404 }),
+    );
+    await s3Bucket(env).delete(["s/r/a.json", "s/r/b.json"]);
+    expect(seen.map((request) => [request.method, request.url])).toEqual([
+      ["DELETE", `${BASE}/s/r/a.json`],
+      ["DELETE", `${BASE}/s/r/b.json`],
+    ]);
   });
 
   test("uploads in parts as the binding does: create, parts, complete, abort", async () => {

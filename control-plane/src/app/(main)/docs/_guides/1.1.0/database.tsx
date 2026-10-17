@@ -853,6 +853,7 @@ CREATE INDEX posts_author ON posts (author);`}</Code>
                   있습니다. 사이트 코드는 지금 릴리스 그대로라서, 복원 지점에
                   없던 마이그레이션은 다음에 <code>_naru</code> 파일을 올릴 때
                   다시 적용됩니다. 그 전에 그 마이그레이션을 고치거나 지우세요.
+                  복원 지점은 만든 때부터 7일 동안 보관하고, 그 뒤에 삭제합니다.
                 </li>
                 <li>
                   나루가 쓰는 이름(<code>collections</code>,{" "}

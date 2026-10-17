@@ -19,8 +19,11 @@ import {
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
 import {
   beforeRestoreName,
+  compressedRestorePoint,
   legacyRestorePoint,
+  pruneRestorePoints,
   releaseRestorePointName,
+  RESTORE_POINT_CONTENT_TYPE,
   restorePointName,
   restorePointsPrefix,
 } from "../../control-plane/src/lib/site-functions/restore-points";
@@ -120,6 +123,8 @@ import {
 } from "../../control-plane/src/lib/site-data/dump-format";
 import {
   dumpStream,
+  gunzip,
+  gzip,
   LineBuffer,
   uploadDump,
   type DumpBucket,
@@ -1480,10 +1485,11 @@ export class SiteData extends DurableObject<Env> {
       if (!pending.ok) return pending;
       if (pending.value.length) {
         await this.exclusive(() =>
-          this.writeDump(
+          this.writeRestorePoint(
             `${restorePointsPrefix(input.site!)}${releaseRestorePointName(input.generation)}`,
           ),
         );
+        await this.pruneRestorePoints(input.site!);
       }
     }
     const activated = this.run(() => {
@@ -2169,7 +2175,7 @@ export class SiteData extends DurableObject<Env> {
       };
       try {
         await this.exclusive(() =>
-          this.writeDump("unused", {
+          this.writeRestorePoint("unused", {
             put: refuse,
             createMultipartUpload: async () => ({
               uploadPart: refuse,
@@ -2192,15 +2198,28 @@ export class SiteData extends DurableObject<Env> {
     }));
   }
 
-  /** Tests only: writes a restore point as given, such as one in the format before NDJSON. */
-  async putRestorePoint(input: { site: string; name: string; source: string }) {
-    if (!restorePointName(input?.name) || typeof input.source !== "string")
+  /**
+   * Tests only: writes a restore point as given, such as one in an older
+   * format: `source` as text, or `base64` bytes (gzip).
+   */
+  async putRestorePoint(input: {
+    site: string;
+    name: string;
+    source?: string;
+    base64?: string;
+  }) {
+    if (
+      !restorePointName(input?.name) ||
+      (typeof input.source !== "string" && typeof input.base64 !== "string")
+    )
       return this.run(() => {
         throw new DataError(400, "Invalid restore point.");
       });
     await this.env.SITE_FILES.put(
       `${restorePointsPrefix(input.site)}${input.name}`,
-      input.source,
+      typeof input.base64 === "string"
+        ? new Uint8Array(Buffer.from(input.base64, "base64"))
+        : input.source!,
     );
     return { ok: true as const, value: null };
   }
@@ -2543,7 +2562,7 @@ export class SiteData extends DurableObject<Env> {
       });
     const name = input.name;
     const prefix = restorePointsPrefix(input.site);
-    return this.settle(() =>
+    const outcome = await this.settle(() =>
       this.exclusive(async () => {
         const object = await this.env.SITE_FILES.get(`${prefix}${name}`);
         if (!object)
@@ -2564,11 +2583,22 @@ export class SiteData extends DurableObject<Env> {
             source = (async function* () {
               yield* legacyDumpLines(point);
             })();
-          } else source = dumpLines(object.body);
+          } else
+            source = dumpLines(
+              compressedRestorePoint(name)
+                ? gunzip(
+                    object.body,
+                    () =>
+                      new DumpFormatError(
+                        "The restore point is not a whole gzip file.",
+                      ),
+                  )
+                : object.body,
+            );
           const staged = await this.stage(source);
           const saved = beforeRestoreName();
           try {
-            await this.writeDump(`${prefix}${saved}`);
+            await this.writeRestorePoint(`${prefix}${saved}`);
           } catch (error) {
             this.dropInternal(STAGE);
             throw error;
@@ -2595,6 +2625,8 @@ export class SiteData extends DurableObject<Env> {
         return done.value;
       }),
     );
+    if (outcome.ok) await this.pruneRestorePoints(input.site);
+    return outcome;
   }
 
   /** Whether this object's database answers, for the health check. */
@@ -2803,13 +2835,61 @@ export class SiteData extends DurableObject<Env> {
   private snapshotBytes = 0;
   private stagedBytes = 0;
 
-  /** Writes a dump of the present to R2 at `key`; the caller holds `exclusive`. */
-  private async writeDump(key: string, bucket: DumpBucket = this.env.SITE_FILES) {
+  /**
+   * Writes a dump of the present to R2 at `key`, gzip-compressed, as a
+   * restore point (restore-points.ts); the caller holds `exclusive`. It is
+   * stored as application/gzip with no Content-Encoding, so nothing on the
+   * way decompresses it. Returns the compressed bytes written.
+   */
+  private async writeRestorePoint(
+    key: string,
+    bucket: DumpBucket = this.env.SITE_FILES,
+  ) {
     const dump = this.openDump();
     try {
-      return await uploadDump(bucket, key, dump.bytes);
+      return await uploadDump(
+        bucket,
+        key,
+        gzip(dump.bytes),
+        undefined,
+        RESTORE_POINT_CONTENT_TYPE,
+      );
     } finally {
       dump.close();
+    }
+  }
+
+  /**
+   * Deletes the site's restore points past their week, after writing a new
+   * one, as the control plane's daily job does for every site. A failure
+   * only waits for that job.
+   */
+  private async pruneRestorePoints(site: string) {
+    const bucket = this.env.SITE_FILES;
+    try {
+      const removed = await pruneRestorePoints(
+        {
+          list: async (options) => {
+            const page = await bucket.list(options);
+            return {
+              objects: page.objects.map((object) => ({
+                key: object.key,
+                uploaded: object.uploaded,
+              })),
+              truncated: page.truncated,
+              cursor: page.truncated ? page.cursor : undefined,
+            };
+          },
+          delete: (keys) => bucket.delete(keys),
+        },
+        site,
+      );
+      if (removed.length)
+        console.log(
+          `[restore-points] ${site}: deleted ${removed.length} past their week: ${removed.join(", ")}`,
+        );
+    } catch (error) {
+      console.error(`Pruning ${site}'s restore points failed`, error);
     }
   }
 
