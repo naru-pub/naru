@@ -14,7 +14,10 @@ import {
   protocolError,
 } from "../../control-plane/src/lib/site-data/validation";
 import type { SiteData } from "./site";
-import { verifyLiveTicket } from "../../control-plane/src/lib/site-data/live-ticket";
+import {
+  OWNER_TICKET,
+  verifyLiveTicket,
+} from "../../control-plane/src/lib/site-data/live-ticket";
 import type { Outcome, Served } from "./types";
 
 // The public data API, /api/data/v1/<site>/..., routed here for every site.
@@ -114,7 +117,11 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
         // a visitor's are limited by.
         "X-Naru-Site": site,
         "X-Naru-Client-Ip": request.headers.get("cf-connecting-ip") ?? "",
-        ...(member ? { "X-Naru-Member": member } : {}),
+        ...(member === OWNER_TICKET
+          ? { "X-Naru-Owner": "1" }
+          : member
+            ? { "X-Naru-Member": member }
+            : {}),
       },
     }),
   );

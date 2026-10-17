@@ -299,7 +299,7 @@ export interface SiteCode {
  * `ctx.member` null and `ctx.owner` true, whatever collections this sign-in
  * approved, and are not counted against the site's budget.
  */
-export interface Admin extends SiteCode {
+export interface Admin extends SiteCode, LiveQueries {
   collection<T = Json>(name: string): AdminCollection<T>;
   /**
    * Commits every write or none. Conditions guard individual documents. Does
@@ -1416,6 +1416,14 @@ function admin(context: Context, token: string, expiresAt: number): Admin {
     },
     query: siteCode(root, send, "_query"),
     mutate: siteCode(root, send, "_mutate"),
+    subscribe: subscriptions(root, async () => {
+      const { ticket } = await send<{ ticket: string }>(`${root}/_live`, {
+        method: "POST",
+        body: {},
+        touches: [],
+      });
+      return ticket;
+    }),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });

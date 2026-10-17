@@ -81,3 +81,9 @@ export async function verifyLiveTicket(
     return null;
   }
 }
+
+/**
+ * Who an owner's ticket is for: not a member ID (those are UUIDs), so the
+ * Worker passes the connection on as the owner's.
+ */
+export const OWNER_TICKET = "~owner";

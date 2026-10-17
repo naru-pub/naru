@@ -36,6 +36,8 @@ import {
 type LiveSocket = {
   id: string;
   member: string | null;
+  /** The site's owner's page (an owner's ticket), subscribing as the owner. */
+  owner?: boolean;
   site: string;
   clientIp?: string;
 };
@@ -271,6 +273,9 @@ export class SiteData extends DurableObject<Env> {
     const socket: LiveSocket = {
       id: randomUUID(),
       member,
+      ...(!member && request.headers.get("X-Naru-Owner") === "1"
+        ? { owner: true }
+        : {}),
       site: request.headers.get("X-Naru-Site") ?? "",
       clientIp: request.headers.get("X-Naru-Client-Ip") ?? undefined,
     };
@@ -414,7 +419,7 @@ export class SiteData extends DurableObject<Env> {
       ownerId,
       site: me.site,
       member: me.member,
-      ...(me.member ? {} : { visitor: true }),
+      ...(me.member || me.owner ? {} : { visitor: true }),
       clientIp: me.clientIp,
       file,
       name: fn,
@@ -1280,13 +1285,17 @@ export class SiteData extends DurableObject<Env> {
         ) as unknown as PlanStep[],
       );
       cursor = this.sql.exec(text, ...bound);
-      for (const row of cursor) {
-        for (const value of Object.values(row))
-          if (value instanceof ArrayBuffer)
-            throw new DataError(
-              400,
-              "ctx.sql does not return BLOB values yet.",
-            );
+      for (const raw of cursor) {
+        // A BLOB crosses into the sandbox as { $blob: base64 }, which ctx.sql
+        // hands the code as a Uint8Array (functions.ts).
+        const row = Object.fromEntries(
+          Object.entries(raw).map(([key, value]) => [
+            key,
+            value instanceof ArrayBuffer
+              ? { $blob: Buffer.from(value).toString("base64") }
+              : value,
+          ]),
+        );
         bytes += JSON.stringify(row).length;
         rows.push(row as Record<string, SqlValue>);
         if (rows.length > MAX_ROWS || bytes > MAX_ROW_BYTES)

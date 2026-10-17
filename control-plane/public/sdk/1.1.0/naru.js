@@ -856,6 +856,14 @@ function admin(context, token, expiresAt) {
     },
     query: siteCode(root, send, "_query"),
     mutate: siteCode(root, send, "_mutate"),
+    subscribe: subscriptions(root, async () => {
+      const { ticket } = await send(`${root}/_live`, {
+        method: "POST",
+        body: {},
+        touches: [],
+      });
+      return ticket;
+    }),
     media: media(root, send),
     signOut: () => signOut(`${origin}/api/data-auth/v1/revoke`),
   });

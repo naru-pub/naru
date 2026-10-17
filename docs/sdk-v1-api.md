@@ -347,7 +347,8 @@ whole call), `fail()`, and these methods, which return promises:
   migrations. Naru's own tables, pragmas, attaching, triggers, transactions
   and recursive queries are refused, and so is a statement whose plan would
   read a whole table once for every row of another: join on an indexed
-  column. It returns at most 1,000 rows and 1 MiB, and no BLOB values yet. A
+  column. It returns at most 1,000 rows and 1 MiB; a `Uint8Array` binds as a
+  BLOB, and BLOB columns come back as `Uint8Array`s. A
   value a `UNIQUE` column already holds fails the call with `CONFLICT`,
   `details.unique` naming the column; any other mistake is SQLite's refusal,
   with its message;

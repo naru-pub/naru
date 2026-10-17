@@ -791,3 +791,56 @@ integration("full-text tables", () => {
     await callSiteObject(copy, "erase", {});
   });
 });
+
+integration("BLOB values", () => {
+  test("a Uint8Array binds as a BLOB, and a BLOB comes back as one", async () => {
+    await put(
+      "migrations",
+      "0007_blobs",
+      "CREATE TABLE blobs (id INTEGER PRIMARY KEY, data BLOB NOT NULL);",
+      false,
+    );
+    await put(
+      "mutations",
+      "blobs",
+      `export async function keep(ctx, { bytes }) {
+         const data = new Uint8Array(bytes);
+         return (await ctx.sql\`INSERT INTO blobs (data) VALUES (\${data}) RETURNING id\`).rows[0].id;
+       }`,
+      false,
+    );
+    await put(
+      "queries",
+      "blobs",
+      `export async function read(ctx, { id }) {
+         const [row] = (await ctx.sql\`SELECT data, typeof(data) AS type, length(data) AS size FROM blobs WHERE id = \${id}\`).rows;
+         return { isBytes: row.data instanceof Uint8Array, bytes: Array.from(row.data), type: row.type, size: row.size };
+       }`,
+    );
+    const bytes = [0, 1, 2, 250, 255, 128, 64];
+    const id = (
+      await callSiteObject<{ result: number }>(site, "call", {
+        ownerId,
+        site,
+        member: "member-1",
+        kind: "mutation",
+        file: "blobs",
+        name: "keep",
+        args: { bytes },
+      })
+    ).result;
+    expect(
+      (
+        await callSiteObject<{ result: unknown }>(site, "call", {
+          ownerId,
+          site,
+          member: "member-1",
+          kind: "query",
+          file: "blobs",
+          name: "read",
+          args: { id },
+        })
+      ).result,
+    ).toEqual({ isBytes: true, bytes, type: "blob", size: 7 });
+  });
+});

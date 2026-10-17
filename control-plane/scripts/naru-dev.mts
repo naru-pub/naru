@@ -31,7 +31,7 @@ import {
 import { connect } from "node:net";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { parseFilterQuery } from "../src/lib/site-data/filters";
-import { signLiveTicket } from "../src/lib/site-data/live-ticket";
+import { OWNER_TICKET, signLiveTicket } from "../src/lib/site-data/live-ticket";
 import {
   CALLS,
   publicResult,
@@ -639,9 +639,10 @@ async function signed(
     return json(res, 200, { result });
   }
   if (path[0] === "_live") {
-    if (!member) throw new DataError(403, "Live tickets are for members.");
+    if (!member && !owner)
+      throw new DataError(403, "Live tickets are for members and the owner.");
     return json(res, 200, {
-      ticket: await signLiveTicket(secret, site, member),
+      ticket: await signLiveTicket(secret, site, member ?? OWNER_TICKET),
     });
   }
   if (member)

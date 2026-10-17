@@ -274,10 +274,60 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles) 
     hash: __operation("passwordHash"),
     verify: __operation("passwordVerify"),
   });
-  const sql = (text, ...values) =>
-    Array.isArray(text) && Object.hasOwn(text, "raw")
-      ? __operation("sql")(text.join("?"), values)
-      : __operation("sql")(String(text), values[0] ?? []);
+  // BLOBs cross the boundary as { $blob: base64 }: Uint8Arrays are bound
+  // as BLOBs, and BLOB columns come back as Uint8Arrays.
+  const __b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const __toBlob = (value) => {
+    if (value instanceof ArrayBuffer) value = new Uint8Array(value);
+    if (!ArrayBuffer.isView(value)) return value;
+    const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    let text = "";
+    for (let i = 0; i < bytes.length; i += 3) {
+      const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+      text += __b64[(n >> 18) & 63] + __b64[(n >> 12) & 63] +
+        (i + 1 < bytes.length ? __b64[(n >> 6) & 63] : "=") +
+        (i + 2 < bytes.length ? __b64[n & 63] : "=");
+    }
+    return { $blob: text };
+  };
+  const __fromBlob = (value) => {
+    if (!value || typeof value !== "object" || typeof value.$blob !== "string") return value;
+    const text = value.$blob.replace(/=+$/, "");
+    const bytes = new Uint8Array(Math.floor((text.length * 3) / 4));
+    let bits = 0, buffer = 0, at = 0;
+    for (const char of text) {
+      buffer = (buffer << 6) | __b64.indexOf(char);
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        bytes[at++] = (buffer >> bits) & 255;
+      }
+    }
+    return bytes;
+  };
+  const __sqlResult = (result) => ({
+    ...result,
+    rows: result.rows.map((row) => {
+      for (const key of Object.keys(row)) row[key] = __fromBlob(row[key]);
+      return row;
+    }),
+  });
+  const sql = (text, ...values) => {
+    const [statement, bound] =
+      Array.isArray(text) && Object.hasOwn(text, "raw")
+        ? [text.join("?"), values]
+        : [String(text), values[0] ?? []];
+    const pending = __operation("sql")(
+      statement,
+      Array.isArray(bound) ? bound.map(__toBlob) : bound,
+    );
+    // A promise of its own, so an unawaited ctx.sql is still caught.
+    const decoded = new CtxPromise((resolve, reject) =>
+      pending.then((result) => resolve(__sqlResult(result)), reject),
+    );
+    __unused.set(decoded, "sql");
+    return decoded;
+  };
   // ctx.sql\`SELECT ... WHERE id = \${id}\` binds each value as a parameter;
   // ctx.sql(text, values) takes a builder's compiled statement.
   const ctx = Object.freeze({

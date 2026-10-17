@@ -375,7 +375,20 @@ export function bindings(values: unknown): SqlValue[] {
     if (value === null || typeof value === "string") return value;
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (typeof value === "boolean") return value ? 1 : 0;
-    throw invalid("values are strings, finite numbers, booleans or null.");
+    // A Uint8Array, as ctx.sql sends it from the sandbox.
+    if (
+      value &&
+      typeof value === "object" &&
+      typeof (value as { $blob?: unknown }).$blob === "string"
+    ) {
+      const bytes = Buffer.from((value as { $blob: string }).$blob, "base64");
+      if (bytes.byteLength > MAX_ROW_BYTES)
+        throw invalid("a BLOB value is at most 1 MiB.");
+      return new Uint8Array(bytes).buffer;
+    }
+    throw invalid(
+      "values are strings, finite numbers, booleans, Uint8Arrays or null.",
+    );
   });
 }
 

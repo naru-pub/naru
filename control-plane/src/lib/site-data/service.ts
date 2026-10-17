@@ -5,7 +5,7 @@ import { siteDataWorker, callSiteObject } from "@/lib/edge/client";
 import { MEMBER_TOKEN, memberScope } from "./member-auth";
 import { tokenScope } from "./owner-auth";
 import { DataError, name, functionReference } from "./validation";
-import { signLiveTicket } from "./live-ticket";
+import { OWNER_TICKET, signLiveTicket } from "./live-ticket";
 
 // Site databases live in Durable Objects, one per site, in the site-data
 // Worker (edge/ at the repository root); the object applies every
@@ -256,16 +256,27 @@ export async function executeCall(
 export async function executeLiveTicket(command: DataCommand) {
   if (command.method !== "POST")
     throw new DataError(405, "Method not allowed.");
-  const { memberId } = await resolveSiteAccess(command);
-  if (memberId === undefined)
+  const { memberId, allowedIds } = await resolveSiteAccess(command);
+  // The owner's page subscribes as the owner (ctx.owner), on a ticket of
+  // its own: OWNER_TICKET names no member.
+  if (
+    memberId === undefined &&
+    (allowedIds === undefined || command.adminUserId !== undefined)
+  )
     throw new DataError(
       command.bearer ? 403 : 401,
-      "Live tickets are for signed-in members; visitors connect without one.",
+      "Live tickets are for signed-in members and the site's owner; visitors connect without one.",
     );
   // Checked by the Worker that holds the site's object (edge/client.ts).
   const { secret } = siteDataWorker(command.site);
   if (!secret) throw new DataError(503, "Live connections are unavailable.");
-  return { ticket: await signLiveTicket(secret, command.site, memberId) };
+  return {
+    ticket: await signLiveTicket(
+      secret,
+      command.site,
+      memberId ?? OWNER_TICKET,
+    ),
+  };
 }
 
 /** A site's collections by name, or all of them, ordered by name. */

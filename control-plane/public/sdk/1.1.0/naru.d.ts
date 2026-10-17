@@ -216,7 +216,7 @@ export interface SiteCode {
  * `ctx.member` null and `ctx.owner` true, whatever collections this sign-in
  * approved, and are not counted against the site's budget.
  */
-export interface Admin extends SiteCode {
+export interface Admin extends SiteCode, LiveQueries {
   collection<T = Json>(name: string): AdminCollection<T>;
   /**
    * Commits every write or none. Conditions guard individual documents. Does

@@ -5,7 +5,12 @@ import { db } from "@/lib/database";
 import { executeMedia } from "../media";
 import { mediaDeletionStorage } from "../media-deletion";
 import { jest } from "@jest/globals";
-import { executeCall, executeData, listCollections } from "../service";
+import {
+  executeCall,
+  executeData,
+  executeLiveTicket,
+  listCollections,
+} from "../service";
 import { callSiteObject, eraseSiteData } from "@/lib/edge/client";
 import {
   approveAuthorization,
@@ -285,6 +290,51 @@ integration("website owner authorization", () => {
     await expect(data(access, ["posts"])).rejects.toMatchObject({
       status: 403,
     });
+  });
+
+  test("the owner's page subscribes to live queries as the owner", async () => {
+    const access = (await exchange(await issue({ collections: [] })))
+      .accessToken;
+    await callSiteObject("alice", "configure", {
+      ownerId: String(owner),
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    const { ticket } = (await executeLiveTicket({
+      site: "alice",
+      method: "POST",
+      path: [],
+      bearer: { token: access, origin },
+    })) as { ticket: string };
+    const socket = new WebSocket(
+      `${process.env.EDGE_WORKER_URL!.replace(/^http/, "ws")}/api/data/v1/alice/_live?ticket=${encodeURIComponent(ticket)}`,
+    );
+    try {
+      const answer = await new Promise((done, fail) => {
+        const timer = setTimeout(() => fail(new Error("No answer.")), 5000);
+        socket.onopen = () =>
+          socket.send(
+            JSON.stringify({
+              type: "subscribe",
+              id: "o",
+              query: "whoami:me",
+              args: null,
+            }),
+          );
+        socket.onmessage = (event) => {
+          clearTimeout(timer);
+          done(JSON.parse(String(event.data)));
+        };
+        socket.onerror = () => fail(new Error("The live connection failed."));
+      });
+      expect(answer).toEqual({
+        type: "result",
+        id: "o",
+        result: { owner: true, member: null },
+      });
+    } finally {
+      socket.close();
+    }
   });
 
   test("deleted and recreated collections do not inherit old grants", async () => {
