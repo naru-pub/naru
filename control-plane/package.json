@@ -30,6 +30,7 @@
     "migrate-down": "tsx src/cli/migrate-down.ts",
     "update-screenshots": "tsx src/cli/update-screenshots.tsx",
     "backfill-site-titles": "tsx src/cli/backfill-site-titles.ts",
+    "rewrite-sdk-urls": "tsx src/cli/rewrite-sdk-urls.ts",
     "update-home-directory-sizes": "tsx src/cli/update-home-directory-sizes.ts",
     "charge-subscriptions": "tsx src/cli/charge-subscriptions.ts",
     "reconcile-payments": "tsx src/cli/reconcile-payments.ts",
