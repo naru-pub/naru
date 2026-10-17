@@ -172,6 +172,29 @@ try {
     401,
     "site operations need the secret",
   );
+  // The control plane's paused-statement alerts (breaker.ts) reach it too,
+  // with the secret only.
+  assert.equal(
+    (
+      await fetch(`${base}/v1/breakers/unnotified`, {
+        method: "POST",
+        body: "{}",
+        headers: { Authorization: `Bearer ${secret}` },
+      })
+    ).status,
+    200,
+    "the breaker alerts reach the Worker",
+  );
+  assert.equal(
+    (
+      await fetch(`${base}/v1/breakers/unnotified`, {
+        method: "POST",
+        body: "{}",
+      })
+    ).status,
+    401,
+    "breaker operations need the secret",
+  );
 
   const configuration = {
     ownerId: "1",

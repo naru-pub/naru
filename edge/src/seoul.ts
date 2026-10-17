@@ -27,7 +27,7 @@ export class SiteData extends EdgeSiteData {
   }
 }
 
-const SERVED = /^\/(?:sdk\/|api\/data\/v1\/|v1\/sites\/)/;
+const SERVED = /^\/(?:sdk\/|api\/data\/v1\/|v1\/sites\/|v1\/breakers\/)/;
 
 export default {
   async fetch(request, env, ctx) {
