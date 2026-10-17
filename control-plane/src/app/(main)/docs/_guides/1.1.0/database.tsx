@@ -1241,7 +1241,10 @@ export default async function (ctx, { path, params, query }) {
   };
 }`}</Code>
               <p>
-                함수는 <code>{"{ path, params, query }"}</code>를 받습니다.{" "}
+                함수는 <code>{"{ path, origin, params, query }"}</code>를
+                받습니다. <code>origin</code>은 방문자가 연 주소의 앞부분(
+                <code>https://alice.naru.pub</code>이나 연결한 도메인)이라
+                <code>og:url</code> 같은 절대 주소를 만들 때 씁니다.{" "}
                 <code>query</code>는 주소의 <code>?</code> 뒤 값입니다. 라우트는
                 로그인과 상관없이 방문자의 쿼리로 돌아, <code>ctx.visitor</code>
                 가 true이고 테이블을 읽기만 합니다. 회원에게만 보일 내용은

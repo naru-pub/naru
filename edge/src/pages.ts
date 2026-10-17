@@ -249,6 +249,8 @@ export type RenderRoute = (input: {
   site: string;
   route: string;
   path: string;
+  /** The page's own origin, such as https://alice.naru.pub, for absolute links. */
+  origin?: string;
   params: Record<string, string>;
   query: Record<string, string>;
   clientIp?: string;
@@ -329,6 +331,8 @@ async function serveRoute(
       site: login,
       route: match.route,
       path: url.pathname,
+      // The address the visitor asked: a subdomain or a custom domain.
+      origin: url.origin,
       params: match.params,
       query: Object.fromEntries(url.searchParams),
       clientIp: request.headers.get("cf-connecting-ip") ?? undefined,

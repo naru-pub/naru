@@ -457,7 +457,10 @@ feeds or pages that should work without JavaScript. Each file in
 | `routes/feed.xml.js`    | `/feed.xml`                   |
 
 A segment starting with `_` takes any one path segment; a fixed segment wins
-over it. Paths no route answers are the site's files, as before.
+over it. Paths no route answers are the site's files, as before. A route's
+default export receives `{ path, origin, params, query }`; `origin` is the
+subdomain or custom domain the page was asked on, such as
+`https://alice.naru.pub`, for absolute URLs like `og:url`.
 
 ```js
 // _naru/routes/posts/_id.js

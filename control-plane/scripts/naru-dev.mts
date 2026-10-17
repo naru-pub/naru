@@ -757,6 +757,7 @@ async function route(res: ServerResponse, url: URL) {
       site,
       route: match.route,
       path: url.pathname,
+      origin: url.origin,
       params: match.params,
       query: Object.fromEntries(url.searchParams),
     });

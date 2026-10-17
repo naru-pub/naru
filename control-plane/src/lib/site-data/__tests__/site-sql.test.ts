@@ -482,10 +482,10 @@ integration("routes", () => {
     await put(
       "routes",
       "posts/_id",
-      `export default async function (ctx, { path, params, query }) {
+      `export default async function (ctx, { path, origin, params, query }) {
          const [post] = (await ctx.sql\`SELECT title FROM posts WHERE id = \${Number(params.id)}\`).rows;
          if (!post) ctx.fail("NOT_FOUND", "그런 글은 없어요.");
-         return { html: \`<h1>\${post.title}</h1><p>\${path} \${query.tab ?? ""} \${ctx.visitor}</p>\`, cache: 30 };
+         return { html: \`<h1>\${post.title}</h1><p>\${origin ?? ""}\${path} \${query.tab ?? ""} \${ctx.visitor}</p>\`, cache: 30 };
        }`,
     );
     const render = (id: string) =>
@@ -493,11 +493,15 @@ integration("routes", () => {
         site,
         route: "posts/_id",
         path: `/posts/${id}`,
+        origin: "https://sqlsite.naru.pub",
         params: { id },
         query: { tab: "c" },
       });
     expect(await render("1")).toEqual({
-      result: { html: "<h1>첫 글</h1><p>/posts/1 c true</p>", cache: 30 },
+      result: {
+        html: "<h1>첫 글</h1><p>https://sqlsite.naru.pub/posts/1 c true</p>",
+        cache: 30,
+      },
     });
     await expect(render("999")).rejects.toMatchObject({
       status: 404,

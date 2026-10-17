@@ -1864,6 +1864,7 @@ export class SiteData extends DurableObject<Env> {
     site: string;
     route: string;
     path: string;
+    origin?: string;
     params: Record<string, string>;
     query: Record<string, string>;
     clientIp?: string;
@@ -1895,6 +1896,11 @@ export class SiteData extends DurableObject<Env> {
       name: "default",
       args: {
         path: String(input.path),
+        // https://<site>.naru.pub or the custom domain the page was asked on.
+        ...(typeof input.origin === "string" &&
+        /^https?:\/\/[^/]+$/.test(input.origin)
+          ? { origin: input.origin }
+          : {}),
         params: input.params ?? {},
         query: input.query ?? {},
       },

@@ -189,6 +189,7 @@ describe("serving", () => {
       site: "carol",
       route: "posts/_id",
       path: "/posts/42",
+      origin: "https://carol.naru.pub",
       params: { id: "42" },
       query: { tab: "comments" },
     });
