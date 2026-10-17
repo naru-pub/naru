@@ -27,9 +27,10 @@ is historical; the gaps it lists are now addressed this way:
   re-run when a mutation writes a table it read, replacing polling.
 - Server-rendered pages: `_naru/routes/` for link previews and feeds.
 - SDK 1.1.0 uploads return IDs and media deletion supports explicit owner grants;
-  members delete their own uploads. Naru records which documents name every
-  upload, and the media library marks those none does; site code does not
-  delete uploads.
+  members delete their own uploads. Naru records which collection documents
+  name an upload, and the media library marks those none does; it does not
+  see site tables, so a site keeping its data in tables (neo-avocado) sees
+  every upload marked unreferenced. Site code does not delete uploads.
 - A local emulator: `pnpm naru-dev`.
 
 Still open: background and scheduled jobs (#4, #9, deliberately not planned),
