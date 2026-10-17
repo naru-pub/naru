@@ -192,7 +192,7 @@ export interface SiteCode {
    * Runs `"<module/path>:<name>"`, an export of the site's
    * `_naru/queries/<module/path>.js`, and resolves with what it returned. A
    * query only reads (`ctx.sql`), so it counts against the caller's read
-   * budget and answers even while the site's database is on its standby.
+   * budget.
    */
   query<R = Json>(
     name: string,

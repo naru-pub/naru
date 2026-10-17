@@ -57,9 +57,10 @@
         }
       ],
       "throws": [],
-      "signature": "interface Admin extends SiteCode",
+      "signature": "interface Admin extends SiteCode, LiveQueries",
       "extends": [
-        "SiteCode"
+        "SiteCode",
+        "LiveQueries"
       ],
       "members": [
         {
@@ -792,7 +793,7 @@
                 },
                 {
                   "type": "text",
-                  "value": "), so it counts against the caller's read budget and answers even while the site's database is on its standby."
+                  "value": "), so it counts against the caller's read budget."
                 }
               ]
             }

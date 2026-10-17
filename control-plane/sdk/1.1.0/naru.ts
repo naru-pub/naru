@@ -275,7 +275,7 @@ export interface SiteCode {
    * Runs `"<module/path>:<name>"`, an export of the site's
    * `_naru/queries/<module/path>.js`, and resolves with what it returned. A
    * query only reads (`ctx.sql`), so it counts against the caller's read
-   * budget and answers even while the site's database is on its standby.
+   * budget.
    */
   query<R = Json>(
     name: string,
@@ -1134,16 +1134,6 @@ function credential(place: Place, token: string, expiresAt: number) {
       return await request<Result>(url, { ...init, token, renew });
     } catch (error) {
       if ((error as NaruError).code === "AUTH_REQUIRED") forget(place, token);
-      // Naru's read-only standby, answering while its server is away, cannot
-      // check a sign-in: a read is asked again as a visitor, so what visitors
-      // may see still shows. Writes wait.
-      if (
-        (init.method ?? "GET") === "GET" &&
-        (error as NaruError).code === "UNAVAILABLE" &&
-        ((error as NaruError).details as { standby?: unknown } | undefined)
-          ?.standby === true
-      )
-        return request<Result>(url, init);
       throw error;
     }
   };

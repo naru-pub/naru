@@ -14,8 +14,8 @@ import {
   type DumpRow,
 } from "@/lib/site-data/dump-format";
 
-// Whole site databases between Workers (edge/src/site.ts `dump`, `restore`,
-// `replace`): NDJSON streams (lib/site-data/dump-format.ts), piped from one
+// Whole site databases between Workers (edge/src/site.ts `dump` and
+// `restore`): NDJSON streams (lib/site-data/dump-format.ts), piped from one
 // Worker's answer into the other's request, so the control plane never holds
 // a dump; at most a chunk of it.
 
@@ -51,21 +51,20 @@ export async function fetchDump(
 }
 
 /**
- * Sends a dump to the Worker at `target`: `restore` fills an empty site,
- * `replace` overwrites the standby's copy. The dump is sent as it is read.
+ * Sends a dump to the Worker at `target`, whose `restore` fills an empty
+ * site with it. The dump is sent as it is read.
  */
 export async function sendDump(
   target: WorkerTarget,
   site: string,
-  operation: "restore" | "replace",
   dump: ReadableStream<Uint8Array> | string,
   signal?: AbortSignal,
 ): Promise<{ rows: number }> {
-  const what = `${operation} on ${site}`;
+  const what = `restore on ${site}`;
   return answerOf(
     await requestWorker(
       target,
-      path(site, operation),
+      path(site, "restore"),
       what,
       { body: dump, contentType: DUMP_CONTENT_TYPE },
       signal,
@@ -83,7 +82,6 @@ export async function copySiteData(
   from: WorkerTarget,
   to: WorkerTarget,
   site: string,
-  operation: "restore" | "replace",
   seen?: (chunk: Uint8Array) => void,
   /** Another site to fill, in tests; the same site otherwise. */
   toSite = site,
@@ -100,7 +98,7 @@ export async function copySiteData(
       }),
     );
   try {
-    return await sendDump(to, toSite, operation, dump, controller.signal);
+    return await sendDump(to, toSite, dump, controller.signal);
   } finally {
     // A refused restore stops reading the dump: let the source go too.
     controller.abort();
@@ -217,4 +215,4 @@ export async function readSiteDump(site: string) {
 export const restoreSiteDump = (
   site: string,
   dump: ReadableStream<Uint8Array> | string,
-) => sendDump(siteDataWorker(site), site, "restore", dump);
+) => sendDump(siteDataWorker(site), site, dump);

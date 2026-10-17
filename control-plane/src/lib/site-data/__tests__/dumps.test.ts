@@ -98,7 +98,6 @@ integration("dumps", () => {
       worker,
       worker,
       site,
-      "restore",
       (chunk) => sent.push(chunk),
       copy,
     );

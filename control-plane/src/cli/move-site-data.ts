@@ -72,9 +72,7 @@ async function main() {
         continue;
       }
       const sent = new DumpSummary();
-      await copySiteData(from, to, site, "restore", (chunk) =>
-        sent.push(chunk),
-      );
+      await copySiteData(from, to, site, (chunk) => sent.push(chunk));
       const original = sent.finish();
       const copy = (await summarizeDump(to, site)).tables;
       const differing = [

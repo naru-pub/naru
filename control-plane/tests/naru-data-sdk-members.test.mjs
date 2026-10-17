@@ -442,7 +442,7 @@ test("ctx.fail's failures keep their message and details without retrying", asyn
   });
 });
 
-test("on Naru's standby an owner's read is asked again as a visitor; writes wait", async () => {
+test("while Naru's server is away, an owner's read and write fail as UNAVAILABLE; the session stays", async () => {
   await browser(async ({ calls, respond, storage }) => {
     storage.set(
       OWNER,
@@ -452,33 +452,27 @@ test("on Naru's standby an owner's read is asked again as a visitor; writes wait
       }),
     );
     const admin = await createNaru().auth.session();
-    const standby = () =>
+    respond(() =>
       Response.json(
         {
           error: {
             code: "UNAVAILABLE",
-            message: "Naru's server is away.",
-            details: { standby: true },
+            message: "The site database is unavailable. Try again shortly.",
           },
         },
         { status: 503 },
-      );
-    respond((call) =>
-      call.headers.Authorization
-        ? standby()
-        : Response.json({ documents: [], nextCursor: null }),
+      ),
     );
-    const page = await admin.collection("board").list();
-    assert.deepEqual(page.documents, []);
-    assert.equal(calls.length, 2);
+    await assert.rejects(admin.collection("board").list(), {
+      code: "UNAVAILABLE",
+    });
+    // Nothing is asked again without the sign-in.
+    assert.equal(calls.length, 1);
     assert.equal(calls[0].headers.Authorization, `Bearer ${"o".repeat(43)}`);
-    assert.equal(calls[1].headers.Authorization, undefined);
-    // A write is not retried, and the session stays for when the server is back.
-    respond(standby);
     await assert.rejects(admin.collection("board").add({ text: "hi" }), {
       code: "UNAVAILABLE",
     });
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 2);
     assert.ok(storage.has(OWNER));
   });
 });

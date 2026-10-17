@@ -97,16 +97,6 @@ export const MAINTENANCE_JOBS = [
     alertAfterMinutes: 60,
   },
   {
-    // Copies changed site databases to the standby on Cloudflare and tells
-    // its health check the mini is up (lib/edge/standby.ts). A run can meet
-    // a Cloudflare 503; the next copies whatever it missed.
-    name: "standby-sync",
-    script: "sync-standby.ts",
-    minutes: 1,
-    timeout: 120,
-    alertAfterMinutes: 30,
-  },
-  {
     name: "edge-pageview-drain",
     script: "drain-edge-pageviews.ts",
     minutes: 1,
