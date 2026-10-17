@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1110" height="840" viewBox="0 0 1110 840" role="img" aria-labelledby="title desc">
   <title id="title">나루의 구조</title>
-  <desc id="desc">한국의 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK(파일과 데이터)는 Cloudflare를 거치지 않고 맥 미니의 Caddy와 workerd에 바로 연결합니다. 사이트 데이터베이스는 맥 미니에만 있고, Backblaze B2에 백업됩니다.</desc>
+  <desc id="desc">한국의 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서 받고, 관리 화면(naru.pub)과 Data SDK(sdk.naru.pub, 파일과 데이터)는 Cloudflare를 거치지 않고 맥 미니의 Caddy에 바로 연결합니다. Caddy는 naru.pub을 nginx 게이트웨이와 control plane으로, sdk.naru.pub을 workerd로 보냅니다. Toss와 GitHub의 웹훅도 같은 길로 옵니다. 사이트 데이터베이스는 맥 미니에만 있고, Backblaze B2에 백업됩니다.</desc>
 
   <style>
     svg { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
@@ -72,21 +72,19 @@
   <rect x="650" y="140" width="190" height="60" rx="8" class="box"/>
   <text x="745.0" y="167.0" class="title" text-anchor="middle">R2</text>
   <text x="745.0" y="184.0" class="sub" text-anchor="middle">사이트 파일, 미디어, 코드</text>
-  <rect x="880" y="140" width="190" height="60" rx="8" class="box"/>
-  <text x="975.0" y="167.0" class="title" text-anchor="middle">Cloudflare Tunnel</text>
-  <text x="975.0" y="184.0" class="sub" text-anchor="middle">naru.pub</text>
   <rect x="420" y="240" width="190" height="60" rx="8" class="box"/>
   <text x="515.0" y="267.0" class="title" text-anchor="middle">Durable Objects</text>
   <text x="515.0" y="284.0" class="sub" text-anchor="middle">페이지뷰 기록</text>
   <rect x="420" y="340" width="190" height="60" rx="8" class="box"/>
   <text x="515.0" y="367.0" class="title" text-anchor="middle">Standby 객체</text>
   <text x="515.0" y="384.0" class="sub" text-anchor="middle">상태 확인 cron, 알림</text>
+  <text x="190" y="254" class="label-direct" text-anchor="start">naru.pub과</text>
   <text x="190" y="270" class="label-direct" text-anchor="start">sdk.naru.pub은</text>
   <text x="190" y="286" class="label-direct" text-anchor="start">Cloudflare를 거치지 않고</text>
   <text x="190" y="302" class="label-direct" text-anchor="start">맥 미니로 바로 연결</text>
   <rect x="190" y="510" width="190" height="60" rx="8" class="box"/>
   <text x="285.0" y="537.0" class="title" text-anchor="middle">Caddy :443</text>
-  <text x="285.0" y="554.0" class="sub" text-anchor="middle">sdk.naru.pub</text>
+  <text x="285.0" y="554.0" class="sub" text-anchor="middle">naru.pub · sdk.naru.pub</text>
   <rect x="420" y="510" width="190" height="60" rx="8" class="box"/>
   <text x="515.0" y="537.0" class="title" text-anchor="middle">workerd</text>
   <text x="515.0" y="554.0" class="sub" text-anchor="middle">사이트마다 SQLite 하나</text>
@@ -112,9 +110,8 @@
   <text x="975.0" y="787.0" class="title" text-anchor="middle">SES, Sentry, Discord</text>
   <text x="975.0" y="804.0" class="sub" text-anchor="middle">메일, 오류, 알림</text>
   <path d="M515.0,70 L515.0,140" class="line" marker-end="url(#a)"/>
-  <path d="M820,70 L820,110 L950.0,110 L950.0,140" class="line" marker-end="url(#a)"/>
-  <path d="M1000.0,70 L1000.0,140" class="line" marker-end="url(#a)"/>
   <path d="M150,70 L150,540 L190,540" class="line-direct" marker-end="url(#d)"/>
+  <path d="M975.0,70 L975.0,85 L150,85" class="line-direct"/>
   <path d="M610,170 L650,170" class="line" marker-end="url(#a)"/>
   <path d="M515.0,200 L515.0,240" class="line" marker-end="url(#a)"/>
   <path d="M420,180 L405,180 L405,370 L420,370" class="line" marker-end="url(#a)"/>
@@ -122,8 +119,8 @@
   <text x="368" y="439" class="label" text-anchor="start">상태 확인, 라우트 렌더</text>
   <path d="M560.0,510 L560.0,455 L745.0,455 L745.0,200" class="line" marker-end="url(#a)"/>
   <text x="753.0" y="300" class="label" text-anchor="start">코드, 복원 지점</text>
-  <path d="M975.0,200 L975.0,510" class="line" marker-end="url(#a)"/>
   <path d="M380,540 L420,540" class="line" marker-end="url(#a)"/>
+  <path d="M325.0,570 L325.0,588 L975.0,588 L975.0,570" class="line" marker-end="url(#a)"/>
   <path d="M880,540 L840,540" class="line" marker-end="url(#a)"/>
   <path d="M650,540 L610,540" class="line" marker-start="url(#a)" marker-end="url(#a)"/>
   <path d="M745.0,570 L745.0,642 L610,642" class="line" marker-end="url(#a)"/>

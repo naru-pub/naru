@@ -44,8 +44,8 @@ What a release does that the code has to allow for:
 ## Edge Worker
 
 The edge Worker ([`edge/`](../edge), deployed as `naru-edge`) serves
-hosted sites, their pageviews and custom domains, and the Data SDK's script;
-site databases live on the mini
+hosted sites, their pageviews and custom domains; site databases, and the
+Data SDK's files at `sdk.naru.pub/sdk/`, live on the mini
 ([database.md](database.md#where-site-data-lives)). It is not part of the
 images and deploys on its own: Cloudflare Workers Builds deploys it from
 `main` (root directory `edge`), on an account on the Workers Paid plan. To set
@@ -79,11 +79,14 @@ the mini each minute and posts to `DISCORD_WEBHOOK` (secret) when it is down
 and when it is back: it alerts, and fails nothing over. See
 [database.md](database.md#when-the-mini-is-away).
 
-`wrangler.jsonc` declares the `edge.naru.pub` custom domain, the
-public `naru.pub/api/data/v1/*` and `naru.pub/sdk/*` routes, and the
-hosted-site routes below. The SDK route serves the committed
-`control-plane/public/sdk/` files, which deploy with the Worker as its static
-assets (`edge/src/sdk.ts`).
+`wrangler.jsonc` declares the `edge.naru.pub` custom domain and the
+hosted-site routes below. naru.pub itself, the control plane, is a DNS-only
+record straight to Caddy on the mini (infra `cloudflare/dns_naru_pub.tf`,
+`apps/naru-sdk/Caddyfile`), so no Cloudflare route or zone rule sees it: the
+control plane answers its data API (`/api/data/v1/*`) itself, and
+`naru.pub/sdk/*` is a 404 there. The SDK's committed
+`control-plane/public/sdk/` files are served at `sdk.naru.pub/sdk/` by
+workerd on the mini (`edge/src/sdk.ts`, bundled by `edge/seoul/`).
 Cloudflare manages the custom domain's DNS and certificate. Both `workers.dev`
 and Preview URLs are disabled. The public route handles every site; the
 control plane does not manage per-site Worker routes. The `edge-sync`
@@ -93,9 +96,10 @@ usage counters every five minutes.
 Deploy the Worker before a control plane that relies on what is new in it,
 and redeploy it whenever `edge/` or the control-plane modules it
 imports (`lib/site-data/validation.ts`, `filters.ts`, `pagination.ts`,
-`protocol.ts`, `lib/uuid.ts`) change, and whenever the SDK's files
-(`public/sdk/`, `sdk/aliases.json`) change: until then naru.pub serves the
-previous SDK. A change to the object's tables must
+`protocol.ts`, `lib/uuid.ts`) change. When the SDK's files
+(`public/sdk/`, `sdk/aliases.json`) change, release naru-sdk (`mise run
+deploy naru-sdk` in infra): until then sdk.naru.pub serves the previous SDK.
+A change to the object's tables must
 create them compatibly with what existing objects already hold.
 
 ## Hosted sites at the edge
@@ -161,9 +165,10 @@ the Worker.
 Routes decide which requests reach the Worker. `wrangler.jsonc` declares
 `*.naru.pub/*` for sites and `*/*`, which catches custom domains: they reach
 the zone through Cloudflare for SaaS under their own hostnames. Those routes
-would also catch the control plane and the bucket's public domains, so keep
-them off with routes that have no Worker, created once (Workers Routes in the
-zone dashboard, or the API with a `zone:workers_routes` token):
+would also catch the bucket's public domains, and naru.pub were it proxied
+again, so routes without a Worker keep them off (infra
+`cloudflare/routes.tf`; by hand, Workers Routes in the zone dashboard, or the
+API with a `zone:workers_routes` token):
 
 ```bash
 for host in naru.pub r2.naru.pub media.naru.pub; do
@@ -173,9 +178,8 @@ for host in naru.pub r2.naru.pub media.naru.pub; do
 done
 ```
 
-The more specific `naru.pub/api/data/v1/*` and `naru.pub/sdk/*` still go to
-the Worker, and the
-Worker's custom domain `edge.naru.pub` takes precedence over every route.
+The Worker's custom domain `edge.naru.pub` takes precedence over every
+route.
 
 The Worker reads the bucket through its `SITE_FILES` binding, so it deploys
 with a token that can read R2 (Workers Builds' does).

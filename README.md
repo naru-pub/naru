@@ -17,10 +17,10 @@
 
 ## 🏗️ 아키텍처
 
-나루는 세 부분으로 이루어져 있습니다. 서울의 맥 미니(kr-seongsu-m4)에서 도는 control plane과 사이트 데이터베이스, 그리고 Cloudflare의 엣지 Worker입니다. 한국에서 Cloudflare로 가는 요청은 로스앤젤레스를 거치므로, 매 요청이 빨라야 하는 Data SDK는 `sdk.naru.pub`으로 맥 미니에 바로 연결합니다.
+나루는 세 부분으로 이루어져 있습니다. 서울의 맥 미니(kr-seongsu-m4)에서 도는 control plane과 사이트 데이터베이스, 그리고 Cloudflare의 엣지 Worker입니다. 한국에서 Cloudflare로 가는 요청은 로스앤젤레스를 거치므로, control plane(`naru.pub`)과 Data SDK(`sdk.naru.pub`)는 Cloudflare를 거치지 않고 맥 미니의 Caddy에 바로 연결합니다. Cloudflare에는 사이트(`<login>.naru.pub`, 커스텀 도메인)를 서빙하는 엣지 Worker와 R2가 남습니다.
 
 <p align="center">
-  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK(파일과 데이터)는 sdk.naru.pub으로 맥 미니의 Caddy와 workerd에 바로 연결합니다." width="100%">
+  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서 받고, 관리 화면(naru.pub)과 Data SDK(sdk.naru.pub)는 맥 미니의 Caddy에 바로 연결합니다. Caddy는 naru.pub을 nginx 게이트웨이와 control plane으로, sdk.naru.pub을 workerd로 보냅니다." width="100%">
 </p>
 
 ### 1. Control Plane (Next.js)

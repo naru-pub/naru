@@ -338,11 +338,11 @@ rule covers it. `XMLHttpRequest` cannot refuse a redirect, so a response whose
 
 Public access permits callers from any origin. Anonymous writes into `create` or `world` collections use fixed-minute limits of 60 successful writes per site and 20 per caller/IP per site. Each site's Durable Object stores and checks these counters in the write transaction. Owner writes do not count, and failed writes roll back their counters. Queries and mutations have their own limits ([Site code](#site-code)).
 
-The Worker reads the visitor IP from Cloudflare’s trusted header. Requests forwarded through the control plane share an `unknown` bucket (20/minute/site) unless trusted IP forwarding is enabled. Set `TRUST_CLOUDFLARE_IP=1` **only** when a trusted ingress replaces `CF-Connecting-IP` and direct access to the application is blocked. Otherwise clients can spoof the header to evade IP limits. The production gateway that `deploy-server.sh` renders satisfies this requirement: it recovers the visitor address from the Cloudflare Tunnel's `X-Forwarded-For` chain only for private tunnel peers, then overwrites `CF-Connecting-IP` before proxying to the application. With the setting enabled, valid IPs get separate buckets while invalid/missing headers still share `unknown`. Only a digest is stored in the bucket key; it is not guaranteed anonymization. The object removes expired buckets during anonymous-write admission.
+The Worker reads the visitor IP from Cloudflare’s trusted header. Requests forwarded through the control plane share an `unknown` bucket (20/minute/site) unless trusted IP forwarding is enabled. Set `TRUST_CLOUDFLARE_IP=1` **only** when a trusted ingress replaces `CF-Connecting-IP` and direct access to the application is blocked. Otherwise clients can spoof the header to evade IP limits. Production satisfies this requirement: naru.pub is DNS-only, straight to Caddy on the mini (infra `apps/naru-sdk/Caddyfile`), which replaces `X-Forwarded-For` and `CF-Connecting-IP` with the address it saw; the gateway (infra `apps/naru/nginx/default.conf`) trusts `X-Forwarded-For` only from private peers (Caddy, on the host), takes the visitor from it, and overwrites `CF-Connecting-IP` before proxying to the application. The router forwards only 443, to Caddy, so nothing on the internet reaches the gateway directly. Toss's `BILLING_DELETED` sender check reads the same header. With the setting enabled, valid IPs get separate buckets while invalid/missing headers still share `unknown`. Only a digest is stored in the bucket key; it is not guaranteed anonymization. The object removes expired buckets during anonymous-write admission.
 
 `cleanup-site-data-grants` periodically removes expired authorization codes and access tokens, owners' and members', from PostgreSQL. It does not touch the object’s rate-limit buckets.
 
-These limits do not protect reads, invalid requests or authorization endpoints from high request volumes. The gateway's nginx config sets per-client limits for `/api/data/*` (30 r/s, burst 60) and `/api/data-auth/*` (2 r/s, burst 10) with matching body caps, keyed on the visitor address recovered from the trusted tunnel's forwarding chain. PostgreSQL backups cover authentication and media metadata, not the documents stored in Durable Objects. The existing hosted-file export does not include site database documents.
+These limits do not protect reads, invalid requests or authorization endpoints from high request volumes. The gateway's nginx config sets per-client limits for `/api/data/*` (30 r/s, burst 60) and `/api/data-auth/*` (2 r/s, burst 10) with matching body caps, keyed on the visitor address Caddy passes on in `X-Forwarded-For`. PostgreSQL backups cover authentication and media metadata, not the documents stored in Durable Objects. The existing hosted-file export does not include site database documents.
 
 ### Reads and caching
 
@@ -419,9 +419,10 @@ cache: a visitor's read is a local query.
   `SITE_DATA_SECRET`, which also signs members' live tickets. Pageviews and
   the custom domain table stay with the Worker on Cloudflare
   (`EDGE_WORKER_URL`, `EDGE_WORKER_SECRET`).
-- On Cloudflare, `MOVED_SITES=*` marks every site's database as moved: a
-  request that still arrives at `naru.pub/api/data/v1` (an old SDK file in a
-  browser's cache) goes on to the control plane, which calls the mini.
+- `naru.pub/api/data/v1`, which 1.0.0 still calls, is the control plane's
+  own: naru.pub is DNS-only, straight to Caddy on the mini, and the control
+  plane calls the site's object there. (The edge Worker's `MOVED_SITES=*`,
+  for when naru.pub was proxied, no longer sees such a request.)
 
 PostgreSQL retains accounts, entitlements, website registrations,
 authorization codes and tokens, and media metadata. Media bytes remain in R2.

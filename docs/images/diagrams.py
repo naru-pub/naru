@@ -81,14 +81,15 @@ def box(x, y, w, h, title, sub=None, cls="box"):
     return "\n  ".join(parts)
 
 
-def path(points, direct=False, both=False, dashed=False):
+def path(points, direct=False, both=False, dashed=False, head=True):
     d = "M" + " L".join(f"{x},{y}" for x, y in points)
     cls = "line-direct" if direct else "line"
     if dashed:
         cls += " dash"
     marker = "d" if direct else "a"
     start = f' marker-start="url(#{marker})"' if both else ""
-    return f'<path d="{d}" class="{cls}"{start} marker-end="url(#{marker})"/>'
+    end = f' marker-end="url(#{marker})"' if head else ""
+    return f'<path d="{d}" class="{cls}"{start}{end}/>'
 
 
 def svg(width, height, body, title, desc):
@@ -125,14 +126,14 @@ parts = [
     # Cloudflare.
     box(C[1], CF[0], W, H, "엣지 Worker", "<site>.naru.pub"),
     box(C[2], CF[0], W, H, "R2", "사이트 파일, 미디어, 코드"),
-    box(C[3], CF[0], W, H, "Cloudflare Tunnel", "naru.pub"),
     box(C[1], CF[1], W, H, "Durable Objects", "페이지뷰 기록"),
     box(C[1], CF[2], W, H, "Standby 객체", "상태 확인 cron, 알림"),
+    t(C[0], 254, "naru.pub과", "label-direct"),
     t(C[0], 270, "sdk.naru.pub은", "label-direct"),
     t(C[0], 286, "Cloudflare를 거치지 않고", "label-direct"),
     t(C[0], 302, "맥 미니로 바로 연결", "label-direct"),
     # The mini.
-    box(C[0], MINI[0], W, H, "Caddy :443", "sdk.naru.pub"),
+    box(C[0], MINI[0], W, H, "Caddy :443", "naru.pub · sdk.naru.pub"),
     box(C[1], MINI[0], W, H, "workerd", "사이트마다 SQLite 하나"),
     box(C[2], MINI[0], W, H, "Control plane", "Next.js, blue/green"),
     box(C[3], MINI[0], W, H, "nginx 게이트웨이", "naru.pub"),
@@ -144,9 +145,9 @@ parts = [
     box(C[3], EXT, W, H, "SES, Sentry, Discord", "메일, 오류, 알림", "box-ext"),
     # Into Cloudflare, and past it.
     path([(CX[1], 70), (CX[1], CF[0])]),
-    path([(C[2] + W - 20, 70), (C[2] + W - 20, 110), (CX[3] - 25, 110), (CX[3] - 25, CF[0])]),
-    path([(CX[3] + 25, 70), (CX[3] + 25, CF[0])]),
     path([(150, 70), (150, MINI[0] + 30), (C[0], MINI[0] + 30)], direct=True),
+    # Toss and GitHub call naru.pub, the same way.
+    path([(CX[3], 70), (CX[3], 85), (150, 85)], direct=True, head=False),
     # Within Cloudflare.
     path([(C[1] + W, CF[0] + 30), (C[2], CF[0] + 30)]),
     path([(CX[1], CF[0] + H), (CX[1], CF[1])]),
@@ -157,10 +158,9 @@ parts = [
     # workerd reads and writes R2: site code, restore points.
     path([(CX[1] + 45, MINI[0]), (CX[1] + 45, 455), (CX[2], 455), (CX[2], CF[0] + H)]),
     t(CX[2] + 8, 300, "코드, 복원 지점", "label"),
-    # naru.pub, through the tunnel.
-    path([(CX[3], CF[0] + H), (CX[3], MINI[0])]),
-    # The mini.
+    # The mini. Caddy sends sdk.naru.pub to workerd, naru.pub to the gateway.
     path([(C[0] + W, MINI[0] + 30), (C[1], MINI[0] + 30)]),
+    path([(CX[0] + 40, MINI[0] + H), (CX[0] + 40, MINI[0] + H + 18), (CX[3], MINI[0] + H + 18), (CX[3], MINI[0] + H)]),
     path([(C[3], MINI[0] + 30), (C[2] + W, MINI[0] + 30)]),
     path([(C[2], MINI[0] + 30), (C[1] + W, MINI[0] + 30)], both=True),
     path([(CX[2], MINI[0] + H), (CX[2], MINI[1] + 22), (C[1] + W, MINI[1] + 22)]),
@@ -175,9 +175,10 @@ parts = [
         840,
         "\n  ".join(parts),
         "나루의 구조",
-        "한국의 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서, "
-        "관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, "
-        "Data SDK(파일과 데이터)는 Cloudflare를 거치지 않고 맥 미니의 Caddy와 workerd에 바로 연결합니다. "
+        "한국의 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서 받고, "
+        "관리 화면(naru.pub)과 Data SDK(sdk.naru.pub, 파일과 데이터)는 Cloudflare를 거치지 않고 "
+        "맥 미니의 Caddy에 바로 연결합니다. Caddy는 naru.pub을 nginx 게이트웨이와 control plane으로, "
+        "sdk.naru.pub을 workerd로 보냅니다. Toss와 GitHub의 웹훅도 같은 길로 옵니다. "
         "사이트 데이터베이스는 맥 미니에만 있고, Backblaze B2에 백업됩니다.",
     )
 )
