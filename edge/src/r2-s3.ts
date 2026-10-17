@@ -2,8 +2,9 @@ import { AwsClient } from "aws4fetch";
 
 // The site bucket through R2's S3 API, where there is no R2 binding: the
 // Worker under workerd on the mini (seoul.ts). Only what SiteData uses: list,
-// get, put (optionally only where nothing is yet) and delete, shaped as the
-// binding answers them.
+// get (as text or a stream), put (optionally only where nothing is yet),
+// delete and multipart uploads (dumps, dump.ts), shaped as the binding
+// answers them.
 
 export interface S3Env {
   R2_ACCOUNT_ID: string;
@@ -72,11 +73,12 @@ export function s3Bucket(env: S3Env) {
         etag: response.headers.get("etag") ?? "",
         size: Number(response.headers.get("content-length")),
         text: () => response.text(),
+        body: response.body!,
       };
     },
     async put(
       key: string,
-      body: string,
+      body: string | Uint8Array,
       options?: { onlyIf?: { etagDoesNotMatch?: string } },
     ) {
       const response = await client.fetch(url(key), {
@@ -91,6 +93,58 @@ export function s3Bucket(env: S3Env) {
       if (response.status === 412) return null;
       if (!response.ok) throw failed(`a write of ${key}`, response);
       return { key };
+    },
+    /** As the binding's: parts of at least 5 MiB, all but the last the same size. */
+    async createMultipartUpload(key: string) {
+      const created = await client.fetch(`${url(key)}?uploads`, {
+        method: "POST",
+      });
+      if (!created.ok) throw failed(`a multipart upload of ${key}`, created);
+      const uploadId = text(await created.text(), "UploadId");
+      if (!uploadId) throw new Error(`R2 gave no upload ID for ${key}`);
+      const at = (query: Record<string, string>) =>
+        `${url(key)}?${new URLSearchParams(query)}`;
+      return {
+        key,
+        uploadId,
+        async uploadPart(partNumber: number, value: Uint8Array) {
+          const response = await client.fetch(
+            at({ partNumber: String(partNumber), uploadId }),
+            { method: "PUT", body: value },
+          );
+          if (!response.ok)
+            throw failed(`part ${partNumber} of ${key}`, response);
+          return { partNumber, etag: response.headers.get("etag") ?? "" };
+        },
+        async complete(parts: { partNumber: number; etag: string }[]) {
+          const xml = `<CompleteMultipartUpload>${parts
+            .map(
+              (part) =>
+                `<Part><PartNumber>${part.partNumber}</PartNumber><ETag>${part.etag
+                  .replaceAll("&", "&amp;")
+                  .replaceAll("<", "&lt;")
+                  .replaceAll(">", "&gt;")
+                  .replaceAll('"', "&quot;")}</ETag></Part>`,
+            )
+            .join("")}</CompleteMultipartUpload>`;
+          const response = await client.fetch(at({ uploadId }), {
+            method: "POST",
+            body: xml,
+          });
+          // S3 can answer 200 with an error in the body.
+          const answer = response.ok ? await response.text() : "";
+          if (!response.ok || /<Error>/.test(answer))
+            throw failed(`completing ${key}`, response);
+          return { key };
+        },
+        async abort() {
+          const response = await client.fetch(at({ uploadId }), {
+            method: "DELETE",
+          });
+          if (!response.ok && response.status !== 404)
+            throw failed(`aborting ${key}`, response);
+        },
+      };
     },
     async delete(key: string) {
       const response = await client.fetch(url(key), { method: "DELETE" });

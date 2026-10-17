@@ -107,4 +107,50 @@ describe("the site bucket through R2's S3 API", () => {
       "R2 answered 500",
     );
   });
+
+  test("uploads in parts as the binding does: create, parts, complete, abort", async () => {
+    const seen = answering(
+      new Response(
+        `<?xml version="1.0"?><InitiateMultipartUploadResult><UploadId>up&amp;1</UploadId></InitiateMultipartUploadResult>`,
+      ),
+      new Response(null, { headers: { etag: '"p1"' } }),
+      new Response(null, { headers: { etag: '"p2"' } }),
+      new Response("<CompleteMultipartUploadResult/>"),
+      new Response(null, { status: 204 }),
+    );
+    const upload = await s3Bucket(env).createMultipartUpload("s/r/a.ndjson");
+    expect(upload.uploadId).toBe("up&1");
+    const one = await upload.uploadPart(1, new Uint8Array([1, 2]));
+    const two = await upload.uploadPart(2, new Uint8Array([3]));
+    expect([one, two]).toEqual([
+      { partNumber: 1, etag: '"p1"' },
+      { partNumber: 2, etag: '"p2"' },
+    ]);
+    await upload.complete([one, two]);
+    await upload.abort();
+    expect(seen.map((request) => request.method)).toEqual([
+      "POST",
+      "PUT",
+      "PUT",
+      "POST",
+      "DELETE",
+    ]);
+    expect(seen[0].url).toBe(`${BASE}/s/r/a.ndjson?uploads`);
+    const part = new URL(seen[1].url);
+    expect(part.searchParams.get("partNumber")).toBe("1");
+    expect(part.searchParams.get("uploadId")).toBe("up&1");
+    expect(new Uint8Array(await seen[1].arrayBuffer())).toEqual(
+      new Uint8Array([1, 2]),
+    );
+    expect(await seen[3].text()).toBe(
+      "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>&quot;p1&quot;</ETag></Part><Part><PartNumber>2</PartNumber><ETag>&quot;p2&quot;</ETag></Part></CompleteMultipartUpload>",
+    );
+    expect(new URL(seen[4].url).searchParams.get("uploadId")).toBe("up&1");
+  });
+
+  test("reads a file as a stream", async () => {
+    answering(new Response("{}\n"));
+    const found = await s3Bucket(env).get("s/r/a.ndjson");
+    expect(await new Response(found!.body).text()).toBe("{}\n");
+  });
 });
