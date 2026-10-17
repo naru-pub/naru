@@ -96,7 +96,7 @@
   <text x="975.0" y="554.0" class="sub" text-anchor="middle">naru.pub</text>
   <rect x="190" y="620" width="190" height="60" rx="8" class="box"/>
   <text x="285.0" y="647.0" class="title" text-anchor="middle">백업 (launchd)</text>
-  <text x="285.0" y="664.0" class="sub" text-anchor="middle">사이트 DB 매시, 전체 매일</text>
+  <text x="285.0" y="664.0" class="sub" text-anchor="middle">사이트 DB 5분마다, 전체 매일</text>
   <rect x="420" y="620" width="190" height="60" rx="8" class="box"/>
   <text x="515.0" y="647.0" class="title" text-anchor="middle">PostgreSQL</text>
   <text x="515.0" y="664.0" class="sub" text-anchor="middle">계정, 결제, 토큰</text>

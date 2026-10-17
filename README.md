@@ -23,6 +23,14 @@
   <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서 받고, 관리 화면(naru.pub)과 Data SDK(sdk.naru.pub)는 맥 미니의 Caddy에 바로 연결합니다. Caddy는 naru.pub을 nginx 게이트웨이와 control plane으로, sdk.naru.pub을 workerd로 보냅니다." width="100%">
 </p>
 
+#### 계획: 사이트를 workerd 넷에 나눠 두기
+
+지금은 workerd 프로세스 하나가 모든 사이트를 한 스레드로 처리해서, 한 사이트의 느린 작업이 다른 모든 사이트를 기다리게 합니다. 사이트를 이름으로 네 개의 workerd 샤드에 나누고, 지금의 포트(40100)에는 요청을 샤드로 보내는 가벼운 라우터를 둘 계획입니다. Caddy, control plane, Cloudflare는 그대로 라우터를 부르고, 한 샤드가 멈춰도 다른 샤드의 사이트는 기다리지 않습니다. 워치독은 멈추거나 메모리를 넘은 샤드만 다시 시작합니다.
+
+<p align="center">
+  <img src="docs/images/architecture-sharded.svg" alt="샤딩 후 나루의 구조 (계획): 맥 미니의 Caddy가 sdk.naru.pub을 workerd 라우터로 보내고, 라우터는 사이트 이름으로 네 개의 workerd 샤드 중 하나로 보냅니다. Cloudflare와 바깥 서비스는 지금과 같습니다." width="100%">
+</p>
+
 ### 1. Control Plane (Next.js)
 
 - **위치**: `control-plane/`
