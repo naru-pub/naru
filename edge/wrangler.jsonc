@@ -1,8 +1,7 @@
 // Naru at the edge. Hosted sites, <login>.naru.pub, are served from the site
 // bucket (see docs/deployment.md, "Hosted sites at the edge"), their routes
 // rendered on the mini, where site databases live (docs/database.md). It also
-// serves the Data SDK's script, naru.pub/sdk/*, and the control plane's
-// pageview log and custom domain table.
+// keeps the control plane's pageview log and custom domain table.
 //
 // Local runs (`wrangler dev --env local`: pnpm dev, the control plane's
 // with-edge-worker.sh and naru-dev) also hold site databases themselves, as
@@ -43,9 +42,10 @@
   },
   // The site bucket: each site's files under <login>/.
   "r2_buckets": [{ "binding": "SITE_FILES", "bucket_name": "naru-pub" }],
-  // The Data SDK's committed files, served at naru.pub/sdk/ (src/sdk.ts). The
-  // Worker runs first on every request, so a hosted site's own /1.0.0/naru.js
-  // is still its own file.
+  // The Data SDK's committed files (src/sdk.ts). Only sdk.naru.pub serves them
+  // now, from workerd on the mini (edge/seoul/); here no route reaches them
+  // but edge.naru.pub/sdk/. The Worker runs first on every request, so a
+  // hosted site's own /1.0.0/naru.js is still its own file.
   "assets": {
     "directory": "../control-plane/public/sdk",
     "binding": "SDK_FILES",
@@ -55,14 +55,11 @@
   "kv_namespaces": [
     { "binding": "DOMAINS", "id": "11c38b8a51984f708edd9ebf619e3ab3" },
   ],
-  // The public data API on naru.pub, which older SDK files still call: sent
-  // on to the control plane, the zone's origin, which calls the mini
-  // (MOVED_SITES).
+  // naru.pub itself is DNS-only, straight to the mini (infra
+  // cloudflare/dns_naru_pub.tf), so no route here sees it: its data API
+  // (/api/data/v1/*, which older SDK files call) is the control plane's own,
+  // and naru.pub/sdk/* is a 404 there.
   "routes": [
-    { "pattern": "naru.pub/api/data/v1/*", "zone_name": "naru.pub" },
-    // The Data SDK, so sites that import it load while the control plane is
-    // down.
-    { "pattern": "naru.pub/sdk/*", "zone_name": "naru.pub" },
     // The control plane calls /v1/sites/* and /v1/pageviews/* here.
     { "pattern": "edge.naru.pub", "custom_domain": true },
     // Hosted sites. r2.naru.pub and media.naru.pub, the bucket's public
@@ -71,8 +68,8 @@
     { "pattern": "*.naru.pub/*", "zone_name": "naru.pub" },
     // Custom domains reach the zone under their own hostnames through
     // Cloudflare for SaaS, so only a route on every host catches them.
-    // naru.pub itself, the control plane, is kept off it by a route without
-    // a Worker, like r2.naru.pub.
+    // naru.pub, if it were ever proxied again, is kept off it by a route
+    // without a Worker, like r2.naru.pub.
     { "pattern": "*/*", "zone_name": "naru.pub" },
   ],
   // Anonymous requests a site may make each calendar month (UTC), unless the
