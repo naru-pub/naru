@@ -12,6 +12,9 @@ import {
   jsonBody,
   NAME,
   protocolError,
+  refusalResponse,
+  secondsUntil,
+  withRetryAfter,
 } from "../../control-plane/src/lib/site-data/validation";
 import type { SiteData } from "./site";
 import {
@@ -118,22 +121,11 @@ async function visit(
       args: body?.args ?? null,
       clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
     })) as Outcome<{ pass: true } | { pass?: undefined; result: unknown }>;
-    if (!outcome.ok) {
-      const { status, message, code, details, site } = outcome.error;
-      return protocolError(status, message, code, headers, details, site);
-    }
+    if (!outcome.ok) return refusalResponse(outcome.error, headers);
     if (outcome.value.pass) return passThrough(original, env);
     return Response.json({ result: outcome.value.result }, { headers });
   } catch (error) {
-    if (error instanceof DataError)
-      return protocolError(
-        error.status,
-        error.message,
-        error.code,
-        headers,
-        error.details,
-        error.site,
-      );
+    if (error instanceof DataError) return refusalResponse(error, headers);
     console.error("A visitor's call failed", error);
     return protocolError(500, "Function call failed.", undefined, headers);
   }
@@ -211,7 +203,12 @@ export async function website(
     return passThrough(request, env);
   const refusal = spent.get(site);
   if (refusal && Date.now() < refusal.until)
-    return protocolError(429, refusal.message, "RATE_LIMITED", headers);
+    return protocolError(
+      429,
+      refusal.message,
+      "RATE_LIMITED",
+      withRetryAfter(headers, secondsUntil(refusal.until)),
+    );
 
   const url = new URL(request.url);
   const fresh = url.searchParams.get("fresh") === "1";
@@ -252,9 +249,14 @@ export async function website(
       clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
     })) as Outcome<Served>;
     if (!outcome.ok) {
-      const { status, message, code, resetsAt } = outcome.error;
+      const { status, message, code, resetsAt, retryAfter } = outcome.error;
       if (resetsAt) spent.set(site, { until: resetsAt, message });
-      return protocolError(status, message, code, headers);
+      return protocolError(
+        status,
+        message,
+        code,
+        withRetryAfter(headers, retryAfter),
+      );
     }
     if (outcome.value.pass) return passThrough(original, env);
     const { result, publicRead } = outcome.value;
@@ -277,7 +279,12 @@ export async function website(
     return response;
   } catch (error) {
     if (error instanceof DataError)
-      return protocolError(error.status, error.message, error.code, headers);
+      return protocolError(
+        error.status,
+        error.message,
+        error.code,
+        withRetryAfter(headers, error.retryAfter),
+      );
     console.error("Site database request failed", error);
     return protocolError(500, "Database request failed.", undefined, headers);
   }

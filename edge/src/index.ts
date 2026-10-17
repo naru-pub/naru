@@ -249,7 +249,12 @@ async function renderRoute(
   );
   const body = (await response.json().catch(() => null)) as {
     value?: { result: unknown };
-    error?: { status: number; message: string; details?: unknown };
+    error?: {
+      status: number;
+      message: string;
+      details?: unknown;
+      retryAfter?: number;
+    };
   } | null;
   if (response.ok && body?.value) return { ok: true, value: body.value };
   // The site's object's own refusal (a lapsed site's is a 404 with its
@@ -381,7 +386,12 @@ export default {
         Response.json({ value: outcome.value ?? null })
       : Response.json(
           { error: outcome.error },
-          { status: outcome.error.status },
+          {
+            status: outcome.error.status,
+            headers: outcome.error.retryAfter
+              ? { "Retry-After": String(outcome.error.retryAfter) }
+              : {},
+          },
         );
   },
   /** Each minute: the mini's health check (standby.ts). */

@@ -10,6 +10,7 @@ import {
   jsonBody,
   protocolError,
   sameOrigin,
+  withRetryAfter,
   type ErrorCode,
 } from "./validation";
 import { parseFilterQuery } from "./filters";
@@ -157,6 +158,7 @@ export async function dataRequest(
     let code: ErrorCode | undefined;
     let details: unknown;
     let site: boolean | undefined;
+    let retryAfter: number | undefined;
     // Media metadata still uses PostgreSQL; documents arrive as Worker DataErrors.
     if (
       path[0] === "_files" &&
@@ -168,7 +170,7 @@ export async function dataRequest(
       status = 400;
       message = "Data contains unsupported characters or numbers.";
     } else if (error instanceof DataError) {
-      ({ status, message, code, details, site } = error);
+      ({ status, message, code, details, site, retryAfter } = error);
     } else if (request.signal.aborted) {
       status = 503;
       message = "Request canceled.";
@@ -176,8 +178,9 @@ export async function dataRequest(
     } else console.error("Site database request failed", error);
     // The control panel ships with this server and reads a plain message;
     // websites get the versioned protocol's coded error.
+    const sent = withRetryAfter(headers, retryAfter);
     return admin
-      ? Response.json({ error: message }, { status, headers })
-      : protocolError(status, message, code, headers, details, site);
+      ? Response.json({ error: message }, { status, headers: sent })
+      : protocolError(status, message, code, sent, details, site);
   }
 }

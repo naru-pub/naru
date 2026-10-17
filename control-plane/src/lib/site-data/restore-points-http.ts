@@ -6,7 +6,13 @@ import {
   listRestorePoints,
   restoreRestorePoint,
 } from "@/lib/site-functions/restore";
-import { DataError, jsonBody, protocolError, sameOrigin } from "./validation";
+import {
+  DataError,
+  jsonBody,
+  protocolError,
+  sameOrigin,
+  withRetryAfter,
+} from "./validation";
 
 /**
  * The owner's restore points on the control panel: GET lists them, GET
@@ -48,7 +54,12 @@ export async function restorePointsOwnerRequest(request: Request) {
     });
   } catch (error) {
     if (error instanceof DataError)
-      return protocolError(error.status, error.message, error.code, headers);
+      return protocolError(
+        error.status,
+        error.message,
+        error.code,
+        withRetryAfter(headers, error.retryAfter),
+      );
     console.error("Restore point request failed", error);
     return protocolError(
       500,

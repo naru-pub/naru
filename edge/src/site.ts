@@ -13,6 +13,8 @@ import {
   functionModule,
   functionReference,
   permission,
+  rateLimited,
+  secondsUntil,
   unreservedName,
   writePermission,
 } from "../../control-plane/src/lib/site-data/validation";
@@ -239,12 +241,19 @@ class BudgetSpent extends DataError {
       `This site has used its ${limit.toLocaleString("en-US")} database requests for the month. They resume on ${new Date(resetsAt).toISOString().slice(0, 10)}.`,
       "RATE_LIMITED",
     );
+    this.retryAfter = secondsUntil(resetsAt);
   }
 }
 const nextMonth = (now: Date) =>
   Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
-const rateLimited = () =>
-  new DataError(429, "Public write rate limit reached. Try again next minute.");
+/** Seconds until the next calendar minute, when every per-minute limit resets. */
+const untilNextMinute = () =>
+  secondsUntil((Math.floor(Date.now() / 60000) + 1) * 60000);
+const publicWritesSpent = (window: number) =>
+  rateLimited(
+    "Public write rate limit reached. Try again next minute.",
+    secondsUntil(window + 60000),
+  );
 /** Mutations a member may make a minute. */
 const MEMBER_CALLS_PER_MINUTE = 30;
 /** Mutations visitors may make a minute: per address, and for the whole site. */
@@ -256,11 +265,11 @@ const VISITOR_CALLS = { address: 20, site: 300 };
  * The owner is never refused.
  */
 const ROWS_PER_MINUTE = 5_000_000;
+// Counted by calendar minute (thisMinute), so it lifts at the next one.
 const busy = () =>
-  new DataError(
-    429,
+  rateLimited(
     "This site has read as much as it may this minute. Try again next minute.",
-    "RATE_LIMITED",
+    untilNextMinute(),
   );
 /** Reads a minute by one address or member; see limitReader. */
 const READS_PER_MINUTE = 600;
@@ -676,6 +685,7 @@ export class SiteData extends DurableObject<Env> {
         ...(error.details === undefined ? {} : { details: error.details }),
         ...(error.site ? { site: true } : {}),
         ...(error instanceof BudgetSpent ? { resetsAt: error.resetsAt } : {}),
+        ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}),
       },
     };
   }
@@ -884,10 +894,9 @@ export class SiteData extends DurableObject<Env> {
         (this.env as { SITE_READS_PER_MINUTE?: string }).SITE_READS_PER_MINUTE,
       ) || READS_PER_MINUTE;
     if (count > limit)
-      throw new DataError(
-        429,
+      throw rateLimited(
         "Too many reads from here this minute. Try again next minute.",
-        "RATE_LIMITED",
+        secondsUntil((minute + 1) * 60000),
       );
     this.readers.counts.set(key, count);
   }
@@ -908,10 +917,9 @@ export class SiteData extends DurableObject<Env> {
     const entry = this.passwordFailures.get(key);
     const failures = entry?.hour === hour ? entry.count : 0;
     if (failures >= PASSWORD_FAILURES_PER_HOUR)
-      throw new DataError(
-        429,
+      throw rateLimited(
         "Too many wrong passwords for this. Try again later.",
-        "RATE_LIMITED",
+        secondsUntil((hour + 1) * 3600000),
       );
     const matches = verifyPassword(password, hash) === true;
     if (!matches) this.passwordFailures.set(key, { hour, count: failures + 1 });
@@ -933,7 +941,7 @@ export class SiteData extends DurableObject<Env> {
         this.rows("SELECT count FROM rate_limits WHERE key = ?", key)[0]
           ?.count ?? 0,
       );
-      if (count >= maximum) throw rateLimited();
+      if (count >= maximum) throw publicWritesSpent(window);
       this.sql.exec(
         "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
         key,
@@ -952,9 +960,9 @@ export class SiteData extends DurableObject<Env> {
         0,
     );
     if (count >= MEMBER_CALLS_PER_MINUTE)
-      throw new DataError(
-        429,
+      throw rateLimited(
         "Member call rate limit reached. Try again next minute.",
+        secondsUntil(window + 60000),
       );
     this.sql.exec(
       "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
@@ -2027,9 +2035,9 @@ export class SiteData extends DurableObject<Env> {
           ?.count ?? 0,
       );
       if (count >= maximum)
-        throw new DataError(
-          429,
+        throw rateLimited(
           "Visitor call rate limit reached. Try again next minute.",
+          secondsUntil(window + 60000),
         );
       this.sql.exec(
         "INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET count = count + 1",
@@ -2225,11 +2233,12 @@ export class SiteData extends DurableObject<Env> {
         if (last.asked === asked && last.changes === changes)
           return { ok: true, value: last.value };
         return this.run(() => {
-          throw new DataError(
-            429,
+          // In details too: what the control panel's library was given first.
+          const retryAfter = secondsUntil(last.at + windowMs);
+          throw rateLimited(
             "The site's tables were searched for uploads a moment ago. Try again in a minute.",
-            "RATE_LIMITED",
-            { retryAfter: Math.ceil((last.at + windowMs - Date.now()) / 1000) },
+            retryAfter,
+            { retryAfter },
           );
         });
       }
@@ -2832,6 +2841,8 @@ export class SiteData extends DurableObject<Env> {
       const outcome = await this.settle(async () => {
         const now = Date.now();
         let recent = 0;
+        // The oldest of the last hour's: the limit lifts when it is an hour old.
+        let oldest = Infinity;
         let cursor: string | undefined;
         do {
           const page = await this.env.SITE_FILES.list({
@@ -2840,16 +2851,17 @@ export class SiteData extends DurableObject<Env> {
           });
           for (const object of page.objects) {
             const point = restorePointOf(object.key.slice(prefix.length));
-            if (point?.kind === "manual" && now - point.createdAt < 3_600_000)
+            if (point?.kind === "manual" && now - point.createdAt < 3_600_000) {
               recent++;
+              oldest = Math.min(oldest, point.createdAt);
+            }
           }
           cursor = page.truncated ? page.cursor : undefined;
         } while (cursor);
         if (recent >= MANUAL_RESTORE_POINTS_PER_HOUR)
-          throw new DataError(
-            429,
+          throw rateLimited(
             `At most ${MANUAL_RESTORE_POINTS_PER_HOUR} restore points an hour can be made. Try again later.`,
-            "RATE_LIMITED",
+            secondsUntil(oldest + 3_600_000),
           );
         const name = manualRestorePointName(now);
         const bytes = await this.exclusive(() =>

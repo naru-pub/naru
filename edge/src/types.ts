@@ -103,6 +103,11 @@ export type Outcome<T> =
         site?: boolean;
         /** Set when the monthly budget is spent: when it resets, epoch ms. */
         resetsAt?: number;
+        /**
+         * Whole seconds until the limit that refused this resets, for
+         * `Retry-After`; only on refusals whose limit resets at a known time.
+         */
+        retryAfter?: number;
       };
     };
 

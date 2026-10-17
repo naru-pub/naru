@@ -9,11 +9,17 @@ import {
   name,
   protocolError,
   sameOrigin,
+  withRetryAfter,
 } from "./validation";
 
 function failure(error: unknown, headers: Record<string, string>) {
   if (error instanceof DataError)
-    return protocolError(error.status, error.message, error.code, headers);
+    return protocolError(
+      error.status,
+      error.message,
+      error.code,
+      withRetryAfter(headers, error.retryAfter),
+    );
   console.error("Membership request failed", error);
   return protocolError(500, "Membership request failed.", undefined, headers);
 }

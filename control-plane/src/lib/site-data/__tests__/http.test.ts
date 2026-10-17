@@ -148,7 +148,7 @@ test("a renewed owner token is reported as an instant and as seconds from now", 
   expect(seconds).toBeLessThanOrEqual(3600);
   expect(
     response.headers.get("access-control-expose-headers")?.split(/,\s*/),
-  ).toEqual(["Naru-Owner-Expires", "Naru-Owner-Expires-In"]);
+  ).toEqual(["Naru-Owner-Expires", "Naru-Owner-Expires-In", "Retry-After"]);
 });
 
 test.each(["", "Basic abc", "Bearer malformed"])(
@@ -278,6 +278,38 @@ test("filter query JSON is decoded and bounded", async () => {
       ).status,
     ).toBe(400);
   }
+});
+
+test("a refusal whose limit resets at a known time says when, as Retry-After", async () => {
+  const { DataError, rateLimited } = await import("../validation");
+  const fail = async (error: unknown, site?: string) => {
+    execute.mockRejectedValueOnce(error as never);
+    return dataRequest(
+      new Request("https://naru.pub/api/data/v1/alice/posts", {
+        headers: site ? {} : { Origin: "https://naru.pub" },
+      }),
+      ["posts"],
+      site,
+    );
+  };
+  const limited = await fail(rateLimited("Slow down.", 42), "alice");
+  expect(limited.status).toBe(429);
+  expect(limited.headers.get("retry-after")).toBe("42");
+  expect(await limited.json()).toEqual({
+    error: { code: "RATE_LIMITED", message: "Slow down." },
+  });
+  // A limit that is not a matter of time, such as a count held, says none.
+  const held = await fail(new DataError(429, "Full."), "alice");
+  expect(held.status).toBe(429);
+  expect(held.headers.get("retry-after")).toBeNull();
+  // The control panel's own answers carry it too.
+  auth.mockResolvedValue({
+    user: { id: 1, loginName: "alice" },
+    session: {},
+  } as never);
+  const panel = await fail(rateLimited("Slow down.", 7.2));
+  expect(panel.headers.get("retry-after")).toBe("8");
+  expect(await panel.json()).toEqual({ error: "Slow down." });
 });
 
 test("website errors carry a protocol code; the control panel keeps a message", async () => {

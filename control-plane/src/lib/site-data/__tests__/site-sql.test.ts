@@ -463,6 +463,28 @@ integration("live queries", () => {
         id: "c",
         error: { status: 404 },
       });
+      // "a" and 19 more fill the connection; the 21st is refused, with no
+      // time to retry after: a held count lifts when one is unsubscribed.
+      // One at a time: each is counted once it has answered.
+      for (let n = 0; n < 20; n++) {
+        socket.send(
+          JSON.stringify({
+            type: "subscribe",
+            id: `s${n}`,
+            query: "board:count",
+            args: null,
+          }),
+        );
+        await until(5 + n);
+      }
+      const full = heard.slice(4).filter((m) => m.type === "error");
+      expect(full).toHaveLength(1);
+      expect(full[0]).toEqual({
+        type: "error",
+        id: "s19",
+        error: expect.objectContaining({ status: 429, code: "RATE_LIMITED" }),
+      });
+      expect(full[0]).not.toHaveProperty("error.retryAfter");
     } finally {
       // An open socket would keep the test run from ending.
       socket.close();
@@ -744,6 +766,78 @@ integration("query limits", () => {
         args: null,
       });
   });
+});
+
+integration("call limits", () => {
+  // The edge Worker's own answer for a site object operation, headers and all.
+  const operation = (input: unknown) =>
+    fetch(`${process.env.EDGE_WORKER_URL}/v1/sites/${site}/call`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.EDGE_WORKER_SECRET}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+  const bump = (caller: { member?: string; clientIp?: string }) => ({
+    ownerId,
+    site,
+    member: caller.member ?? null,
+    ...(caller.member ? {} : { visitor: true, clientIp: caller.clientIp }),
+    kind: "mutation",
+    file: "limits",
+    name: "bump",
+    args: null,
+  });
+  const inMinute = (seconds: unknown) => {
+    expect(seconds).toBeGreaterThanOrEqual(1);
+    expect(seconds).toBeLessThanOrEqual(60);
+  };
+
+  test("members' and visitors' mutation limits say when the minute resets", async () => {
+    await put("mutations", "limits", "export function bump() { return 1; }");
+    // The buckets are wall-clock minutes: start early in one.
+    const into = Date.now() % 60_000;
+    if (into > 40_000)
+      await new Promise((resolve) => setTimeout(resolve, 60_500 - into));
+    // 30 a minute for a member.
+    for (let i = 0; i < 30; i++)
+      expect((await operation(bump({ member: "member-limit" }))).status).toBe(
+        200,
+      );
+    const member = await operation(bump({ member: "member-limit" }));
+    expect(member.status).toBe(429);
+    inMinute(Number(member.headers.get("retry-after")));
+    const body = (await member.json()) as { error: { retryAfter: number } };
+    expect(String(body.error.retryAfter)).toBe(
+      member.headers.get("retry-after"),
+    );
+    // As the control plane's client hands it on.
+    const refused = await callSiteObject(
+      site,
+      "call",
+      bump({ member: "member-limit" }),
+    ).then(
+      () => null,
+      (error) => error,
+    );
+    expect(refused).toMatchObject({ status: 429 });
+    inMinute(refused.retryAfter);
+
+    // 20 a minute from one visitor's address.
+    for (let i = 0; i < 20; i++)
+      expect((await operation(bump({ clientIp: "192.0.2.77" }))).status).toBe(
+        200,
+      );
+    const visitor = await operation(bump({ clientIp: "192.0.2.77" }));
+    expect(visitor.status).toBe(429);
+    inMinute(Number(visitor.headers.get("retry-after")));
+
+    // A refusal no wait will lift says none.
+    const missing = await operation({ ...bump({}), name: "nothing" });
+    expect(missing.status).toBeGreaterThanOrEqual(400);
+    expect(missing.headers.get("retry-after")).toBeNull();
+  }, 60_000);
 });
 
 integration("full-text tables", () => {

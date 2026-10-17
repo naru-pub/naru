@@ -215,10 +215,14 @@ integration("restore points", () => {
       saved++;
     }
     expect(saved).toBe(3);
-    await expect(save()).rejects.toMatchObject({
-      status: 429,
-      code: "RATE_LIMITED",
-    });
+    // Until the oldest of the hour's is an hour old: nearly the whole hour.
+    const refused = await save().then(
+      () => null,
+      (error) => error,
+    );
+    expect(refused).toMatchObject({ status: 429, code: "RATE_LIMITED" });
+    expect(refused.retryAfter).toBeGreaterThan(3500);
+    expect(refused.retryAfter).toBeLessThanOrEqual(3600);
   });
 
   test("a restore point outside the site's own is refused", async () => {

@@ -39,6 +39,65 @@ export class DataError extends Error {
   ) {
     super(message);
   }
+  /**
+   * Whole seconds until the limit that refused this resets, sent as
+   * `Retry-After`; set through `rateLimited`.
+   */
+  retryAfter?: number;
+}
+
+/** Whole seconds from now until `at` (epoch ms), at least 1. */
+export function secondsUntil(at: number) {
+  return Math.max(1, Math.ceil((at - Date.now()) / 1000));
+}
+
+/**
+ * A 429 RATE_LIMITED refusal from a limit that resets at a known time:
+ * `retryAfter` seconds from now (see secondsUntil), sent as `Retry-After`.
+ */
+export function rateLimited(
+  message: string,
+  retryAfter: number,
+  details?: unknown,
+) {
+  const error = new DataError(429, message, "RATE_LIMITED", details);
+  error.retryAfter = Math.max(1, Math.ceil(retryAfter));
+  return error;
+}
+
+/** `headers` with `Retry-After` when a refusal says when to try again. */
+export function withRetryAfter(
+  headers: Record<string, string> | undefined,
+  retryAfter: number | undefined,
+): Record<string, string> | undefined {
+  return retryAfter
+    ? { ...headers, "Retry-After": String(retryAfter) }
+    : headers;
+}
+
+/** A refusal as it crosses from a site's object, or a DataError itself. */
+export type Refusal = {
+  status: number;
+  message: string;
+  code?: ErrorCode;
+  details?: unknown;
+  site?: boolean;
+  retryAfter?: number;
+};
+
+/** protocolError for a whole refusal, with its `Retry-After`. */
+export function refusalResponse(
+  error: Refusal,
+  headers?: Record<string, string>,
+) {
+  return protocolError(
+    error.status,
+    error.message,
+    error.code,
+    withRetryAfter(headers, error.retryAfter),
+    error.details,
+    error.site,
+  );
 }
 
 function statusCode(status: number): ErrorCode {

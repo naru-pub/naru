@@ -241,6 +241,15 @@ describe("serving", () => {
     const missing = await get("/posts/9");
     expect(missing.status).toBe(404);
     expect(await missing.text()).toContain("그런 글은 없어요 &#60;b&#62;");
+    expect(missing.headers.get("Retry-After")).toBeNull();
+    // A limit that refused the render says when it resets.
+    answer = {
+      ok: false,
+      error: { status: 429, message: "Too many reads.", retryAfter: 17 },
+    };
+    const limited = await get("/posts/9");
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toBe("17");
     // Unavailable, and not a page's navigation: the path is served as a
     // file, as it would be without routes.
     answer = { ok: false, error: { status: 503, message: "away" } };

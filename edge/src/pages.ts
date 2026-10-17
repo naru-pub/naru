@@ -259,7 +259,13 @@ export type RenderRoute = (input: {
   | { ok: true; value: { result: unknown } }
   | {
       ok: false;
-      error: { status: number; message: string; details?: unknown };
+      error: {
+        status: number;
+        message: string;
+        details?: unknown;
+        /** Seconds until a limit that refused the render resets. */
+        retryAfter?: number;
+      };
     }
 >;
 
@@ -301,7 +307,7 @@ async function siteRoutes(env: PagesEnv, login: string) {
 
 const escape = (value: string) =>
   value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-const routeError = (status: number, message: string) =>
+const routeError = (status: number, message: string, retryAfter?: number) =>
   new Response(
     `<!doctype html><meta charset="utf-8"><title>${status}</title><p>${escape(message)}</p>`,
     {
@@ -309,6 +315,7 @@ const routeError = (status: number, message: string) =>
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
+        ...(retryAfter ? { "Retry-After": String(retryAfter) } : {}),
       },
     },
   );
@@ -361,7 +368,11 @@ async function serveRoute(
     if (routesOff(outcome.error)) return notFound();
     return outcome.error.status === 503
       ? away(request, env, ctx, login)
-      : routeError(outcome.error.status, outcome.error.message);
+      : routeError(
+          outcome.error.status,
+          outcome.error.message,
+          outcome.error.retryAfter,
+        );
   }
   let answer: RouteAnswer;
   try {

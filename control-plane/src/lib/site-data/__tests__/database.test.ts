@@ -507,9 +507,12 @@ integration("Durable Objects site database", () => {
       Array.from({ length: 21 }, () => post("192.0.2.1")),
     );
     expect(burst.filter((r) => r.status === "fulfilled")).toHaveLength(20);
-    expect(burst.find((r) => r.status === "rejected")).toMatchObject({
-      reason: { status: 429 },
-    });
+    const refusal = burst.find((r) => r.status === "rejected");
+    expect(refusal).toMatchObject({ reason: { status: 429 } });
+    // Its bucket is this minute's, so it says the seconds left of it.
+    const { retryAfter } = (refusal as PromiseRejectedResult).reason;
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(retryAfter).toBeLessThanOrEqual(60);
     await expect(post(undefined, true)).resolves.toBeDefined();
     // 20 counted so far; the site's own bucket holds 60.
     for (let n = 0; n < 40; n += 1) await post(`198.51.100.${n}`);
@@ -722,6 +725,13 @@ integration("answering visitors at the edge", () => {
     expect(await refused.json()).toMatchObject({
       error: { code: "RATE_LIMITED" },
     });
+    // Until the next minute, when the count starts again.
+    const wait = Number(refused.headers.get("retry-after"));
+    expect(wait).toBeGreaterThanOrEqual(1);
+    expect(wait).toBeLessThanOrEqual(60);
+    expect(refused.headers.get("access-control-expose-headers")).toContain(
+      "Retry-After",
+    );
     expect((await from("2001:db8:1:3::1")).status).toBe(200);
 
     // The owner's listing shows what the site holds and the month's requests.
@@ -759,6 +769,9 @@ integration("answering visitors at the edge", () => {
       expect(await busy.json()).toMatchObject({
         error: { code: "RATE_LIMITED" },
       });
+      const wait = Number(busy.headers.get("retry-after"));
+      expect(wait).toBeGreaterThanOrEqual(1);
+      expect(wait).toBeLessThanOrEqual(60);
       await expect(owned("GET", ["posts"])).resolves.toBeDefined();
     } finally {
       await configure(null);
@@ -914,6 +927,17 @@ integration("answering visitors at the edge", () => {
         message: expect.stringContaining("3 database requests for the month"),
       },
     });
+    // Until the first of next month (UTC), from the object and then from
+    // the Worker's own note of the spent site alike.
+    const now = new Date();
+    const resets = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+    const left = (resets - Date.now()) / 1000;
+    for (const response of [refused, await visit("posts/one?fresh=1&n=4")]) {
+      expect(response.status).toBe(429);
+      const wait = Number(response.headers.get("retry-after"));
+      expect(wait).toBeGreaterThan(left - 30);
+      expect(wait).toBeLessThanOrEqual(left + 30);
+    }
     // Visitors reaching it through the control plane are counted too.
     await expect(
       executeData({

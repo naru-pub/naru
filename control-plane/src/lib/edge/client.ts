@@ -154,17 +154,23 @@ export async function answerOf<T>(
       code?: ErrorCode;
       details?: unknown;
       site?: boolean;
+      retryAfter?: number;
     };
   } | null;
   if (response.ok && body && "value" in body) return body.value as T;
-  if (body?.error && body.error.status === response.status)
-    throw new DataError(
+  if (body?.error && body.error.status === response.status) {
+    const error = new DataError(
       body.error.status,
       body.error.message,
       body.error.code,
       body.error.details,
       body.error.site,
     );
+    // When the limit that refused it resets, for the caller's Retry-After.
+    if (typeof body.error.retryAfter === "number" && body.error.retryAfter >= 1)
+      error.retryAfter = Math.ceil(body.error.retryAfter);
+    throw error;
+  }
   console.error(`Edge Worker answered ${response.status} to ${what}`);
   throw unavailable();
 }
