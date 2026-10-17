@@ -121,31 +121,60 @@ async function callWorker<T>(
   what: string,
   input: unknown,
   signal?: AbortSignal,
-  { base, secret }: WorkerTarget = edgeWorker(),
+  target: WorkerTarget = edgeWorker(),
   timeoutMs = WORKER_TIMEOUT_MS,
 ): Promise<T> {
+  const response = await requestWorker(
+    target,
+    path,
+    what,
+    { body: JSON.stringify(input), contentType: "application/json" },
+    signal,
+    timeoutMs,
+  );
+  return answerOf<T>(response, what);
+}
+
+/**
+ * POSTs `body` to the Worker at `target`; a stream is sent as it is read.
+ * Returns its response, whatever its status, or throws unavailable when it
+ * cannot be reached. The timeout covers reading the response too.
+ */
+export async function requestWorker(
+  { base, secret }: WorkerTarget,
+  path: string,
+  what: string,
+  { body, contentType }: { body: BodyInit; contentType: string },
+  signal?: AbortSignal,
+  timeoutMs = WORKER_TIMEOUT_MS,
+): Promise<Response> {
   if (!base || !secret) {
     console.error(`No Worker URL or secret for ${what}`);
     throw unavailable();
   }
   const timeout = AbortSignal.timeout(timeoutMs);
-  let response: Response;
   try {
-    response = await fetch(new URL(path, base), {
+    return await fetch(new URL(path, base), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${secret}`,
-        "Content-Type": "application/json",
+        "Content-Type": contentType,
       },
-      body: JSON.stringify(input),
+      body,
+      // A stream body is sent as it is read (Node's fetch needs this).
+      ...(body instanceof ReadableStream ? { duplex: "half" } : {}),
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    });
+    } as RequestInit);
   } catch (error) {
     // The caller canceled: http.ts reports that itself.
     if (signal?.aborted) throw error;
     console.error(`Edge Worker unreachable for ${what}`, error);
     throw unavailable();
   }
+}
+
+/** A Worker's JSON answer: its `value`, or the DataError it refused with. */
+export async function answerOf<T>(response: Response, what: string): Promise<T> {
   const body = (await response.json().catch(() => null)) as {
     value?: T;
     error?: {

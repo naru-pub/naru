@@ -1,43 +1,25 @@
-import { createHash } from "node:crypto";
 import { parseArgs } from "node:util";
 import { db } from "@/lib/database";
-import {
-  callSiteObjectAt,
-  edgeWorker,
-  type WorkerTarget,
-} from "@/lib/edge/client";
+import { edgeWorker, type WorkerTarget } from "@/lib/edge/client";
+import { copySiteData, DumpSummary, summarizeDump } from "@/lib/edge/dumps";
 
 // Moves site databases from the edge Worker on Cloudflare (EDGE_WORKER_URL)
 // to the one beside this control plane (SITE_DATA_URL, edge/src/seoul.ts):
-// each site's whole object is dumped there, restored here, and the copy
-// compared with the original table by table. Run it during the cutover, with
-// the data API in maintenance so nothing writes meanwhile. A site that already
-// has collections here is refused, never overwritten.
+// each site's whole object is dumped there and restored here, the dump piped
+// straight through (lib/edge/dumps.ts) and summarized on the way, and the
+// copy's dump compared with it table by table. Run it during the cutover,
+// with the data API in maintenance so nothing writes meanwhile. A site that
+// already has collections here is refused, never overwritten.
 //
 //   node dist/cli/move-site-data.mjs [--site <login name>] [--dry-run]
 //
 // Only accounts that ever had the database feature can hold data: supporters,
 // past and present, complimentary plans, and any with documents counted.
 
-type Dump = { tables: Record<string, Record<string, unknown>[]> };
-
-/** A table's rows in an order-free form, so two dumps compare equal. */
-const fingerprint = (rows: Record<string, unknown>[]) =>
-  createHash("sha256")
-    .update(
-      JSON.stringify(
-        rows
-          .map((row) =>
-            JSON.stringify(
-              Object.keys(row)
-                .sort()
-                .map((key) => [key, row[key]]),
-            ),
-          )
-          .sort(),
-      ),
-    )
-    .digest("hex");
+const countsOf = (tables: Record<string, { rows: number }>) =>
+  Object.entries(tables)
+    .map(([name, table]) => `${name} ${table.rows}`)
+    .join(", ");
 
 async function main() {
   const { values } = parseArgs({
@@ -78,34 +60,34 @@ async function main() {
   const failed: string[] = [];
   for (const site of sites) {
     try {
-      const dump = await callSiteObjectAt<Dump>(from, site, "dump", {});
-      const rows = Object.values(dump.tables).reduce(
-        (sum, table) => sum + table.length,
-        0,
-      );
-      if (!rows) {
+      const before = await summarizeDump(from, site);
+      if (!Object.keys(before.tables).length) {
         empty++;
         continue;
       }
-      const counts = Object.entries(dump.tables)
-        .filter(([, table]) => table.length)
-        .map(([name, table]) => `${name} ${table.length}`)
-        .join(", ");
       if (values["dry-run"]) {
-        console.log(`[move-site-data] ${site}: would move ${counts}`);
+        console.log(
+          `[move-site-data] ${site}: would move ${countsOf(before.tables)}`,
+        );
         continue;
       }
-      await callSiteObjectAt(to, site, "restore", dump);
-      const copy = await callSiteObjectAt<Dump>(to, site, "dump", {});
-      const differing = Object.keys(dump.tables).filter(
+      const sent = new DumpSummary();
+      await copySiteData(from, to, site, "restore", (chunk) =>
+        sent.push(chunk),
+      );
+      const original = sent.finish();
+      const copy = (await summarizeDump(to, site)).tables;
+      const differing = [
+        ...new Set([...Object.keys(original), ...Object.keys(copy)]),
+      ].filter(
         (name) =>
-          fingerprint(dump.tables[name]) !==
-          fingerprint(copy.tables[name] ?? []),
+          original[name]?.digest !== copy[name]?.digest ||
+          original[name]?.rows !== copy[name]?.rows,
       );
       if (differing.length)
         throw new Error(`the copy differs in ${differing.join(", ")}`);
       moved++;
-      console.log(`[move-site-data] ${site}: moved ${counts}`);
+      console.log(`[move-site-data] ${site}: moved ${countsOf(original)}`);
     } catch (error) {
       failed.push(site);
       console.error(`[move-site-data] ${site} failed:`, error);

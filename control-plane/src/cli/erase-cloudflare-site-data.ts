@@ -5,6 +5,7 @@ import {
   edgeWorker,
   type WorkerTarget,
 } from "@/lib/edge/client";
+import { summarizeDump } from "@/lib/edge/dumps";
 
 // Erases the copies of site databases left on Cloudflare once every site
 // lives on the mini (move-site-data.ts). Permanent: run it only after the
@@ -13,8 +14,6 @@ import {
 // so nothing that has not moved is lost.
 //
 //   node dist/cli/erase-cloudflare-site-data.mjs [--site <login name>] --yes
-
-type Dump = { tables: Record<string, unknown[]> };
 
 async function main() {
   const { values } = parseArgs({
@@ -52,11 +51,11 @@ async function main() {
   let erased = 0;
   const kept: string[] = [];
   for (const site of sites) {
-    const old = await callSiteObjectAt<Dump>(cloudflare, site, "dump", {});
-    const rows = Object.values(old.tables).reduce((n, t) => n + t.length, 0);
+    const old = (await summarizeDump(cloudflare, site)).tables;
+    const rows = Object.values(old).reduce((n, t) => n + t.rows, 0);
     if (!rows) continue;
-    const copy = await callSiteObjectAt<Dump>(mini, site, "dump", {});
-    if (old.tables.collections.length && !copy.tables.collections.length) {
+    const copy = (await summarizeDump(mini, site)).tables;
+    if (old.collections?.rows && !copy.collections?.rows) {
       kept.push(site);
       console.error(
         `[erase-cloudflare-site-data] ${site}: not on the mini, kept`,

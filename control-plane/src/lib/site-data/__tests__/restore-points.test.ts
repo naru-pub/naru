@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { describe, expect, test } from "@jest/globals";
 import { callSiteObject } from "@/lib/edge/client";
+import { readSiteDump } from "@/lib/edge/dumps";
 
 // Restore points (1.1.0) end to end in the site's Durable Object
 // (scripts/with-edge-worker.sh): a release's migrations keep one, and
@@ -42,15 +43,7 @@ type Exported = {
   functions?: { revision: string; generation: string | null };
 };
 const exported = () => callSiteObject<Exported>(site, "export", {});
-type Dumped = {
-  site: {
-    schema: string[];
-    tables: Record<string, Record<string, unknown>[]>;
-    migrations: { name: string }[];
-    roles: { member: string; roles: string }[];
-  };
-};
-const dumped = () => callSiteObject<Dumped>(site, "dump", {});
+const dumped = () => readSiteDump(site);
 const restoreFrom = (name: unknown, body: Record<string, unknown> = {}) =>
   callSiteObject<{ revision: string | null; saved: string; rows: number }>(
     site,
@@ -107,7 +100,7 @@ integration("restore points", () => {
       "CREATE TABLE tags (name TEXT PRIMARY KEY); INSERT INTO tags VALUES ('a');",
     );
     const release = (await exported()).functions!;
-    const point = `${release.generation}.json`;
+    const point = `${release.generation}.ndjson`;
     await call("mutation", "add", { body: "셋" });
     await callSiteObject(site, "setMemberRoles", {
       member: "member-1",
@@ -127,7 +120,7 @@ integration("restore points", () => {
 
     // A site named in the body is not the one restored: the URL's is.
     const restored = await restoreFrom(point, { site: other });
-    expect(restored.saved).toMatch(/^before-restore-\d+\.json$/);
+    expect(restored.saved).toMatch(/^before-restore-\d+\.ndjson$/);
     // The active release stays.
     expect(restored.revision).toBe(release.revision);
     expect((await exported()).functions).toEqual(release);
@@ -183,14 +176,15 @@ integration("restore points", () => {
     );
     const theirs = (await callSiteObject<Exported>(other, "export", {}))
       .functions!.generation!;
-    await expect(restoreFrom(`${theirs}.json`)).rejects.toMatchObject({
+    await expect(restoreFrom(`${theirs}.ndjson`)).rejects.toMatchObject({
       status: 404,
     });
     for (const name of [
-      `../../${other}/restore-points/${theirs}.json`,
+      `../../${other}/restore-points/${theirs}.ndjson`,
       `${theirs}`,
       "routes.json",
-      "before-restore-x.json",
+      "before-restore-x.ndjson",
+      `${theirs}.txt`,
       null,
     ])
       await expect(restoreFrom(name)).rejects.toMatchObject({ status: 400 });

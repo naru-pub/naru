@@ -5,11 +5,12 @@ import {
   sendStandbyHeartbeat,
   siteDataWorker,
 } from "@/lib/edge/client";
+import { copySiteData } from "@/lib/edge/dumps";
 
 // The standby: every site's database lives on the mini (edge/src/seoul.ts),
 // and a copy of each is kept on Cloudflare, which serves visitors read-only
 // while the mini is away (edge/src/standby.ts). Each minute, sites whose data
-// changed since their last copy are copied again, whole: a site's
+// changed since their last copy are copied again, whole, as a stream: a site's
 // fingerprint names what it holds, and the mini records which fingerprint
 // Cloudflare has. Then the mini reports in, so the health check on
 // Cloudflare knows it is up even when its probes cannot reach it.
@@ -65,8 +66,8 @@ export async function syncStandby() {
         documents: now.documents,
       };
       if (now.fingerprint === now.standby) continue;
-      const dump = await callSiteObjectAt(mini, site, "dump", {});
-      await callSiteObjectAt(cloudflare, site, "replace", dump);
+      // Piped from the mini's answer into Cloudflare's request (dumps.ts).
+      await copySiteData(mini, cloudflare, site, "replace");
       // If the site changed after `fingerprint`, the next run sees it still
       // differs and copies it again.
       await callSiteObjectAt(mini, site, "markStandby", {

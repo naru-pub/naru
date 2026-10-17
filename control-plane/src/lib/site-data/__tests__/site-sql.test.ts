@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { describe, expect, jest, test } from "@jest/globals";
 import { callSiteObject } from "@/lib/edge/client";
+import { readSiteDump, restoreSiteDump } from "@/lib/edge/dumps";
 
 // Site SQL (1.1.0) end to end in the site's Durable Object
 // (scripts/with-edge-worker.sh): migrations applied with a release, ctx.sql
@@ -153,13 +154,7 @@ integration("site SQL", () => {
   });
 
   test("a dump carries the site's tables, and restore makes them again", async () => {
-    const dump = await callSiteObject<{
-      site: {
-        schema: string[];
-        tables: Record<string, unknown[]>;
-        migrations: { name: string }[];
-      };
-    }>(site, "dump", {});
+    const dump = await readSiteDump(site);
     expect(dump.site.schema).toEqual([
       expect.stringMatching(/^CREATE TABLE posts/),
       "CREATE INDEX posts_board ON posts (board)",
@@ -170,11 +165,11 @@ integration("site SQL", () => {
     ]);
     const copy = "sqlsite-copy";
     await callSiteObject(copy, "erase", {});
-    await callSiteObject(copy, "restore", dump);
-    const again = await callSiteObject<typeof dump>(copy, "dump", {});
+    await restoreSiteDump(copy, dump.text);
+    const again = await readSiteDump(copy);
     expect(again.site).toEqual(dump.site);
     // A site that has tables is not restored over.
-    await expect(callSiteObject(copy, "restore", dump)).rejects.toMatchObject({
+    await expect(restoreSiteDump(copy, dump.text)).rejects.toMatchObject({
       status: 409,
     });
     await callSiteObject(copy, "erase", {});
@@ -350,9 +345,7 @@ integration("member roles", () => {
       }),
     ).rejects.toMatchObject({ status: 400 });
     // Dumps carry them.
-    const dump = await callSiteObject<{
-      site: { roles: { member: string }[] };
-    }>(site, "dump", {});
+    const dump = await readSiteDump(site);
     expect(dump.site.roles.map((row) => row.member).sort()).toEqual([
       "member-1",
       "member-3",
@@ -687,23 +680,15 @@ integration("AUTOINCREMENT", () => {
     expect(await call("add", { note: "b" })).toBe(2);
     await call("remove", { id: 2 });
     expect(await call("add", { note: "c" })).toBe(3);
-    const dump = await callSiteObject<{
-      site: { tables: Record<string, unknown[]> };
-    }>(site, "dump", {});
+    const dump = await readSiteDump(site);
     expect(dump.site.tables.tickets).toHaveLength(2);
     expect(Object.keys(dump.site.tables)).not.toContain("sqlite_sequence");
     const copy = "sqlsite-autoinc";
     await callSiteObject(copy, "erase", {});
-    await callSiteObject(copy, "restore", dump);
-    expect(
-      (
-        await callSiteObject<{ site: { tables: Record<string, unknown[]> } }>(
-          copy,
-          "dump",
-          {},
-        )
-      ).site.tables.tickets,
-    ).toEqual(dump.site.tables.tickets);
+    await restoreSiteDump(copy, dump.text);
+    expect((await readSiteDump(copy)).site.tables.tickets).toEqual(
+      dump.site.tables.tickets,
+    );
     await callSiteObject(copy, "erase", {});
   });
 });
@@ -778,9 +763,7 @@ integration("full-text tables", () => {
     expect(await call("query", "like", { text: "규칙" })).toEqual([11]);
     // Dumped by its rows, without its own storage tables; restored, it
     // searches as before.
-    const dump = await callSiteObject<{
-      site: { schema: string[]; tables: Record<string, unknown[]> };
-    }>(site, "dump", {});
+    const dump = await readSiteDump(site);
     expect(dump.site.tables.search).toHaveLength(2);
     expect(Object.keys(dump.site.tables)).not.toContain("search_data");
     expect(dump.site.schema.filter((sql) => /search/.test(sql))).toEqual([
@@ -788,10 +771,10 @@ integration("full-text tables", () => {
     ]);
     const copy = "sqlsite-fts";
     await callSiteObject(copy, "erase", {});
-    await callSiteObject(copy, "restore", dump);
-    expect(
-      (await callSiteObject<typeof dump>(copy, "dump", {})).site.tables.search,
-    ).toEqual(dump.site.tables.search);
+    await restoreSiteDump(copy, dump.text);
+    expect((await readSiteDump(copy)).site.tables.search).toEqual(
+      dump.site.tables.search,
+    );
     await callSiteObject(copy, "erase", {});
   });
 });
