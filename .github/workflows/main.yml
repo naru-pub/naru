@@ -135,7 +135,8 @@ jobs:
   # The edge Worker as the mini runs it (edge/seoul/): built, served with
   # npm's workerd and checked (smoke.mjs), then with Naru's own workerd
   # (edge/seoul/workerd/), whose release binary.json names, with its step
-  # budget set as on the mini; then packed with Naru's workerd for
+  # budget set as on the mini, alone and as router and shards
+  # (smoke-shards.mjs); then packed, router.capnp and all, with Naru's workerd for
   # `mise run deploy naru-sdk` in infra. macOS runners are Apple Silicon, like
   # the mini.
   build-sdk-seoul:
@@ -174,6 +175,7 @@ jobs:
           echo "NARU_WORKERD_BIN=$binary" >> "$GITHUB_ENV"
       - run: node seoul/workerd/selftest.mjs "$NARU_WORKERD_BIN"
       - run: node seoul/smoke.mjs
+      - run: node seoul/smoke-shards.mjs
       - run: |
           cp "$NARU_WORKERD_BIN" seoul/dist/workerd
           rm -rf seoul/dist/site-objects

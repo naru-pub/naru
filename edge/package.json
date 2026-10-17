@@ -8,7 +8,7 @@
     "typecheck": "wrangler types && tsc --noEmit",
     "test": "vitest run",
     "build:seoul": "node seoul/build.mjs",
-    "test:seoul": "node seoul/build.mjs && node seoul/smoke.mjs",
+    "test:seoul": "node seoul/build.mjs && node seoul/smoke.mjs && node seoul/smoke-shards.mjs",
     "meter:quickjs": "cargo run --quiet --release --locked --manifest-path quickjs/meter/Cargo.toml -- node_modules/@jitl/quickjs-ng-wasmfile-release-sync/dist/emscripten-module.wasm quickjs/metered.wasm",
     "check:meter": "cargo run --quiet --release --locked --manifest-path quickjs/meter/Cargo.toml -- node_modules/@jitl/quickjs-ng-wasmfile-release-sync/dist/emscripten-module.wasm quickjs/metered.check.wasm && cmp quickjs/metered.wasm quickjs/metered.check.wasm && rm quickjs/metered.check.wasm"
   },
