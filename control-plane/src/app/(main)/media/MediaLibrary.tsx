@@ -62,7 +62,13 @@ async function api(path = "", method = "GET", body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "요청에 실패했습니다.");
+  if (!response.ok)
+    throw Object.assign(
+      new Error(
+        result.error?.message ?? result.error ?? "요청에 실패했습니다.",
+      ),
+      { status: response.status },
+    );
   return result;
 }
 
@@ -107,8 +113,12 @@ function TypeIcon({ type }: { type: string }) {
 type Library = {
   files: MediaFile[];
   usage: Usage;
-  /** The search of the site's tables stopped short, or failed. */
-  tablesPartial: boolean;
+  /**
+   * Whether the site's tables were wholly searched: "partial" when the
+   * search stopped short or failed, "busy" when they were searched a moment
+   * ago for another question (429), and not again yet.
+   */
+  tables: "whole" | "partial" | "busy";
 };
 
 async function fetchLibrary(): Promise<Library> {
@@ -129,20 +139,20 @@ async function fetchLibrary(): Promise<Library> {
   // Documents' references come with the listing; the site's own tables are
   // searched once, now, for every upload. A search that fails leaves the
   // documents' answer, said to be partial.
-  let tablesPartial = false;
+  let tables: Library["tables"] = "whole";
   try {
     const { tableReferences, partial } = await api("?references=tables");
-    tablesPartial = partial;
+    if (partial) tables = "partial";
     for (const file of files) {
       const places = tableReferences[file.id];
       if (!places?.length || file.referenced === undefined) continue;
       file.referenced = true;
       file.tableReferences = places;
     }
-  } catch {
-    tablesPartial = true;
+  } catch (error) {
+    tables = (error as { status?: number }).status === 429 ? "busy" : "partial";
   }
-  return { files, usage, tablesPartial };
+  return { files, usage, tables };
 }
 
 export default function MediaLibrary() {
@@ -162,12 +172,13 @@ export default function MediaLibrary() {
   const [copied, setCopied] = useState("");
   const confirm = useConfirm();
 
-  const [tablesPartial, setTablesPartial] = useState(false);
+  const [tables, setTables] = useState<Library["tables"]>("whole");
+  const tablesPartial = tables !== "whole";
 
   function show(library: Library) {
     setFiles(library.files);
     setUsage(library.usage);
-    setTablesPartial(library.tablesPartial);
+    setTables(library.tables);
   }
 
   async function refresh() {
@@ -435,7 +446,14 @@ export default function MediaLibrary() {
           {error}
         </p>
       )}
-      {tablesPartial && (
+      {tables === "busy" && (
+        <p className="text-sm text-warning" role="status">
+          사이트 SQL 테이블의 참조를 확인하는 중입니다. 잠시 후 다시 열어
+          주세요. 그때까지 &lsquo;참조 없음&rsquo;은 컬렉션 문서만 보고 붙인
+          것입니다.
+        </p>
+      )}
+      {tables === "partial" && (
         <p className="text-sm text-warning" role="status">
           사이트 SQL 테이블을 다 확인하지 못했습니다. &lsquo;참조 없음&rsquo;인
           파일도 테이블 어딘가에서 쓰고 있을 수 있습니다.

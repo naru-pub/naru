@@ -33,8 +33,13 @@ type Answer = {
   ms: number;
   chars: number;
 };
+// Each look a fresh scan, unless a test asks for the minute's throttle.
 const references = (ids: string[], extra: Record<string, unknown> = {}) =>
-  callSiteObject<Answer>(site, "tableMediaReferences", { ids, ...extra });
+  callSiteObject<Answer>(site, "tableMediaReferences", {
+    ids,
+    windowMs: 0,
+    ...extra,
+  });
 
 integration("upload references in site tables", () => {
   test("an upload named only in a table is referenced until its row goes", async () => {
@@ -135,5 +140,41 @@ integration("upload references in site tables", () => {
     const stopped = await references([id], { maxChars: 1000 });
     expect(stopped.partial).toBe(true);
     expect(stopped.chars).toBeLessThan(20_000);
+  });
+
+  test("within the minute the same question is answered from the last scan, and any other refused", async () => {
+    const id = upload(1);
+    const other = upload(2);
+    const throttled = (ids: string[]) => references(ids, { windowMs: 60_000 });
+    // A scan now; the window counts from it.
+    const first = await references([id, other]);
+    const again = await throttled([other, id]);
+    expect(again).toEqual(first);
+    // Other IDs, or the same after a write, would need a new scan.
+    await expect(throttled([id])).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+      details: { retryAfter: expect.any(Number) },
+    });
+    await run("INSERT INTO posts (id, body) VALUES (?, ?)", [20, url(other)]);
+    await expect(throttled([id, other])).rejects.toMatchObject({
+      status: 429,
+    });
+    // After a new scan, the same question at once is answered from it,
+    // whatever comes first, and another is refused.
+    const scanned = await references([id, other]);
+    const [same, different] = await Promise.allSettled([
+      throttled([id, other]),
+      throttled([other]),
+    ]);
+    expect(scanned.references[other]).toContainEqual({
+      table: "posts",
+      column: "body",
+    });
+    expect(same).toEqual({ status: "fulfilled", value: scanned });
+    expect(different).toMatchObject({
+      status: "rejected",
+      reason: { status: 429 },
+    });
   });
 });

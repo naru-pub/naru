@@ -138,6 +138,12 @@ const TABLE_SCAN_ROWS = 1000;
 const TABLE_SCAN_IDS = 10_000;
 const TABLE_SCAN_MS = 8000;
 const TABLE_SCAN_CHARS = 256 * 1024 * 1024;
+/**
+ * How long a scan's answer stands: the same question is answered from it,
+ * and another refused (429). A scan of a large site keeps the workerd
+ * process busy for every site, not only this one.
+ */
+const TABLE_SCAN_WINDOW_MS = 60_000;
 const UPLOAD_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ANY_UUID =
@@ -2168,6 +2174,8 @@ export class SiteData extends DurableObject<Env> {
     ids?: unknown;
     /** Tests only (TEST_OPERATIONS): a smaller TABLE_SCAN_CHARS. */
     maxChars?: unknown;
+    /** Tests only (TEST_OPERATIONS): another TABLE_SCAN_WINDOW_MS. */
+    windowMs?: unknown;
   }): Promise<
     Outcome<{
       references: Record<string, { table: string; column: string }[]>;
@@ -2189,11 +2197,42 @@ export class SiteData extends DurableObject<Env> {
       typeof input?.maxChars === "number"
         ? input.maxChars
         : TABLE_SCAN_CHARS;
+    const test =
+      (this.env as { TEST_OPERATIONS?: string }).TEST_OPERATIONS === "1";
+    const windowMs =
+      test && typeof input?.windowMs === "number"
+        ? input.windowMs
+        : TABLE_SCAN_WINDOW_MS;
+    if (!ids.size)
+      return {
+        ok: true,
+        value: { references: {}, partial: false, ms: 0, chars: 0 },
+      };
+    const asked = [...ids].sort().join(",");
     const before = this.scanning;
     let done!: () => void;
     this.scanning = new Promise<void>((resolve) => (done = resolve));
+    // One scan at a time: a request meeting one waits for it, then is
+    // answered by what it found when it asked the same.
     await before;
     try {
+      // Every write on the object's one connection, Naru's and the site's.
+      const changes = Number(
+        this.rows("SELECT total_changes() AS n")[0]?.n ?? 0,
+      );
+      const last = this.lastScan;
+      if (last && Date.now() - last.at < windowMs) {
+        if (last.asked === asked && last.changes === changes)
+          return { ok: true, value: last.value };
+        return this.run(() => {
+          throw new DataError(
+            429,
+            "The site's tables were searched for uploads a moment ago. Try again in a minute.",
+            "RATE_LIMITED",
+            { retryAfter: Math.ceil((last.at + windowMs - Date.now()) / 1000) },
+          );
+        });
+      }
       const started = Date.now();
       const found = new Map<
         string,
@@ -2281,22 +2320,41 @@ export class SiteData extends DurableObject<Env> {
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }
-      return {
-        ok: true,
-        value: {
-          references: Object.fromEntries(
-            [...found].map(([id, places]) => [id, [...places.values()]]),
-          ),
-          partial,
-          ms: Date.now() - started,
-          chars,
-        },
+      const value = {
+        references: Object.fromEntries(
+          [...found].map(([id, places]) => [id, [...places.values()]]),
+        ),
+        partial,
+        ms: Date.now() - started,
+        chars,
       };
+      this.lastScan = { at: Date.now(), asked, changes, value };
+      return { ok: true as const, value };
     } finally {
       done();
     }
   }
   private scanning: Promise<void> = Promise.resolve();
+  /**
+   * The last scan's answer, in memory only, with what it depends on: the
+   * IDs asked and the connection's write count when it began. Within
+   * TABLE_SCAN_WINDOW_MS the same question is answered from it, and any
+   * other is refused, so an owner reopening the library cannot keep the
+   * Worker busy scanning.
+   */
+  private lastScan:
+    | {
+        at: number;
+        asked: string;
+        changes: number;
+        value: {
+          references: Record<string, { table: string; column: string }[]>;
+          partial: boolean;
+          ms: number;
+          chars: number;
+        };
+      }
+    | undefined;
 
   /**
    * Tests only: the snapshot and staging tables that are left, and how long

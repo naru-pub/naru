@@ -1053,9 +1053,20 @@ integration("site members", () => {
           tableReferences: true,
         }),
       ).rejects.toMatchObject({ status: 403 });
-      // Nothing is kept: the next look sees the row gone.
+      // Within the minute the same look is answered again, but one after a
+      // write would scan again: refused, so reopening cannot keep the
+      // Worker scanning (table-media-references.test.ts sees the row gone).
+      expect(await tables()).toEqual({
+        tableReferences: {
+          [inTable.id]: [{ table: "gallery", column: "image" }],
+        },
+        partial: false,
+      });
       await gallery("clear");
-      expect(await tables()).toEqual({ tableReferences: {}, partial: false });
+      await expect(tables()).rejects.toMatchObject({
+        status: 429,
+        code: "RATE_LIMITED",
+      });
     });
 
     test("a site's first media listing records the references its documents already had", async () => {

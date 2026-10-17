@@ -627,7 +627,10 @@ sites); uploads are deleted by the owner, or by the member who made them
   next look. The search is bounded (8 seconds, 256 Mi characters of text): past
   that, the library says it looked at only part of the tables, and an
   upload marked unreferenced may still be named in the rest. A ~100 MiB
-  database is searched whole in about half a second.
+  database is searched whole in about half a second. The tables are searched
+  at most once a minute: reopening the library within it shows the same
+  answer, or, after a write, says the references are still being checked
+  (documents' only until then).
 
 ## Documents, pages, and queries
 
