@@ -50,32 +50,7 @@ export interface WebsiteEnv {
    * for all: their requests here go on to the control plane (`website`).
    */
   MOVED_SITES?: string;
-  /**
-   * "1" while this is the standby, serving with the mini away (standby.ts):
-   * visitors read this copy, and nothing that would write or needs the
-   * control plane is accepted.
-   */
-  READ_ONLY?: string;
 }
-
-/** Refused while serving as the standby: it needs the mini. */
-const unavailable = (headers: Record<string, string>) =>
-  protocolError(
-    503,
-    "Naru's server is away: this site can be read, not changed, until it is back.",
-    "UNAVAILABLE",
-    headers,
-    // The SDK reads public data again without the sign-in, which this copy
-    // cannot check, so a signed-in page still shows what visitors may see.
-    { standby: true },
-  );
-
-/** passThrough, unless this is the standby, which has nowhere to send it. */
-const passOn = (
-  request: Request,
-  env: WebsiteEnv,
-  headers: Record<string, string>,
-) => (env.READ_ONLY === "1" ? unavailable(headers) : passThrough(request, env));
 
 /** Whether `site`'s database is on the mini: MOVED_SITES lists it, or is "*". */
 const moved = (env: WebsiteEnv, site: string) => {
@@ -151,13 +126,12 @@ async function visit(
       name: fn,
       args: body?.args ?? null,
       clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
-      readOnlyOnly: env.READ_ONLY === "1",
     })) as Outcome<{ pass: true } | { pass?: undefined; result: unknown }>;
     if (!outcome.ok) {
       const { status, message, code, details, site } = outcome.error;
       return protocolError(status, message, code, headers, details, site);
     }
-    if (outcome.value.pass) return passOn(original, env, headers);
+    if (outcome.value.pass) return passThrough(original, env);
     return Response.json({ result: outcome.value.result }, { headers });
   } catch (error) {
     if (error instanceof DataError)
@@ -200,19 +174,7 @@ export async function website(
   // no longer its database. Requests go on to the control plane, which calls
   // the mini, so a page holding an older SDK still works; a live connection
   // would attach to this copy, so it is refused and the SDK retries.
-  if (env.READ_ONLY === "1") {
-    // A visitor's query reads; a mutation would change the site.
-    const visitorCall =
-      path[0] === "_query" &&
-      request.method === "POST" &&
-      !request.headers.has("authorization");
-    if (
-      request.headers.has("authorization") ||
-      request.headers.get("Upgrade")?.toLowerCase() === "websocket" ||
-      (request.method !== "GET" && !visitorCall)
-    )
-      return unavailable(headers);
-  } else if (moved(env, site)) {
+  if (moved(env, site)) {
     if (request.headers.get("Upgrade")?.toLowerCase() === "websocket")
       return protocolError(
         503,
@@ -247,7 +209,7 @@ export async function website(
     Object.hasOwn(CALLS, path[0]) ||
     !METHODS.includes(request.method)
   )
-    return passOn(request, env, headers);
+    return passThrough(request, env);
   const refusal = spent.get(site);
   if (refusal && Date.now() < refusal.until)
     return protocolError(429, refusal.message, "RATE_LIMITED", headers);
@@ -295,7 +257,7 @@ export async function website(
       if (resetsAt) spent.set(site, { until: resetsAt, message });
       return protocolError(status, message, code, headers);
     }
-    if (outcome.value.pass) return passOn(original, env, headers);
+    if (outcome.value.pass) return passThrough(original, env);
     const { result, publicRead } = outcome.value;
     const cacheable = publicRead && !fresh;
     const response = Response.json(publicResult(result), {

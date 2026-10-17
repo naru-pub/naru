@@ -103,18 +103,16 @@ object reads the restore point into staging tables, so one that is not a
 whole dump is refused before anything is kept or changed; dumps the present
 to `before-restore-<ms>.ndjson`; then in one transaction empties and refills
 DUMP_TABLES and the site's tables, migrations and roles from the staging
-tables, as `replace` does, and re-runs every live query. What describes the
+tables, and re-runs every live query. What describes the
 present stays: the meta keys of the owner, paid status and limits, the
-month's budget and counts (flushed from memory first), the standby's
-fingerprint and the active release (`functions_revision` and
+month's budget and counts (flushed from memory first), and the active release (`functions_revision` and
 `functions_generation`, which `site_function_releases` names; a release's
 restore point holds the release before it, whose files are deleted five
 minutes after), and `rate_limits`. The rest of meta (`unique:`, `indexes:`,
 `media_refs`) is the restore point's. Migrations of the active release that
 the restore point had not applied are pending again and apply with the next
 release. The control plane then writes `routes.json` for the active release
-again; nothing cached is purged, as releases purge nothing. The standby takes
-the restored site at its next sync.
+again; nothing cached is purged, as releases purge nothing.
 
 ### Dumps
 

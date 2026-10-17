@@ -69,11 +69,10 @@ type Migration = { name: string; sql: string; digest: string };
 /**
  * Meta that describes the present rather than the site's data, which a
  * restore (`restoreFrom`) keeps: the owner, the control plane's
- * configuration, the month's budget and counts, the standby's copy, and the
- * active release.
+ * configuration, the month's budget and counts, and the active release.
  */
 const PRESENT_META =
-  /^(owner_id|entitled_until|confirmed_until|monthly_requests|rows_per_minute|budget_month|budget_used|standby_fingerprint|functions_revision|functions_generation|stats:.*)$/;
+  /^(owner_id|entitled_until|confirmed_until|monthly_requests|rows_per_minute|budget_month|budget_used|functions_revision|functions_generation|stats:.*)$/;
 
 /** A value for a dump, which is JSON: a BLOB becomes { $base64 }. */
 const toDump = (value: SqlValue): DumpValue =>
@@ -193,13 +192,6 @@ const quoteName = (name: string) => `"${name.replaceAll('"', '""')}"`;
 // A Durable Object runs one request at a time, and every method here is
 // synchronous inside `transactionSync`, so the object needs no owner-row lock
 // or write queue: each request sees and leaves a consistent site.
-
-const readOnlyStandby = () =>
-  new DataError(
-    503,
-    "Naru's server is away: this site can be read, not changed, until it is back.",
-    "UNAVAILABLE",
-  );
 
 const outsideScope = (collection: string) =>
   new DataError(
@@ -626,7 +618,7 @@ export class SiteData extends DurableObject<Env> {
       this.sql.exec("ALTER TABLE documents ADD COLUMN created_by TEXT");
     // A document's write secret, from an early 1.1.0 that has since gone:
     // nothing reads or writes it now. Kept, so every object's documents have
-    // the same columns (dumps, standby fingerprints).
+    // the same columns (dumps).
     if (
       !this.rows("PRAGMA table_info(documents)").some(
         (column) => column.name === "secret_hash",
@@ -1789,11 +1781,6 @@ export class SiteData extends DurableObject<Env> {
     member: string | null;
     /** No one signed in. */
     visitor?: boolean;
-    /**
-     * Only queries and routes may run: this copy is the standby, answering
-     * while the mini is away, and must not change.
-     */
-    readOnlyOnly?: boolean;
     /** A visitor's address, which their calls are limited by. */
     clientIp?: string;
     /** The module, as `<module/path>` under its kind's folder. */
@@ -1817,7 +1804,6 @@ export class SiteData extends DurableObject<Env> {
       if (kind === "route") routeModule(input.file);
       else functionModule(input.file);
       name(input.name);
-      if (input.readOnlyOnly && !readonly) throw readOnlyStandby();
       const revision = this.meta("functions_revision");
       if (!revision) throw unpublished();
       const revisions = this.revisions(input.site);
@@ -1920,7 +1906,6 @@ export class SiteData extends DurableObject<Env> {
     name: string;
     args: unknown;
     clientIp?: string;
-    readOnlyOnly?: boolean;
     kind: "query" | "mutation";
   }): Promise<Outcome<{ pass: true } | { pass?: undefined; result: unknown }>> {
     const ownerId = this.meta("owner_id");
@@ -2531,70 +2516,6 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * What the site holds, as one hash and two counts, to tell whether the
-   * standby on Cloudflare has it (cli/sync-standby.ts). Counters that every
-   * read moves (the monthly budget, rate limits) are left out, and so is
-   * what this records about the standby itself.
-   */
-  async fingerprint(): Promise<
-    Outcome<{
-      fingerprint: string;
-      collections: number;
-      documents: number;
-      standby: string | null;
-    }>
-  > {
-    return this.run(() => {
-      const hash = createHash("sha256");
-      for (const table of DUMP_TABLES) {
-        if (table === "rate_limits") continue;
-        for (const row of this.rows(`SELECT * FROM ${table} ORDER BY 1, 2`)) {
-          if (table === "meta" && /^(budget_|standby_)/.test(String(row.key)))
-            continue;
-          hash.update(`${table}\u0000${JSON.stringify(row)}\n`);
-        }
-      }
-      return {
-        fingerprint: hash.digest("hex"),
-        collections: Number(
-          this.rows("SELECT count(*) AS n FROM collections")[0].n,
-        ),
-        documents: Number(
-          this.rows("SELECT count(*) AS n FROM documents")[0].n,
-        ),
-        standby: this.meta("standby_fingerprint"),
-      };
-    });
-  }
-
-  /** Records which `fingerprint` the standby on Cloudflare now holds. */
-  async markStandby(input: { fingerprint: string }) {
-    return this.run(() => {
-      if (!/^[a-f0-9]{64}$/.test(String(input?.fingerprint)))
-        throw new DataError(400, "Expected a fingerprint.");
-      this.setMeta("standby_fingerprint", input.fingerprint);
-      return null;
-    });
-  }
-
-  /**
-   * Overwrites this copy with the mini's `dump`, whatever it held: the
-   * standby on Cloudflare only (index.ts refuses it anywhere else).
-   */
-  async replace(
-    input: ReadableStream<Uint8Array>,
-  ): Promise<Outcome<{ rows: number }>> {
-    return this.settle(() =>
-      this.exclusive(() =>
-        readBody(input, async (body) => {
-          const staged = await this.stage(dumpLines(body));
-          return this.swapIn(staged, { keepPresent: false });
-        }),
-      ),
-    );
-  }
-
-  /**
    * Returns the site to one of its restore points (1.1.0): the owner's undo
    * of a release's migrations, or of an earlier restore. The restore point is
    * read into staging tables first, so one that is not a whole dump changes
@@ -2604,7 +2525,7 @@ export class SiteData extends DurableObject<Env> {
    * roles become the restore point's. What belongs to the present stays: the
    * active release (its revision and generation, which the control plane's
    * records name), the owner, paid status and limits, the month's budget and
-   * counts, rate limits, and which copy the standby holds. Migrations of the
+   * counts, and rate limits. Migrations of the
    * active release that the restore point had not applied are pending again,
    * and apply with the next release. `site` is the object's own, from the URL
    * (index.ts). Restore points from before NDJSON (`.json`) are read whole,
@@ -2686,7 +2607,7 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * Every row of every table, to move the site to another runtime (its
-   * `restore`) or keep the standby's copy: collections, documents, upload
+   * `restore`): collections, documents, upload
    * references, limits and settings, and the site's own tables, as NDJSON
    * (control-plane/src/lib/site-data/dump-format.ts). The snapshot is taken
    * before this answers; the stream is read from it a page at a time.

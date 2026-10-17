@@ -30,7 +30,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/healthz") return new Response("ok");
-    // What the standby's health check probes (standby.ts): workerd answers
+    // What the health check on Cloudflare probes (standby.ts): workerd answers
     // and a site object's database opens on this disk.
     if (url.pathname === "/healthz/deep") {
       const outcome = await env.SITES.get(

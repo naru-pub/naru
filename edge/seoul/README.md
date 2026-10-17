@@ -37,10 +37,13 @@ How it differs from Cloudflare:
   `X-Forwarded-For` to the client's address, replacing whatever the client
   sent: rate limits key on it here and in the control plane.
 
-Cloudflare keeps a read-only standby of every site, copied from here each
-minute by fingerprint, and fails `sdk.naru.pub` over to it when this host
-stops answering: see `docs/database.md`, "The read-only standby". Only the
-standby's copies can be overwritten (`replace`); this Worker refuses it.
+This host holds the only copy of each site's database; nightly backups to B2
+(~/Git/infra) are what recovers it. While it is away, sites' static files are
+still served from R2 by Cloudflare, but their data calls fail and their routes
+answer with their index.html (status 503). The edge Worker on Cloudflare
+probes `https://origin.sdk.naru.pub/healthz/deep` each minute and posts to
+Discord when this host has failed three minutes in a row, and again when it
+answers: see `docs/database.md`, "When the mini is away".
 
 Moving sites here from Cloudflare: with the control plane's `SITE_DATA_URL`
 pointing at this Worker, `node dist/cli/move-site-data.mjs` copies each site's

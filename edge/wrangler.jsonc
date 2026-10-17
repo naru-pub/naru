@@ -24,7 +24,8 @@
       { "name": "SITES", "class_name": "SiteData" },
       // One log of every edge-served pageview, drained by the control plane.
       { "name": "PAGEVIEWS", "class_name": "PageviewLog" },
-      // The Data SDK's standby and its health check (src/standby.ts).
+      // What reaches the mini, where site databases live, and its health
+      // check (src/standby.ts). Named for the read-only standby it once was.
       { "name": "STANDBY", "class_name": "Standby" },
     ],
   },
@@ -57,9 +58,6 @@
     // The Data SDK, so sites that import it load while the control plane is
     // down.
     { "pattern": "naru.pub/sdk/*", "zone_name": "naru.pub" },
-    // sdk.naru.pub, the Data SDK on the mini: here only while its proxy is
-    // on, failed over to the standby or just after (src/standby.ts).
-    { "pattern": "sdk.naru.pub/*", "zone_name": "naru.pub" },
     // The control plane calls /v1/sites/* and /v1/pageviews/* here.
     { "pattern": "edge.naru.pub", "custom_domain": true },
     // Hosted sites. r2.naru.pub and media.naru.pub, the bucket's public
@@ -84,13 +82,13 @@
     // Sites whose databases are on the mini (sdk.naru.pub), comma-separated:
     // their requests here go on to the control plane (src/website.ts).
     "MOVED_SITES": "*",
-    // The mini's own name, which never fails over: probed by the health
-    // check, and where sdk.naru.pub's traffic is forwarded while it is up.
+    // The mini's own name: probed by the health check, and where routes are
+    // rendered (src/standby.ts).
     "SDK_ORIGIN_HOST": "origin.sdk.naru.pub",
   },
   "observability": { "enabled": true },
-  // The standby's health check, each minute (src/standby.ts). Its secrets,
-  // set with `wrangler secret put`: CLOUDFLARE_DNS_TOKEN, which can edit
-  // naru.pub's DNS, and DISCORD_WEBHOOK.
+  // The mini's health check, each minute (src/standby.ts): it alerts, and
+  // changes nothing. Its secret, set with `wrangler secret put`:
+  // DISCORD_WEBHOOK. Routes also need SDK_ORIGIN_SECRET.
   "triggers": { "crons": ["* * * * *"] },
 }

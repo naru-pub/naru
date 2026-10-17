@@ -122,11 +122,6 @@ try {
   await start();
   const deep = await fetch(`${base}/healthz/deep`);
   assert.equal(await deep.text(), "ok", "a site database opens");
-  assert.equal(
-    (await operate("alpha", "replace", { tables: {} })).status,
-    404,
-    "only the standby's copy may be overwritten",
-  );
   const sdk = await fetch(`${base}/sdk/1.1.0/naru.js`, {
     headers: { Host: "sdk.naru.pub" },
   });
@@ -249,24 +244,6 @@ try {
   const moved = linesOf(await (await dumpOf("beta")).text());
   assert.deepEqual(rowsOf(moved, "documents"), rowsOf(dump, "documents"));
   assert.deepEqual(rowsOf(moved, "meta"), rowsOf(dump, "meta"));
-
-  // A copy holds what the original does, and its fingerprint says so; what
-  // is recorded about the standby is not part of it.
-  const original = (await operate("alpha", "fingerprint", {})).value;
-  const copy = (await operate("beta", "fingerprint", {})).value;
-  assert.equal(copy.fingerprint, original.fingerprint);
-  assert.deepEqual([copy.collections, copy.documents], [1, 1]);
-  assert.equal(
-    (
-      await operate("beta", "markStandby", {
-        fingerprint: copy.fingerprint,
-      })
-    ).status,
-    200,
-  );
-  const marked = (await operate("beta", "fingerprint", {})).value;
-  assert.equal(marked.fingerprint, copy.fingerprint);
-  assert.equal(marked.standby, copy.fingerprint);
 
   // The unique field came along, index and all.
   const duplicate = await operate("beta", "execute", {
