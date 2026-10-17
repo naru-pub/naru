@@ -1,0 +1,10 @@
+// The router in front of the mini's shards (src/router.ts): only bundled by
+// wrangler (`pnpm build:seoul`), never deployed to Cloudflare.
+// seoul/build.mjs writes the workerd config (router.capnp) that binds it.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "naru-sdk-seoul-router",
+  "main": "src/router.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+}
