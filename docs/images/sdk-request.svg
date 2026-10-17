@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="544" viewBox="0 0 1080 544" role="img" aria-labelledby="title desc">
+  <title id="title">Data SDK 요청이 지나는 길</title>
+  <desc id="desc">SDK 파일은 엣지 Worker에서 받고, 방문자의 읽기는 맥 미니의 workerd가 사이트 SQLite에서 바로 답합니다. 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다.</desc>
+
+  <style>
+    svg { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
+    .bg { fill: #ffffff; }
+    .band { fill: #f6f8fa; stroke: #d0d7de; stroke-width: 1; }
+    .band-cf { fill: #fff7ed; stroke: #fdba74; }
+    .band-mini { fill: #f0f9ff; stroke: #7dd3fc; }
+    .band-title { font-size: 14px; font-weight: 700; fill: #1f2328; }
+    .band-sub { font-size: 12px; fill: #59636e; }
+    .box { fill: #ffffff; stroke: #8c959f; stroke-width: 1.2; }
+    .box-ext { fill: #ffffff; stroke: #8c959f; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .box-user { fill: #1f2328; stroke: none; }
+    .title { font-size: 14px; font-weight: 600; fill: #1f2328; }
+    .sub { font-size: 11.5px; fill: #59636e; }
+    .user-title { font-size: 14px; font-weight: 600; fill: #ffffff; }
+    .user-sub { font-size: 11.5px; fill: #d1d9e0; }
+    .line { fill: none; stroke: #57606a; stroke-width: 1.4; }
+    .line-direct { fill: none; stroke: #0969da; stroke-width: 2; }
+    .dash { stroke-dasharray: 5 4; }
+    .label { font-size: 11px; fill: #59636e; }
+    .label-direct { font-size: 11px; font-weight: 600; fill: #0969da; }
+    .head { fill: #57606a; }
+    .head-direct { fill: #0969da; }
+    .life { stroke: #d0d7de; stroke-width: 1.2; stroke-dasharray: 4 4; }
+    .msg { font-size: 12px; fill: #1f2328; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .band { fill: #161b22; stroke: #30363d; }
+      .band-cf { fill: #241a10; stroke: #9a5b1f; }
+      .band-mini { fill: #0f1d2b; stroke: #1f6f9f; }
+      .band-title, .title, .msg { fill: #e6edf3; }
+      .band-sub, .sub, .label { fill: #9198a1; }
+      .box, .box-ext { fill: #0d1117; stroke: #6e7681; }
+      .box-user { fill: #e6edf3; }
+      .user-title { fill: #0d1117; }
+      .user-sub { fill: #3d444d; }
+      .line { stroke: #9198a1; }
+      .head { fill: #9198a1; }
+      .line-direct { stroke: #4493f8; }
+      .head-direct, .label-direct { fill: #4493f8; }
+      .life { stroke: #30363d; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="head"/>
+    </marker>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="head-direct"/>
+    </marker>
+  </defs>
+
+  <rect width="1080" height="544" class="bg"/>
+  <line x1="110" y1="70" x2="110" y2="529" class="life"/>
+  <rect x="25.0" y="20" width="170" height="50" rx="8" class="box-user"/>
+  <text x="110.0" y="50.0" class="user-title" text-anchor="middle">브라우저</text>
+  <line x1="370" y1="70" x2="370" y2="529" class="life"/>
+  <rect x="285.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="370.0" y="42.0" class="title" text-anchor="middle">엣지 Worker</text>
+  <text x="370.0" y="59.0" class="sub" text-anchor="middle">Cloudflare</text>
+  <line x1="580" y1="70" x2="580" y2="529" class="life"/>
+  <rect x="495.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="580.0" y="42.0" class="title" text-anchor="middle">Caddy + workerd</text>
+  <text x="580.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
+  <line x1="790" y1="70" x2="790" y2="529" class="life"/>
+  <rect x="705.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="790.0" y="42.0" class="title" text-anchor="middle">Control plane</text>
+  <text x="790.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
+  <line x1="975" y1="70" x2="975" y2="529" class="life"/>
+  <rect x="890.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="975.0" y="42.0" class="title" text-anchor="middle">PostgreSQL</text>
+  <text x="975.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
+  <path d="M110,110 L364,110" class="line" marker-end="url(#a)"/>
+  <text x="240.0" y="102" class="msg" text-anchor="middle">GET naru.pub/sdk/1.1.0/naru.js</text>
+  <path d="M370,158 L116,158" class="line dash" marker-end="url(#a)"/>
+  <text x="240.0" y="150" class="msg" text-anchor="middle">SDK 파일 (5분 캐시, 하루 동안 백그라운드 갱신)</text>
+  <path d="M110,206 L574,206" class="line" marker-end="url(#a)"/>
+  <text x="345.0" y="198" class="msg" text-anchor="middle">GET sdk.naru.pub/api/data/v1/{site}/{collection}</text>
+  <path d="M580,254 L116,254" class="line dash" marker-end="url(#a)"/>
+  <text x="345.0" y="246" class="msg" text-anchor="middle">사이트 SQLite에서 바로 응답 (수십 ms)</text>
+  <path d="M110,302 L574,302" class="line" marker-end="url(#a)"/>
+  <text x="345.0" y="294" class="msg" text-anchor="middle">로그인 토큰과 함께 요청</text>
+  <path d="M580,350 L784,350" class="line" marker-end="url(#a)"/>
+  <text x="685.0" y="342" class="msg" text-anchor="middle">토큰이 있는 요청은 control plane으로</text>
+  <path d="M790,398 L969,398" class="line" marker-end="url(#a)"/>
+  <text x="882.5" y="390" class="msg" text-anchor="middle">사이트, 결제 상태, 회원 확인</text>
+  <path d="M790,446 L586,446" class="line" marker-end="url(#a)"/>
+  <text x="685.0" y="438" class="msg" text-anchor="middle">확인된 작업을 사이트 객체에 실행</text>
+  <path d="M580,494 L116,494" class="line dash" marker-end="url(#a)"/>
+  <text x="345.0" y="486" class="msg" text-anchor="middle">결과</text>
+</svg>

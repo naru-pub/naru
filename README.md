@@ -19,53 +19,9 @@
 
 나루는 세 부분으로 이루어져 있습니다. 서울의 맥 미니(kr-seongsu-m4)에서 도는 control plane과 사이트 데이터베이스, 그리고 Cloudflare의 엣지 Worker입니다. 한국에서 Cloudflare로 가는 요청은 로스앤젤레스를 거치므로, 매 요청이 빨라야 하는 Data SDK는 `sdk.naru.pub`으로 맥 미니에 바로 연결합니다.
 
-```mermaid
-flowchart LR
-  user(["한국의 브라우저"])
-
-  subgraph cf["Cloudflare (한국에서는 LAX 경유)"]
-    worker["엣지 Worker<br/>사이트 페이지, SDK 파일"]
-    standby["Standby 객체<br/>상태 확인 cron, 알림, 라우트 전달"]
-    copies[("Durable Objects<br/>페이지뷰")]
-    r2[("R2<br/>사이트 파일, 미디어, 사이트 코드")]
-    tunnel["Cloudflare Tunnel"]
-  end
-
-  subgraph mini["맥 미니 kr-seongsu-m4 (서울)"]
-    caddy["Caddy :443"]
-    workerd["workerd<br/>사이트마다 SQLite 하나"]
-    gateway["nginx 게이트웨이"]
-    cp["Control plane<br/>Next.js, blue/green"]
-    jobs["작업 워커<br/>동기화, 결제, 스크린샷"]
-    pg[("PostgreSQL<br/>계정, 결제, 토큰")]
-  end
-
-  subgraph ext["외부 서비스"]
-    toss["Toss Payments"]
-    github["GitHub<br/>사이트 배포, CI"]
-    b2[("Backblaze B2<br/>야간 백업")]
-    alerts["SES, Sentry, Discord"]
-  end
-
-  user -->|"&lt;site&gt;.naru.pub, 커스텀 도메인, naru.pub/sdk"| worker
-  user -->|"sdk.naru.pub (데이터 API)"| caddy
-  user -->|"naru.pub (관리 화면)"| tunnel
-  worker --> r2
-  worker --> copies
-  worker --> standby
-  standby -->|"상태 확인, 라우트 렌더"| caddy
-  tunnel --> gateway --> cp
-  caddy --> workerd
-  workerd -->|"로그인한 요청"| gateway
-  cp --> workerd
-  cp --> pg
-  jobs --> pg
-  workerd --> r2
-  toss -->|"웹훅"| tunnel
-  github -->|"배포"| cp
-  jobs --> b2
-  cp --> alerts
-```
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지와 SDK 파일을 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK는 sdk.naru.pub으로 맥 미니의 Caddy와 workerd에 바로 연결합니다." width="100%">
+</p>
 
 ### 1. Control Plane (Next.js)
 
@@ -98,28 +54,13 @@ flowchart LR
 
 방문자의 읽기는 맥 미니의 workerd가 바로 답합니다. 로그인한 요청은 workerd가 같은 호스트의 control plane에 넘겨 PostgreSQL로 권한을 확인한 뒤, 다시 workerd의 사이트 데이터베이스에서 처리합니다. `naru.js` 파일은 Cloudflare(`naru.pub/sdk/`)에서 받고, 브라우저가 하루 동안 보관합니다.
 
-```mermaid
-sequenceDiagram
-  participant B as 브라우저
-  participant E as 엣지 Worker (Cloudflare)
-  participant C as Caddy + workerd (맥 미니)
-  participant P as Control plane (맥 미니)
-  participant DB as PostgreSQL
-
-  B->>E: GET naru.pub/sdk/1.1.0/naru.js
-  E-->>B: SDK 파일 (5분 캐시, 하루 동안 백그라운드 갱신)
-  B->>C: GET sdk.naru.pub/api/data/v1/{site}/{collection}
-  C-->>B: 사이트 SQLite에서 바로 응답 (수십 ms)
-  B->>C: 로그인 토큰과 함께 요청
-  C->>P: 토큰이 있는 요청은 control plane으로
-  P->>DB: 사이트, 결제 상태, 회원 확인
-  P->>C: 확인된 작업을 사이트 객체에 실행
-  C-->>B: 결과
-```
+<p align="center">
+  <img src="docs/images/sdk-request.svg" alt="Data SDK 요청이 지나는 길: SDK 파일은 엣지 Worker에서, 방문자의 읽기는 workerd가 사이트 SQLite에서 바로, 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다." width="100%">
+</p>
 
 ### 맥 미니가 멈추면
 
-사이트 데이터베이스는 맥 미니에만 있습니다. 대기본은 없고, 맥 미니를 잃으면 B2의 야간 백업으로 복구합니다. 맥 미니가 멈춘 동안에는:
+사이트 데이터베이스는 맥 미니에만 있습니다. 대기본은 없고, 맥 미니를 잃으면 Backblaze B2의 백업으로 복구합니다. 사이트 데이터베이스는 매시, 전체(PostgreSQL과 R2 버킷 포함)는 매일 밤 백업합니다. 맥 미니가 멈춘 동안에는:
 
 - 사이트의 정적 파일은 엣지 Worker가 R2에서 계속 서빙합니다.
 - 데이터 호출은 실패합니다. SDK는 `UNAVAILABLE` 오류로 알립니다. control plane도 같은 맥 미니에 있어 로그인과 관리 화면도 멈춥니다.
