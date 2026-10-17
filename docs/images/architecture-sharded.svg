@@ -128,17 +128,20 @@
   <path d="M650,760 L610,760" class="line" marker-end="url(#a)"/>
   <path d="M285.0,790 L285.0,850" class="line" marker-end="url(#a)"/>
   <path d="M745.0,790 L745.0,850" class="line" marker-end="url(#a)"/>
+  <rect x="636" y="480" width="448" height="212" rx="12" class="box-ext"/>
+  <text x="650" y="499" class="title" text-anchor="start">workerd 샤드 넷</text>
+  <text x="768" y="499" class="sub" text-anchor="start">사이트 이름으로 나눔, 한 샤드가 멈춰도 나머지는 그대로</text>
   <rect x="650" y="510" width="190" height="60" rx="8" class="box"/>
-  <text x="745.0" y="537.0" class="title" text-anchor="middle">workerd 샤드 1</text>
+  <text x="745.0" y="537.0" class="title" text-anchor="middle">샤드 1</text>
   <text x="745.0" y="554.0" class="sub" text-anchor="middle">사이트 ¼, SQLite 하나씩</text>
   <rect x="880" y="510" width="190" height="60" rx="8" class="box"/>
-  <text x="975.0" y="537.0" class="title" text-anchor="middle">workerd 샤드 2</text>
+  <text x="975.0" y="537.0" class="title" text-anchor="middle">샤드 2</text>
   <text x="975.0" y="554.0" class="sub" text-anchor="middle">사이트 ¼, SQLite 하나씩</text>
   <rect x="650" y="620" width="190" height="60" rx="8" class="box"/>
-  <text x="745.0" y="647.0" class="title" text-anchor="middle">workerd 샤드 3</text>
+  <text x="745.0" y="647.0" class="title" text-anchor="middle">샤드 3</text>
   <text x="745.0" y="664.0" class="sub" text-anchor="middle">사이트 ¼, SQLite 하나씩</text>
   <rect x="880" y="620" width="190" height="60" rx="8" class="box"/>
-  <text x="975.0" y="647.0" class="title" text-anchor="middle">workerd 샤드 4</text>
+  <text x="975.0" y="647.0" class="title" text-anchor="middle">샤드 4</text>
   <text x="975.0" y="664.0" class="sub" text-anchor="middle">사이트 ¼, SQLite 하나씩</text>
   <path d="M590,570 L590,595 L975.0,595" class="line"/>
   <path d="M745.0,595 L745.0,570" class="line" marker-end="url(#a)"/>
@@ -147,5 +150,5 @@
   <path d="M975.0,595 L975.0,620" class="line" marker-end="url(#a)"/>
   <path d="M695.0,510 L695.0,200" class="line" marker-end="url(#a)"/>
   <text x="703.0" y="300" class="label" text-anchor="start">코드, 복원 지점</text>
-  <path d="M975.0,730 L975.0,680" class="line dash" marker-end="url(#a)"/>
+  <path d="M975.0,730 L975.0,692" class="line dash" marker-end="url(#a)"/>
 </svg>

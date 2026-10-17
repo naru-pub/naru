@@ -243,14 +243,22 @@ parts = [
     path([(CX[0], MINI2[2] + H), (CX[0], EXT2)]),
     path([(CX[2], MINI2[2] + H), (CX[2], EXT2)]),
 ]
-# Four shards, two rows of two, fed from one line under the router.
+# Four shards, two rows of two, fed from one line under the router, and
+# drawn as one group: the router picks one of them by the site's name.
 BUS = MINI2[0] + H + 25
+GROUP = (C[2] - 14, MINI2[0] - 30, C[3] + W + 14, MINI2[1] + H + 12)
+parts.append(
+    f'<rect x="{GROUP[0]}" y="{GROUP[1]}" width="{GROUP[2] - GROUP[0]}" '
+    f'height="{GROUP[3] - GROUP[1]}" rx="12" class="box-ext"/>'
+)
+parts.append(t(GROUP[0] + 14, GROUP[1] + 19, "workerd 샤드 넷", "title"))
+parts.append(t(GROUP[0] + 132, GROUP[1] + 19, "사이트 이름으로 나눔, 한 샤드가 멈춰도 나머지는 그대로", "sub"))
 SHARDS = []
 for i, (x, y) in enumerate(
     [(C[2], MINI2[0]), (C[3], MINI2[0]), (C[2], MINI2[1]), (C[3], MINI2[1])], 1
 ):
     SHARDS.append((x, y))
-    parts.append(box(x, y, W, H, f"workerd 샤드 {i}", "사이트 ¼, SQLite 하나씩"))
+    parts.append(box(x, y, W, H, f"샤드 {i}", "사이트 ¼, SQLite 하나씩"))
 parts.append(
     path([(C[1] + W - 20, MINI2[0] + H), (C[1] + W - 20, BUS), (CX[3], BUS)], head=False)
 )
@@ -261,7 +269,7 @@ for x, y in SHARDS:
 parts.append(path([(CX[2] - 50, MINI2[0]), (CX[2] - 50, CF[0] + H)]))
 parts.append(t(CX[2] - 42, 300, "코드, 복원 지점", "label"))
 # The watchdog restarts a stuck or oversized shard, only that one.
-parts.append(path([(CX[3], MINI2[2]), (CX[3], MINI2[1] + H)], dashed=True))
+parts.append(path([(CX[3], MINI2[2]), (CX[3], GROUP[3])], dashed=True))
 (OUT / "architecture-sharded.svg").write_text(
     svg(
         1110,
