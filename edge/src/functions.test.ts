@@ -603,6 +603,159 @@ describe("calling", () => {
       "undefined",
     ]);
   });
+
+  // What docs/sdk-v1-api.md ("The runtime's globals") and functions.d.ts
+  // list: QuickJS's own, plus URL, URLSearchParams and structuredClone from
+  // the prelude (Naru's `__` names aside).
+  test("the guest's globals are the documented set", () => {
+    const globals = run(
+      `export function f() {
+        return Object.getOwnPropertyNames(globalThis).filter((name) => !name.startsWith("__")).sort();
+      }`,
+      "f",
+      null,
+      "query",
+    );
+    expect(globals).toEqual(
+      [
+        // Values and functions
+        "globalThis",
+        "undefined",
+        "NaN",
+        "Infinity",
+        "eval",
+        "isFinite",
+        "isNaN",
+        "parseFloat",
+        "parseInt",
+        "decodeURI",
+        "decodeURIComponent",
+        "encodeURI",
+        "encodeURIComponent",
+        "escape",
+        "unescape",
+        "queueMicrotask",
+        "structuredClone",
+        // Objects and constructors
+        "Object",
+        "Function",
+        "Array",
+        "Number",
+        "Boolean",
+        "String",
+        "Symbol",
+        "BigInt",
+        "Date",
+        "RegExp",
+        "JSON",
+        "Math",
+        "Reflect",
+        "Proxy",
+        "Promise",
+        "Map",
+        "Set",
+        "WeakMap",
+        "WeakSet",
+        "WeakRef",
+        "FinalizationRegistry",
+        "Iterator",
+        "ArrayBuffer",
+        "SharedArrayBuffer",
+        "DataView",
+        "Int8Array",
+        "Uint8Array",
+        "Uint8ClampedArray",
+        "Int16Array",
+        "Uint16Array",
+        "Int32Array",
+        "Uint32Array",
+        "BigInt64Array",
+        "BigUint64Array",
+        "Float16Array",
+        "Float32Array",
+        "Float64Array",
+        "Error",
+        "AggregateError",
+        "EvalError",
+        "InternalError",
+        "RangeError",
+        "ReferenceError",
+        "SyntaxError",
+        "TypeError",
+        "URIError",
+        "DOMException",
+        "performance",
+        "URL",
+        "URLSearchParams",
+      ].sort(),
+    );
+    // And what pages have that this does not.
+    expect(
+      run(
+        `export function f() {
+          return [typeof Intl, typeof TextEncoder, typeof TextDecoder, typeof crypto, typeof atob, typeof btoa, typeof console, typeof setTimeout, typeof performance.now, typeof Date.now()];
+        }`,
+        "f",
+        null,
+        "query",
+      ),
+    ).toEqual([
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "undefined",
+      "function",
+      "number",
+    ]);
+  });
+
+  test("structuredClone copies plain data, Dates, Maps, Sets and bytes, and refuses the rest", () => {
+    expect(
+      run(
+        `export function f() {
+          const shared = { n: 1 };
+          const from = {
+            list: [1, "two", null, shared, shared],
+            when: new Date(5),
+            map: new Map([["k", new Set([1, 2])]]),
+            bytes: new Uint8Array([1, 2, 3]),
+            pattern: /a+/gi,
+          };
+          from.self = from;
+          const to = structuredClone(from);
+          to.list[3].n = 2;
+          to.bytes[0] = 9;
+          const refused = [() => 1, Symbol("s"), new (class Thing {})(), new Int16Array(1)].map((value) => {
+            try { structuredClone(value); return "cloned"; } catch (error) { return error.name; }
+          });
+          return {
+            copied: to !== from && to.self === to && to.list[3] === to.list[4],
+            untouched: [shared.n, from.bytes[0]],
+            when: to.when instanceof Date && to.when.getTime(),
+            map: [...to.map.get("k")],
+            bytes: to.bytes instanceof Uint8Array && [...to.bytes],
+            pattern: String(to.pattern),
+            refused,
+          };
+        }`,
+        "f",
+        null,
+        "query",
+      ),
+    ).toEqual({
+      copied: true,
+      untouched: [1, 1],
+      when: 5,
+      map: [1, 2],
+      bytes: [9, 2, 3],
+      pattern: "/a+/gi",
+      refused: Array(4).fill("DataCloneError"),
+    });
+  });
 });
 
 describe("the host", () => {

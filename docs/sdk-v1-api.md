@@ -365,10 +365,36 @@ whole call), `fail()`, and these methods, which return promises:
 Every promise a `ctx` method returns must be used: awaited, returned,
 chained with `then` or `catch`, or passed to `Promise.all`. Otherwise the call
 fails with `INVALID_REQUEST` and rolls back, since a mistake like
-`if (!ctx.passwords.verify(...))` would otherwise go unnoticed. Code also has
-`URL` and `URLSearchParams`, as browsers do, and `Math.random`. It has no
-network or timers, and awaiting anything other than `ctx` (a promise that
-never resolves) fails the call.
+`if (!ctx.passwords.verify(...))` would otherwise go unnoticed. Awaiting
+anything other than `ctx` (a promise that never resolves) fails the call.
+
+**The runtime's globals.** Queries, mutations and routes run in QuickJS, not
+in a browser or Node. They have the JavaScript language's own globals
+(`Object`, `Array`, `JSON`, `Math`, `Date`, `RegExp`, `Map`, `Set`, `WeakMap`,
+`WeakSet`, `WeakRef`, `Promise`, `Proxy`, `Reflect`, `Symbol`, `BigInt`,
+`Iterator`, `ArrayBuffer`, `DataView` and the typed arrays including
+`Float16Array`, the `Error` types, `encodeURIComponent` and the other URI
+functions, `parseInt` and the like), and besides them:
+
+- `URL` and `URLSearchParams`, as browsers have them (at most 1,000 parses a
+  call);
+- `structuredClone(value)`, for primitives, plain objects and arrays, `Date`,
+  `RegExp`, `Map`, `Set`, `ArrayBuffer` and `Uint8Array`, keeping cycles;
+  anything else (functions, class instances, other typed arrays) throws a
+  `DataCloneError`;
+- `Math.random()`, from the host's random source;
+- `Date` and `Date.now()`, the server's clock; prefer `ctx.now`, fixed for
+  the call. Local time is the server's, which need not be Korea's: use
+  `toISOString()` or the `getUTC…` methods and add the offset you want;
+- `performance.now()`, `queueMicrotask`, `DOMException`.
+
+There is no `Intl` (`toLocaleString` formats as English, without grouping),
+no `TextEncoder` or `TextDecoder`, no `atob` or `btoa`, no `crypto` (hash
+guest passwords with `ctx.passwords`), no `console` (`console.log` throws a
+ReferenceError; return what you want to see, or `ctx.fail` with `details`),
+no `fetch` or other network, no `setTimeout` or other timers, and no
+`WebAssembly`, `require` or `process`. Strings have `normalize`,
+`localeCompare` and Unicode property escapes (`/\p{L}/u`).
 
 **Guest passwords.** Visitors can post and later edit with a password, as on
 a guest board. The site keeps the hash in its own table and never returns it:

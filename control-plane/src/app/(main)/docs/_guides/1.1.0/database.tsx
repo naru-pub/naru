@@ -1135,8 +1135,16 @@ export async function add(ctx, { post, text }) {
 export const latest = async (ctx, { board }) =>
   (await ctx.sql\`SELECT id, title FROM posts WHERE board = \${board} LIMIT 20\`).rows;`}</Code>
               <p>
-                사이트 코드에서는 네트워크와 타이머를 쓸 수 없습니다.{" "}
-                <code>URL</code>과 <code>Math.random()</code>은 쓸 수 있습니다.
+                사이트 코드는 브라우저나 Node가 아니라 QuickJS에서 돌아갑니다.
+                자바스크립트 기본 객체에 더해 <code>URL</code>,{" "}
+                <code>URLSearchParams</code>, <code>structuredClone</code>,{" "}
+                <code>Math.random()</code>, <code>Date.now()</code>,{" "}
+                <code>performance.now()</code>를 쓸 수 있습니다.{" "}
+                <code>Intl</code>, <code>TextEncoder</code>,{" "}
+                <code>atob</code>/<code>btoa</code>, <code>crypto</code>,{" "}
+                <code>console</code>, 네트워크와 타이머는 없습니다. 시각은{" "}
+                <code>ctx.now</code>를 쓰고, 서버의 지역 시간대가 한국이
+                아닐 수 있으니 UTC 메서드로 계산하세요.
                 사이트 코드 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니
                 비밀값을 넣지 마세요.
               </p>

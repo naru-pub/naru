@@ -247,6 +247,41 @@ class URL {
 }
 globalThis.URL = URL;
 globalThis.URLSearchParams = URLSearchParams;
+// structuredClone (QuickJS has none) for what calls pass around: primitives,
+// plain objects and arrays, Date, RegExp, Map, Set, ArrayBuffer and
+// Uint8Array, cycles and shared references kept. Anything else (functions,
+// symbols, class instances, other typed arrays) is a DataCloneError.
+globalThis.structuredClone = (value) => {
+  const seen = new Map();
+  const refuse = () => {
+    throw new DOMException("The value could not be cloned.", "DataCloneError");
+  };
+  const clone = (from) => {
+    if (typeof from === "function" || typeof from === "symbol") refuse();
+    if (from === null || typeof from !== "object") return from;
+    if (seen.has(from)) return seen.get(from);
+    const prototype = Object.getPrototypeOf(from);
+    const keyed =
+      Array.isArray(from) || prototype === Object.prototype || prototype === null;
+    let to;
+    if (Array.isArray(from)) to = new Array(from.length);
+    else if (keyed) to = {};
+    else if (from instanceof Date) to = new Date(from.getTime());
+    else if (from instanceof RegExp) to = new RegExp(from.source, from.flags);
+    else if (from instanceof ArrayBuffer) to = from.slice(0);
+    else if (from instanceof Uint8Array) to = new Uint8Array(from);
+    else if (from instanceof Map) to = new Map();
+    else if (from instanceof Set) to = new Set();
+    else refuse();
+    seen.set(from, to);
+    if (from instanceof Map) for (const [k, v] of from) to.set(clone(k), clone(v));
+    else if (from instanceof Set) for (const v of from) to.add(clone(v));
+    else if (keyed)
+      for (const key of Object.keys(from)) to[key] = clone(from[key]);
+    return to;
+  };
+  return clone(value);
+};
 const __unused = new Map();
 class CtxPromise extends Promise {
   static get [Symbol.species]() { return Promise; }

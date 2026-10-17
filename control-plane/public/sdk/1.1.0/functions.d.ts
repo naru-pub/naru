@@ -10,6 +10,20 @@
  *   (await ctx.sql`SELECT id, title FROM posts WHERE board = ${board}`).rows;
  * ```
  *
+ * The code runs in QuickJS, not a browser or Node. Its globals are the
+ * language's own (Object, Array, JSON, Math, Date, RegExp, Map, Set, WeakMap,
+ * WeakSet, WeakRef, Promise, Proxy, Reflect, Symbol, BigInt, Iterator,
+ * ArrayBuffer, DataView, the typed arrays, the Error types, the URI
+ * functions, parseInt and the like) and: URL and URLSearchParams, as
+ * browsers have them; structuredClone, for primitives, plain objects and
+ * arrays, Date, RegExp, Map, Set, ArrayBuffer and Uint8Array (anything else
+ * throws a DataCloneError); Math.random; Date.now, the server's clock (prefer
+ * `ctx.now`; local time is the server's, so use UTC methods);
+ * performance.now, queueMicrotask and DOMException. There is no Intl
+ * (toLocaleString formats as English), TextEncoder, TextDecoder, atob, btoa,
+ * crypto, console, fetch, setTimeout or other timers, WebAssembly, require or
+ * process, whatever your editor's lib types say.
+ *
  * Written by hand beside the generated naru.d.ts, whose `Json` this repeats
  * so this file stands on its own.
  * @packageDocumentation
