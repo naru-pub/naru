@@ -494,7 +494,7 @@
       "kind": "type",
       "summary": [],
       "throws": [],
-      "signature": "type Json =\n  | null\n  | boolean\n  | number\n  | string\n  | Json[]\n  | { [key: string]: Json }"
+      "signature": "type Json =\n  null | boolean | number | string | Json[] | { [key: string]: Json }"
     },
     {
       "name": "NaruErrorCode",
