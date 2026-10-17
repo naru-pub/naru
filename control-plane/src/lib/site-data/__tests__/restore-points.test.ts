@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { gzipSync } from "node:zlib";
 import { describe, expect, test } from "@jest/globals";
 import { callSiteObject } from "@/lib/edge/client";
 import { readSiteDump } from "@/lib/edge/dumps";
@@ -167,11 +168,13 @@ integration("restore points", () => {
 
   test("writing a restore point deletes the site's points past their week", async () => {
     const DAY = 24 * 60 * 60 * 1000;
-    const old = `before-restore-${Date.now() - 8 * DAY}.ndjson`;
-    const recent = `before-restore-${Date.now() - 6 * DAY}.ndjson`;
-    const source = (await dumped()).text;
+    const old = `before-restore-${Date.now() - 8 * DAY}.ndjson.gz`;
+    const recent = `before-restore-${Date.now() - 6 * DAY}.ndjson.gz`;
+    const base64 = gzipSync(Buffer.from((await dumped()).text)).toString(
+      "base64",
+    );
     for (const name of [old, recent])
-      await callSiteObject(site, "putRestorePoint", { site, name, source });
+      await callSiteObject(site, "putRestorePoint", { site, name, base64 });
     // Restoring the recent one writes a new point, then prunes.
     await restoreFrom(recent);
     await expect(restoreFrom(old)).rejects.toMatchObject({ status: 404 });

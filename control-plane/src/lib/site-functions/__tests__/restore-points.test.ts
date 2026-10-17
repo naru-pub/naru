@@ -1,8 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import {
   beforeRestoreName,
-  compressedRestorePoint,
-  legacyRestorePoint,
   pruneRestorePoints,
   RESTORE_POINT_KEEP_MS,
   type RestorePointBucket,
@@ -14,14 +12,11 @@ import {
 
 const generation = "019a2b3c-4d5e-7000-8000-000000000001";
 
-test("restore point names are a release's generation or a restore's time, gzip NDJSON, NDJSON or, from before it, JSON", () => {
+test("restore point names are a release's generation or a restore's time, as gzip NDJSON", () => {
   for (const name of [
     releaseRestorePointName(generation),
     `${generation}.ndjson.gz`,
-    `${generation}.ndjson`,
-    `${generation}.json`,
     beforeRestoreName(1_790_000_000_000),
-    "before-restore-1790000000000.json",
   ])
     expect(restorePointName(name)).toBe(true);
   expect(beforeRestoreName(1_790_000_000_000)).toBe(
@@ -30,6 +25,11 @@ test("restore point names are a release's generation or a restore's time, gzip N
   expect(releaseRestorePointName(generation)).toBe(`${generation}.ndjson.gz`);
   for (const name of [
     generation,
+    // Earlier formats.
+    `${generation}.ndjson`,
+    `${generation}.json`,
+    "before-restore-1790000000000.ndjson",
+    "before-restore-1790000000000.json",
     `${generation}.txt`,
     `${generation}.jsonl`,
     `${generation.toUpperCase()}.ndjson`,
@@ -49,15 +49,10 @@ test("restore point names are a release's generation or a restore's time, gzip N
     42,
   ])
     expect(restorePointName(name)).toBe(false);
-  expect(legacyRestorePoint(`${generation}.json`)).toBe(true);
-  expect(legacyRestorePoint(`${generation}.ndjson`)).toBe(false);
-  expect(legacyRestorePoint(`${generation}.ndjson.gz`)).toBe(false);
-  expect(compressedRestorePoint(`${generation}.ndjson.gz`)).toBe(true);
-  expect(compressedRestorePoint(`${generation}.ndjson`)).toBe(false);
 });
 
 test("a restore point's name tells when it was made and what it preceded", () => {
-  for (const extension of ["ndjson.gz", "ndjson", "json"]) {
+  for (const extension of ["ndjson.gz"]) {
     expect(restorePointOf(`${generation}.${extension}`)).toEqual({
       name: `${generation}.${extension}`,
       createdAt: 0x019a2b3c4d5e,
@@ -74,6 +69,7 @@ test("a restore point's name tells when it was made and what it preceded", () =>
     );
   }
   expect(restorePointOf("manifest.json")).toBeNull();
+  expect(restorePointOf(`${generation}.json`)).toBeNull();
   expect(restorePointsPrefix("alice")).toBe(
     "_naru-runtime/alice/restore-points/",
   );
@@ -118,9 +114,17 @@ describe("keeping restore points a week", () => {
     const { fake, deleted } = bucket([
       { key: `${prefix}${made(NOW - 6 * DAY)}.ndjson.gz` },
       { key: `${prefix}${made(NOW - 8 * DAY)}.ndjson.gz` },
-      { key: `${prefix}${made(NOW - 30 * DAY, 2)}.json` },
+      // Earlier formats go by their upload time.
+      {
+        key: `${prefix}${made(NOW - 30 * DAY, 2)}.json`,
+        uploaded: new Date(NOW - 30 * DAY),
+      },
+      {
+        key: `${prefix}${made(NOW - 8 * DAY, 3)}.ndjson`,
+        uploaded: new Date(NOW - 6 * DAY),
+      },
       { key: `${prefix}before-restore-${NOW - 6 * DAY}.ndjson.gz` },
-      { key: `${prefix}before-restore-${NOW - 8 * DAY}.ndjson` },
+      { key: `${prefix}before-restore-${NOW - 8 * DAY}.ndjson.gz` },
       // Outside restore-points/, however old.
       {
         key: "_naru-runtime/alice/revisions/x/manifest.json",
@@ -137,7 +141,7 @@ describe("keeping restore points a week", () => {
       [
         `${made(NOW - 8 * DAY)}.ndjson.gz`,
         `${made(NOW - 30 * DAY, 2)}.json`,
-        `before-restore-${NOW - 8 * DAY}.ndjson`,
+        `before-restore-${NOW - 8 * DAY}.ndjson.gz`,
       ].sort(),
     );
     expect(deleted.flat().every((key) => key.startsWith(prefix))).toBe(true);

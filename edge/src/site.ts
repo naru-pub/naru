@@ -19,8 +19,6 @@ import {
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
 import {
   beforeRestoreName,
-  compressedRestorePoint,
-  legacyRestorePoint,
   pruneRestorePoints,
   releaseRestorePointName,
   RESTORE_POINT_CONTENT_TYPE,
@@ -113,13 +111,11 @@ import {
   DUMP_VERSION,
   DumpFormatError,
   dumpLines,
-  legacyDumpLines,
   SITE_TABLE_PREFIX,
   type DumpHeader,
   type DumpRow,
   type DumpRowLine,
   type DumpValue,
-  type LegacyDump,
 } from "../../control-plane/src/lib/site-data/dump-format";
 import {
   dumpStream,
@@ -2539,7 +2535,7 @@ export class SiteData extends DurableObject<Env> {
    * of a release's migrations, or of an earlier restore. The restore point is
    * read into staging tables first, so one that is not a whole dump changes
    * nothing; then what the site holds now is kept as
-   * `before-restore-<ms>.ndjson`; then, in one transaction, collections,
+   * `before-restore-<ms>.ndjson.gz`; then, in one transaction, collections,
    * documents, upload references and the site's own tables, migrations and
    * roles become the restore point's. What belongs to the present stays: the
    * active release (its revision and generation, which the control plane's
@@ -2547,8 +2543,7 @@ export class SiteData extends DurableObject<Env> {
    * counts, and rate limits. Migrations of the
    * active release that the restore point had not applied are pending again,
    * and apply with the next release. `site` is the object's own, from the URL
-   * (index.ts). Restore points from before NDJSON (`.json`) are read whole,
-   * as they were written.
+   * (index.ts).
    */
   async restoreFrom(input: {
     site: string;
@@ -2572,29 +2567,15 @@ export class SiteData extends DurableObject<Env> {
             "NOT_FOUND",
           );
         const restoring = async () => {
-          let source: AsyncIterable<{ line: DumpHeader | DumpRowLine }>;
-          if (legacyRestorePoint(name)) {
-            let point: LegacyDump;
-            try {
-              point = JSON.parse(await object.text()) as LegacyDump;
-            } catch {
-              throw new DataError(400, "The restore point is not a dump.");
-            }
-            source = (async function* () {
-              yield* legacyDumpLines(point);
-            })();
-          } else
-            source = dumpLines(
-              compressedRestorePoint(name)
-                ? gunzip(
-                    object.body,
-                    () =>
-                      new DumpFormatError(
-                        "The restore point is not a whole gzip file.",
-                      ),
-                  )
-                : object.body,
-            );
+          const source = dumpLines(
+            gunzip(
+              object.body,
+              () =>
+                new DumpFormatError(
+                  "The restore point is not a whole gzip file.",
+                ),
+            ),
+          );
           const staged = await this.stage(source);
           const saved = beforeRestoreName();
           try {

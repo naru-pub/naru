@@ -98,12 +98,9 @@ bytes packed into the multipart parts, stored as `application/gzip` with no
 Content-Encoding, so nothing on the way decompresses it; a restore reads it
 through `DecompressionStream` (`gunzip`), and a file that is not whole gzip is
 refused before anything changes. Moving a site between runtimes (`dump` and
-`restore`) stays uncompressed. Uncompressed `.ndjson`, written before
-restore points were compressed, are restored too. Those written before dumps
-were NDJSON end in `.json`
-and hold the whole dump as one JSON object (`tables` and `site`); they are
-listed and restored as well, read whole and converted to lines
-(`legacyDumpLines`). The owner lists and restores them on the control panel
+`restore`) stays uncompressed. Files in earlier formats (`.ndjson`, `.json`)
+are not restore points: they are neither listed nor restored, and expire by
+their upload time. The owner lists and restores them on the control panel
 (`/api/account/restore-points`, `lib/site-functions/restore.ts`), which calls
 the object's `restoreFrom({ name })`; index.ts sets `site` from the URL, so an
 object only reads its own site's prefix. Under `blockConcurrencyWhile`, the

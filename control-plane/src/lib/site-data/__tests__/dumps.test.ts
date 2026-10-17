@@ -182,12 +182,12 @@ integration("dumps", () => {
       // No end line.
       [`${lines.slice(0, -1).join("\n")}\n`, /incomplete/],
       // Cut in the middle of a row.
-      [dump.text.slice(0, Math.floor(dump.text.length / 2)), /not JSON|incomplete/],
-      // The wrong count.
       [
-        `${lines.slice(0, -2).join("\n")}\n${lines.at(-1)}\n`,
-        /says it has/,
+        dump.text.slice(0, Math.floor(dump.text.length / 2)),
+        /not JSON|incomplete/,
       ],
+      // The wrong count.
+      [`${lines.slice(0, -2).join("\n")}\n${lines.at(-1)}\n`, /says it has/],
       ["{}\n", /header/],
       [
         `${lines[0]}\n{"type":"row","table":"site:_naru_roles","row":{}}\n{"type":"end","rows":1}\n`,
@@ -203,11 +203,13 @@ integration("dumps", () => {
 
     // Nor does a restore point cut short; nothing of the present is kept.
     const original = await summarizeDump(siteDataWorker(site), site);
-    const name = "before-restore-1000.ndjson";
+    const name = "before-restore-1000.ndjson.gz";
     await callSiteObject(site, "putRestorePoint", {
       site,
       name,
-      source: `${lines.slice(0, 100).join("\n")}\n`,
+      base64: gzipSync(
+        Buffer.from(`${lines.slice(0, 100).join("\n")}\n`),
+      ).toString("base64"),
     });
     await expect(
       callSiteObject(site, "restoreFrom", { name }),
@@ -216,40 +218,47 @@ integration("dumps", () => {
     expect((await internals(site)).tables).toEqual([]);
   }, 120_000);
 
-  test("a restore point larger than a part is written in parts and read back, and one from before NDJSON restores", async () => {
+  test("a restore point larger than a part is written in parts and read back", async () => {
     const big = await summarizeDump(siteDataWorker(site), site);
-    // A restore point as releases wrote them before NDJSON: one JSON object.
-    const legacy = `${"0190f5a0-0000-7000-8000-000000000001"}.json`;
+    // A small restore point, so the one kept of the present is the big one.
+    const small = `${"0190f5a0-0000-7000-8000-000000000001"}.ndjson.gz`;
+    const smallLines = [
+      {
+        type: "header",
+        version: 2,
+        schema: ["CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)"],
+      },
+      {
+        type: "row",
+        table: "meta",
+        row: { key: "owner_id", value: "someone else" },
+      },
+      {
+        type: "row",
+        table: "collections",
+        row: {
+          id: collectionId,
+          name: "old",
+          read_access: "public",
+          write_access: "owner",
+        },
+      },
+      { type: "row", table: "site:notes", row: { id: 1, body: "옛 글" } },
+      { type: "end", rows: 3 },
+    ];
     await callSiteObject(site, "putRestorePoint", {
       site,
-      name: legacy,
-      source: JSON.stringify({
-        tables: {
-          meta: [{ key: "owner_id", value: "someone else" }],
-          collections: [
-            {
-              id: collectionId,
-              name: "old",
-              read_access: "public",
-              write_access: "owner",
-            },
-          ],
-          documents: [],
-          media_refs: [],
-          rate_limits: [],
-        },
-        site: {
-          schema: ["CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)"],
-          tables: { notes: [{ id: 1, body: "옛 글" }] },
-          migrations: [],
-          roles: [],
-        },
-      }),
+      name: small,
+      base64: gzipSync(
+        Buffer.from(
+          smallLines.map((line) => JSON.stringify(line)).join("\n") + "\n",
+        ),
+      ).toString("base64"),
     });
     const restored = await callSiteObject<{ saved: string; rows: number }>(
       site,
       "restoreFrom",
-      { name: legacy },
+      { name: small },
     );
     expect(restored.saved).toMatch(/^before-restore-\d+\.ndjson\.gz$/);
     const old = await readSiteDump(site);
@@ -257,9 +266,9 @@ integration("dumps", () => {
     expect(old.tables.documents).toEqual([]);
     expect(old.site.tables.notes).toEqual([{ id: 1, body: "옛 글" }]);
     // The owner is the present's, not the restore point's.
-    expect(
-      old.tables.meta.find((row) => row.key === "owner_id")?.value,
-    ).toBe(ownerId);
+    expect(old.tables.meta.find((row) => row.key === "owner_id")?.value).toBe(
+      ownerId,
+    );
 
     // What was replaced, more than a part, comes back whole.
     await callSiteObject(site, "restoreFrom", { name: restored.saved });
@@ -273,7 +282,7 @@ integration("dumps", () => {
     await callSiteObject(copy, "erase", {});
   }, 180_000);
 
-  test("restore points are gzip NDJSON; a cut-short one changes nothing, and uncompressed NDJSON still restores", async () => {
+  test("restore points are gzip NDJSON; a cut-short one changes nothing, and earlier formats are refused", async () => {
     await seed();
     const text = (await readSiteDump(site)).text;
     const original = await summarizeDump(siteDataWorker(site), site);
@@ -291,18 +300,25 @@ integration("dumps", () => {
     ).rejects.toMatchObject({ status: 400 });
     expect(await summarizeDump(siteDataWorker(site), site)).toEqual(original);
     expect((await internals(site)).tables).toEqual([]);
-    // Whole, it restores; so does the same dump uncompressed, as written
-    // before restore points were compressed.
-    for (const [name, point] of [
-      ["before-restore-3000.ndjson.gz", { base64: gzipped.toString("base64") }],
-      ["before-restore-4000.ndjson", { source: text }],
-    ] as const) {
-      await callSiteObject(site, "putRestorePoint", { site, name, ...point });
-      await callSiteObject(site, "restoreFrom", { name });
-      const restored = await summarizeDump(siteDataWorker(site), site);
-      for (const table of ["collections", "documents", "media_refs"])
-        expect(restored.tables[table]).toEqual(original.tables[table]);
-    }
+    // Whole, it restores.
+    const name = "before-restore-3000.ndjson.gz";
+    await callSiteObject(site, "putRestorePoint", {
+      site,
+      name,
+      base64: gzipped.toString("base64"),
+    });
+    await callSiteObject(site, "restoreFrom", { name });
+    const restored = await summarizeDump(siteDataWorker(site), site);
+    for (const table of ["collections", "documents", "media_refs"])
+      expect(restored.tables[table]).toEqual(original.tables[table]);
+    // Uncompressed NDJSON and the JSON before it are no restore points.
+    for (const old of [
+      "before-restore-4000.ndjson",
+      "0190f5a0-0000-7000-8000-000000000001.json",
+    ])
+      await expect(
+        callSiteObject(site, "restoreFrom", { name: old }),
+      ).rejects.toMatchObject({ status: 400 });
     await callSiteObject(site, "erase", {});
   }, 180_000);
 });

@@ -59,7 +59,7 @@ test("restore points are the owner's, from the same origin", async () => {
   expect(
     (
       await restorePointsOwnerRequest(
-        request("POST", { name: `${first}.json` }, "https://alice.naru.pub"),
+        request("POST", { name: `${first}.ndjson.gz` }, "https://alice.naru.pub"),
       )
     ).status,
   ).toBe(403);
@@ -70,12 +70,12 @@ test("the list is the site's restore points, newest first", async () => {
   storage.list.mockResolvedValueOnce({
     objects: [
       {
-        key: `_naru-runtime/alice/restore-points/${first}.json`,
+        key: `_naru-runtime/alice/restore-points/${first}.ndjson.gz`,
         etag: "a",
         size: 10,
       },
       {
-        key: "_naru-runtime/alice/restore-points/before-restore-1790000000000.json",
+        key: "_naru-runtime/alice/restore-points/before-restore-1790000000000.ndjson.gz",
         etag: "b",
         size: 20,
       },
@@ -91,7 +91,7 @@ test("the list is the site's restore points, newest first", async () => {
   storage.list.mockResolvedValueOnce({
     objects: [
       {
-        key: `_naru-runtime/alice/restore-points/${second}.json`,
+        key: `_naru-runtime/alice/restore-points/${second}.ndjson.gz`,
         etag: "d",
         size: 30,
       },
@@ -106,9 +106,9 @@ test("the list is the site's restore points, newest first", async () => {
     cursor: undefined,
   });
   expect(restorePoints.map((p: { name: string }) => p.name)).toEqual([
-    "before-restore-1790000000000.json",
-    `${second}.json`,
-    `${first}.json`,
+    "before-restore-1790000000000.ndjson.gz",
+    `${second}.ndjson.gz`,
+    `${first}.ndjson.gz`,
   ]);
   expect(restorePoints[1]).toMatchObject({
     kind: "release",
@@ -125,16 +125,16 @@ test("a restore asks the site's object, then writes the active release's routes"
   expect(call).not.toHaveBeenCalled();
   call.mockResolvedValueOnce({
     revision: null,
-    saved: "before-restore-1790000000000.json",
+    saved: "before-restore-1790000000000.ndjson.gz",
   });
   const response = await restorePointsOwnerRequest(
-    request("POST", { name: `${first}.json` }),
+    request("POST", { name: `${first}.ndjson.gz` }),
   );
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({
     revision: null,
     saved: {
-      name: "before-restore-1790000000000.json",
+      name: "before-restore-1790000000000.ndjson.gz",
       createdAt: 1_790_000_000_000,
       kind: "before-restore",
       generation: null,
@@ -143,7 +143,7 @@ test("a restore asks the site's object, then writes the active release's routes"
   expect(call).toHaveBeenCalledWith(
     "alice",
     "restoreFrom",
-    { name: `${first}.json` },
+    { name: `${first}.ndjson.gz` },
     undefined,
     expect.any(Number),
   );
@@ -165,9 +165,9 @@ test("the routes written are those of the release the object still runs", async 
     size: body.length,
     text: async () => body,
   });
-  call.mockResolvedValueOnce({ revision, saved: "before-restore-1.json" });
+  call.mockResolvedValueOnce({ revision, saved: "before-restore-1.ndjson.gz" });
   const response = await restorePointsOwnerRequest(
-    request("POST", { name: `${first}.json` }),
+    request("POST", { name: `${first}.ndjson.gz` }),
   );
   expect(response.status).toBe(200);
   expect(storage.put).toHaveBeenCalledWith(

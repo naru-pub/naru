@@ -3,31 +3,23 @@
 // `_naru-runtime/<site>/restore-points/` for RESTORE_POINT_DAYS. The site's
 // object writes one before a release's migrations run,
 // `<generation>.ndjson.gz`, and one before each restore,
-// `before-restore-<ms>.ndjson.gz`, so a restore can be undone. Older ones are
-// still read: uncompressed `.ndjson`, and, from before NDJSON, `.json`, the
-// whole dump as one JSON object. Shared by the edge (site.ts) and the control
-// plane.
+// `before-restore-<ms>.ndjson.gz`, so a restore can be undone. Points in
+// earlier formats (`.json`, `.ndjson`) are no restore points: not listed nor
+// restored, and pruned by their upload time. Shared by the edge (site.ts) and
+// the control plane.
 
 /** Where a site's restore points are kept. */
 export const restorePointsPrefix = (site: string) =>
   `_naru-runtime/${site}/restore-points/`;
 
 const GENERATION =
-  /^(([a-f0-9]{8})-([a-f0-9]{4})-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.(?:ndjson\.gz|ndjson|json)$/;
-const BEFORE_RESTORE =
-  /^before-restore-(\d{1,15})\.(?:ndjson\.gz|ndjson|json)$/;
+  /^(([a-f0-9]{8})-([a-f0-9]{4})-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.ndjson\.gz$/;
+const BEFORE_RESTORE = /^before-restore-(\d{1,15})\.ndjson\.gz$/;
 
 /** Whether `name` names a restore point: either kind, and nothing else. */
 export const restorePointName = (name: unknown): name is string =>
   typeof name === "string" &&
   (GENERATION.test(name) || BEFORE_RESTORE.test(name));
-
-/** Whether a restore point is in the format before NDJSON, one JSON object. */
-export const legacyRestorePoint = (name: string) => name.endsWith(".json");
-
-/** Whether a restore point is gzip-compressed NDJSON, as they are written now. */
-export const compressedRestorePoint = (name: string) =>
-  name.endsWith(".ndjson.gz");
 
 /** The type restore points are stored with: no Content-Encoding, ever. */
 export const RESTORE_POINT_CONTENT_TYPE = "application/gzip";

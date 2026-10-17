@@ -27,21 +27,6 @@ export type DumpRowLine = { type: "row"; table: string; row: DumpRow };
 export type DumpEnd = { type: "end"; rows: number };
 export type DumpLine = DumpHeader | DumpRowLine | DumpEnd;
 
-/**
- * A dump as `dump` answered it before NDJSON (restore points written until
- * 2026-10): the whole database as one JSON object. Read only, converted to
- * lines by `legacyDumpLines`.
- */
-export type LegacyDump = {
-  tables: Record<string, DumpRow[]>;
-  site?: {
-    schema: string[];
-    tables: Record<string, DumpRow[]>;
-    migrations: DumpRow[];
-    roles?: DumpRow[];
-  };
-};
-
 /** A dump that is not one, or was cut short. */
 export class DumpFormatError extends Error {}
 
@@ -239,39 +224,6 @@ export async function* dumpLines(
     if (line) yield { line, length: text.length };
   }
   checker.finish();
-}
-
-/** A dump in the format before NDJSON, as the lines it would be now. */
-export function* legacyDumpLines(
-  dump: LegacyDump,
-): Generator<{ line: DumpHeader | DumpRowLine; length: number }> {
-  if (!dump?.tables || typeof dump.tables !== "object")
-    throw new DumpFormatError("The dump has no tables.");
-  const row = (table: string, value: DumpRow) => {
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new DumpFormatError("A row of the dump is not a row.");
-    return { line: { type: "row" as const, table, row: value }, length: 0 };
-  };
-  const site = dump.site;
-  if (site && !Array.isArray(site.schema))
-    throw new DumpFormatError("The dump's schema is not a list.");
-  yield {
-    line: { type: "header", version: DUMP_VERSION, schema: site?.schema ?? [] },
-    length: 0,
-  };
-  for (const [table, rows] of Object.entries(dump.tables)) {
-    if (!Array.isArray(rows))
-      throw new DumpFormatError(`The dump's ${table} is not a list.`);
-    for (const value of rows) yield row(table, value);
-  }
-  if (!site) return;
-  for (const [table, rows] of Object.entries(site.tables ?? {})) {
-    if (!Array.isArray(rows))
-      throw new DumpFormatError(`The dump's ${table} is not a list.`);
-    for (const value of rows) yield row(`${SITE_TABLE_PREFIX}${table}`, value);
-  }
-  for (const value of site.migrations ?? []) yield row("_naru_migrations", value);
-  for (const value of site.roles ?? []) yield row("_naru_roles", value);
 }
 
 /** A dump read whole, for tests and small comparisons: never for a site's data in production. */

@@ -3,7 +3,6 @@ import {
   collectDump,
   dumpLines,
   DumpFormatError,
-  legacyDumpLines,
   LineSplitter,
   lines,
 } from "../../control-plane/src/lib/site-data/dump-format";
@@ -156,32 +155,6 @@ describe("the dump's line reader", () => {
     });
     await expect(collectDump(stream)).rejects.toThrow(DumpFormatError);
     expect(cancel).toHaveBeenCalled();
-  });
-
-  test("reads a dump in the format before NDJSON as the lines it would be now", () => {
-    const lines = [
-      ...legacyDumpLines({
-        tables: { meta: [{ key: "a", value: "1" }], documents: [] },
-        site: {
-          schema: ["CREATE TABLE t (x)"],
-          tables: { t: [{ x: 1 }] },
-          migrations: [{ name: "0001.sql" }],
-          roles: [{ member: "m" }],
-        },
-      }),
-    ].map((entry) => entry.line);
-    expect(lines).toEqual([
-      header,
-      { type: "row", table: "meta", row: { key: "a", value: "1" } },
-      row(1),
-      { type: "row", table: "_naru_migrations", row: { name: "0001.sql" } },
-      { type: "row", table: "_naru_roles", row: { member: "m" } },
-    ]);
-    // From before site tables: no schema, nothing of the site's.
-    expect([...legacyDumpLines({ tables: { meta: [] } })]).toEqual([
-      { line: { ...header, schema: [] }, length: 0 },
-    ]);
-    expect(() => [...legacyDumpLines({} as never)]).toThrow(DumpFormatError);
   });
 });
 
