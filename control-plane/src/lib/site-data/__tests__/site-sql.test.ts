@@ -939,7 +939,7 @@ integration("statement plans", () => {
     await expect(call("query", "cross")).rejects.toMatchObject({
       status: 400,
       message: expect.stringMatching(
-        /read all of \(subquery-1\) for every row/,
+        /read all of titles for every row of items/,
       ),
     });
     // Patterns allowed before stay allowed.

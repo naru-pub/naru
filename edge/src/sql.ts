@@ -8,8 +8,8 @@ import type { SqlValue } from "./query";
 // attaching, triggers, transactions), is refused before it runs.
 //
 // SQLite's time is outside the fuel meter (engine.ts), and the mini's runtime
-// has no CPU limit, so a statement is also held to its plan (`checkPlan`):
-// one full pass over a table at most, every other table reached by key.
+// has no CPU limit, so a statement is also held to its plan (`checkPlan`,
+// plan.ts): its work may grow at most linearly with the tables it reads.
 
 /**
  * Naru's own tables, indexes and triggers in the site's database; a test keeps
@@ -312,77 +312,7 @@ export function classify(
   return kind;
 }
 
-/** A step of EXPLAIN QUERY PLAN. */
-export type PlanStep = { id: number; parent: number; detail: string };
-
-/**
- * Refuses a plan that could take more than one pass over a table: within
- * each step's children, only the first table access may be a full scan, a
- * later one must find its rows by key (an equality on an index or the row
- * ID), and a correlated subquery, run once per outer row, may not scan.
- *
- * A subquery or common table expression SQLite runs as a co-routine or
- * materializes ("CO-ROUTINE (subquery-1)", "MATERIALIZE recent") has its own
- * steps, checked as any others; reading its result ("SCAN (subquery-1)")
- * reads only the rows those steps found. In a correlated subquery, whose
- * co-routine runs again for every outer row, that read is not a scan of a
- * table. Anywhere as a later table it still is: it would be read again for
- * every row before it, unless found by key ("SEARCH s USING AUTOMATIC ...").
- */
-export function checkPlan(plan: PlanStep[]) {
-  const children = new Map<number, PlanStep[]>();
-  for (const step of plan) {
-    const list = children.get(step.parent) ?? [];
-    list.push(step);
-    children.set(step.parent, list);
-  }
-  const access = (step: PlanStep) => /^(SCAN|SEARCH) /.test(step.detail);
-  // A virtual table here is json_each or json_tree (site SQL creates
-  // none): it reads one JSON value, so its cost is that value's size.
-  // A virtual table read with no constraint ("INDEX 0:" and nothing more)
-  // is a full-text table read whole. Any other is bounded: a full-text table
-  // searched by MATCH, LIKE or rowid, or json_each/json_tree reading one
-  // JSON value of the row (site SQL makes no other virtual tables).
-  const scans = (step: PlanStep) =>
-    /^SCAN /.test(step.detail) &&
-    step.detail !== "SCAN CONSTANT ROW" &&
-    (!/^SCAN \S+ VIRTUAL TABLE\b/.test(step.detail) ||
-      /VIRTUAL TABLE INDEX 0:$/.test(step.detail));
-  // The result of a co-routine or materialization among the same steps.
-  const produced = (step: PlanStep) =>
-    (children.get(step.parent) ?? []).some(
-      (sibling) =>
-        sibling.detail === `CO-ROUTINE ${step.detail.slice(5)}` ||
-        sibling.detail === `MATERIALIZE ${step.detail.slice(5)}`,
-    );
-  const table = (step: PlanStep) => step.detail.split(" ")[1];
-  const within = (id: number): PlanStep[] =>
-    (children.get(id) ?? []).flatMap((child) => [child, ...within(child.id)]);
-  for (const [, steps] of children) {
-    const tables = steps.filter(access);
-    tables.slice(1).forEach((step) => {
-      if (scans(step))
-        throw invalid(
-          `it would read all of ${table(step)} for every row before it; give ${table(step)} an index on the column it joins on.`,
-        );
-      // A range or pattern on a later table can still read most of it.
-      if (!/=/.test(step.detail) && !/ VIRTUAL TABLE\b/.test(step.detail))
-        throw invalid(
-          `it would search ${table(step)} by a range for every row before it; join it on equal values.`,
-        );
-    });
-  }
-  for (const step of plan)
-    if (/^CORRELATED /.test(step.detail)) {
-      const scan = within(step.id).find(
-        (inner) => scans(inner) && !produced(inner),
-      );
-      if (scan)
-        throw invalid(
-          `a subquery would read all of ${table(scan)} for every row; give ${table(scan)} an index on the column it compares.`,
-        );
-    }
-}
+export { checkPlan, type PlanStep } from "./plan";
 
 /** A statement's bound values: strings, finite numbers, booleans or null. */
 export function bindings(values: unknown): SqlValue[] {
@@ -412,7 +342,11 @@ export function bindings(values: unknown): SqlValue[] {
 /** Rows a statement may return, and their size as JSON. */
 export const MAX_ROWS = 1000;
 export const MAX_ROW_BYTES = 1024 * 1024;
-/** Rows a call's statements may read in all: five passes over a full table. */
+/**
+ * Rows a call's statements may read in all: five passes over a full table.
+ * Counted from each statement's cursor once it has finished (site.ts), so it
+ * fails the call after the statement that passes it, never part way.
+ */
 export const MAX_ROWS_READ = 500_000;
 
 /**

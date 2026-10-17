@@ -267,7 +267,7 @@ describe("site SQL", () => {
     refused("SELECT * FROM big1, (SELECT * FROM big2)", /read all of big2/);
     refused(
       "SELECT * FROM big1, (SELECT y, count(*) AS n FROM big2 GROUP BY y)",
-      /read all of \(subquery-1\) for every row/,
+      /read all of big2 for every row of big1/,
     );
     refused(`${cte} SELECT * FROM big1, s`, /read all of s for every row/);
     refused(
@@ -287,5 +287,32 @@ describe("site SQL", () => {
       `${cte} SELECT c.id, (SELECT count(*) FROM s WHERE s.y = c.id) FROM chars c`,
       /subquery would read all of big2/,
     );
+  });
+
+  test("a plan step of a shape the rule does not know is refused", () => {
+    const steps = (...details: string[]) =>
+      details.map((detail, index) => ({ id: index + 1, parent: 0, detail }));
+    expect(() => checkPlan(steps("SCAN posts", "SOMETHING NEW posts"))).toThrow(
+      /does not cost \("SOMETHING NEW posts"\)/,
+    );
+    // A name with a space could hide a constraint; an unknown virtual table
+    // index is not fts5's or json_each's.
+    expect(() => checkPlan(steps("SCAN old posts"))).toThrow(/does not cost/);
+    expect(() => checkPlan(steps("SCAN t VIRTUAL TABLE INDEX 5:abc"))).toThrow(
+      /does not cost/,
+    );
+    // A result and a table of one name cannot be told apart.
+    expect(() =>
+      checkPlan([
+        { id: 1, parent: 0, detail: "MATERIALIZE s" },
+        { id: 2, parent: 1, detail: "SCAN notes" },
+        { id: 3, parent: 0, detail: "SCAN s" },
+        {
+          id: 4,
+          parent: 0,
+          detail: "SEARCH s USING INTEGER PRIMARY KEY (rowid=?)",
+        },
+      ]),
+    ).toThrow(/two things named s/);
   });
 });

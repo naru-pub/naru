@@ -343,10 +343,11 @@ whole call), `fail()`, and these methods, which return promises:
   resolves `{ rows, changes }`. `SELECT`, `VALUES`, `INSERT`, `REPLACE`,
   `UPDATE` and `DELETE` run (`RETURNING` included); schema changes belong in
   migrations. Naru's own tables, pragmas, attaching, triggers, transactions
-  and recursive queries are refused, and so is a statement whose plan would
-  read a whole table once for every row of another: join on an indexed
-  column (see **SQL limits**). It binds at most 100 values and returns at
-  most 1,000 rows and 1 MiB; a `Uint8Array` binds as a
+  and recursive queries are refused, and so is a statement whose work could
+  grow faster than the tables it reads, such as one reading a whole table
+  for every row of another: join on an indexed column (see **SQL limits**).
+  It binds at most 100 values and returns at most 1,000 rows and 1 MiB; a
+  `Uint8Array` binds as a
   BLOB, and BLOB columns come back as `Uint8Array`s. A
   value a `UNIQUE` column already holds fails the call with `CONFLICT`,
   `details.unique` naming the column; any other mistake is SQLite's refusal,
@@ -432,20 +433,46 @@ for the whole site. Members' and visitors' calls count against the site's
 monthly budget; the owner's do not. The files under `_naru/` are served like
 any other file of the site, so do not put secrets in them.
 
-**SQL limits.** Each `ctx.sql` statement is checked against its plan before
-it runs:
+**SQL limits.** Each `ctx.sql` statement is checked against its plan
+(`EXPLAIN QUERY PLAN`) before it runs, since a statement cannot be stopped
+once it runs: its cost must grow at most linearly with the sizes of the tables
+it reads. Each step of the plan has a degree, 0 when its rows are bounded by a
+key or a value already in hand and 1 when they grow with a table. Loops nested
+in a join add their degrees, and so does a correlated subquery to the loops it
+runs for; a subquery, common table expression or automatic index made once
+costs its own degree once, and reading its result costs what made it. A
+statement is refused, with a message naming the loop that multiplies, when
+any path adds up to more than 1, and so is a plan step of a shape Naru does
+not know.
 
-| Limit                                          | Value                                                                                          |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Full passes over a table                       | One per statement; every other table is reached by key (an equality on an index or the row ID) |
-| Correlated subqueries (run once per outer row) | May not scan a table; they find rows by key                                                    |
-| Bound values                                   | 100 per statement                                                                              |
-| Rows and size returned                         | 1,000 rows and 1 MiB per statement                                                             |
-| Rows read                                      | 500,000 per call, all statements together                                                      |
+| Degree | Steps                                                                                                                                                                                                                                         |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | A search by `=` (or an `IN` of bound values) on every column it uses of the row ID, a primary key or an index; `json_each`/`json_tree` over a bound value or a row's column; a `VALUES` list; a full-text table by `rowid`                    |
+| 1      | A scan of a table or index; a range on an index (`<`, `>`, `BETWEEN`, a `LIKE` prefix); a full-text table read whole or searched (`MATCH`, `LIKE`, `GLOB`: any can return every row); an `IN (SELECT ...)` list a later table is looked up by |
 
-A subquery's or common table expression's own result counts as what its steps
-read: reading it first, inside a correlated subquery, or by key is fine;
-reading it whole again for every row before it is refused. Patterns that fit:
+So a table is read whole at most once (by a scan, a range or a search), and
+every table joined to it, and every correlated subquery, finds its rows by
+`=`. A full-text search goes first, with the rest found by `rowid`. Other
+limits:
+
+| Limit                  | Value                                     |
+| ---------------------- | ----------------------------------------- |
+| Bound values           | 100 per statement                         |
+| Rows and size returned | 1,000 rows and 1 MiB per statement        |
+| Rows read              | 500,000 per call, all statements together |
+
+The plan does not show everything. An `=` on an index that is not unique
+counts as degree 0 however many rows share the value, so `posts p1 JOIN posts
+p2 ON p2.board = p1.board` is allowed, and is near quadratic when one board
+holds most posts. The rows read limit is the backstop there: SQLite's rows
+read are counted when each statement finishes, so a statement is never
+stopped part way; the call fails after the statement that went past 500,000.
+(Naru may one day estimate such fan-out from `sqlite_stat1`, as `ANALYZE`
+makes it; it does not now.) The other way, a few linear statements are
+refused because the plan does not show what keeps them linear: a correlated
+range ended by `LIMIT 1`, an `IN (SELECT ...)` read from an index after a
+table found by key, and a common table expression made once inside a
+correlated subquery. Patterns that fit:
 
 ```js
 // A list as one bound value, however long.
@@ -460,7 +487,7 @@ await ctx.sql`SELECT * FROM items WHERE id > ${after} ORDER BY id LIMIT 1000`;
 ```
 
 The ordered aggregate needs an index on `titles (ch, ord)`; without one its
-subquery would scan `titles` for every row and is refused.
+subquery would read all of `titles` for every row of `chars` and is refused.
 
 **Caching.** Queries and mutations use the site's tables, not collections:
 a mutation leaves every collection's cache as it was, and a query's answer is

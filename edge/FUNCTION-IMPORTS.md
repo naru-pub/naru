@@ -83,10 +83,32 @@ with its digest), writes a dump of the database to
 then applies them in name order and switches the pointer in one transaction.
 A migration's statements may create, alter and drop tables, indexes and views
 and write rows; each passes the checks of `ctx.sql` (`edge/src/sql.ts`), and a
-write the plan check as well (`checkPlan`: one full pass over a table per
-statement, every other table by key, no scan in a correlated subquery; a
-subquery's co-routine or materialization is checked by its own steps; the
-limits and patterns are in `docs/sdk-v1-api.md`, **SQL limits**). A refusal is a 422 with `details.reason`
+write the plan check as well (`checkPlan`, `edge/src/plan.ts`). The plan check
+holds a statement to one rule: its cost grows at most linearly with table
+sizes. Each `EXPLAIN QUERY PLAN` step gets a degree: 0 for a `SEARCH` by `=`
+on every column it uses (row ID, primary key or any index), `SCAN CONSTANT
+ROW` and `VALUES`, `json_each`/`json_tree` (`VIRTUAL TABLE INDEX 1:` or `3:`)
+and an fts5 table by rowid (an index string with `=`); 1 for a `SCAN`, a
+`SEARCH` by a range or with no constraint, an fts5 table read whole or by
+`MATCH`/`LIKE`/`GLOB`, and an `IN (SELECT ...)` list that drives the `=`
+search before it (a `LIST SUBQUERY` without `CREATE BLOOM FILTER`, or `USING
+... FOR IN-OPERATOR`). Sibling loops add their degrees; a `CORRELATED`
+subquery adds its degree to all its group's loops; `MATERIALIZE`, plain
+`SCALAR`/`LIST SUBQUERY`, an `AUTOMATIC ... INDEX` and a `BLOOM FILTER ON`
+cost theirs once, and reading a materialized result costs what made it; a
+`CO-ROUTINE` is costed where it is read, inside the loops before it;
+`MULTI-INDEX OR`, compound parts and `RIGHT-JOIN` cost the most of theirs;
+`USE TEMP B-TREE` costs nothing more. Everything inside a correlated subquery
+counts once per outer row. A path over 1 is refused, naming the loop that
+multiplies; a step of any other shape is refused naming the step. Known gap:
+`=` on a non-unique index counts as 0, so a self-join on a shared value can be
+near quadratic on skewed data; `MAX_ROWS_READ` is the backstop, counted from
+the cursor's `rowsRead` after each statement finishes, so it fails the call
+but never stops a statement part way. Estimating fan-out from
+`sqlite_stat1` (`ANALYZE`) would close the gap; it is not done.
+`src/plan.test.ts` measures `src/plan.corpus.ts` in workerd at N and 4N rows
+(how to add a statement is at the top of the corpus); the user-facing limits
+and patterns are in `docs/sdk-v1-api.md`, **SQL limits**. A refusal is a 422 with `details.reason`
 `migration_failed`; the release task then deletes the refused revision and
 its row instead of retrying, and leaves the active release.
 
