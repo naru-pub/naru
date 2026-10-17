@@ -434,10 +434,11 @@ monthly budget; the owner's do not. The files under `_naru/` are served like
 any other file of the site, so do not put secrets in them.
 
 **SQL limits.** Each `ctx.sql` statement is checked against its plan
-(`EXPLAIN QUERY PLAN`) before it runs, since a statement cannot be stopped
-once it runs: its cost must grow at most linearly with the sizes of the tables
-it reads. Each step of the plan has a degree, 0 when its rows are bounded by a
-key or a value already in hand and 1 when they grow with a table. Loops nested
+(`EXPLAIN QUERY PLAN`) before it runs, so that a slow statement is refused
+early, with the reason, rather than stopped part way: its cost must grow at
+most linearly with the sizes of the tables it reads. Each step of the plan has
+a degree, 0 when its rows are bounded by a key or a value already in hand and
+1 when they grow with a table. Loops nested
 in a join add their degrees, and so does a correlated subquery to the loops it
 runs for; a subquery, common table expression or automatic index made once
 costs its own degree once, and reading its result costs what made it. A
@@ -460,19 +461,27 @@ limits:
 | Bound values           | 100 per statement                         |
 | Rows and size returned | 1,000 rows and 1 MiB per statement        |
 | Rows read              | 500,000 per call, all statements together |
+| Statement time         | 3 seconds for any one step of a statement |
 
 The plan does not show everything. An `=` on an index that is not unique
 counts as degree 0 however many rows share the value, so `posts p1 JOIN posts
 p2 ON p2.board = p1.board` is allowed, and is near quadratic when one board
-holds most posts. The rows read limit is the backstop there: SQLite's rows
-read are counted when each statement finishes, so a statement is never
-stopped part way; the call fails after the statement that went past 500,000.
-(Naru may one day estimate such fan-out from `sqlite_stat1`, as `ANALYZE`
-makes it; it does not now.) The other way, a few linear statements are
-refused because the plan does not show what keeps them linear: a correlated
-range ended by `LIMIT 1`, an `IN (SELECT ...)` read from an index after a
-table found by key, and a common table expression made once inside a
-correlated subquery. Patterns that fit:
+holds most posts. Two limits are the backstop there. SQLite's rows read are
+counted when each statement finishes; the call fails after the statement that
+went past 500,000. And Naru's runtime stops a statement once SQLite has worked
+on it for 3 seconds without handing back a row (one `sqlite3_step`; a
+statement returning many rows quickly is not stopped): the call fails with
+400 `INVALID_REQUEST`, "This statement ran longer than 3 seconds and was
+stopped; give it an index or read less." A stopped read fails only its call.
+A stopped write (an `INSERT`, `UPDATE` or `DELETE`) also rolls back
+everything the call wrote and restarts the site's database object: the call
+fails the same way, and the next request finds the site as it was before the
+call. While a statement runs, requests to every Naru site wait for it. (Naru
+may one day estimate such fan-out from `sqlite_stat1`, as `ANALYZE` makes it;
+it does not now.) The other way, a few linear statements are refused because
+the plan does not show what keeps them linear: a correlated range ended by
+`LIMIT 1`, an `IN (SELECT ...)` read from an index after a table found by key,
+and a common table expression made once inside a correlated subquery. Patterns that fit:
 
 ```js
 // A list as one bound value, however long.
@@ -524,6 +533,12 @@ refused as in `ctx.sql`. What has run is history: a release that edits or
 removes an applied migration, or adds one whose name sorts before the last
 applied, is refused, so a fix is a new file. A migration that fails refuses
 the whole release, which changes nothing: the previous code and tables stay.
+So does a migration statement that runs past the 3-second statement time
+(**SQL limits**), refused with "A migration ran longer than 3 seconds and was
+stopped" (it does not say which migration). A migration's writes are held to
+their plan like `ctx.sql`, but its `CREATE TABLE ... AS SELECT` and
+`CREATE INDEX` only to that time: an index over a whole 100 MiB table of
+long text takes about 1.5 seconds.
 Before a release applies migrations, Naru keeps a restore point of the whole
 site database; the owner can return the site to one on the control panel
 (데이터베이스 → 복원 지점). A restore brings back collections, documents,

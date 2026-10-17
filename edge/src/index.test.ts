@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { describe, expect, test, vi } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
@@ -151,5 +152,97 @@ describe("a route's page rendered on the mini, through the Standby object", () =
       expect(await page.text()).toBe("<p>bob's app</p>");
       expect(page.headers.get("Retry-After")).toBe("60");
     }
+  });
+});
+
+describe("a write the runtime stopped at its step budget", () => {
+  // Naru's workerd on the mini (seoul/workerd/) resets the object, and its
+  // caller's stub throws SQLite's interrupt instead of the object's answer.
+  const stopped = () => {
+    throw new Error("interrupted: SQLITE_INTERRUPT");
+  };
+  // workerd's, which Node's Web Crypto lacks.
+  Object.assign(crypto.subtle, {
+    timingSafeEqual: (a: Uint8Array, b: Uint8Array) => timingSafeEqual(a, b),
+  });
+  const sites = (method: () => unknown) => ({
+    ...(env as object),
+    EDGE_WORKER_SECRET: "secret",
+    SQLITE_STATEMENT_TIMEOUT_MS: "3000",
+    SITES: {
+      idFromName: () => ({}),
+      get: () => new Proxy({}, { get: () => method }),
+    },
+  });
+  const operate = (operation: string, method: () => unknown = stopped) =>
+    worker.fetch!(
+      new Request(`http://localhost/v1/sites/alice/${operation}`, {
+        method: "POST",
+        headers: { Authorization: "Bearer secret" },
+        body: "{}",
+      }) as never,
+      sites(method) as never,
+      ctx,
+    );
+
+  test("is the site's statement in a call, and its release's in an activation", async () => {
+    const call = await operate("call");
+    expect(call.status).toBe(400);
+    expect(await call.json()).toEqual({
+      error: {
+        status: 400,
+        code: "INVALID_REQUEST",
+        message:
+          "This statement ran longer than 3 seconds and was stopped; give it an index or read less.",
+      },
+    });
+    // Refused for good: the control plane's release task stops retrying it.
+    const activation = await operate("activateFunctions");
+    expect(activation.status).toBe(422);
+    expect(await activation.json()).toMatchObject({
+      error: {
+        status: 422,
+        code: "INVALID_REQUEST",
+        message: expect.stringMatching(
+          /^A migration ran longer than 3 seconds/,
+        ),
+        details: { reason: "migration_failed" },
+      },
+    });
+    // One of Naru's own: the database is unavailable for now.
+    const restore = await operate("restoreFrom");
+    expect(restore.status).toBe(503);
+    expect(await restore.json()).toMatchObject({
+      error: { code: "UNAVAILABLE" },
+    });
+  });
+
+  test("leaves any other failure of the object as it was", async () => {
+    await expect(
+      operate("call", () => {
+        throw new Error("Network connection lost.");
+      }),
+    ).rejects.toThrow("Network connection lost.");
+  });
+
+  test("is a visitor's call's own statement at the data API", async () => {
+    const response = await local.fetch!(
+      new Request("https://sdk.naru.pub/api/data/v1/alice/_mutate/posts:add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ args: null }),
+      }) as never,
+      sites(stopped) as never,
+      ctx,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "INVALID_REQUEST",
+        message: expect.stringMatching(
+          /^This statement ran longer than 3 seconds/,
+        ),
+      },
+    });
   });
 });

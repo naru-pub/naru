@@ -17,6 +17,8 @@ import type { SiteData } from "./site";
 import { Standby, type StandbyEnv } from "./standby";
 import type { Outcome } from "./types";
 import { DUMP_CONTENT_TYPE } from "../../control-plane/src/lib/site-data/dump-format";
+import type { DataError } from "../../control-plane/src/lib/site-data/validation";
+import { interruptedCall } from "./sql";
 
 export { PageviewLog } from "./pageview-log";
 // No SiteData here: site databases live on the mini (seoul.ts exports it
@@ -44,6 +46,11 @@ export interface Env extends PagesEnv, DomainsEnv, StandbyEnv {
   SDK_ORIGIN_SECRET?: string;
   /** The default monthly budget of anonymous requests per site. */
   SITE_MONTHLY_REQUESTS?: string;
+  /**
+   * The runtime's step budget for one SQLite statement, in ms: on the mini,
+   * from the environment that sets it in workerd (seoul/workerd/).
+   */
+  SQLITE_STATEMENT_TIMEOUT_MS?: string;
   /**
    * "1" opens TEST_OPERATIONS. Only the test harness sets it
    * (control-plane/scripts/with-edge-worker.sh); production never does.
@@ -168,8 +175,22 @@ function dispatch(
   }
 }
 
-function failure(status: number, message: string) {
-  return Response.json({ error: { status, message } }, { status });
+function failure(
+  status: number,
+  message: string,
+  error?: Pick<DataError, "code" | "details">,
+) {
+  return Response.json(
+    {
+      error: {
+        status,
+        message,
+        ...(error?.code ? { code: error.code } : {}),
+        ...(error?.details === undefined ? {} : { details: error.details }),
+      },
+    },
+    { status },
+  );
 }
 
 async function authorized(request: Request, secret: string | undefined) {
@@ -372,11 +393,29 @@ export default {
       input = { ...(input as object), site } satisfies { site: string };
     const stub = env.SITES.get(env.SITES.idFromName(site));
     // Each operation takes one argument object; the object validates it.
-    const outcome = (await dispatch(
-      stub,
-      operation!,
-      input as never,
-    )) as Outcome<unknown>;
+    let outcome: Outcome<unknown>;
+    try {
+      outcome = (await dispatch(
+        stub,
+        operation!,
+        input as never,
+      )) as Outcome<unknown>;
+    } catch (error) {
+      // A write the runtime stopped at its step budget reset the object
+      // (sql.ts, `interrupted`): the site's own statement in a call or a
+      // release's migrations, or one of Naru's.
+      const refusal = interruptedCall(
+        error,
+        env,
+        operation === "call"
+          ? "site"
+          : operation === "activateFunctions" || operation === "putFunctions"
+            ? "migrations"
+            : "naru",
+      );
+      if (!refusal) throw error;
+      return failure(refusal.status, refusal.message, refusal);
+    }
     if (outcome.ok && operation === "dump")
       return new Response(outcome.value as ReadableStream<Uint8Array>, {
         headers: { "Content-Type": DUMP_CONTENT_TYPE },

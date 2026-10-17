@@ -10,6 +10,10 @@ import type { SqlValue } from "./query";
 // SQLite's time is outside the fuel meter (engine.ts), and the mini's runtime
 // has no CPU limit, so a statement is also held to its plan (`checkPlan`,
 // plan.ts): its work may grow at most linearly with the tables it reads.
+// That is the early refusal, with its reason. Behind it, Naru's workerd on
+// the mini stops any one step of a statement after 3 seconds (seoul/workerd/,
+// `interrupted` below): what the plan rule lets through and still runs long,
+// such as an index equality that matches most of a table.
 
 /**
  * Naru's own tables, indexes and triggers in the site's database; a test keeps
@@ -350,12 +354,91 @@ export const MAX_ROW_BYTES = 1024 * 1024;
 export const MAX_ROWS_READ = 500_000;
 
 /**
+ * The mini's step budget, in ms, as the object's environment gives it
+ * (SQLITE_STATEMENT_TIMEOUT_MS, from the WORKERD_SQLITE_STATEMENT_TIMEOUT_MS
+ * that sets it in workerd: seoul/workerd/), or undefined where unknown.
+ */
+export function statementBudget(env: unknown) {
+  const ms = Number(
+    (env as { SQLITE_STATEMENT_TIMEOUT_MS?: string } | undefined)
+      ?.SQLITE_STATEMENT_TIMEOUT_MS,
+  );
+  return ms > 0 ? ms : undefined;
+}
+
+/**
+ * Whether `error` is SQLite stopping a statement at the runtime's step
+ * budget: Naru's workerd on the mini interrupts any one step of a statement
+ * that runs past it (seoul/workerd/README.md). An interrupted read throws
+ * this in the object; an interrupted write rolls back the object's
+ * transaction and resets the object, and its caller's stub throws it.
+ */
+export const interrupted = (error: unknown) =>
+  /\bSQLITE_INTERRUPT\b/.test(String((error as Error)?.message ?? error));
+
+const duration = (ms: number) =>
+  ms % 1000 === 0 && ms >= 1000
+    ? `${ms / 1000} second${ms === 1000 ? "" : "s"}`
+    : `${ms} ms`;
+
+/** A statement the runtime stopped at its step budget (`budgetMs`, when known). */
+export function tooLong(budgetMs?: number) {
+  return new DataError(
+    400,
+    budgetMs
+      ? `This statement ran longer than ${duration(budgetMs)} and was stopped; give it an index or read less.`
+      : "This statement ran too long and was stopped; give it an index or read less.",
+    "INVALID_REQUEST",
+  );
+}
+
+/**
+ * A migration the runtime stopped at its step budget. Its write reset the
+ * object, so which migration it was is not known: the release was refused
+ * whole, and nothing it would have changed was.
+ */
+export function migrationTooLong(budgetMs?: number) {
+  return new DataError(
+    422,
+    `A migration ran ${budgetMs ? `longer than ${duration(budgetMs)}` : "too long"} and was stopped, so the release changed nothing; give its statements an index or change less at a time.`,
+    "INVALID_REQUEST",
+    { reason: "migration_failed" },
+  );
+}
+
+/**
+ * What the object's caller tells of a stub that threw because the runtime
+ * stopped a statement and reset the object (`interrupted`): a site's
+ * statement (a call's, `migrations` for an activation) is its own to fix;
+ * one of Naru's own, which are kept short, is the database being
+ * unavailable. Anything else is undefined, for the caller's own handling.
+ */
+export function interruptedCall(
+  error: unknown,
+  env: unknown,
+  statement: "site" | "migrations" | "naru",
+) {
+  if (!interrupted(error)) return undefined;
+  const budget = statementBudget(env);
+  if (statement === "site") return tooLong(budget);
+  if (statement === "migrations") return migrationTooLong(budget);
+  return new DataError(
+    503,
+    "The site database stopped a statement that ran too long. Try again shortly.",
+    "UNAVAILABLE",
+  );
+}
+
+/**
  * What SQLite's own refusal of a statement means to the caller: a value a
  * UNIQUE constraint already holds is a CONFLICT naming its columns (as a
- * collection's unique fields are), anything else the statement's mistake.
+ * collection's unique fields are), a statement the runtime stopped at its
+ * step budget (`budgetMs`) ran too long, anything else is the statement's
+ * mistake.
  */
-export function sqlFailure(error: unknown) {
+export function sqlFailure(error: unknown, budgetMs?: number) {
   if (error instanceof DataError) return error;
+  if (interrupted(error)) return tooLong(budgetMs);
   const message = String((error as Error)?.message ?? error).replace(
     // The runtime's code, as ": SQLITE_CONSTRAINT (extended: ...)".
     /:\s*SQLITE_[A-Z_]+(\s*\(extended: [A-Z_]+\))?$/,

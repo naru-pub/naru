@@ -6,6 +6,10 @@
 # itself to a server a test may start on that port, standing in for the
 # control plane. It also opens the Worker's test-only export and import
 # operations. Install ../edge first: pnpm install there.
+#
+# With NARU_WORKERD_BIN set to Naru's own workerd (edge/seoul/workerd/), the
+# Worker runs on it, as on the mini, with its step budget:
+# WORKERD_SQLITE_STATEMENT_TIMEOUT_MS, 3000 unless set.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 worker_dir=../edge
@@ -23,11 +27,17 @@ trap cleanup EXIT
 secret=$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)
 port=$((20000 + RANDOM % 20000))
 origin_port=$((port + 2))
+budget_var=()
+if [[ -n "${NARU_WORKERD_BIN:-}" ]]; then
+  export MINIFLARE_WORKERD_PATH="$NARU_WORKERD_BIN"
+  export WORKERD_SQLITE_STATEMENT_TIMEOUT_MS="${WORKERD_SQLITE_STATEMENT_TIMEOUT_MS:-3000}"
+  budget_var=(--var "SQLITE_STATEMENT_TIMEOUT_MS:$WORKERD_SQLITE_STATEMENT_TIMEOUT_MS")
+fi
 (cd "$worker_dir" && exec ./node_modules/.bin/wrangler dev --local \
   --env local --ip 127.0.0.1 --port "$port" --inspector-port $((port + 1)) \
   --persist-to "$scratch/worker" --var "EDGE_WORKER_SECRET:$secret" \
   --var "PASSTHROUGH_ORIGIN:http://127.0.0.1:$origin_port" \
-  --var "TEST_OPERATIONS:1" \
+  --var "TEST_OPERATIONS:1" ${budget_var[@]+"${budget_var[@]}"} \
   --log-level warn) >"$scratch/worker.log" 2>&1 &
 worker_pid=$!
 for _ in $(seq 1 150); do

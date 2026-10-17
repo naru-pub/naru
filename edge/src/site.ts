@@ -35,12 +35,15 @@ import {
   bindings,
   checkPlan,
   classify,
+  interrupted,
   MAX_ROW_BYTES,
   MAX_ROWS,
   MAX_ROWS_READ,
   reserved,
   sqlFailure,
+  statementBudget,
   statements,
+  tooLong,
   type PlanStep,
   type Tables,
 } from "./sql";
@@ -1413,7 +1416,9 @@ export class SiteData extends DurableObject<Env> {
           );
       }
     } catch (error) {
-      throw sqlFailure(error);
+      // A write the runtime stopped has reset this object: its caller's
+      // stub says so (interruptedCall), whatever this throws.
+      throw sqlFailure(error, statementBudget(this.env));
     }
     // Each statement is held to one pass by its plan; a call, to a few.
     budget.rowsRead += cursor.rowsRead;
@@ -1591,10 +1596,14 @@ export class SiteData extends DurableObject<Env> {
         this.sql.exec(statement.text);
       }
     } catch (error) {
+      // A statement the runtime stopped has reset this object, and its
+      // caller says so instead (interruptedCall in index.ts).
       throw fail(
         error instanceof DataError
           ? error.message
-          : String((error as Error)?.message ?? error),
+          : interrupted(error)
+            ? tooLong(statementBudget(this.env)).message
+            : String((error as Error)?.message ?? error),
       );
     }
     this.sql.exec(

@@ -133,7 +133,9 @@ jobs:
           NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
 
   # The edge Worker as the mini runs it (edge/seoul/): built, served with
-  # workerd and checked (smoke.mjs), then packed with that workerd for
+  # npm's workerd and checked (smoke.mjs), then with Naru's own workerd
+  # (edge/seoul/workerd/), whose release binary.json names, with its step
+  # budget set as on the mini; then packed with Naru's workerd for
   # `mise run deploy naru-sdk` in infra. macOS runners are Apple Silicon, like
   # the mini.
   build-sdk-seoul:
@@ -151,8 +153,29 @@ jobs:
       - run: npm install --global pnpm@11.5.2
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:seoul
+      # Published by hand (edge/seoul/workerd/README.md); a missing asset, or
+      # one whose sha256 is not binary.json's, fails the job. So does a
+      # binary.json for another workerd than package.json's.
+      - name: Download Naru's workerd
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          field() { node -p "require('./seoul/workerd/binary.json').$1"; }
+          pinned=$(node -p "require('./package.json').devDependencies.workerd")
+          if [[ "$(field version)" != "$pinned" ]]; then
+            echo "seoul/workerd/binary.json is for workerd $(field version), package.json pins $pinned: build and publish one (seoul/workerd/README.md)." >&2
+            exit 1
+          fi
+          gh release download "$(field tag)" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$(field asset)" --dir "$RUNNER_TEMP/workerd"
+          binary="$RUNNER_TEMP/workerd/$(field asset)"
+          echo "$(field sha256)  $binary" | shasum -a 256 -c
+          chmod 755 "$binary"
+          echo "NARU_WORKERD_BIN=$binary" >> "$GITHUB_ENV"
+      - run: node seoul/workerd/selftest.mjs "$NARU_WORKERD_BIN"
+      - run: node seoul/smoke.mjs
       - run: |
-          cp node_modules/.pnpm/@cloudflare+workerd-darwin-arm64@*/node_modules/@cloudflare/workerd-darwin-arm64/bin/workerd seoul/dist/workerd
+          cp "$NARU_WORKERD_BIN" seoul/dist/workerd
           rm -rf seoul/dist/site-objects
           tar -czf naru-sdk-seoul-macos-arm64.tar.gz -C seoul/dist .
       - uses: actions/upload-artifact@v4

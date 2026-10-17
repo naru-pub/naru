@@ -5,6 +5,10 @@
 // sources need the real R2 bucket.
 //
 //   node seoul/smoke.mjs
+//
+// With npm's workerd, or with NARU_WORKERD_BIN set to Naru's own
+// (seoul/workerd/), as the mini runs it: with its 3-second step budget
+// (WORKERD_SQLITE_STATEMENT_TIMEOUT_MS, unless set otherwise).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -15,7 +19,11 @@ import { fileURLToPath } from "node:url";
 
 const edge = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(edge, "seoul/dist");
-const workerd = join(edge, "node_modules/.bin/workerd");
+const workerd =
+  process.env.NARU_WORKERD_BIN ?? join(edge, "node_modules/.bin/workerd");
+const budget = process.env.NARU_WORKERD_BIN
+  ? { WORKERD_SQLITE_STATEMENT_TIMEOUT_MS: "3000" }
+  : {};
 const objects = await mkdtemp(join(tmpdir(), "naru-seoul-"));
 const secret = "smoke-secret";
 const port = await new Promise((done) => {
@@ -41,6 +49,7 @@ async function start() {
     {
       cwd: dist,
       env: {
+        ...budget,
         ...process.env,
         EDGE_WORKER_SECRET: secret,
         PASSTHROUGH_ORIGIN: "http://127.0.0.1:9",
@@ -269,7 +278,9 @@ try {
   const again = await visit("beta/posts/one");
   assert.equal(again.status, 200);
   assert.equal((await again.json()).document.data.title, "first");
-  console.log("seoul: workerd serves the SDK, keeps sites and moves them.");
+  console.log(
+    `seoul: ${process.env.NARU_WORKERD_BIN ? "Naru's" : "npm's"} workerd serves the SDK, keeps sites and moves them.`,
+  );
 } finally {
   if (running && running.exitCode === null) await stop();
   await rm(objects, { recursive: true, force: true });

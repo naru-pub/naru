@@ -6,8 +6,9 @@
 //     --directory-path site-objects=<where site databases live> \
 //     --socket-addr http=127.0.0.1:<port>
 //
-// with EDGE_WORKER_SECRET, PASSTHROUGH_ORIGIN and the R2_* variables in its
-// environment.
+// with EDGE_WORKER_SECRET, PASSTHROUGH_ORIGIN, the R2_* variables and
+// WORKERD_SQLITE_STATEMENT_TIMEOUT_MS in its environment. The mini runs Naru's
+// own workerd (seoul/workerd/), which holds each statement to that budget.
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -57,6 +58,11 @@ const fromEnvironment = [
   "R2_SECRET_ACCESS_KEY",
   "R2_BUCKET",
 ].map((name) => `      (name = "${name}", fromEnvironment = "${name}"),`);
+// The step budget Naru's workerd holds each SQLite statement to
+// (seoul/workerd/), so the object can say how long a stopped one ran.
+fromEnvironment.push(
+  `      (name = "SQLITE_STATEMENT_TIMEOUT_MS", fromEnvironment = "WORKERD_SQLITE_STATEMENT_TIMEOUT_MS"),`,
+);
 
 await writeFile(
   join(dist, "config.capnp"),

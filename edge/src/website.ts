@@ -17,6 +17,7 @@ import {
   withRetryAfter,
 } from "../../control-plane/src/lib/site-data/validation";
 import type { SiteData } from "./site";
+import { interruptedCall } from "./sql";
 import {
   OWNER_TICKET,
   verifyLiveTicket,
@@ -50,6 +51,11 @@ export interface WebsiteEnv {
    * are then answered by the object each time, which is local there.
    */
   EDGE_CACHE?: string;
+  /**
+   * The runtime's step budget for one SQLite statement, in ms, where it has
+   * one (workerd on the mini: seoul/workerd/), for saying so when it stops one.
+   */
+  SQLITE_STATEMENT_TIMEOUT_MS?: string;
 }
 
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
@@ -126,6 +132,9 @@ async function visit(
     return Response.json({ result: outcome.value.result }, { headers });
   } catch (error) {
     if (error instanceof DataError) return refusalResponse(error, headers);
+    // A write of the site's code the runtime stopped, which reset the object.
+    const stopped = interruptedCall(error, env, "site");
+    if (stopped) return refusalResponse(stopped, headers);
     console.error("A visitor's call failed", error);
     return protocolError(500, "Function call failed.", undefined, headers);
   }
@@ -285,6 +294,9 @@ export async function website(
         error.code,
         withRetryAfter(headers, error.retryAfter),
       );
+    // Naru's own write, stopped by the runtime, which reset the object.
+    const stopped = interruptedCall(error, env, "naru");
+    if (stopped) return refusalResponse(stopped, headers);
     console.error("Site database request failed", error);
     return protocolError(500, "Database request failed.", undefined, headers);
   }

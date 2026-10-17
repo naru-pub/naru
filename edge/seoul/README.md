@@ -9,7 +9,14 @@ Worker serves neither the SDK nor the data API.
 ```bash
 pnpm build:seoul   # seoul/dist: the bundle, the SDK's files, config.capnp
 pnpm test:seoul    # build, then serve it with workerd and check it (smoke.mjs)
+NARU_WORKERD_BIN=<Naru's workerd> node seoul/smoke.mjs   # as the mini runs it
 ```
+
+The mini runs Naru's own workerd: npm's release of the version
+`package.json` pins, with one patch that stops a SQLite statement after a
+step budget (`workerd/`, whose README says how it is built, published and
+checked). CI downloads the build `workerd/binary.json` names, checks it and
+packs it into the release in place of npm's.
 
 Serve `seoul/dist` from its own directory:
 
@@ -26,11 +33,17 @@ with these in the environment:
 | `EDGE_WORKER_SECRET` | What the control plane sends for site operations (its `SITE_DATA_SECRET`) and signs live tickets with |
 | `PASSTHROUGH_ORIGIN` | The control plane on this host, for requests with a token, such as `http://127.0.0.1:40000` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | The site bucket, where sites' code and its releases are: a key that can read and write it |
+| `WORKERD_SQLITE_STATEMENT_TIMEOUT_MS` | `3000`: Naru's workerd stops any one step of a site's statement after this long (`workerd/`), and the object says so with it; unset or 0, never |
 
 How it differs from Cloudflare:
 
 - **Storage.** Each site's database is a SQLite file under `site-objects`. Back
   these up; nothing replicates them.
+- **A statement's time is bounded.** Cloudflare limits an object's CPU;
+  workerd has no such limit and runs every object on one thread, so one
+  statement could hold up every site. Naru's workerd stops it after 3
+  seconds instead (`workerd/README.md`); the plan rule (`src/plan.ts`) stays
+  the early, explained refusal.
 - **No edge cache.** Visitors' reads are answered by the object each time
   (`EDGE_CACHE=off`), which is a local query here.
 - **R2 through its S3 API** (`src/r2-s3.ts`), since workerd has no R2 binding.

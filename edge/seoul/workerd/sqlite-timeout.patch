@@ -1,0 +1,84 @@
+diff --git a/src/workerd/util/sqlite.c++ b/src/workerd/util/sqlite.c++
+index 0c0ab26..1ef479a 100644
+--- a/src/workerd/util/sqlite.c++
++++ b/src/workerd/util/sqlite.c++
+@@ -25,10 +25,12 @@
+ 
+ #include <fcntl.h>
+ #include <sqlite3.h>
++#include <stdlib.h>
+ #include <sys/stat.h>
+ 
+ #include <kj/map.h>
+ #include <kj/mutex.h>
++#include <kj/time.h>
+ #include <kj/vector.h>
+ 
+ #include <atomic>
+@@ -344,6 +346,33 @@ class SqliteCallScope {
+ 
+ namespace {
+ 
++// Wall-clock budget for one sqlite3_step() of an application (non-TRUSTED) statement, from
++// WORKERD_SQLITE_STATEMENT_TIMEOUT_MS. 0 (the default) disables the progress handler entirely.
++kj::Duration stepBudget() {
++  static const kj::Duration budget = []() {
++    const char* env = getenv("WORKERD_SQLITE_STATEMENT_TIMEOUT_MS");
++    return (env == nullptr ? 0 : strtoull(env, nullptr, 10)) * kj::MILLISECONDS;
++  }();
++  return budget;
++}
++
++// Deadline of the step running on this thread, if it is budgeted.
++thread_local kj::Maybe<kj::TimePoint> stepDeadline;
++
++struct StepDeadlineScope {
++  kj::Maybe<kj::TimePoint> saved = stepDeadline;
++  explicit StepDeadlineScope(bool budgeted) {
++    stepDeadline = kj::none;
++    if (budgeted && stepBudget() > 0 * kj::MILLISECONDS) {
++      stepDeadline = kj::systemPreciseMonotonicClock().now() + stepBudget();
++    }
++  }
++  ~StepDeadlineScope() {
++    stepDeadline = saved;
++  }
++  KJ_DISALLOW_COPY_AND_MOVE(StepDeadlineScope);
++};
++
+ void disposeSqlite(sqlite3_stmt* stmt) {
+   sqlite3_finalize(stmt);
+ 
+@@ -937,6 +966,7 @@ SqliteDatabase::StatementAndEffect SqliteDatabase::prepareSql(StaticRegulator re
+           }
+ 
+           // This isn't the last statement in the code. Execute it immediately.
++          StepDeadlineScope stepDeadlineScope(regulator->shouldAddQueryStats());
+           SQLITE_CALL_SCOPE {
+             auto start = sqliteObserver.now();
+             auto dbWalSizeBefore = sqliteObserver.getDbWalSize();
+@@ -1470,7 +1500,15 @@ void SqliteDatabase::setupSecurity(sqlite3* db) {
+       this));
+ 
+   // 4. Set a progress handler or use interrupt() to limit CPU time.
+-  // This happens inside LimitEnforcer.
++  // This happens inside LimitEnforcer. Standalone workerd: see stepBudget().
++  if (stepBudget() > 0 * kj::MILLISECONDS) {
++    sqlite3_progress_handler(db, 1000, [](void*) -> int {
++      KJ_IF_SOME(deadline, stepDeadline) {
++        return kj::systemPreciseMonotonicClock().now() >= deadline;
++      }
++      return 0;
++    }, nullptr);
++  }
+ 
+   // 5. Limit heap size.
+   // Set a 128MB "soft" limit so that SQLite will purge the page cache when per-process memory
+@@ -1725,6 +1763,7 @@ void SqliteDatabase::Query::nextRow(bool first) {
+   db.currentRegulator = regulator;
+ 
+   auto memoryScope = db.enterMemoryScope();
++  StepDeadlineScope stepDeadlineScope(regulator->shouldAddQueryStats());
+   SQLITE_CALL_SCOPE {
+     int err = sqlite3_step(statement);
+     queryEvent.setQueryResult(err);

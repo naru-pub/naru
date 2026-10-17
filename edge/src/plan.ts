@@ -1,9 +1,10 @@
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
 
 // A site SQL statement's plan, costed before it runs (sql.ts, site.ts). The
-// mini's runtime has no CPU limit and a statement cannot be stopped once it
-// runs, so a statement whose work could grow faster than the tables it reads
-// is refused from its EXPLAIN QUERY PLAN.
+// mini's runtime has no CPU limit, and stops a statement only once one of
+// its steps has run for 3 seconds (seoul/workerd/), holding up every site on
+// the mini meanwhile, so a statement whose work could grow faster than the
+// tables it reads is refused from its EXPLAIN QUERY PLAN, with why.
 //
 // The rule: a statement's cost grows at most linearly with table sizes. Each
 // step of the plan has a degree, the power of a table's size its rows grow
@@ -35,8 +36,9 @@ import { DataError } from "../../control-plane/src/lib/site-data/validation";
 //
 // The known gap: an `=` on an index that is not unique counts as degree 0,
 // though one value may match many rows (posts p1 JOIN posts p2 ON p2.board =
-// p1.board is near quadratic when one board holds most posts). A call's
-// MAX_ROWS_READ (sql.ts) is then the backstop, counted after each statement.
+// p1.board is near quadratic when one board holds most posts). The step
+// budget is then the backstop, and a call's MAX_ROWS_READ (sql.ts), counted
+// after each statement.
 
 /** A step of EXPLAIN QUERY PLAN. */
 export type PlanStep = { id: number; parent: number; detail: string };

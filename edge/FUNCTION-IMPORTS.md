@@ -102,10 +102,24 @@ cost theirs once, and reading a materialized result costs what made it; a
 counts once per outer row. A path over 1 is refused, naming the loop that
 multiplies; a step of any other shape is refused naming the step. Known gap:
 `=` on a non-unique index counts as 0, so a self-join on a shared value can be
-near quadratic on skewed data; `MAX_ROWS_READ` is the backstop, counted from
-the cursor's `rowsRead` after each statement finishes, so it fails the call
-but never stops a statement part way. Estimating fan-out from
-`sqlite_stat1` (`ANALYZE`) would close the gap; it is not done.
+near quadratic on skewed data; two backstops remain. `MAX_ROWS_READ`,
+counted from the cursor's `rowsRead` after each statement finishes, fails the
+call after the statement. And on the mini, Naru's workerd (`seoul/workerd/`)
+stops any one `sqlite3_step` past `WORKERD_SQLITE_STATEMENT_TIMEOUT_MS`
+(3000): a read throws `SQLITE_INTERRUPT` where it ran, which `sqlFailure`
+makes 400 `INVALID_REQUEST` ("This statement ran longer than 3 seconds and was
+stopped; give it an index or read less."); a write rolls back and resets the
+object, so its caller's stub throws, and `interruptedCall` (`src/sql.ts`)
+words it there: the same 400 for `call` and a visitor's call
+(`src/website.ts`), 422 `migration_failed` for `activateFunctions` and
+`putFunctions` (without the migration's name, which the reset object cannot
+tell), 503 `UNAVAILABLE` for any other operation (Naru's own statements, kept
+paged or linear in the site's 100 MiB). Schema statements in migrations
+(`CREATE TABLE ... AS SELECT`, `CREATE INDEX`) are held only to the budget.
+The plan rule stays the early refusal, with the reason; the budget is what
+keeps one statement from holding up every site on the mini's one workerd
+thread. Estimating fan-out from `sqlite_stat1` (`ANALYZE`) would close the
+gap; it is not done.
 `src/plan.test.ts` measures `src/plan.corpus.ts` in workerd at N and 4N rows
 (how to add a statement is at the top of the corpus); the user-facing limits
 and patterns are in `docs/sdk-v1-api.md`, **SQL limits**. A refusal is a 422 with `details.reason`

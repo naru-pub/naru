@@ -4,7 +4,10 @@ import { fieldIndex, SCHEMA, USAGE_SCHEMA } from "./query";
 import {
   checkPlan,
   classify,
+  interruptedCall,
   reserved,
+  sqlFailure,
+  statementBudget,
   statements,
   type Kind,
   type PlanStep,
@@ -314,5 +317,64 @@ describe("site SQL", () => {
         },
       ]),
     ).toThrow(/two things named s/);
+  });
+});
+
+describe("a statement the runtime stopped at its step budget", () => {
+  // As Naru's workerd throws it (seoul/workerd/): in the object for a read,
+  // from the caller's stub for a write, which reset the object.
+  const stopped = new Error("interrupted: SQLITE_INTERRUPT");
+  const env = { SQLITE_STATEMENT_TIMEOUT_MS: "3000" };
+
+  test("is the site's statement running too long, by the budget when known", () => {
+    expect(statementBudget(env)).toBe(3000);
+    expect(statementBudget({})).toBeUndefined();
+    expect(
+      statementBudget({ SQLITE_STATEMENT_TIMEOUT_MS: "0" }),
+    ).toBeUndefined();
+    expect(sqlFailure(stopped, 3000)).toMatchObject({
+      status: 400,
+      code: "INVALID_REQUEST",
+      message:
+        "This statement ran longer than 3 seconds and was stopped; give it an index or read less.",
+    });
+    expect(sqlFailure(stopped).message).toBe(
+      "This statement ran too long and was stopped; give it an index or read less.",
+    );
+    expect(sqlFailure(stopped, 1000).message).toMatch(/longer than 1 second /);
+    // SQLite's other refusals are as before.
+    expect(
+      sqlFailure(new Error("no such table: nowhere: SQLITE_ERROR")),
+    ).toMatchObject({
+      status: 400,
+      message: "SQL failed: no such table: nowhere",
+    });
+  });
+
+  test("is told by its caller after the object reset", () => {
+    expect(interruptedCall(stopped, env, "site")).toMatchObject({
+      status: 400,
+      code: "INVALID_REQUEST",
+      message: expect.stringMatching(
+        /^This statement ran longer than 3 seconds/,
+      ),
+    });
+    // A release's migrations: refused for good, as a failed migration is.
+    expect(interruptedCall(stopped, env, "migrations")).toMatchObject({
+      status: 422,
+      code: "INVALID_REQUEST",
+      message: expect.stringMatching(
+        /^A migration ran longer than 3 seconds and was stopped, so the release changed nothing/,
+      ),
+      details: { reason: "migration_failed" },
+    });
+    // One of Naru's own statements is the database being unavailable.
+    expect(interruptedCall(stopped, env, "naru")).toMatchObject({
+      status: 503,
+      code: "UNAVAILABLE",
+    });
+    expect(
+      interruptedCall(new Error("Network connection lost."), env, "site"),
+    ).toBeUndefined();
   });
 });
