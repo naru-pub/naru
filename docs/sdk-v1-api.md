@@ -420,8 +420,12 @@ TypeScript before uploading; bundling is unnecessary.
 of letters, digits, `_`, `.` and `-`), create and change the site's tables.
 They are applied in the byte order of their names when a release of the
 site's code activates, each once. A migration may create, alter and drop
-tables, indexes and views, and write rows; virtual (full-text) tables,
-temporary tables and triggers are not supported, and Naru's own names are
+tables, indexes and views, and write rows. Full-text tables are fts5
+virtual tables (`USING fts5(..., tokenize='trigram')` finds Korean of three
+characters or more), keeping their own content or indexing a table named by
+`content=`; contentless ones, other virtual tables, temporary tables and
+triggers are not supported. A full-text table is read by MATCH, LIKE or rowid
+beside other tables, and whole only first. Naru's own names are
 refused as in `ctx.sql`. What has run is history: a release that edits or
 removes an applied migration, or adds one whose name sorts before the last
 applied, is refused, so a fix is a new file. A migration that fails refuses

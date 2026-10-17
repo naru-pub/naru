@@ -720,3 +720,74 @@ integration("query limits", () => {
       });
   });
 });
+
+integration("full-text tables", () => {
+  test("a trigram table finds Korean text, and dumps carry it", async () => {
+    await put(
+      "migrations",
+      "0006_search",
+      "CREATE VIRTUAL TABLE search USING fts5(title, body, tokenize='trigram');",
+      false,
+    );
+    await put(
+      "mutations",
+      "search",
+      `export async function index(ctx, { id, title, body }) {
+         await ctx.sql\`INSERT INTO search (rowid, title, body) VALUES (\${id}, \${title}, \${body})\`;
+       }`,
+      false,
+    );
+    await put(
+      "queries",
+      "search",
+      `export async function find(ctx, { text }) {
+         return (await ctx.sql\`SELECT rowid AS id FROM search WHERE search MATCH \${'"' + text + '"'} ORDER BY rank\`).rows.map((row) => row.id);
+       }
+       export async function like(ctx, { text }) {
+         return (await ctx.sql\`SELECT rowid AS id FROM search WHERE body LIKE \${"%" + text + "%"}\`).rows.map((row) => row.id);
+       }`,
+    );
+    const call = (kind: string, name: string, args: unknown) =>
+      callSiteObject<{ result: unknown }>(site, "call", {
+        ownerId,
+        site,
+        member: "member-1",
+        kind,
+        file: "search",
+        name,
+        args,
+      }).then((answer) => answer.result);
+    await call("mutation", "index", {
+      id: 10,
+      title: "환영",
+      body: "아보카도 커뮤니티에 오신 것을 환영합니다",
+    });
+    await call("mutation", "index", {
+      id: 11,
+      title: "공지",
+      body: "커뮤니티 규칙을 읽어 주세요",
+    });
+    expect(await call("query", "find", { text: "커뮤니티" })).toEqual(
+      expect.arrayContaining([10, 11]),
+    );
+    expect(await call("query", "find", { text: "아보카도" })).toEqual([10]);
+    expect(await call("query", "like", { text: "규칙" })).toEqual([11]);
+    // Dumped by its rows, without its own storage tables; restored, it
+    // searches as before.
+    const dump = await callSiteObject<{
+      site: { schema: string[]; tables: Record<string, unknown[]> };
+    }>(site, "dump", {});
+    expect(dump.site.tables.search).toHaveLength(2);
+    expect(Object.keys(dump.site.tables)).not.toContain("search_data");
+    expect(dump.site.schema.filter((sql) => /search/.test(sql))).toEqual([
+      expect.stringMatching(/^CREATE VIRTUAL TABLE search USING fts5/),
+    ]);
+    const copy = "sqlsite-fts";
+    await callSiteObject(copy, "erase", {});
+    await callSiteObject(copy, "restore", dump);
+    expect(
+      (await callSiteObject<typeof dump>(copy, "dump", {})).site.tables.search,
+    ).toEqual(dump.site.tables.search);
+    await callSiteObject(copy, "erase", {});
+  });
+});

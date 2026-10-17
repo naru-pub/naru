@@ -77,6 +77,16 @@ describe("site SQL", () => {
       "schema",
     );
     expect(one("ALTER TABLE posts ADD COLUMN body TEXT")).toBe("schema");
+    expect(
+      one(
+        "CREATE VIRTUAL TABLE search USING fts5(title, body, tokenize='trigram')",
+      ),
+    ).toBe("schema");
+    expect(
+      one(
+        "CREATE VIRTUAL TABLE search USING fts5(body, content='posts', content_rowid='id')",
+      ),
+    ).toBe("schema");
     expect(one("DROP INDEX p")).toBe("schema");
     expect(() => one("UPDATE posts SET x = 1", ["read"])).toThrow(
       /read-only query cannot write/,
@@ -98,7 +108,15 @@ describe("site SQL", () => {
       ["INSERT OR ROLLBACK INTO posts VALUES (1)", /transactions/],
       ["BEGIN", /not a statement/],
       ["CREATE TEMP TABLE t (x)", /temporary/],
-      ["CREATE VIRTUAL TABLE t USING fts5(body)", /not supported yet/],
+      ["CREATE VIRTUAL TABLE t USING rtree(id, a, b)", /fts5\) tables only/],
+      [
+        "CREATE VIRTUAL TABLE t USING fts5(body, content='')",
+        /keeps its content/,
+      ],
+      [
+        "CREATE VIRTUAL TABLE t USING fts5(body, contentless_delete=1)",
+        /keeps its content/,
+      ],
       ["VACUUM", /VACUUM/],
     ] as const)
       expect(() =>
@@ -158,6 +176,19 @@ describe("site SQL", () => {
     // Comments have no index on post: SQLite would build one per statement
     // (an automatic index), which is one pass, so it is allowed.
     ok("SELECT * FROM posts JOIN comments ON comments.post = posts.id");
+    // A full-text table is searched, or read whole only on its own.
+    db.exec(
+      "CREATE VIRTUAL TABLE search USING fts5(title, body, tokenize='trigram')",
+    );
+    ok("SELECT rowid FROM search WHERE search MATCH '커뮤니티'");
+    ok("SELECT rowid FROM search WHERE body LIKE '%보카도%'");
+    ok(
+      "SELECT posts.* FROM search JOIN posts ON posts.id = search.rowid WHERE search MATCH 'abc'",
+    );
+    ok("SELECT rowid FROM search");
+    // SQLite reads the full-text table first, then finds posts by key.
+    ok("SELECT * FROM posts, search WHERE search.body = posts.board");
+    refused("SELECT * FROM posts, search", /read all of posts for every row/);
     // json_each reads one value of the row: as cheap as the value is long.
     db.exec("CREATE TABLE visits (day TEXT PRIMARY KEY, hours TEXT)");
     ok(

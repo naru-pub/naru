@@ -828,9 +828,16 @@ CREATE INDEX posts_author ON posts (author);`}</Code>
                 <li>
                   <code>CREATE</code>·<code>ALTER</code>·<code>DROP</code>{" "}
                   (TABLE·INDEX·VIEW)과 데이터를 옮기는 <code>INSERT</code>·
-                  <code>UPDATE</code>·<code>DELETE</code>를 쓸 수 있습니다.
-                  트리거, 임시 테이블, 전문 검색 같은 가상 테이블은 아직 쓸 수
-                  없습니다.
+                  <code>UPDATE</code>·<code>DELETE</code>를 쓸 수 있습니다. 전문
+                  검색 테이블은{" "}
+                  <code>
+                    CREATE VIRTUAL TABLE search USING fts5(title, body,
+                    tokenize=&apos;trigram&apos;)
+                  </code>
+                  로 만들고 <code>MATCH</code>나 <code>LIKE</code>로 찾습니다.
+                  trigram은 한국어도 세 글자 이상이면 찾습니다. 내용을 직접 갖지
+                  않는 전문 검색 테이블(<code>content=&apos;&apos;</code>), 다른
+                  가상 테이블, 트리거, 임시 테이블은 쓸 수 없습니다.
                 </li>
                 <li>
                   마이그레이션 하나라도 실패하면 그 릴리스 전체가 거절되고

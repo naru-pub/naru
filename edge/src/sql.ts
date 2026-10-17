@@ -276,12 +276,26 @@ export function classify(
   else if (verb === "CREATE") {
     const rest = tokens.slice(1).filter((token) => !is(token, "UNIQUE"));
     if (is(rest[0], "TABLE", "INDEX", "VIEW")) kind = "schema";
-    else if (is(rest[0], "VIRTUAL"))
-      // A dump cannot carry one's index yet (types.ts's Dump).
-      throw invalid(
-        "full-text and other virtual tables are not supported yet.",
-      );
-    else if (is(rest[0], "TEMP", "TEMPORARY"))
+    else if (is(rest[0], "VIRTUAL")) {
+      // Full-text tables only (fts5): SQLite's other modules read files or
+      // run code. One with no content of its own cannot be dumped, so a
+      // site could not be moved or restored with it.
+      const using = tokens.findIndex((token) => is(token, "USING"));
+      if (!is(tokens[using + 1], "FTS5"))
+        throw invalid("virtual tables are full-text (fts5) tables only.");
+      tokens.forEach((token, index) => {
+        if (
+          is(token, "CONTENT", "CONTENTLESS_DELETE", "CONTENTLESS_UNINDEXED") &&
+          tokens[index + 1]?.text === "=" &&
+          (is(token, "CONTENTLESS_DELETE", "CONTENTLESS_UNINDEXED") ||
+            tokens[index + 2]?.text === "")
+        )
+          throw invalid(
+            "a full-text table keeps its content, or names the table it indexes.",
+          );
+      });
+      kind = "schema";
+    } else if (is(rest[0], "TEMP", "TEMPORARY"))
       throw invalid("temporary tables are not supported.");
   } else if (verb === "ALTER" && is(tokens[1], "TABLE")) kind = "schema";
   else if (verb === "DROP" && is(tokens[1], "TABLE", "INDEX", "VIEW"))
@@ -317,10 +331,15 @@ export function checkPlan(plan: PlanStep[]) {
   const access = (step: PlanStep) => /^(SCAN|SEARCH) /.test(step.detail);
   // A virtual table here is json_each or json_tree (site SQL creates
   // none): it reads one JSON value, so its cost is that value's size.
+  // A virtual table read with no constraint ("INDEX 0:" and nothing more)
+  // is a full-text table read whole. Any other is bounded: a full-text table
+  // searched by MATCH, LIKE or rowid, or json_each/json_tree reading one
+  // JSON value of the row (site SQL makes no other virtual tables).
   const scans = (step: PlanStep) =>
     /^SCAN /.test(step.detail) &&
     step.detail !== "SCAN CONSTANT ROW" &&
-    !/^SCAN \S+ VIRTUAL TABLE\b/.test(step.detail);
+    (!/^SCAN \S+ VIRTUAL TABLE\b/.test(step.detail) ||
+      /VIRTUAL TABLE INDEX 0:$/.test(step.detail));
   const table = (step: PlanStep) => step.detail.split(" ")[1];
   const within = (id: number): PlanStep[] =>
     (children.get(id) ?? []).flatMap((child) => [child, ...within(child.id)]);

@@ -1563,15 +1563,31 @@ export class SiteData extends DurableObject<Env> {
    */
   private siteObjects() {
     const order: Record<string, number> = { table: 0, index: 1, view: 2 };
-    return this.rows(
+    const rows = this.rows(
       "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table', 'index', 'view') ORDER BY rowid",
-    )
-      .filter((row) => !reserved(String(row.name)))
+    ).filter((row) => !reserved(String(row.name)));
+    // A full-text table's own storage (<name>_data, _idx, _content,
+    // _docsize, _config) comes and goes with it: never the site's to list,
+    // dump or drop.
+    const virtual = new Set(
+      rows
+        .filter((row) => /^CREATE VIRTUAL TABLE/i.test(String(row.sql)))
+        .map((row) => String(row.name).toLowerCase()),
+    );
+    const shadow = (name: string) =>
+      [...virtual].some((table) =>
+        ["data", "idx", "content", "docsize", "config"].some(
+          (part) => name.toLowerCase() === `${table}_${part}`,
+        ),
+      );
+    return rows
+      .filter((row) => !shadow(String(row.name)))
       .sort((a, b) => order[String(a.type)] - order[String(b.type)])
       .map((row) => ({
         type: String(row.type),
         name: String(row.name),
         sql: String(row.sql),
+        virtual: virtual.has(String(row.name).toLowerCase()),
       }));
   }
 
@@ -2449,7 +2465,8 @@ export class SiteData extends DurableObject<Env> {
               .map((object) => [
                 object.name,
                 this.rows(
-                  `SELECT * FROM "${object.name.replaceAll('"', '""')}"`,
+                  // A full-text table's rowid is not one of its columns.
+                  `SELECT ${object.virtual ? "rowid, " : ""}* FROM "${object.name.replaceAll('"', '""')}"`,
                 ).map(dumpRow),
               ]),
           ),
@@ -2528,11 +2545,18 @@ export class SiteData extends DurableObject<Env> {
         classify(statement.tokens, ["schema"]);
       this.sql.exec(sql);
     }
+    const virtual = new Set(
+      this.siteObjects()
+        .filter((object) => object.virtual)
+        .map((object) => object.name),
+    );
     const insert = (table: string, given: DumpRow[]) => {
-      const columns = this.rows(
-        `SELECT name FROM pragma_table_info(?)`,
-        table,
-      ).map((column) => String(column.name));
+      const columns = [
+        ...(virtual.has(table) ? ["rowid"] : []),
+        ...this.rows(`SELECT name FROM pragma_table_info(?)`, table).map(
+          (column) => String(column.name),
+        ),
+      ];
       for (const row of given) {
         const present = columns.filter((column) => Object.hasOwn(row, column));
         const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
