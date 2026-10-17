@@ -84,6 +84,9 @@ const worker = spawn(
   [
     "dev",
     "--local",
+    // The Worker with site databases in it (edge/wrangler.jsonc, env.local).
+    "--env",
+    "local",
     "--ip",
     "127.0.0.1",
     "--port",

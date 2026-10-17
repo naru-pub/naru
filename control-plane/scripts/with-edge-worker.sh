@@ -24,7 +24,7 @@ secret=$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9)
 port=$((20000 + RANDOM % 20000))
 origin_port=$((port + 2))
 (cd "$worker_dir" && exec ./node_modules/.bin/wrangler dev --local \
-  --ip 127.0.0.1 --port "$port" --inspector-port $((port + 1)) \
+  --env local --ip 127.0.0.1 --port "$port" --inspector-port $((port + 1)) \
   --persist-to "$scratch/worker" --var "EDGE_WORKER_SECRET:$secret" \
   --var "PASSTHROUGH_ORIGIN:http://127.0.0.1:$origin_port" \
   --var "TEST_OPERATIONS:1" \

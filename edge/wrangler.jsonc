@@ -1,8 +1,12 @@
 // Naru at the edge. Hosted sites, <login>.naru.pub, are served from the site
-// bucket (see docs/deployment.md, "Hosted sites at the edge"). Site databases
-// are one Durable Object per site, named by the site; the Worker answers the
-// public data API's visitors and serves the control plane (docs/database.md).
-// It also serves the Data SDK's script, naru.pub/sdk/*.
+// bucket (see docs/deployment.md, "Hosted sites at the edge"), their routes
+// rendered on the mini, where site databases live (docs/database.md). It also
+// serves the Data SDK's script, naru.pub/sdk/*, and the control plane's
+// pageview log and custom domain table.
+//
+// Local runs (`wrangler dev --env local`: pnpm dev, the control plane's
+// with-edge-worker.sh and naru-dev) also hold site databases themselves, as
+// the mini does: see "env.local" at the end.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "naru-edge",
@@ -21,7 +25,6 @@
   "alias": { "acorn": "./node_modules/acorn/dist/acorn.mjs" },
   "durable_objects": {
     "bindings": [
-      { "name": "SITES", "class_name": "SiteData" },
       // One log of every edge-served pageview, drained by the control plane.
       { "name": "PAGEVIEWS", "class_name": "PageviewLog" },
       // What reaches the mini, where site databases live, and its health
@@ -29,10 +32,12 @@
       { "name": "STANDBY", "class_name": "Standby" },
     ],
   },
-  // The classes' namespaces. Both moved here, with their data, from the
-  // Worker's former name, naru-site-data.
+  // The classes' namespaces. SiteData and PageviewLog moved here, with their
+  // data, from the Worker's former name, naru-site-data. SiteData's objects,
+  // the read-only standby's copies of site databases, are deleted: site
+  // databases live only on the mini (wrangler.seoul.jsonc).
   "exports": {
-    "SiteData": { "type": "durable-object", "storage": "sqlite" },
+    "SiteData": { "type": "durable-object", "state": "deleted" },
     "PageviewLog": { "type": "durable-object", "storage": "sqlite" },
     "Standby": { "type": "durable-object", "storage": "sqlite" },
   },
@@ -50,9 +55,9 @@
   "kv_namespaces": [
     { "binding": "DOMAINS", "id": "11c38b8a51984f708edd9ebf619e3ab3" },
   ],
-  // The public data API. Every site's database is a Durable Object, so the
-  // Worker sees all of it; what it does not answer itself it sends on to the
-  // control plane, the zone's origin.
+  // The public data API on naru.pub, which older SDK files still call: sent
+  // on to the control plane, the zone's origin, which calls the mini
+  // (MOVED_SITES).
   "routes": [
     { "pattern": "naru.pub/api/data/v1/*", "zone_name": "naru.pub" },
     // The Data SDK, so sites that import it load while the control plane is
@@ -80,7 +85,8 @@
     // (src/pages.ts). The control plane purges a file's entry when it changes.
     "SITE_FILE_CACHE_SECONDS": "86400",
     // Sites whose databases are on the mini (sdk.naru.pub), comma-separated:
-    // their requests here go on to the control plane (src/website.ts).
+    // their requests here go on to the control plane (src/website.ts). All
+    // of them: there are none here.
     "MOVED_SITES": "*",
     // The mini's own name: probed by the health check, and where routes are
     // rendered (src/standby.ts).
@@ -91,4 +97,42 @@
   // changes nothing. Its secret, set with `wrangler secret put`:
   // DISCORD_WEBHOOK. Routes also need SDK_ORIGIN_SECRET.
   "triggers": { "crons": ["* * * * *"] },
+  // Local runs: this Worker with every site's database in it, as SiteData
+  // objects in wrangler dev's local storage, for tests and naru-dev.
+  // Bindings and vars are not inherited, so they are repeated here; keep
+  // them in step with the above. Never deployed.
+  "env": {
+    "local": {
+      // The same name, so local storage made before this env is found. Never
+      // deploy it (it would replace the Worker above): no routes, no cron.
+      "name": "naru-edge",
+      "routes": [],
+      "triggers": { "crons": [] },
+      // index.ts and SiteData, which the deployed Worker no longer exports.
+      "main": "src/local.ts",
+      "durable_objects": {
+        "bindings": [
+          { "name": "SITES", "class_name": "SiteData" },
+          { "name": "PAGEVIEWS", "class_name": "PageviewLog" },
+        ],
+      },
+      "exports": {
+        "SiteData": { "type": "durable-object", "storage": "sqlite" },
+        "PageviewLog": { "type": "durable-object", "storage": "sqlite" },
+        "Standby": { "type": "durable-object", "storage": "sqlite" },
+      },
+      "r2_buckets": [{ "binding": "SITE_FILES", "bucket_name": "naru-pub" }],
+      "kv_namespaces": [
+        { "binding": "DOMAINS", "id": "11c38b8a51984f708edd9ebf619e3ab3" },
+      ],
+      // No SDK_ORIGIN_HOST and no STANDBY: routes render here, from SITES.
+      "vars": {
+        "SITE_MONTHLY_REQUESTS": "5000000",
+        "PLATFORM_DOMAIN": "naru.pub",
+        "R2_PUBLIC_DOMAIN": "r2.naru.pub",
+        "SITE_FILE_CACHE_SECONDS": "86400",
+        "MOVED_SITES": "",
+      },
+    },
+  },
 }

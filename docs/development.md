@@ -76,7 +76,7 @@ pnpm install
 pnpm test
 ```
 
-Control Plane 테스트 가운데 Worker가 필요한 것은 `control-plane/scripts/with-edge-worker.sh`가 Worker를 `wrangler dev`로 띄운 채 실행합니다.
+Control Plane 테스트 가운데 Worker가 필요한 것은 `control-plane/scripts/with-edge-worker.sh`가 Worker를 `wrangler dev --env local`로 띄운 채 실행합니다. `local` 환경(`edge/wrangler.jsonc`의 `env.local`)은 배포되는 Worker와 달리 사이트 데이터베이스(`SiteData`)를 직접 가집니다. 배포되는 Worker에는 없고, 맥 미니의 workerd에만 있습니다.
 
 > 커스텀 도메인 운영 설정(Cloudflare for SaaS, Worker 라우트)은 [커스텀 도메인](custom-domains.md)을, 결제 흐름 설정은 [유료 서비스와 결제](billing.md)를 참고하세요.
 
@@ -155,5 +155,5 @@ pnpm charge-subscriptions # 구독 자동 갱신 청구 (cron이 매일 실행)
 ```bash
 pnpm test                 # 테스트
 pnpm typecheck            # 타입 검사
-pnpm dev                  # wrangler dev로 실행
+pnpm dev                  # wrangler dev --env local로 실행 (사이트 데이터베이스 포함)
 ```

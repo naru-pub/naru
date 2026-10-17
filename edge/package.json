@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --env local",
     "deploy": "wrangler deploy",
     "typecheck": "wrangler types && tsc --noEmit",
     "test": "vitest run",

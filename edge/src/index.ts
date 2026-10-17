@@ -21,7 +21,8 @@ import { DUMP_CONTENT_TYPE } from "../../control-plane/src/lib/site-data/dump-fo
 import { website, type WebsiteEnv } from "./website";
 
 export { PageviewLog } from "./pageview-log";
-export { SiteData } from "./site";
+// No SiteData here: site databases live on the mini (seoul.ts exports it
+// there), and local runs export it from local.ts.
 export { Standby } from "./standby";
 
 export interface Env
@@ -32,6 +33,10 @@ export interface Env
    */
   STANDBY?: DurableObjectNamespace<Standby>;
   PAGEVIEWS: DurableObjectNamespace<PageviewLog>;
+  /**
+   * Site databases: on the mini (seoul.ts) and in local runs (local.ts).
+   * Not bound on Cloudflare, where /v1/sites is not found.
+   */
   SITES: DurableObjectNamespace<SiteData>;
   /** Shared with the control plane, the only caller of /v1/sites. */
   EDGE_WORKER_SECRET: string;
@@ -336,7 +341,12 @@ export default {
       env.TEST_OPERATIONS === "1"
         ? [...OPERATIONS, ...TEST_OPERATIONS]
         : OPERATIONS;
-    if (!site || !SITE.test(site) || !operations.includes(operation!))
+    if (
+      !env.SITES ||
+      !site ||
+      !SITE.test(site) ||
+      !operations.includes(operation!)
+    )
       return failure(404, "Not found.");
     if (request.method !== "POST") return failure(405, "Method not allowed.");
     let input: unknown;

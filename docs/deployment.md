@@ -69,7 +69,10 @@ Site databases themselves run on the mini, not here: the same Worker under
 workerd, released with `mise run deploy naru-sdk` from infra once CI's
 `build-sdk-seoul` job has built it (`edge/seoul/README.md`), and reached by
 the control plane at `SITE_DATA_URL` with `SITE_DATA_SECRET`. `sdk.naru.pub`
-is DNS-only, straight to the mini, and never reaches this Worker. The Worker
+is DNS-only, straight to the mini, and never reaches this Worker, which
+binds no `SiteData` (its class is declared deleted in `wrangler.jsonc`, which
+deleted the standby's copies); `wrangler dev --env local` adds it back for
+tests and naru-dev. The Worker
 renders sites' routes there, at `origin.sdk.naru.pub` (secret
 `SDK_ORIGIN_SECRET`, the mini's `EDGE_WORKER_SECRET`), and its cron probes
 the mini each minute and posts to `DISCORD_WEBHOOK` (secret) when it is down
