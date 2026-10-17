@@ -57,7 +57,7 @@ Create a collection in the control plane, choose its permissions, then use this 
 
 ```html
 <script type="module">
-  import { createNaru, NaruError } from "https://naru.pub/sdk/1/naru.js";
+  import { createNaru, NaruError } from "https://sdk.naru.pub/sdk/1/naru.js";
   const naru = createNaru();
   const entries = naru.collection("guestbook");
 
@@ -82,7 +82,7 @@ A page served from `<login>.naru.pub` belongs to that site, so `createNaru()` ne
 
 `get` returns `{ id, data, revision, createdAt, updatedAt }`; a missing document throws `NaruError` with `code: "NOT_FOUND"`. `set` replaces the whole document or creates it if absent. `add` generates an opaque ID without requiring read permission. `add` and `set` return `{ id, data, revision, createdAt, updatedAt }`, so a caller rendering what it just saved uses the server's own timestamps rather than the browser clock. `delete` is idempotent and resolves with nothing. JSON null is stored as a value, not treated as deletion. Render user data with `textContent`, not `innerHTML`.
 
-SDK declarations are available alongside the module at `/sdk/1/naru.d.ts`. The SDK pins `https://naru.pub` as its control-plane origin, even when bundled/copied. It takes no option to change that; Naru's own integration tests redirect its requests to a loopback server in their `fetch` shim instead.
+SDK declarations are available alongside the module at `https://sdk.naru.pub/sdk/1/naru.d.ts`. The SDK pins `https://naru.pub` as its control-plane origin, even when bundled/copied. It takes no option to change that; Naru's own integration tests redirect its requests to a loopback server in their `fetch` shim instead.
 
 ## Website owner login
 
@@ -100,7 +100,7 @@ Minimal editor-page wiring:
 <button id="logout" disabled>Sign out</button>
 <p id="status"></p>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1/naru.js";
   const naru = createNaru();
   const status = document.querySelector("#status");
   async function run(action) {
@@ -190,13 +190,13 @@ Each site's SQLite keeps three things from the first 1.1.0 design, which had col
 
 ## SDK releases
 
-Two URLs serve the SDK, and a site picks one:
+The SDK is served from `https://sdk.naru.pub`, at these paths, and a site picks one:
 
 - `/sdk/1/naru.js` (and `/sdk/1/naru.d.ts`) is the newest 1.x release. A site that imports it picks up compatible fixes and additions without changing anything. This is what the docs and the example blog use.
 - `/sdk/1.0.0/naru.js` is one exact release, for a site that wants the same code on every load. It was frozen on 2026-10-12 and never changes (see [sdk-1.0.0-release.md](sdk-1.0.0-release.md)).
 - `/sdk/1.1.0/naru.js` adds members, the site's own code and live queries. **1.1.0 remains under active development and will continue to be updated until the project owner says otherwise**; once frozen it never changes, and fixes ship as 1.1.1 and so on.
 
-Each version is written in TypeScript at `control-plane/sdk/<version>/naru.ts`; `pnpm sdk:build` emits the served `naru.js` and `naru.d.ts` beside each other under `public/sdk/<version>/`, and those emitted files are committed (1.1.0 also serves `functions.d.ts`, the types of queries', mutations' and routes' `ctx`, written by hand there; `tests/naru-functions-1.1.0.types.ts` checks it), so a deploy serves exactly what was reviewed. `pnpm build` refuses to proceed while they are stale. Both are served `no-cache`, so browsers revalidate. `/sdk/1/` is an alias in `control-plane/sdk/aliases.json`; point it at the newest 1.x directory when one ships. In production the edge Worker serves `naru.pub/sdk/*` (`edge/src/sdk.ts`), with the committed files deployed as its static assets, so a site that imports the SDK keeps loading while the control plane is down; the control plane serves the same files and aliases for local development. Unversioned SDK URLs are not served. A change that would break a 1.x caller goes into `/sdk/2/`.
+Each version is written in TypeScript at `control-plane/sdk/<version>/naru.ts`; `pnpm sdk:build` emits the served `naru.js` and `naru.d.ts` beside each other under `public/sdk/<version>/`, and those emitted files are committed (1.1.0 also serves `functions.d.ts`, the types of queries', mutations' and routes' `ctx`, written by hand there; `tests/naru-functions-1.1.0.types.ts` checks it), so a deploy serves exactly what was reviewed. `pnpm build` refuses to proceed while they are stale. `/sdk/1/` is an alias in `control-plane/sdk/aliases.json`; point it at the newest 1.x directory when one ships, and release naru-sdk. Only `sdk.naru.pub/sdk/*` serves them: workerd on the mini (`edge/src/sdk.ts`, the committed files bundled into `edge/seoul/`), with `Cache-Control: public, max-age=300, stale-while-revalidate=86400`, so a browser keeps a file a day and picks up a fix within minutes. The control plane serves none of it, in production or development: `naru.pub/sdk/*` is a plain 404 (`control-plane/src/proxy.ts`). Unversioned SDK URLs are not served. A change that would break a 1.x caller goes into `/sdk/2/`.
 
 The wire protocol is versioned separately, in the path: `/api/data/v1/:site` and `/api/data-auth/v1/*`. Every 1.x SDK file that was ever served keeps calling these, including copies cached or bundled by sites, so they stay compatible for as long as 1.x is supported: routes, parameters, response shapes and error codes. Breaking server changes need `/api/data/v2/` alongside v1.
 
@@ -410,9 +410,10 @@ cache: a visitor's read is a local query.
   `CF-Connecting-IP` and `X-Forwarded-For` for the rate limits. The Worker
   answers visitors itself and sends requests with a sign-in to the control
   plane on the same host (`PASSTHROUGH_ORIGIN`).
-- `naru.pub/sdk/<version>/naru.js` stays on Cloudflare: browsers keep it for
-  a day, checking after five minutes, and it sends data requests to
-  `sdk.naru.pub`; sign-in and saved sessions stay on naru.pub.
+- `sdk.naru.pub/sdk/<version>/naru.js` is the SDK, from the same workerd:
+  browsers keep it for a day, checking after five minutes. 1.1.0 sends data
+  requests to `sdk.naru.pub`; sign-in and saved sessions stay on naru.pub.
+  `naru.pub/sdk/` serves nothing (404).
 - The control plane calls site objects at `SITE_DATA_URL`
   (`http://host.docker.internal:40100` from its containers) with
   `SITE_DATA_SECRET`, which also signs members' live tickets. Pageviews and
@@ -435,7 +436,8 @@ The mini holds the only copy of each site's database; there is no standby
 (nightly backups, below, are what recovers it). While it is away:
 
 - Hosted sites' static files are still served from R2 by the edge Worker on
-  Cloudflare, and `naru.pub/sdk/` still serves the SDK.
+  Cloudflare. The SDK itself is on the mini: a browser that loaded it within
+  the last day uses its cached copy; others cannot import it.
 - Data calls fail: `sdk.naru.pub` does not answer, nor does the control
   plane on the same host, and the SDK rejects each call with `UNAVAILABLE`
   as it does any other failure. Nothing serves site data meanwhile.

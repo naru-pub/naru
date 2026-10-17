@@ -56,8 +56,8 @@ retain the work and quota rather than losing track of an undeleted object.
 
 The migration is additive. Apply it before rolling out the web application and
 background jobs. Do not enable deletion controls until all processes run the new
-version: old processes do not recognize tombstones or the new grant. Then deploy
-the edge Worker with the new committed SDK assets. No payment records or unfinished
+version: old processes do not recognize tombstones or the new grant. Then release
+naru-sdk, which serves the new committed SDK files at `sdk.naru.pub`. No payment records or unfinished
 durable work are removed by the migration.
 
 Application integration is separate: save IDs on new uploads, replace/remove the

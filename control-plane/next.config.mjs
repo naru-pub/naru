@@ -1,20 +1,8 @@
 import { withSentryConfig } from "@sentry/nextjs";
-import sdkAliases from "./sdk/aliases.json" with { type: "json" };
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // The Dockerfile's web image runs .next/standalone/server.js.
   output: "standalone",
-  // /sdk/1/ remains on the stable 1.0.0 release. Newer releases require an
-  // explicit version; /sdk/<exact version>/ never changes once released. In
-  // production the edge Worker answers naru.pub/sdk/* (edge/src/sdk.ts) with
-  // the same files and aliases; these serve local development and the smoke
-  // test.
-  async rewrites() {
-    return Object.entries(sdkAliases).map(([alias, version]) => ({
-      source: `/sdk/${alias}/:path*`,
-      destination: `/sdk/${version}/:path*`,
-    }));
-  },
   // The GitHub deploys page was /deploys; old links and bookmarks follow it.
   async redirects() {
     return [{ source: "/deploys", destination: "/github", permanent: true }];
@@ -30,20 +18,6 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
         ],
-      },
-      {
-        source: "/sdk/:path*",
-        headers: [
-          { key: "Access-Control-Allow-Origin", value: "*" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Cache-Control", value: "no-cache" },
-        ],
-      },
-      // Next types files by extension, and to it .ts is an MPEG transport
-      // stream; declarations are text an editor or a person reads.
-      {
-        source: "/sdk/:version/:file*.d.ts",
-        headers: [{ key: "Content-Type", value: "text/plain; charset=utf-8" }],
       },
       {
         source: "/database/authorize",

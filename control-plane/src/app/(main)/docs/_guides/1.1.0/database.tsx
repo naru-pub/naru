@@ -127,7 +127,7 @@ export default function DatabaseDocs() {
 }`}</Code>
               <Code language="html">{`<ul id="posts"></ul>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.1.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.1.0/naru.js";
 
   const naru = createNaru();
   const { documents } = await naru.collection("posts").list();
@@ -145,7 +145,7 @@ export default function DatabaseDocs() {
               <Code language="html">{`<button id="hello">인사 남기기</button>
 <p id="result"></p>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.1.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.1.0/naru.js";
   const naru = createNaru();
   const button = document.querySelector("#hello");
   const result = document.querySelector("#result");
@@ -518,7 +518,7 @@ export default function DatabaseDocs() {
               <Code language="html">{`<button id="login">관리자 로그인</button>
 <p id="auth-status"></p>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.1.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.1.0/naru.js";
   const naru = createNaru();
   const admin = await naru.auth.session();
   const login = document.querySelector("#login");
@@ -701,7 +701,7 @@ input.oninput = async () => {
               </p>
               <Code language="html">{`<button id="join">회원 로그인</button>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.1.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.1.0/naru.js";
   const naru = createNaru();
   const member = await naru.members.session();
   document.querySelector("#join").hidden = !!member;
@@ -1124,7 +1124,7 @@ export async function add(ctx, { post, text }) {
               </p>
               <p>
                 <code>ctx</code>의 타입은{" "}
-                <a href="/sdk/1.1.0/functions.d.ts">functions.d.ts</a>에 모두
+                <a href="https://sdk.naru.pub/sdk/1.1.0/functions.d.ts">functions.d.ts</a>에 모두
                 적혀 있습니다. 내려받아 <code>_naru/types/</code>에 두고
                 JSDoc으로 쓰면 편집기가 <code>ctx</code>를 알아봅니다. 로컬 개발
                 서버 naru-dev로 사이트를 돌리면 마이그레이션이 만든 테이블마다

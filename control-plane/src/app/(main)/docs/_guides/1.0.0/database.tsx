@@ -121,7 +121,7 @@ export default function DatabaseDocs() {
 }`}</Code>
               <Code language="html">{`<ul id="posts"></ul>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.0.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.0.0/naru.js";
 
   const naru = createNaru();
   const { documents } = await naru.collection("posts").list();
@@ -139,7 +139,7 @@ export default function DatabaseDocs() {
               <Code language="html">{`<button id="hello">인사 남기기</button>
 <p id="result"></p>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.0.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.0.0/naru.js";
   const naru = createNaru();
   const button = document.querySelector("#hello");
   const result = document.querySelector("#result");
@@ -220,7 +220,7 @@ export default function DatabaseDocs() {
               <Code language="html">{`<button id="login">관리자 로그인</button>
 <p id="auth-status"></p>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1.0.0/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1.0.0/naru.js";
   const naru = createNaru();
   const admin = await naru.auth.session();
   const login = document.querySelector("#login");

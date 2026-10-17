@@ -61,7 +61,7 @@ COPY components.json \
 COPY public/ public/
 
 # The SDK source and the check, run first by the build, that public/sdk/ is
-# what it emits. The served files are the committed ones, never rebuilt here.
+# what it emits. sdk.naru.pub serves the committed ones, never rebuilt here.
 COPY sdk/ sdk/
 COPY scripts/build-sdk.mjs scripts/
 
@@ -133,6 +133,8 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static .next/static/
 COPY --from=builder --chown=node:node /app/public public/
+# Not the Data SDK, which only sdk.naru.pub serves (src/proxy.ts answers 404).
+RUN rm -rf public/sdk
 
 # Next writes its image optimization cache under .next/cache.
 USER node

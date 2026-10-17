@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import MembershipManager from "./MembershipManager";
 import RestorePoints from "./RestorePoints";
 import DeclaredCollections from "./DeclaredCollections";
 import { MAX_DOCUMENTS, MAX_SITE_BYTES } from "@/lib/site-data/validation";
+import { SDK_URL } from "@/lib/const";
 
 type Collection = {
   name: string;
@@ -68,11 +69,6 @@ async function api(path = "", method = "GET", body?: unknown) {
 function failureMessage(e: unknown) {
   return e instanceof Error ? e.message : "요청에 실패했습니다.";
 }
-// The page's origin never changes, so there is nothing to subscribe to; the
-// server renders it empty and the client fills it in during hydration.
-const subscribeToOrigin = () => () => {};
-const browserOrigin = () => window.location.origin;
-const serverOrigin = () => "";
 export default function DatabaseManager({
   site,
   websiteUrl,
@@ -98,11 +94,6 @@ export default function DatabaseManager({
   const [json, setJson] = useState('{\n  "message": "안녕하세요!"\n}');
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
-  const origin = useSyncExternalStore(
-    subscribeToOrigin,
-    browserOrigin,
-    serverOrigin,
-  );
   const confirm = useConfirm();
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -170,7 +161,7 @@ export default function DatabaseManager({
       .finally(() => setBusy(false));
   }, []);
   // A page on the site's own subdomain needs no site option; custom domains do.
-  const snippet = `import { createNaru } from "${origin}/sdk/1/naru.js";\nconst naru = createNaru({ site: ${JSON.stringify(site)} });\nconst entries = naru.collection(${JSON.stringify(selected || "guestbook")});\nconst page = await entries.list();`;
+  const snippet = `import { createNaru } from "${SDK_URL}/1/naru.js";\nconst naru = createNaru({ site: ${JSON.stringify(site)} });\nconst entries = naru.collection(${JSON.stringify(selected || "guestbook")});\nconst page = await entries.list();`;
   return (
     <div className="mx-auto w-full max-w-7xl p-4 space-y-6 sm:p-6 lg:p-8">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">

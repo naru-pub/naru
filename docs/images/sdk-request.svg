@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="544" viewBox="0 0 1080 544" role="img" aria-labelledby="title desc">
   <title id="title">Data SDK 요청이 지나는 길</title>
-  <desc id="desc">SDK 파일은 엣지 Worker에서 받고, 방문자의 읽기는 맥 미니의 workerd가 사이트 SQLite에서 바로 답합니다. 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다.</desc>
+  <desc id="desc">SDK 파일도 데이터도 sdk.naru.pub, 맥 미니의 workerd에서 받습니다. 방문자의 읽기는 사이트 SQLite에서 바로 답하고, 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다.</desc>
 
   <style>
     svg { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
@@ -57,38 +57,34 @@
   <line x1="110" y1="70" x2="110" y2="529" class="life"/>
   <rect x="25.0" y="20" width="170" height="50" rx="8" class="box-user"/>
   <text x="110.0" y="50.0" class="user-title" text-anchor="middle">브라우저</text>
-  <line x1="370" y1="70" x2="370" y2="529" class="life"/>
-  <rect x="285.0" y="20" width="170" height="50" rx="8" class="box"/>
-  <text x="370.0" y="42.0" class="title" text-anchor="middle">엣지 Worker</text>
-  <text x="370.0" y="59.0" class="sub" text-anchor="middle">Cloudflare</text>
-  <line x1="580" y1="70" x2="580" y2="529" class="life"/>
-  <rect x="495.0" y="20" width="170" height="50" rx="8" class="box"/>
-  <text x="580.0" y="42.0" class="title" text-anchor="middle">Caddy + workerd</text>
-  <text x="580.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
-  <line x1="790" y1="70" x2="790" y2="529" class="life"/>
-  <rect x="705.0" y="20" width="170" height="50" rx="8" class="box"/>
-  <text x="790.0" y="42.0" class="title" text-anchor="middle">Control plane</text>
-  <text x="790.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
-  <line x1="975" y1="70" x2="975" y2="529" class="life"/>
-  <rect x="890.0" y="20" width="170" height="50" rx="8" class="box"/>
-  <text x="975.0" y="42.0" class="title" text-anchor="middle">PostgreSQL</text>
-  <text x="975.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
-  <path d="M110,110 L364,110" class="line" marker-end="url(#a)"/>
-  <text x="240.0" y="102" class="msg" text-anchor="middle">GET naru.pub/sdk/1.1.0/naru.js</text>
-  <path d="M370,158 L116,158" class="line dash" marker-end="url(#a)"/>
-  <text x="240.0" y="150" class="msg" text-anchor="middle">SDK 파일 (5분 캐시, 하루 동안 백그라운드 갱신)</text>
-  <path d="M110,206 L574,206" class="line" marker-end="url(#a)"/>
-  <text x="345.0" y="198" class="msg" text-anchor="middle">GET sdk.naru.pub/api/data/v1/{site}/{collection}</text>
-  <path d="M580,254 L116,254" class="line dash" marker-end="url(#a)"/>
-  <text x="345.0" y="246" class="msg" text-anchor="middle">사이트 SQLite에서 바로 응답 (수십 ms)</text>
-  <path d="M110,302 L574,302" class="line" marker-end="url(#a)"/>
-  <text x="345.0" y="294" class="msg" text-anchor="middle">로그인 토큰과 함께 요청</text>
-  <path d="M580,350 L784,350" class="line" marker-end="url(#a)"/>
-  <text x="685.0" y="342" class="msg" text-anchor="middle">토큰이 있는 요청은 control plane으로</text>
-  <path d="M790,398 L969,398" class="line" marker-end="url(#a)"/>
-  <text x="882.5" y="390" class="msg" text-anchor="middle">사이트, 결제 상태, 회원 확인</text>
-  <path d="M790,446 L586,446" class="line" marker-end="url(#a)"/>
-  <text x="685.0" y="438" class="msg" text-anchor="middle">확인된 작업을 사이트 객체에 실행</text>
-  <path d="M580,494 L116,494" class="line dash" marker-end="url(#a)"/>
-  <text x="345.0" y="486" class="msg" text-anchor="middle">결과</text>
+  <line x1="450" y1="70" x2="450" y2="529" class="life"/>
+  <rect x="365.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="450.0" y="42.0" class="title" text-anchor="middle">Caddy + workerd</text>
+  <text x="450.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
+  <line x1="700" y1="70" x2="700" y2="529" class="life"/>
+  <rect x="615.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="700.0" y="42.0" class="title" text-anchor="middle">Control plane</text>
+  <text x="700.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
+  <line x1="935" y1="70" x2="935" y2="529" class="life"/>
+  <rect x="850.0" y="20" width="170" height="50" rx="8" class="box"/>
+  <text x="935.0" y="42.0" class="title" text-anchor="middle">PostgreSQL</text>
+  <text x="935.0" y="59.0" class="sub" text-anchor="middle">맥 미니</text>
+  <path d="M110,110 L444,110" class="line" marker-end="url(#a)"/>
+  <text x="280.0" y="102" class="msg" text-anchor="middle">GET sdk.naru.pub/sdk/1.1.0/naru.js</text>
+  <path d="M450,158 L116,158" class="line dash" marker-end="url(#a)"/>
+  <text x="280.0" y="150" class="msg" text-anchor="middle">SDK 파일 (5분 캐시, 하루 동안 백그라운드 갱신)</text>
+  <path d="M110,206 L444,206" class="line" marker-end="url(#a)"/>
+  <text x="280.0" y="198" class="msg" text-anchor="middle">GET sdk.naru.pub/api/data/v1/{site}/{collection}</text>
+  <path d="M450,254 L116,254" class="line dash" marker-end="url(#a)"/>
+  <text x="280.0" y="246" class="msg" text-anchor="middle">사이트 SQLite에서 바로 응답 (수십 ms)</text>
+  <path d="M110,302 L444,302" class="line" marker-end="url(#a)"/>
+  <text x="280.0" y="294" class="msg" text-anchor="middle">로그인 토큰과 함께 요청</text>
+  <path d="M450,350 L694,350" class="line" marker-end="url(#a)"/>
+  <text x="575.0" y="342" class="msg" text-anchor="middle">토큰이 있는 요청은 control plane으로</text>
+  <path d="M700,398 L929,398" class="line" marker-end="url(#a)"/>
+  <text x="817.5" y="390" class="msg" text-anchor="middle">사이트, 결제 상태, 회원 확인</text>
+  <path d="M700,446 L456,446" class="line" marker-end="url(#a)"/>
+  <text x="575.0" y="438" class="msg" text-anchor="middle">확인된 작업을 사이트 객체에 실행</text>
+  <path d="M450,494 L116,494" class="line dash" marker-end="url(#a)"/>
+  <text x="280.0" y="486" class="msg" text-anchor="middle">결과</text>
 </svg>

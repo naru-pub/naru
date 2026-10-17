@@ -123,7 +123,7 @@ parts = [
     box(130, 20, C[2] + W - 130, 50, "한국의 브라우저", "방문자, 회원, 사이트 주인", "box-user"),
     box(C[3], 20, W, 50, "Toss, GitHub", "결제 웹훅, 사이트 배포", "box-ext"),
     # Cloudflare.
-    box(C[1], CF[0], W, H, "엣지 Worker", "<site>.naru.pub · /sdk"),
+    box(C[1], CF[0], W, H, "엣지 Worker", "<site>.naru.pub"),
     box(C[2], CF[0], W, H, "R2", "사이트 파일, 미디어, 코드"),
     box(C[3], CF[0], W, H, "Cloudflare Tunnel", "naru.pub"),
     box(C[1], CF[1], W, H, "Durable Objects", "페이지뷰 기록"),
@@ -175,9 +175,9 @@ parts = [
         840,
         "\n  ".join(parts),
         "나루의 구조",
-        "한국의 브라우저는 사이트 페이지와 SDK 파일을 Cloudflare의 엣지 Worker에서, "
+        "한국의 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서, "
         "관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, "
-        "Data SDK는 Cloudflare를 거치지 않고 맥 미니의 Caddy와 workerd에 바로 연결합니다. "
+        "Data SDK(파일과 데이터)는 Cloudflare를 거치지 않고 맥 미니의 Caddy와 workerd에 바로 연결합니다. "
         "사이트 데이터베이스는 맥 미니에만 있고, Backblaze B2에 백업됩니다.",
     )
 )
@@ -186,23 +186,22 @@ parts = [
 # A Data SDK request.
 COLS = [
     ("브라우저", None),
-    ("엣지 Worker", "Cloudflare"),
     ("Caddy + workerd", "맥 미니"),
     ("Control plane", "맥 미니"),
     ("PostgreSQL", "맥 미니"),
 ]
-X = [110, 370, 580, 790, 975]
+X = [110, 450, 700, 935]
 TOP, STEP = 20, 48
 MESSAGES = [
-    (0, 1, "GET naru.pub/sdk/1.1.0/naru.js", False),
+    (0, 1, "GET sdk.naru.pub/sdk/1.1.0/naru.js", False),
     (1, 0, "SDK 파일 (5분 캐시, 하루 동안 백그라운드 갱신)", True),
-    (0, 2, "GET sdk.naru.pub/api/data/v1/{site}/{collection}", False),
-    (2, 0, "사이트 SQLite에서 바로 응답 (수십 ms)", True),
-    (0, 2, "로그인 토큰과 함께 요청", False),
-    (2, 3, "토큰이 있는 요청은 control plane으로", False),
-    (3, 4, "사이트, 결제 상태, 회원 확인", False),
-    (3, 2, "확인된 작업을 사이트 객체에 실행", False),
-    (2, 0, "결과", True),
+    (0, 1, "GET sdk.naru.pub/api/data/v1/{site}/{collection}", False),
+    (1, 0, "사이트 SQLite에서 바로 응답 (수십 ms)", True),
+    (0, 1, "로그인 토큰과 함께 요청", False),
+    (1, 2, "토큰이 있는 요청은 control plane으로", False),
+    (2, 3, "사이트, 결제 상태, 회원 확인", False),
+    (2, 1, "확인된 작업을 사이트 객체에 실행", False),
+    (1, 0, "결과", True),
 ]
 BOX_W, BOX_H = 170, 50
 first = TOP + BOX_H + 40
@@ -223,7 +222,7 @@ for i, (a, b, text, back) in enumerate(MESSAGES):
         height,
         "\n  ".join(parts),
         "Data SDK 요청이 지나는 길",
-        "SDK 파일은 엣지 Worker에서 받고, 방문자의 읽기는 맥 미니의 workerd가 사이트 SQLite에서 바로 답합니다. "
+        "SDK 파일도 데이터도 sdk.naru.pub, 맥 미니의 workerd에서 받습니다. 방문자의 읽기는 사이트 SQLite에서 바로 답하고, "
         "로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다.",
     )
 )

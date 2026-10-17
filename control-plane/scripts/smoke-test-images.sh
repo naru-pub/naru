@@ -78,13 +78,13 @@ start web -e DATABASE_URL="$database_url" "$web_image"
 wait_for "the web server to become healthy" 60 docker exec "$run-web" node -e \
   "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 
-echo "Requesting pages, SDK files and assets..."
+echo "Requesting pages and assets, and the SDK paths it must not serve..."
 docker exec "$run-web" node -e '
 const base = "http://127.0.0.1:3000";
-const expect = async (path, type) => {
+const expect = async (path, type, status = 200) => {
   const response = await fetch(base + path);
   const contentType = response.headers.get("content-type") ?? "";
-  if (!response.ok || !contentType.startsWith(type)) {
+  if (response.status !== status || !contentType.startsWith(type)) {
     throw new Error(`${path}: ${response.status} ${contentType}`);
   }
   console.log(`  ${path} ${response.status}`);
@@ -96,8 +96,9 @@ const expect = async (path, type) => {
   const chunk = login.match(/\/_next\/static\/[^"]+\.js/);
   if (!chunk) throw new Error("/login references no /_next/static script");
   await expect(chunk[0], "application/javascript");
-  await expect("/sdk/1/naru.js", "application/javascript");
-  await expect("/sdk/1.0.0/naru.d.ts", "text/plain");
+  // The SDK is only at sdk.naru.pub (src/proxy.ts): a plain 404 here.
+  await expect("/sdk/1/naru.js", "text/plain", 404);
+  await expect("/sdk/1.0.0/naru.d.ts", "text/plain", 404);
   await expect("/logo.png", "image/png");
 })().catch((error) => {
   console.error(error.message);

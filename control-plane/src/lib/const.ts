@@ -19,6 +19,11 @@ export const RESERVED_LOGIN_NAMES = new Set([
   "yang",
 ]);
 
+// Where sites import the Data SDK from: sdk.naru.pub/sdk/<version>/naru.js,
+// served by workerd on kr-seongsu-m4 (edge/src/sdk.ts). The control plane does
+// not serve it (src/proxy.ts), here or in development.
+export const SDK_URL = "https://sdk.naru.pub/sdk";
+
 export function isReservedLoginName(loginName: string) {
   return RESERVED_LOGIN_NAMES.has(loginName.toLowerCase());
 }

@@ -4,13 +4,13 @@ Naru Data is a dependency-free browser ES module for JSON documents and media
 owned by one Naru site. Import the versioned module and create one client:
 
 ```js
-import { createNaru, NaruError } from "https://naru.pub/sdk/1/naru.js";
+import { createNaru, NaruError } from "https://sdk.naru.pub/sdk/1/naru.js";
 
 const naru = createNaru({ site: "alice" });
 ```
 
 `site` may be omitted (or empty) on a `*.naru.pub` site. The module's matching
-TypeScript declarations are at `https://naru.pub/sdk/1/naru.d.ts`.
+TypeScript declarations are at `https://sdk.naru.pub/sdk/1/naru.d.ts`.
 
 `/sdk/1/` stays on stable 1.0.0, whose bytes are frozen. The public `/docs`
 guides also describe 1.0.0. SDK 1.1.0 remains in development; its members,
@@ -25,7 +25,7 @@ save a document with a `title`. Add this to a page hosted on your Naru site:
 ```html
 <ul id="posts"></ul>
 <script type="module">
-  import { createNaru } from "https://naru.pub/sdk/1/naru.js";
+  import { createNaru } from "https://sdk.naru.pub/sdk/1/naru.js";
   const naru = createNaru();
   const page = await naru.collection("posts").list();
   for (const post of page.documents) {
@@ -331,7 +331,7 @@ Returning `{ ok: false }` remains valid, but is an ordinary successful return
 and does **not** roll back writes. Messages and details reach the browser, so
 do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 
-**ctx.** Its types are in `https://naru.pub/sdk/1.1.0/functions.d.ts`, written
+**ctx.** Its types are in `https://sdk.naru.pub/sdk/1.1.0/functions.d.ts`, written
 by hand beside the generated `naru.d.ts` (`Query`, `Mutation`, `QueryCtx`,
 `MutationCtx`, `CallingMember`, `SqlValue`, `SqlResult`, `ErrorCode`, `Json`).
 `ctx` has `member`, `owner`, `visitor`, `now` (milliseconds, fixed for the
@@ -640,7 +640,7 @@ and limits, and a stand-in for naru.pub that serves the site's files and the
 SDK, signs owners and members in on one click (members are named test
 accounts with a status), keeps uploads in a folder, and republishes `_naru/`
 on every change, writing `_naru/types/database.d.ts` after each. Pages keep
-importing `https://naru.pub/sdk/1.1.0/naru.js`; an import map sends them to
+importing `https://sdk.naru.pub/sdk/1.1.0/naru.js`; an import map sends them to
 the local SDK, and uploads keep their `https://media.naru.pub` addresses,
 served locally by a service worker. Data persists in `<site>/.naru-dev/`.
 

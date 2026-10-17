@@ -13,6 +13,7 @@ import {
   type Span,
   type Version,
 } from "./reference";
+import { SDK_URL } from "@/lib/const";
 
 const KIND_LABELS: Record<Entry["kind"], string> = {
   function: "함수",
@@ -196,10 +197,10 @@ export default async function SdkReference(props: {
           </p>
           <div className="flex flex-wrap gap-5 text-sm underline underline-offset-4">
             <a href={`/docs/${version}/database`}>데이터베이스 사용 안내 →</a>
-            <a href={`/sdk/${version}/naru.js`}>naru.js 보기 ↗</a>
-            <a href={`/sdk/${version}/naru.d.ts`}>naru.d.ts 보기 ↗</a>
+            <a href={`${SDK_URL}/${version}/naru.js`}>naru.js 보기 ↗</a>
+            <a href={`${SDK_URL}/${version}/naru.d.ts`}>naru.d.ts 보기 ↗</a>
             {version !== "1.0.0" && (
-              <a href={`/sdk/${version}/functions.d.ts`}>
+              <a href={`${SDK_URL}/${version}/functions.d.ts`}>
                 쿼리·뮤테이션 타입(functions.d.ts) 보기 ↗
               </a>
             )}

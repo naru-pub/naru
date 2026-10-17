@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1110" height="840" viewBox="0 0 1110 840" role="img" aria-labelledby="title desc">
   <title id="title">나루의 구조</title>
-  <desc id="desc">한국의 브라우저는 사이트 페이지와 SDK 파일을 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK는 Cloudflare를 거치지 않고 맥 미니의 Caddy와 workerd에 바로 연결합니다. 사이트 데이터베이스는 맥 미니에만 있고, Backblaze B2에 백업됩니다.</desc>
+  <desc id="desc">한국의 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK(파일과 데이터)는 Cloudflare를 거치지 않고 맥 미니의 Caddy와 workerd에 바로 연결합니다. 사이트 데이터베이스는 맥 미니에만 있고, Backblaze B2에 백업됩니다.</desc>
 
   <style>
     svg { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
@@ -68,7 +68,7 @@
   <text x="975.0" y="59.0" class="sub" text-anchor="middle">결제 웹훅, 사이트 배포</text>
   <rect x="420" y="140" width="190" height="60" rx="8" class="box"/>
   <text x="515.0" y="167.0" class="title" text-anchor="middle">엣지 Worker</text>
-  <text x="515.0" y="184.0" class="sub" text-anchor="middle">&lt;site&gt;.naru.pub · /sdk</text>
+  <text x="515.0" y="184.0" class="sub" text-anchor="middle">&lt;site&gt;.naru.pub</text>
   <rect x="650" y="140" width="190" height="60" rx="8" class="box"/>
   <text x="745.0" y="167.0" class="title" text-anchor="middle">R2</text>
   <text x="745.0" y="184.0" class="sub" text-anchor="middle">사이트 파일, 미디어, 코드</text>

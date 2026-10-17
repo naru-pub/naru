@@ -111,7 +111,7 @@ the process is:
   third-party and lose cookies in browsers that block them. The control plane
   does not depend on this: the Data SDK uses bearer tokens with no cookies,
   `/database/authorize` refuses to be framed and opens top-level, and
-  `/sdk/*` is a public, cookie-less script.
+  the SDK is a public, cookie-less script on `sdk.naru.pub`.
 - `document.domain` relaxation between user sites becomes impossible. It is
   already disabled by default in current Chromium.
 

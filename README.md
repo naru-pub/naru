@@ -20,7 +20,7 @@
 나루는 세 부분으로 이루어져 있습니다. 서울의 맥 미니(kr-seongsu-m4)에서 도는 control plane과 사이트 데이터베이스, 그리고 Cloudflare의 엣지 Worker입니다. 한국에서 Cloudflare로 가는 요청은 로스앤젤레스를 거치므로, 매 요청이 빨라야 하는 Data SDK는 `sdk.naru.pub`으로 맥 미니에 바로 연결합니다.
 
 <p align="center">
-  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지와 SDK 파일을 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK는 sdk.naru.pub으로 맥 미니의 Caddy와 workerd에 바로 연결합니다." width="100%">
+  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서, 관리 화면을 Cloudflare Tunnel을 거쳐 맥 미니의 control plane에서 받고, Data SDK(파일과 데이터)는 sdk.naru.pub으로 맥 미니의 Caddy와 workerd에 바로 연결합니다." width="100%">
 </p>
 
 ### 1. Control Plane (Next.js)
@@ -52,10 +52,10 @@
 
 ### Data SDK 요청이 지나는 길
 
-방문자의 읽기는 맥 미니의 workerd가 바로 답합니다. 로그인한 요청은 workerd가 같은 호스트의 control plane에 넘겨 PostgreSQL로 권한을 확인한 뒤, 다시 workerd의 사이트 데이터베이스에서 처리합니다. `naru.js` 파일은 Cloudflare(`naru.pub/sdk/`)에서 받고, 브라우저가 하루 동안 보관합니다.
+방문자의 읽기는 맥 미니의 workerd가 바로 답합니다. 로그인한 요청은 workerd가 같은 호스트의 control plane에 넘겨 PostgreSQL로 권한을 확인한 뒤, 다시 workerd의 사이트 데이터베이스에서 처리합니다. `naru.js` 파일도 같은 workerd(`sdk.naru.pub/sdk/`)에서 받고, 브라우저가 하루 동안 보관합니다.
 
 <p align="center">
-  <img src="docs/images/sdk-request.svg" alt="Data SDK 요청이 지나는 길: SDK 파일은 엣지 Worker에서, 방문자의 읽기는 workerd가 사이트 SQLite에서 바로, 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다." width="100%">
+  <img src="docs/images/sdk-request.svg" alt="Data SDK 요청이 지나는 길: SDK 파일은 sdk.naru.pub의 workerd에서, 방문자의 읽기는 workerd가 사이트 SQLite에서 바로, 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다." width="100%">
 </p>
 
 ### 맥 미니가 멈추면

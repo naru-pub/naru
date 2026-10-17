@@ -1,12 +1,12 @@
 import aliases from "../../control-plane/sdk/aliases.json";
 
-// The Data SDK, naru.pub/sdk/<version>/naru.js, naru.d.ts and (1.1.0)
-// functions.d.ts, answered at the edge so sites that import it keep working
-// while the control plane is down.
-// The files are the committed control-plane/public/sdk/, deployed with the
-// Worker as its static assets; /sdk/1/ stays on stable 1.0.0 as configured
-// in control-plane/sdk/aliases.json, matching the control
-// plane's own rewrite does.
+// The Data SDK, sdk.naru.pub/sdk/<version>/naru.js, naru.d.ts and (1.1.0)
+// functions.d.ts, answered by workerd on the mini (seoul.ts) beside the data
+// API. Nothing else serves it: naru.pub/sdk/ is a 404 (control-plane
+// src/proxy.ts).
+// The files are the committed control-plane/public/sdk/, bundled with the
+// Worker (edge/seoul/build.mjs); /sdk/1/ stays on stable 1.0.0 as configured
+// in control-plane/sdk/aliases.json.
 
 export interface SdkEnv {
   /** control-plane/public/sdk/, so /1.0.0/naru.js is that release's module. */
