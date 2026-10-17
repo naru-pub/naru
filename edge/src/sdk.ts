@@ -2,10 +2,10 @@ import aliases from "../../control-plane/sdk/aliases.json";
 
 // The Data SDK, sdk.naru.pub/sdk/<version>/naru.js, naru.d.ts and (1.1.0)
 // functions.d.ts, answered by workerd on the mini (seoul.ts) beside the data
-// API. Nothing else serves it: naru.pub/sdk/ is a 404 (control-plane
-// src/proxy.ts).
-// The files are the committed control-plane/public/sdk/, bundled with the
-// Worker (edge/seoul/build.mjs); /sdk/1/ stays on stable 1.0.0 as configured
+// API. Nothing else serves it: not the Worker on Cloudflare (index.ts), and
+// naru.pub/sdk/ is a 404 (control-plane src/proxy.ts).
+// The files are the committed control-plane/public/sdk/, copied beside the
+// Worker as workerd's sdk-files service (edge/seoul/build.mjs); /sdk/1/ stays on stable 1.0.0 as configured
 // in control-plane/sdk/aliases.json.
 
 export interface SdkEnv {

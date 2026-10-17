@@ -86,7 +86,9 @@ record straight to Caddy on the mini (infra `cloudflare/dns_naru_pub.tf`,
 control plane answers its data API (`/api/data/v1/*`) itself, and
 `naru.pub/sdk/*` is a 404 there. The SDK's committed
 `control-plane/public/sdk/` files are served at `sdk.naru.pub/sdk/` by
-workerd on the mini (`edge/src/sdk.ts`, bundled by `edge/seoul/`).
+workerd on the mini (`edge/src/sdk.ts`, bundled by `edge/seoul/`); the
+Worker on Cloudflare has neither the files nor the data API, so a hosted
+site's own `/sdk/` and `/api/data/v1/` paths are its files.
 Cloudflare manages the custom domain's DNS and certificate. Both `workers.dev`
 and Preview URLs are disabled. The public route handles every site; the
 control plane does not manage per-site Worker routes. The `edge-sync`

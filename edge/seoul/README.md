@@ -1,8 +1,9 @@
 # The Data SDK on the mini
 
-The same Worker that runs on Cloudflare, served by workerd on kr-seongsu-m4
-as `sdk.naru.pub`: the SDK's files, the data API, live connections and the
-control plane's site operations. Hosted pages stay on Cloudflare.
+The edge Worker's code, served by workerd on kr-seongsu-m4 as
+`sdk.naru.pub`: the SDK's files, the data API, live connections and the
+control plane's site operations. Hosted pages stay on Cloudflare, whose
+Worker serves neither the SDK nor the data API.
 `src/seoul.ts` is its entry; `wrangler.seoul.jsonc` only bundles it.
 
 ```bash
@@ -44,8 +45,3 @@ answer with their index.html (status 503). The edge Worker on Cloudflare
 probes `https://origin.sdk.naru.pub/healthz/deep` each minute and posts to
 Discord when this host has failed three minutes in a row, and again when it
 answers: see `docs/database.md`, "When the mini is away".
-
-Moving sites here from Cloudflare: with the control plane's `SITE_DATA_URL`
-pointing at this Worker, `node dist/cli/move-site-data.mjs` copies each site's
-database (`dump` there piped into `restore` here, as NDJSON) and compares the
-copy table by table.

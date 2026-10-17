@@ -129,6 +129,14 @@ try {
   const sdkSource = await sdk.text();
   assert.match(sdkSource, /createNaru/);
   assert.match(sdkSource, /const DATA_API = "https:\/\/sdk\.naru\.pub";/);
+  // /sdk/1/ is an alias (control-plane/sdk/aliases.json), with its headers.
+  const alias = await fetch(`${base}/sdk/1/naru.js`, {
+    headers: { Host: "sdk.naru.pub" },
+  });
+  assert.equal(alias.status, 200);
+  assert.match(alias.headers.get("content-type"), /^text\/javascript/);
+  assert.equal(alias.headers.get("access-control-allow-origin"), "*");
+  assert.match(await alias.text(), /createNaru/);
   assert.equal(
     (await fetch(`${base}/`, { headers: { Host: "alpha.naru.pub" } })).status,
     404,

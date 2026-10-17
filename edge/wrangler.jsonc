@@ -42,15 +42,6 @@
   },
   // The site bucket: each site's files under <login>/.
   "r2_buckets": [{ "binding": "SITE_FILES", "bucket_name": "naru-pub" }],
-  // The Data SDK's committed files (src/sdk.ts). Only sdk.naru.pub serves them
-  // now, from workerd on the mini (edge/seoul/); here no route reaches them
-  // but edge.naru.pub/sdk/. The Worker runs first on every request, so a
-  // hosted site's own /1.0.0/naru.js is still its own file.
-  "assets": {
-    "directory": "../control-plane/public/sdk",
-    "binding": "SDK_FILES",
-    "run_worker_first": true,
-  },
   // The custom domain table the control plane sends (src/domains.ts).
   "kv_namespaces": [
     { "binding": "DOMAINS", "id": "11c38b8a51984f708edd9ebf619e3ab3" },
@@ -58,7 +49,9 @@
   // naru.pub itself is DNS-only, straight to the mini (infra
   // cloudflare/dns_naru_pub.tf), so no route here sees it: its data API
   // (/api/data/v1/*, which older SDK files call) is the control plane's own,
-  // and naru.pub/sdk/* is a 404 there.
+  // and naru.pub/sdk/* is a 404 there. The Data SDK and its data API are
+  // sdk.naru.pub's, also DNS-only, served by workerd on the mini
+  // (wrangler.seoul.jsonc); this Worker serves neither.
   "routes": [
     // The control plane calls /v1/sites/* and /v1/pageviews/* here.
     { "pattern": "edge.naru.pub", "custom_domain": true },
@@ -81,10 +74,6 @@
     // How long each data center keeps a site file it read from the bucket
     // (src/pages.ts). The control plane purges a file's entry when it changes.
     "SITE_FILE_CACHE_SECONDS": "86400",
-    // Sites whose databases are on the mini (sdk.naru.pub), comma-separated:
-    // their requests here go on to the control plane (src/website.ts). All
-    // of them: there are none here.
-    "MOVED_SITES": "*",
     // The mini's own name: probed by the health check, and where routes are
     // rendered (src/standby.ts).
     "SDK_ORIGIN_HOST": "origin.sdk.naru.pub",
@@ -105,7 +94,8 @@
       "name": "naru-edge",
       "routes": [],
       "triggers": { "crons": [] },
-      // index.ts and SiteData, which the deployed Worker no longer exports.
+      // index.ts, SiteData and the data API (src/website.ts), which the
+      // deployed Worker does not have.
       "main": "src/local.ts",
       "durable_objects": {
         "bindings": [
@@ -128,7 +118,6 @@
         "PLATFORM_DOMAIN": "naru.pub",
         "R2_PUBLIC_DOMAIN": "r2.naru.pub",
         "SITE_FILE_CACHE_SECONDS": "86400",
-        "MOVED_SITES": "",
       },
     },
   },

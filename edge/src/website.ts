@@ -20,9 +20,11 @@ import {
 } from "../../control-plane/src/lib/site-data/live-ticket";
 import type { Outcome, Served } from "./types";
 
-// The public data API, /api/data/v1/<site>/..., routed here for every site.
-// A visitor's request is answered at the edge from the site's object instead
-// of crossing to the control plane and back. Whatever needs the control plane
+// The public data API, sdk.naru.pub/api/data/v1/<site>/..., answered by
+// workerd on the mini (seoul.ts) and in local runs (local.ts), where site
+// databases live; the Worker on Cloudflare has none and never routes here.
+// A visitor's request is answered from the site's object instead of going on
+// to the control plane. Whatever needs the control plane
 // is sent on to it unchanged: requests with an owner token (sign-in scope and
 // renewal live in PostgreSQL), media (`_files`), batches (owner only),
 // members' queries and mutations, and any request the object will not
@@ -45,18 +47,7 @@ export interface WebsiteEnv {
    * are then answered by the object each time, which is local there.
    */
   EDGE_CACHE?: string;
-  /**
-   * Sites whose databases have moved to the mini, comma-separated, or "*"
-   * for all: their requests here go on to the control plane (`website`).
-   */
-  MOVED_SITES?: string;
 }
-
-/** Whether `site`'s database is on the mini: MOVED_SITES lists it, or is "*". */
-const moved = (env: WebsiteEnv, site: string) => {
-  const sites = (env.MOVED_SITES ?? "").split(",").map((name) => name.trim());
-  return sites.includes("*") || sites.includes(site);
-};
 
 const METHODS = ["GET", "POST", "PUT", "DELETE"];
 
@@ -160,6 +151,28 @@ function passThrough(request: Request, env: WebsiteEnv) {
   );
 }
 
+const ROUTE = /^\/api\/data\/v1\/([^/]+)(?:\/(.*))?$/;
+
+/** A data API request's answer, or null for any other path. */
+export function dataApi(
+  request: Request,
+  env: WebsiteEnv,
+  ctx: ExecutionContext,
+): Promise<Response> | null {
+  const route = ROUTE.exec(new URL(request.url).pathname);
+  if (!route) return null;
+  return website(
+    request,
+    env,
+    ctx,
+    decodeURIComponent(route[1]),
+    (route[2] ?? "")
+      .split("/")
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part)),
+  );
+}
+
 export async function website(
   request: Request,
   env: WebsiteEnv,
@@ -170,20 +183,6 @@ export async function website(
   const headers = websiteHeaders(request);
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers });
-  // A site whose database has moved to the mini (sdk.naru.pub): this copy is
-  // no longer its database. Requests go on to the control plane, which calls
-  // the mini, so a page holding an older SDK still works; a live connection
-  // would attach to this copy, so it is refused and the SDK retries.
-  if (moved(env, site)) {
-    if (request.headers.get("Upgrade")?.toLowerCase() === "websocket")
-      return protocolError(
-        503,
-        "This site's live connections have moved.",
-        "UNAVAILABLE",
-        headers,
-      );
-    return passThrough(request, env);
-  }
   // A live connection: opened here, held by the site's object. Asking for a
   // member's ticket (POST, with their token) goes to the control plane below.
   if (

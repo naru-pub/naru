@@ -13,20 +13,17 @@ import {
   type RenderRoute,
 } from "./pages";
 import type { PageviewLog } from "./pageview-log";
-import { serveSdk, type SdkEnv } from "./sdk";
 import type { SiteData } from "./site";
 import { Standby, type StandbyEnv } from "./standby";
 import type { Outcome } from "./types";
 import { DUMP_CONTENT_TYPE } from "../../control-plane/src/lib/site-data/dump-format";
-import { website, type WebsiteEnv } from "./website";
 
 export { PageviewLog } from "./pageview-log";
 // No SiteData here: site databases live on the mini (seoul.ts exports it
 // there), and local runs export it from local.ts.
 export { Standby } from "./standby";
 
-export interface Env
-  extends WebsiteEnv, PagesEnv, DomainsEnv, SdkEnv, StandbyEnv {
+export interface Env extends PagesEnv, DomainsEnv, StandbyEnv {
   /**
    * On Cloudflare: what reaches the mini, and its health check (standby.ts).
    * Absent under workerd on the mini and in local runs.
@@ -54,10 +51,11 @@ export interface Env
   TEST_OPERATIONS?: string;
 }
 
-// Four surfaces. <login>.naru.pub, or a custom domain, is a hosted site
-// (pages.ts, domains.ts). Under the platform domain, /sdk/<version>/<file> is
-// the Data SDK (sdk.ts) and /api/data/v1/<site>/... the public data API
-// (website.ts). /v1/sites/<site>/<operation>,
+// Two surfaces. <login>.naru.pub, or a custom domain, is a hosted site
+// (pages.ts, domains.ts). The Data SDK (sdk.ts) and the public data API
+// (website.ts) are sdk.naru.pub's, answered beside the site databases on the
+// mini (seoul.ts) and in local runs (local.ts), never here; on a platform
+// host every other path is the control plane's: /v1/sites/<site>/<operation>,
 // /v1/pageviews/<operation> and /v1/domains/replace are the control plane's
 // own: POST with a JSON body, answered with `{ value }` or
 // `{ error: { status, message, code } }` at that status. A site's object is
@@ -83,7 +81,7 @@ const OPERATIONS = [
   // Returning a site to a restore point its object kept in R2 (1.1.0).
   "restoreFrom",
   "disconnect",
-  // Moving a site's database to another runtime (sdk.naru.pub on the mini).
+  // A site's whole database, as NDJSON (control-plane lib/edge/dumps.ts).
   "dump",
   "restore",
 ] as const;
@@ -288,9 +286,9 @@ async function replaceDomains(request: Request, env: Env) {
 }
 
 /**
- * Hosts that are not a hosted site: the platform domain (its SDK and data API
- * routes), the SDK's own host where this runs on the mini (seoul.ts),
- * this Worker's custom domain, and the address `wrangler dev` answers on.
+ * Hosts that are not a hosted site: the platform domain, the SDK's own host
+ * where this runs on the mini (seoul.ts), this Worker's custom domain, and
+ * the address `wrangler dev` answers on.
  */
 export function platformHost(hostname: string, env: Env) {
   return (
@@ -314,21 +312,10 @@ export default {
     // control plane and the bucket's public domains on R2; this Worker's own
     // custom domain takes precedence over all of them (docs/deployment.md).
     // sdk.naru.pub is DNS-only, straight to the mini, so it never comes here
-    // on Cloudflare; under workerd on the mini, seoul.ts sends it all.
+    // on Cloudflare; under workerd on the mini, seoul.ts sends it what is
+    // not the SDK or the data API. A hosted site's own /sdk/ and
+    // /api/data/v1/ paths are its files, like any other.
     if (!platformHost(hostname, env)) return hostedSite(request, env, ctx);
-    if (pathname.startsWith("/sdk/")) return serveSdk(request, env);
-    const route = /^\/api\/data\/v1\/([^/]+)(?:\/(.*))?$/.exec(pathname);
-    if (route)
-      return website(
-        request,
-        env,
-        ctx,
-        decodeURIComponent(route[1]),
-        (route[2] ?? "")
-          .split("/")
-          .filter(Boolean)
-          .map((part) => decodeURIComponent(part)),
-      );
     if (!(await authorized(request, env.EDGE_WORKER_SECRET)))
       return failure(401, "Unauthorized.");
     if (pathname === "/v1/domains/replace") return replaceDomains(request, env);

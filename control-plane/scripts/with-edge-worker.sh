@@ -28,7 +28,6 @@ origin_port=$((port + 2))
   --persist-to "$scratch/worker" --var "EDGE_WORKER_SECRET:$secret" \
   --var "PASSTHROUGH_ORIGIN:http://127.0.0.1:$origin_port" \
   --var "TEST_OPERATIONS:1" \
-  --var "MOVED_SITES:moved-away" \
   --log-level warn) >"$scratch/worker.log" 2>&1 &
 worker_pid=$!
 for _ in $(seq 1 150); do
