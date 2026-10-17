@@ -68,6 +68,8 @@ const OPERATIONS = [
   "configure",
   "call",
   "activateFunctions",
+  // Returning a site to a restore point its object kept in R2 (1.1.0).
+  "restoreFrom",
   "disconnect",
   // Moving a site's database to another runtime (sdk.naru.pub on the mini).
   "dump",
@@ -127,6 +129,8 @@ function dispatch(
       return stub.activateFunctions(input);
     case "disconnect":
       return stub.disconnect(input);
+    case "restoreFrom":
+      return stub.restoreFrom(input);
     case "dump":
       return stub.dump();
     case "fingerprint":
@@ -401,6 +405,10 @@ export default {
     } catch {
       return failure(400, "Expected a JSON body.");
     }
+    // A restore point is read from the site the URL names, whose object
+    // this is, never one the body names.
+    if (operation === "restoreFrom")
+      input = { ...(input as object), site } satisfies { site: string };
     const stub = env.SITES.get(env.SITES.idFromName(site));
     // Each operation takes one argument object; the object validates it.
     const outcome = (await dispatch(

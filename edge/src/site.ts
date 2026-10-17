@@ -17,6 +17,11 @@ import {
   writePermission,
 } from "../../control-plane/src/lib/site-data/validation";
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
+import {
+  beforeRestoreName,
+  restorePointName,
+  restorePointsPrefix,
+} from "../../control-plane/src/lib/site-functions/restore-points";
 import { runFunction, type Host } from "./functions";
 import {
   bindings,
@@ -58,6 +63,15 @@ const liveSend = (socket: WebSocket, message: unknown) => {
 
 /** One of a release's SQL migrations (FunctionRevisions.migrations). */
 type Migration = { name: string; sql: string; digest: string };
+
+/**
+ * Meta that describes the present rather than the site's data, which a
+ * restore (`restoreFrom`) keeps: the owner, the control plane's
+ * configuration, the month's budget and counts, the standby's copy, and the
+ * active release.
+ */
+const PRESENT_META =
+  /^(owner_id|entitled_until|confirmed_until|monthly_requests|rows_per_minute|budget_month|budget_used|standby_fingerprint|functions_revision|functions_generation|stats:.*)$/;
 
 /** A row for a dump, which is JSON: a BLOB becomes { $base64 }. */
 const dumpRow = (row: Row): DumpRow =>
@@ -1399,7 +1413,7 @@ export class SiteData extends DurableObject<Env> {
         const dump = await this.dump();
         if (!dump.ok) return dump;
         await this.env.SITE_FILES.put(
-          `_naru-runtime/${input.site}/restore-points/${input.generation}.json`,
+          `${restorePointsPrefix(input.site!)}${input.generation}.json`,
           JSON.stringify(dump.value),
         );
       }
@@ -2446,6 +2460,97 @@ export class SiteData extends DurableObject<Env> {
     return this.run(() => {
       for (const table of DUMP_TABLES) this.sql.exec(`DELETE FROM ${table}`);
       return this.fill(input);
+    });
+  }
+
+  /**
+   * Returns the site to one of its restore points (1.1.0): the owner's undo
+   * of a release's migrations, or of an earlier restore. What the site holds
+   * now is kept first as `before-restore-<ms>.json`; then, in one
+   * transaction, collections, documents, upload references and the site's
+   * own tables, migrations and roles become the restore point's. What
+   * belongs to the present stays: the active release (its revision and
+   * generation, which the control plane's records name), the owner, paid
+   * status and limits, the month's budget and counts, rate limits, and which
+   * copy the standby holds. Migrations of the active release that the
+   * restore point had not applied are pending again, and apply with the
+   * next release. `site` is the object's own, from the URL (index.ts).
+   */
+  async restoreFrom(input: {
+    site: string;
+    name: unknown;
+  }): Promise<
+    Outcome<{ revision: string | null; saved: string; rows: number }>
+  > {
+    if (!restorePointName(input?.name))
+      return this.run(() => {
+        throw new DataError(400, "Invalid restore point.");
+      });
+    const prefix = restorePointsPrefix(input.site);
+    const object = await this.env.SITE_FILES.get(`${prefix}${input.name}`);
+    if (!object)
+      return this.run(() => {
+        throw new DataError(
+          404,
+          "There is no such restore point.",
+          "NOT_FOUND",
+        );
+      });
+    let point: Dump;
+    try {
+      point = JSON.parse(await object.text()) as Dump;
+      if (!point?.tables || typeof point.tables !== "object") throw 0;
+    } catch {
+      return this.run(() => {
+        throw new DataError(400, "The restore point is not a dump.");
+      });
+    }
+    // Nothing else runs from the save to the replacement, so the restore
+    // point of the present misses no write the restore replaces.
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const now = await this.dump();
+      if (!now.ok) return now;
+      const saved = beforeRestoreName();
+      await this.env.SITE_FILES.put(
+        `${prefix}${saved}`,
+        JSON.stringify(now.value),
+      );
+      const restored = this.run(() => {
+        // What memory holds of the month goes to meta first, to be kept.
+        if (this.budget) {
+          this.setMeta("budget_month", this.budget.month);
+          this.setMeta("budget_used", String(this.budget.used));
+        }
+        if (this.stats)
+          this.setMeta(
+            `stats:${this.stats.month}`,
+            JSON.stringify(this.stats.counts),
+          );
+        const present = this.rows("SELECT * FROM meta")
+          .filter((row) => PRESENT_META.test(String(row.key)))
+          .map(dumpRow);
+        const rateLimits = this.rows("SELECT * FROM rate_limits").map(dumpRow);
+        for (const table of DUMP_TABLES) this.sql.exec(`DELETE FROM ${table}`);
+        const { rows } = this.fill({
+          ...point,
+          tables: {
+            ...point.tables,
+            meta: [
+              ...(point.tables.meta ?? []).filter(
+                (row) => !PRESENT_META.test(String(row.key)),
+              ),
+              ...present,
+            ],
+            rate_limits: rateLimits,
+          },
+        });
+        return { revision: this.meta("functions_revision"), saved, rows };
+      });
+      this.budget = undefined;
+      this.stats = undefined;
+      // Every live query may now answer differently.
+      if (restored.ok) this.scheduleRefresh(["*"]);
+      return restored;
     });
   }
 
