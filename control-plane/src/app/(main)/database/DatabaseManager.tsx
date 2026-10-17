@@ -11,6 +11,7 @@ import { useConfirm } from "@/components/ui/confirm";
 import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
 import MembershipManager from "./MembershipManager";
+import RestorePoints from "./RestorePoints";
 import DeclaredCollections from "./DeclaredCollections";
 import { MAX_DOCUMENTS, MAX_SITE_BYTES } from "@/lib/site-data/validation";
 
@@ -216,6 +217,7 @@ export default function DatabaseManager({
           <TabsTrigger value="collections">컬렉션과 문서</TabsTrigger>
           <TabsTrigger value="access">웹사이트 관리자 로그인</TabsTrigger>
           <TabsTrigger value="members">사이트 회원</TabsTrigger>
+          <TabsTrigger value="restore">복원 지점</TabsTrigger>
           <TabsTrigger value="sdk">웹 SDK</TabsTrigger>
         </TabsList>
         {error && (
@@ -619,6 +621,10 @@ export default function DatabaseManager({
           className="data-[state=inactive]:hidden"
         >
           <MembershipManager />
+        </TabsContent>
+        {/* Loaded when opened: most visits never list restore points. */}
+        <TabsContent value="restore">
+          {view === "restore" && <RestorePoints />}
         </TabsContent>
         <TabsContent
           value="sdk"
