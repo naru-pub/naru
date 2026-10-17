@@ -1,7 +1,7 @@
 // Serves seoul/dist (pnpm build:seoul) with workerd, as the mini does, and
 // checks what only that runtime can break: SQLite objects on local disk across
 // a restart, the SDK's files, visitors at sdk.naru.pub, and moving a site
-// between objects with `dump` and `restore`. Site functions are left out: their
+// between objects with `dump` and `restore`, NDJSON streamed both ways. Site functions are left out: their
 // sources need the real R2 bucket.
 //
 //   node seoul/smoke.mjs
@@ -84,6 +84,26 @@ async function operate(site, operation, input) {
   const body = await response.json();
   return { status: response.status, ...body };
 }
+/** A site's dump, as NDJSON lines parsed (control-plane/src/lib/edge/dumps.ts reads it a chunk at a time). */
+async function dumpOf(site) {
+  const response = await fetch(`${base}/v1/sites/${site}/dump`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${secret}` },
+    body: "{}",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/x-ndjson");
+  return response;
+}
+const linesOf = (text) =>
+  text
+    .trimEnd()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+const rowsOf = (lines, table) =>
+  lines
+    .filter((line) => line.type === "row" && line.table === table)
+    .map((line) => line.row);
 const visit = (path, init = {}) =>
   fetch(`${base}/api/data/v1/${path}`, {
     ...init,
@@ -192,20 +212,43 @@ try {
   assert.equal(pong, "pong");
   socket.close();
 
-  // Move alpha's database into beta, as the cutover moves each site.
-  const dump = await operate("alpha", "dump", {});
-  assert.equal(dump.status, 200);
-  const restored = await operate("beta", "restore", dump.value);
-  assert.equal(restored.status, 200, JSON.stringify(restored));
+  // Move alpha's database into beta, as the cutover moves each site: one
+  // object's dump piped straight into the other's restore.
+  const restore = (site, body) =>
+    fetch(`${base}/v1/sites/${site}/restore`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/x-ndjson",
+      },
+      body,
+      duplex: "half",
+    });
+  const piped = await restore("beta", (await dumpOf("alpha")).body);
+  const restored = await piped.json();
+  assert.equal(piped.status, 200, JSON.stringify(restored));
   assert.ok(restored.value.rows >= 3);
+  const dump = linesOf(await (await dumpOf("alpha")).text());
+  assert.deepEqual(dump[0], { type: "header", version: 2, schema: [] });
+  assert.deepEqual(dump.at(-1), { type: "end", rows: dump.length - 2 });
   assert.equal(
-    (await operate("beta", "restore", dump.value)).status,
+    (await restore("beta", dump.map((line) => JSON.stringify(line)).join("\n")))
+      .status,
     409,
     "a site with data is never overwritten",
   );
-  const moved = await operate("beta", "dump", {});
-  assert.deepEqual(moved.value.tables.documents, dump.value.tables.documents);
-  assert.deepEqual(moved.value.tables.meta, dump.value.tables.meta);
+  // A dump cut short is refused, and changes nothing.
+  assert.equal(
+    (await restore("gamma", `${JSON.stringify(dump[0])}\n`)).status,
+    400,
+  );
+  assert.equal(
+    rowsOf(linesOf(await (await dumpOf("gamma")).text()), "collections").length,
+    0,
+  );
+  const moved = linesOf(await (await dumpOf("beta")).text());
+  assert.deepEqual(rowsOf(moved, "documents"), rowsOf(dump, "documents"));
+  assert.deepEqual(rowsOf(moved, "meta"), rowsOf(dump, "meta"));
 
   // A copy holds what the original does, and its fingerprint says so; what
   // is recorded about the standby is not part of it.

@@ -57,7 +57,11 @@ export type StoredDocument = {
   created_by: string | null;
 };
 
-/** Every table of a site's object, in the order `restore` fills them. */
+/**
+ * Naru's own tables of a site's object, which a dump carries by name
+ * (control-plane/src/lib/site-data/dump-format.ts), in the order a restore
+ * fills them.
+ */
 export const DUMP_TABLES = [
   "meta",
   "collections",
@@ -65,28 +69,6 @@ export const DUMP_TABLES = [
   "media_refs",
   "rate_limits",
 ] as const;
-/** A row as a dump carries it: a BLOB as { $base64 }. */
-export type DumpRow = Record<
-  string,
-  string | number | null | { $base64: string }
->;
-/** A site's whole database, as `dump` answers and `restore` takes it. */
-export type Dump = {
-  tables: Record<(typeof DUMP_TABLES)[number], DumpRow[]>;
-  /**
-   * The site's own tables (1.1.0): their schema, in the order it is created
-   * again, their rows, and the migrations that made them. A dump without it
-   * is from before site tables, and leaves none.
-   */
-  site?: {
-    schema: string[];
-    tables: Record<string, DumpRow[]>;
-    migrations: DumpRow[];
-    /** Members' roles; a dump from before them has none. */
-    roles?: DumpRow[];
-  };
-};
-
 export type Snapshot = {
   ownerId: string | null;
   collections: Collection[];

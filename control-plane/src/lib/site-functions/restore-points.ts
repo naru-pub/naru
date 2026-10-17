@@ -1,25 +1,35 @@
-// Restore points (1.1.0): a site's whole database as `dump` answers it, kept
-// in R2 under `_naru-runtime/<site>/restore-points/`. The site's object writes
-// one before a release's migrations run, named by the release's generation,
-// and one before each restore, `before-restore-<ms>.json`, so a restore can
-// be undone. Shared by the edge (site.ts) and the control plane.
+// Restore points (1.1.0): a site's whole database as `dump` answers it
+// (NDJSON, lib/site-data/dump-format.ts), kept in R2 under
+// `_naru-runtime/<site>/restore-points/`. The site's object writes one before
+// a release's migrations run, `<generation>.ndjson`, and one before each
+// restore, `before-restore-<ms>.ndjson`, so a restore can be undone. Those
+// written before NDJSON end in `.json` and hold the whole dump as one JSON
+// object: they are listed and restored too. Shared by the edge (site.ts) and
+// the control plane.
 
 /** Where a site's restore points are kept. */
 export const restorePointsPrefix = (site: string) =>
   `_naru-runtime/${site}/restore-points/`;
 
 const GENERATION =
-  /^([a-f0-9]{8})-([a-f0-9]{4})-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.json$/;
-const BEFORE_RESTORE = /^before-restore-(\d{1,15})\.json$/;
+  /^(([a-f0-9]{8})-([a-f0-9]{4})-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.(nd)?json$/;
+const BEFORE_RESTORE = /^before-restore-(\d{1,15})\.(nd)?json$/;
 
 /** Whether `name` names a restore point: either kind, and nothing else. */
 export const restorePointName = (name: unknown): name is string =>
   typeof name === "string" &&
   (GENERATION.test(name) || BEFORE_RESTORE.test(name));
 
+/** Whether a restore point is in the format before NDJSON, one JSON object. */
+export const legacyRestorePoint = (name: string) => !name.endsWith(".ndjson");
+
 /** The name of the restore point a restore keeps of what it replaces. */
 export const beforeRestoreName = (now = Date.now()) =>
-  `before-restore-${now}.json`;
+  `before-restore-${now}.ndjson`;
+
+/** The name of the restore point kept before a release's migrations. */
+export const releaseRestorePointName = (generation: string) =>
+  `${generation}.ndjson`;
 
 export type RestorePoint = {
   name: string;
@@ -41,9 +51,9 @@ export function restorePointOf(name: string): RestorePoint | null {
   if (release)
     return {
       name,
-      createdAt: parseInt(release[1] + release[2], 16),
+      createdAt: parseInt(release[2] + release[3], 16),
       kind: "release",
-      generation: name.slice(0, -".json".length),
+      generation: release[1],
     };
   const restore = BEFORE_RESTORE.exec(name);
   if (restore)

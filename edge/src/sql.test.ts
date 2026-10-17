@@ -41,7 +41,13 @@ describe("site SQL", () => {
     expect(
       reserved(fieldIndex("0190f5a0-0000-7000-8000-000000000001", "x").index),
     ).toBe(true);
-    for (const name of ["_cf_KV", "__miniflare_do_name"])
+    // A dump's snapshot tables and a restore's staging tables (site.ts).
+    for (const name of [
+      "_cf_KV",
+      "__miniflare_do_name",
+      "_naru_snap_0",
+      "_NARU_STAGE_12",
+    ])
       expect(reserved(name)).toBe(true);
     for (const name of ["posts", "usage_stats", "metadata", "comments"])
       expect(reserved(name)).toBe(false);

@@ -19,6 +19,8 @@ import {
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
 import {
   beforeRestoreName,
+  legacyRestorePoint,
+  releaseRestorePointName,
   restorePointName,
   restorePointsPrefix,
 } from "../../control-plane/src/lib/site-functions/restore-points";
@@ -73,16 +75,11 @@ type Migration = { name: string; sql: string; digest: string };
 const PRESENT_META =
   /^(owner_id|entitled_until|confirmed_until|monthly_requests|rows_per_minute|budget_month|budget_used|standby_fingerprint|functions_revision|functions_generation|stats:.*)$/;
 
-/** A row for a dump, which is JSON: a BLOB becomes { $base64 }. */
-const dumpRow = (row: Row): DumpRow =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
-      key,
-      value instanceof ArrayBuffer
-        ? { $base64: Buffer.from(value).toString("base64") }
-        : value,
-    ]),
-  );
+/** A value for a dump, which is JSON: a BLOB becomes { $base64 }. */
+const toDump = (value: SqlValue): DumpValue =>
+  value instanceof ArrayBuffer
+    ? { $base64: Buffer.from(value).toString("base64") }
+    : (value as DumpValue);
 const fromDump = (value: DumpRow[string] | undefined): SqlValue =>
   value && typeof value === "object"
     ? new Uint8Array(Buffer.from(value.$base64, "base64")).buffer
@@ -108,9 +105,83 @@ import type {
   Served,
   Snapshot,
   Usage,
-  Dump,
 } from "./types";
-import { DUMP_TABLES, type DumpRow } from "./types";
+import { DUMP_TABLES } from "./types";
+import {
+  DUMP_VERSION,
+  DumpFormatError,
+  dumpLines,
+  legacyDumpLines,
+  SITE_TABLE_PREFIX,
+  type DumpHeader,
+  type DumpRow,
+  type DumpRowLine,
+  type DumpValue,
+  type LegacyDump,
+} from "../../control-plane/src/lib/site-data/dump-format";
+import {
+  dumpStream,
+  LineBuffer,
+  uploadDump,
+  type DumpBucket,
+} from "./dump";
+
+/** A dump's snapshot tables (`openDump`) and a restore's staging tables (`stage`). */
+const SNAP = "_naru_snap_";
+const STAGE = "_naru_stage_";
+/** Rows a dump reads from its snapshot at a time. */
+const DUMP_PAGE_ROWS = 500;
+/** Characters of lines a dump collects before handing them on. */
+const DUMP_YIELD_CHARS = 256 * 1024;
+/** Rows, or characters of their lines, a restore stages per transaction. */
+const STAGE_BATCH_ROWS = 1000;
+const STAGE_BATCH_CHARS = 1024 * 1024;
+/** A restore's rows, staged: each dump table's staging table and its rows' keys. */
+type Staged = {
+  schema: string[];
+  tables: Map<string, { stage: string; keys: string[]; rows: number }>;
+};
+/**
+ * Reads a request's dump through `work`. Refused before its end, the rest is
+ * still read (up to a limit) and dropped: a caller still sending its body
+ * would see its connection cut rather than the refusal.
+ */
+async function readBody<T>(
+  input: ReadableStream<Uint8Array>,
+  work: (body: AsyncIterable<Uint8Array>) => Promise<T>,
+): Promise<T> {
+  const reader = input.getReader();
+  let ended = false;
+  async function* body() {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) {
+        ended = true;
+        return;
+      }
+      yield next.value;
+    }
+  }
+  try {
+    return await work(body());
+  } catch (error) {
+    let left = DRAIN_BYTES;
+    try {
+      while (!ended && left > 0) {
+        const next = await reader.read();
+        if (next.done) ended = true;
+        else left -= next.value.byteLength;
+      }
+      if (!ended) await reader.cancel();
+    } catch {
+      /* the caller went away */
+    }
+    throw error;
+  }
+}
+/** How much of a refused dump is read and dropped before it is cut off. */
+const DRAIN_BYTES = 512 * 1024 * 1024;
+const quoteName = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
 // One site's collections and documents, stored in SQLite: the request rules
 // and storage. Its arguments and answers are in types.ts, its list query in
@@ -576,8 +647,12 @@ export class SiteData extends DurableObject<Env> {
     try {
       return { ok: true, value: this.ctx.storage.transactionSync(work) };
     } catch (error) {
-      if (error instanceof DataError)
-        return {
+      if (error instanceof DataError) return this.failure(error);
+      throw error;
+    }
+  }
+  private failure(error: DataError): Outcome<never> {
+    return {
           ok: false,
           error: {
             status: error.status,
@@ -590,8 +665,6 @@ export class SiteData extends DurableObject<Env> {
               : {}),
           },
         };
-      throw error;
-    }
   }
 
   private rows(query: string, ...bindings: SqlValue[]): Row[] {
@@ -1334,7 +1407,11 @@ export class SiteData extends DurableObject<Env> {
 
   /** The whole database, collections and tables, within the site's quota. */
   private checkDatabaseSize() {
-    if (this.sql.databaseSize > MAX_SITE_BYTES)
+    // A dump's snapshot or a restore's staging tables are not the site's.
+    if (
+      this.sql.databaseSize - this.snapshotBytes - this.stagedBytes >
+      MAX_SITE_BYTES
+    )
       throw new DataError(
         409,
         "Site database quota exceeded.",
@@ -1410,11 +1487,10 @@ export class SiteData extends DurableObject<Env> {
       const pending = this.run(() => this.pendingMigrations(migrations));
       if (!pending.ok) return pending;
       if (pending.value.length) {
-        const dump = await this.dump();
-        if (!dump.ok) return dump;
-        await this.env.SITE_FILES.put(
-          `${restorePointsPrefix(input.site!)}${input.generation}.json`,
-          JSON.stringify(dump.value),
+        await this.exclusive(() =>
+          this.writeDump(
+            `${restorePointsPrefix(input.site!)}${releaseRestorePointName(input.generation)}`,
+          ),
         );
       }
     }
@@ -2095,6 +2171,55 @@ export class SiteData extends DurableObject<Env> {
     });
   }
 
+  /**
+   * Tests only: the snapshot and staging tables that are left, and how long
+   * the last dump's snapshot took. `failUpload` first writes a dump to a
+   * bucket that refuses its parts, as R2 failing midway would.
+   */
+  async internalTables(input: { failUpload?: boolean } = {}) {
+    let failed: string | null = null;
+    if (input?.failUpload) {
+      const refuse = async () => {
+        throw new Error("The bucket refused the dump.");
+      };
+      try {
+        await this.exclusive(() =>
+          this.writeDump("unused", {
+            put: refuse,
+            createMultipartUpload: async () => ({
+              uploadPart: refuse,
+              complete: refuse,
+              abort: async () => {},
+            }),
+          }),
+        );
+      } catch (error) {
+        failed = String((error as Error).message);
+      }
+    }
+    return this.run(() => ({
+      tables: this.rows(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND (substr(name, 1, 11) = '_naru_snap_' OR substr(name, 1, 12) = '_naru_stage_') ORDER BY name",
+      ).map((row) => String(row.name)),
+      snapshotMs: this.lastSnapshotMs,
+      failed,
+      temporaryBytes: this.snapshotBytes + this.stagedBytes,
+    }));
+  }
+
+  /** Tests only: writes a restore point as given, such as one in the format before NDJSON. */
+  async putRestorePoint(input: { site: string; name: string; source: string }) {
+    if (!restorePointName(input?.name) || typeof input.source !== "string")
+      return this.run(() => {
+        throw new DataError(400, "Invalid restore point.");
+      });
+    await this.env.SITE_FILES.put(
+      `${restorePointsPrefix(input.site)}${input.name}`,
+      input.source,
+    );
+    return { ok: true as const, value: null };
+  }
+
   /** Tests only: replaces a module or migration, or removes it (null). */
   async putFunctions(input: {
     site: string;
@@ -2456,25 +2581,34 @@ export class SiteData extends DurableObject<Env> {
    * Overwrites this copy with the mini's `dump`, whatever it held: the
    * standby on Cloudflare only (index.ts refuses it anywhere else).
    */
-  async replace(input: Dump): Promise<Outcome<{ rows: number }>> {
-    return this.run(() => {
-      for (const table of DUMP_TABLES) this.sql.exec(`DELETE FROM ${table}`);
-      return this.fill(input);
-    });
+  async replace(
+    input: ReadableStream<Uint8Array>,
+  ): Promise<Outcome<{ rows: number }>> {
+    return this.settle(() =>
+      this.exclusive(() =>
+        readBody(input, async (body) => {
+          const staged = await this.stage(dumpLines(body));
+          return this.swapIn(staged, { keepPresent: false });
+        }),
+      ),
+    );
   }
 
   /**
    * Returns the site to one of its restore points (1.1.0): the owner's undo
-   * of a release's migrations, or of an earlier restore. What the site holds
-   * now is kept first as `before-restore-<ms>.json`; then, in one
-   * transaction, collections, documents, upload references and the site's
-   * own tables, migrations and roles become the restore point's. What
-   * belongs to the present stays: the active release (its revision and
-   * generation, which the control plane's records name), the owner, paid
-   * status and limits, the month's budget and counts, rate limits, and which
-   * copy the standby holds. Migrations of the active release that the
-   * restore point had not applied are pending again, and apply with the
-   * next release. `site` is the object's own, from the URL (index.ts).
+   * of a release's migrations, or of an earlier restore. The restore point is
+   * read into staging tables first, so one that is not a whole dump changes
+   * nothing; then what the site holds now is kept as
+   * `before-restore-<ms>.ndjson`; then, in one transaction, collections,
+   * documents, upload references and the site's own tables, migrations and
+   * roles become the restore point's. What belongs to the present stays: the
+   * active release (its revision and generation, which the control plane's
+   * records name), the owner, paid status and limits, the month's budget and
+   * counts, rate limits, and which copy the standby holds. Migrations of the
+   * active release that the restore point had not applied are pending again,
+   * and apply with the next release. `site` is the object's own, from the URL
+   * (index.ts). Restore points from before NDJSON (`.json`) are read whole,
+   * as they were written.
    */
   async restoreFrom(input: {
     site: string;
@@ -2486,72 +2620,60 @@ export class SiteData extends DurableObject<Env> {
       return this.run(() => {
         throw new DataError(400, "Invalid restore point.");
       });
+    const name = input.name;
     const prefix = restorePointsPrefix(input.site);
-    const object = await this.env.SITE_FILES.get(`${prefix}${input.name}`);
-    if (!object)
-      return this.run(() => {
-        throw new DataError(
-          404,
-          "There is no such restore point.",
-          "NOT_FOUND",
-        );
-      });
-    let point: Dump;
-    try {
-      point = JSON.parse(await object.text()) as Dump;
-      if (!point?.tables || typeof point.tables !== "object") throw 0;
-    } catch {
-      return this.run(() => {
-        throw new DataError(400, "The restore point is not a dump.");
-      });
-    }
-    // Nothing else runs from the save to the replacement, so the restore
-    // point of the present misses no write the restore replaces.
-    return this.ctx.blockConcurrencyWhile(async () => {
-      const now = await this.dump();
-      if (!now.ok) return now;
-      const saved = beforeRestoreName();
-      await this.env.SITE_FILES.put(
-        `${prefix}${saved}`,
-        JSON.stringify(now.value),
-      );
-      const restored = this.run(() => {
-        // What memory holds of the month goes to meta first, to be kept.
-        if (this.budget) {
-          this.setMeta("budget_month", this.budget.month);
-          this.setMeta("budget_used", String(this.budget.used));
-        }
-        if (this.stats)
-          this.setMeta(
-            `stats:${this.stats.month}`,
-            JSON.stringify(this.stats.counts),
+    return this.settle(() =>
+      this.exclusive(async () => {
+        const object = await this.env.SITE_FILES.get(`${prefix}${name}`);
+        if (!object)
+          throw new DataError(
+            404,
+            "There is no such restore point.",
+            "NOT_FOUND",
           );
-        const present = this.rows("SELECT * FROM meta")
-          .filter((row) => PRESENT_META.test(String(row.key)))
-          .map(dumpRow);
-        const rateLimits = this.rows("SELECT * FROM rate_limits").map(dumpRow);
-        for (const table of DUMP_TABLES) this.sql.exec(`DELETE FROM ${table}`);
-        const { rows } = this.fill({
-          ...point,
-          tables: {
-            ...point.tables,
-            meta: [
-              ...(point.tables.meta ?? []).filter(
-                (row) => !PRESENT_META.test(String(row.key)),
-              ),
-              ...present,
-            ],
-            rate_limits: rateLimits,
-          },
+        const restoring = async () => {
+          let source: AsyncIterable<{ line: DumpHeader | DumpRowLine }>;
+          if (legacyRestorePoint(name)) {
+            let point: LegacyDump;
+            try {
+              point = JSON.parse(await object.text()) as LegacyDump;
+            } catch {
+              throw new DataError(400, "The restore point is not a dump.");
+            }
+            source = (async function* () {
+              yield* legacyDumpLines(point);
+            })();
+          } else source = dumpLines(object.body);
+          const staged = await this.stage(source);
+          const saved = beforeRestoreName();
+          try {
+            await this.writeDump(`${prefix}${saved}`);
+          } catch (error) {
+            this.dropInternal(STAGE);
+            throw error;
+          }
+          const { rows } = this.swapIn(staged, { keepPresent: true });
+          this.budget = undefined;
+          this.stats = undefined;
+          // Every live query may now answer differently.
+          this.scheduleRefresh(["*"]);
+          return { revision: this.meta("functions_revision"), saved, rows };
+        };
+        // Nothing else runs from the save to the replacement, so the restore
+        // point of the present misses no write the restore replaces. A
+        // callback that throws would reset the object: a refusal comes out
+        // as a value, and is thrown again here.
+        const done = await this.ctx.blockConcurrencyWhile(async () => {
+          try {
+            return { value: await restoring() };
+          } catch (error) {
+            return { error };
+          }
         });
-        return { revision: this.meta("functions_revision"), saved, rows };
-      });
-      this.budget = undefined;
-      this.stats = undefined;
-      // Every live query may now answer differently.
-      if (restored.ok) this.scheduleRefresh(["*"]);
-      return restored;
-    });
+        if ("error" in done) throw done.error;
+        return done.value;
+      }),
+    );
   }
 
   /** Whether this object's database answers, for the health check. */
@@ -2564,140 +2686,420 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * Every row of every table, to move the site to another runtime (its
-   * `restore`): collections, documents, upload references, limits and
-   * settings, and the site's own tables.
+   * `restore`) or keep the standby's copy: collections, documents, upload
+   * references, limits and settings, and the site's own tables, as NDJSON
+   * (control-plane/src/lib/site-data/dump-format.ts). The snapshot is taken
+   * before this answers; the stream is read from it a page at a time.
    */
-  async dump(): Promise<Outcome<Dump>> {
-    return this.run(() => {
-      const objects = this.siteObjects();
-      return {
-        tables: Object.fromEntries(
-          DUMP_TABLES.map((table) => [
-            table,
-            this.rows(`SELECT * FROM ${table}`).map(dumpRow),
-          ]),
-        ) as Dump["tables"],
-        site: {
-          schema: objects.map((object) => object.sql),
-          tables: Object.fromEntries(
-            objects
-              .filter((object) => object.type === "table")
-              .map((object) => [
-                object.name,
-                this.rows(
-                  // A full-text table's rowid is not one of its columns.
-                  `SELECT ${object.virtual ? "rowid, " : ""}* FROM "${object.name.replaceAll('"', '""')}"`,
-                ).map(dumpRow),
-              ]),
-          ),
-          migrations: this.rows("SELECT * FROM _naru_migrations").map(dumpRow),
-          roles: this.rows("SELECT * FROM _naru_roles").map(dumpRow),
-        },
-      };
+  async dump(): Promise<Outcome<ReadableStream<Uint8Array>>> {
+    return this.settle(async () => {
+      const release = await this.acquire();
+      try {
+        const dump = this.openDump();
+        return dumpStream(dump.bytes, () => {
+          dump.close();
+          release();
+        });
+      } catch (error) {
+        release();
+        throw error;
+      }
     });
   }
 
   /**
    * Fills an empty site with another runtime's `dump`. Refused once the site
-   * has a collection, so a mistaken run cannot overwrite live data.
+   * has a collection or a table, so a mistaken run cannot overwrite live
+   * data.
    */
-  async restore(input: Dump): Promise<Outcome<{ rows: number }>> {
-    return this.run(() => {
-      if (this.rows("SELECT 1 FROM collections LIMIT 1").length)
-        throw new DataError(409, "The site already has collections.");
-      if (this.siteObjects().length)
-        throw new DataError(409, "The site already has tables.");
-      return this.fill(input);
+  async restore(
+    input: ReadableStream<Uint8Array>,
+  ): Promise<Outcome<{ rows: number }>> {
+    return this.settle(() =>
+      this.exclusive(() =>
+        readBody(input, async (body) => {
+          this.ctx.storage.transactionSync(() => this.refuseUnlessEmpty());
+          const staged = await this.stage(dumpLines(body));
+          return this.swapIn(staged, { keepPresent: false, empty: true });
+        }),
+      ),
+    );
+  }
+
+  private refuseUnlessEmpty() {
+    if (this.rows("SELECT 1 FROM collections LIMIT 1").length)
+      throw new DataError(409, "The site already has collections.");
+    if (this.siteObjects().length)
+      throw new DataError(409, "The site already has tables.");
+  }
+
+  // Dumps and restores, a part at a time (dump.ts, dump-format.ts). A dump
+  // copies every table it carries into `_naru_snap_<n>` in one synchronous
+  // step, its snapshot, and is then written from those a page at a time; a
+  // restore reads rows into `_naru_stage_<n>` in short transactions, and
+  // swaps them in at the end in one. Both are `_naru…` names, which site SQL
+  // cannot use and dumps and listings leave out. One runs at a time in an
+  // object (`exclusive`), so each may drop what a crash left behind.
+
+  private bulk: Promise<void> = Promise.resolve();
+  /** Waits for the dump or restore before to end; the answer ends this one. */
+  private async acquire(): Promise<() => void> {
+    const before = this.bulk;
+    let release!: () => void;
+    this.bulk = new Promise<void>((done) => (release = done));
+    await before;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      release();
+    };
+  }
+  private async exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await work();
+    } finally {
+      release();
+    }
+  }
+
+  /** An async step's refusals as an Outcome, as `run` answers a synchronous one. */
+  private async settle<T>(work: () => Promise<T>): Promise<Outcome<T>> {
+    try {
+      return { ok: true, value: await work() };
+    } catch (error) {
+      if (error instanceof DumpFormatError)
+        return this.failure(new DataError(400, error.message));
+      if (error instanceof DataError) return this.failure(error);
+      throw error;
+    }
+  }
+
+  /** Drops what a dump (SNAP) or restore (STAGE) left of its tables. */
+  private dropInternal(prefix: string) {
+    if (prefix === STAGE) this.stagedBytes = 0;
+    this.ctx.storage.transactionSync(() => {
+      for (const row of this.rows(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND substr(name, 1, ?) = ?",
+        prefix.length,
+        prefix,
+      ))
+        this.sql.exec(`DROP TABLE IF EXISTS "${String(row.name)}"`);
     });
   }
 
-  /** Writes a `dump` into tables `restore` or `replace` emptied. */
-  private fill(input: Dump) {
-    let rows = this.fillSite(input.site);
-    for (const table of DUMP_TABLES) {
-      const given = input?.tables?.[table];
-      if (!Array.isArray(given))
-        throw new DataError(400, `The dump has no ${table} table.`);
-      // Column names come from this object's own schema, never the input.
-      const columns = this.rows(`PRAGMA table_info(${table})`).map((column) =>
-        String(column.name),
-      );
-      this.sql.exec(`DELETE FROM ${table}`);
-      for (const row of given) {
-        const present = columns.filter((column) => Object.hasOwn(row, column));
+  /**
+   * The snapshot: every table a dump carries, copied in one transaction,
+   * with the schema to create the site's tables again. Then `bytes` reads it
+   * a page at a time; `close` drops it, however the dump ended.
+   */
+  private openDump() {
+    this.dropInternal(SNAP);
+    const started = Date.now();
+    const before = this.sql.databaseSize;
+    const snapshot = this.ctx.storage.transactionSync(() => {
+      const objects = this.siteObjects();
+      const sources = [
+        ...DUMP_TABLES.map((table) => ({ table, from: table, virtual: false })),
+        ...objects
+          .filter((object) => object.type === "table")
+          .map((object) => ({
+            table: `${SITE_TABLE_PREFIX}${object.name}`,
+            from: quoteName(object.name),
+            virtual: object.virtual,
+          })),
+        { table: "_naru_migrations", from: "_naru_migrations", virtual: false },
+        { table: "_naru_roles", from: "_naru_roles", virtual: false },
+      ];
+      const tables = sources.map((source, n) => {
+        const snap = `${SNAP}${n}`;
+        // A full-text table's rowid is not one of its columns: it is kept as
+        // one, under that name, as restore expects it.
         this.sql.exec(
-          `INSERT INTO ${table} (${present.join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
-          ...present.map((column) => fromDump(row[column])),
+          `CREATE TABLE ${snap} AS SELECT ${source.virtual ? "rowid AS rowid, " : ""}* FROM ${source.from}`,
         );
-        rows++;
+        return { table: source.table, snap };
+      });
+      return { schema: objects.map((object) => object.sql), tables };
+    });
+    this.lastSnapshotMs = Date.now() - started;
+    this.snapshotBytes = Math.max(0, this.sql.databaseSize - before);
+    const sql = this.sql;
+    async function* bytes(): AsyncGenerator<Uint8Array> {
+      const buffer = new LineBuffer();
+      buffer.add({ type: "header", version: DUMP_VERSION, schema: snapshot.schema });
+      let rows = 0;
+      for (const { table, snap } of snapshot.tables) {
+        const columns = sql
+          .exec(`SELECT name FROM pragma_table_info('${snap}')`)
+          .toArray()
+          .map((column) => String(column.name));
+        // The snapshot's own rowid, by a name none of its columns has.
+        const key = ["_rowid_", "oid", "rowid"].find(
+          (name) => !columns.some((column) => column.toLowerCase() === name),
+        )!;
+        let after = 0;
+        for (;;) {
+          // A page at a time, read whole: no cursor is open across an await.
+          const cursor = [
+            ...sql
+              .exec(
+                `SELECT ${key}, * FROM ${snap} WHERE ${key} > ? ORDER BY ${key} LIMIT ${DUMP_PAGE_ROWS}`,
+                after,
+              )
+              .raw(),
+          ];
+          for (const values of cursor) {
+            after = Number(values[0]);
+            const row: DumpRow = {};
+            for (let i = 0; i < columns.length; i++)
+              row[columns[i]] = toDump(values[i + 1] as SqlValue);
+            buffer.add({ type: "row", table, row });
+            rows++;
+          }
+          if (buffer.size >= DUMP_YIELD_CHARS) yield buffer.take();
+          if (cursor.length < DUMP_PAGE_ROWS) break;
+        }
       }
+      buffer.add({ type: "end", rows });
+      yield buffer.take();
     }
-    for (const row of this.rows(
-      "SELECT key, value FROM meta WHERE key LIKE 'unique:%'",
-    ))
-      for (const field of JSON.parse(String(row.value)) as string[])
-        this.sql.exec(this.uniqueIndex(String(row.key).slice(7), field).create);
-    for (const row of this.rows(
-      "SELECT key, value FROM meta WHERE key LIKE 'indexes:%'",
-    ))
-      for (const field of JSON.parse(String(row.value)) as string[])
-        this.sql.exec(fieldIndex(String(row.key).slice(8), field).create);
-    this.budget = undefined;
-    return { rows };
+    return {
+      bytes: bytes(),
+      close: () => {
+        this.dropInternal(SNAP);
+        this.snapshotBytes = 0;
+      },
+    };
+  }
+  /** How long the last dump's snapshot held the object, in ms (tests). */
+  private lastSnapshotMs = 0;
+  /**
+   * About how much of the database the open dump's snapshot and the
+   * restore's staging tables take, which the site's quota leaves out.
+   */
+  private snapshotBytes = 0;
+  private stagedBytes = 0;
+
+  /** Writes a dump of the present to R2 at `key`; the caller holds `exclusive`. */
+  private async writeDump(key: string, bucket: DumpBucket = this.env.SITE_FILES) {
+    const dump = this.openDump();
+    try {
+      return await uploadDump(bucket, key, dump.bytes);
+    } finally {
+      dump.close();
+    }
   }
 
   /**
-   * Replaces the site's own tables with a dump's: what it held is dropped,
-   * the dump's schema created (checked as a migration's is) and its rows
-   * written. Returns how many rows were written.
+   * Reads a dump's rows into staging tables, a batch to a short transaction,
+   * checking its header, rows and end line as they come; a dump that is not
+   * whole fails here, before the site is touched, and leaves no staging
+   * table. Each table's rows go to `_naru_stage_<n>`, whose columns c0, c1…
+   * stand for the keys of its rows.
    */
-  private fillSite(site: Dump["site"]) {
-    for (const object of this.siteObjects().reverse())
-      this.sql.exec(
-        `DROP ${object.type.toUpperCase()} IF EXISTS "${object.name.replaceAll('"', '""')}"`,
-      );
-    this.sql.exec("DELETE FROM _naru_migrations");
-    this.sql.exec("DELETE FROM _naru_roles");
-    if (!site) return 0;
-    let rows = 0;
-    for (const sql of site.schema) {
-      for (const statement of statements(sql))
-        classify(statement.tokens, ["schema"]);
-      this.sql.exec(sql);
-    }
-    const virtual = new Set(
-      this.siteObjects()
-        .filter((object) => object.virtual)
-        .map((object) => object.name),
-    );
-    const insert = (table: string, given: DumpRow[]) => {
-      const columns = [
-        ...(virtual.has(table) ? ["rowid"] : []),
-        ...this.rows(`SELECT name FROM pragma_table_info(?)`, table).map(
-          (column) => String(column.name),
-        ),
-      ];
-      for (const row of given) {
-        const present = columns.filter((column) => Object.hasOwn(row, column));
-        const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
-        this.sql.exec(
-          `INSERT INTO ${quote(table)} (${present.map(quote).join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
-          ...present.map((column) => fromDump(row[column])),
-        );
-        rows++;
-      }
+  private async stage(
+    source: AsyncIterable<{ line: DumpHeader | DumpRowLine; length?: number }>,
+  ): Promise<Staged> {
+    this.dropInternal(STAGE);
+    this.dropInternal(SNAP);
+    const staged: Staged = { schema: [], tables: new Map() };
+    let batch: DumpRowLine[] = [];
+    let chars = 0;
+    const before = this.sql.databaseSize;
+    const flush = () => {
+      const rows = batch;
+      batch = [];
+      chars = 0;
+      this.ctx.storage.transactionSync(() => {
+        for (const { table, row } of rows) this.stageRow(staged, table, row);
+      });
+      this.stagedBytes = Math.max(0, this.sql.databaseSize - before);
     };
-    for (const [table, given] of Object.entries(site.tables ?? {})) {
-      if (reserved(table) || !Array.isArray(given))
-        throw new DataError(
-          400,
-          `The dump's table ${table} is not the site's.`,
-        );
-      insert(table, given);
+    try {
+      for await (const { line, length } of source) {
+        if (line.type === "header") {
+          staged.schema = line.schema;
+          continue;
+        }
+        batch.push(line);
+        chars += length ?? 0;
+        if (batch.length >= STAGE_BATCH_ROWS || chars >= STAGE_BATCH_CHARS)
+          flush();
+      }
+      flush();
+      return staged;
+    } catch (error) {
+      this.dropInternal(STAGE);
+      throw error;
     }
-    insert("_naru_migrations", site.migrations ?? []);
-    insert("_naru_roles", site.roles ?? []);
-    return rows;
+  }
+
+  private stageRow(staged: Staged, table: string, row: DumpRow) {
+    let stage = staged.tables.get(table);
+    if (!stage) {
+      const site = table.startsWith(SITE_TABLE_PREFIX)
+        ? table.slice(SITE_TABLE_PREFIX.length)
+        : null;
+      if (
+        site === null
+          ? !(DUMP_TABLES as readonly string[]).includes(table) &&
+            table !== "_naru_migrations" &&
+            table !== "_naru_roles"
+          : !site || reserved(site)
+      )
+        throw new DataError(400, `The dump's table ${table} is not the site's.`);
+      stage = {
+        stage: `${STAGE}${staged.tables.size}`,
+        keys: Object.keys(row),
+        rows: 0,
+      };
+      staged.tables.set(table, stage);
+      // `n` only lets a table be made, and a row written, without columns.
+      this.sql.exec(
+        `CREATE TABLE ${stage.stage} (n${stage.keys.map((_, i) => `, c${i}`).join("")})`,
+      );
+    }
+    for (const key of Object.keys(row))
+      if (!stage.keys.includes(key)) {
+        this.sql.exec(
+          `ALTER TABLE ${stage.stage} ADD COLUMN c${stage.keys.length}`,
+        );
+        stage.keys.push(key);
+      }
+    const present = stage.keys
+      .map((key, i) => [key, i] as const)
+      .filter(([key]) => Object.hasOwn(row, key));
+    if (present.length)
+      this.sql.exec(
+        `INSERT INTO ${stage.stage} (${present.map(([, i]) => `c${i}`).join(", ")}) VALUES (${present.map(() => "?").join(", ")})`,
+        ...present.map(([key]) => fromDump(row[key])),
+      );
+    else this.sql.exec(`INSERT INTO ${stage.stage} DEFAULT VALUES`);
+    stage.rows++;
+  }
+
+  /**
+   * Swaps staged rows in, in one transaction: Naru's tables emptied, the
+   * site's objects dropped and the dump's schema created again (checked as a
+   * migration's is), every table filled from its staging table, unique and
+   * field indexes made again, and the staging tables dropped. `keepPresent`
+   * (restoreFrom) keeps what belongs to the present: PRESENT_META and rate
+   * limits. `empty` (restore) refuses a site that is no longer empty.
+   */
+  private swapIn(
+    staged: Staged,
+    options: { keepPresent: boolean; empty?: boolean },
+  ): { rows: number } {
+    try {
+      return this.ctx.storage.transactionSync(() => {
+        if (options.empty) this.refuseUnlessEmpty();
+        let present: Row[] = [];
+        if (options.keepPresent) {
+          // What memory holds of the month goes to meta first, to be kept.
+          if (this.budget) {
+            this.setMeta("budget_month", this.budget.month);
+            this.setMeta("budget_used", String(this.budget.used));
+          }
+          if (this.stats)
+            this.setMeta(
+              `stats:${this.stats.month}`,
+              JSON.stringify(this.stats.counts),
+            );
+          present = this.rows("SELECT * FROM meta").filter((row) =>
+            PRESENT_META.test(String(row.key)),
+          );
+        }
+        for (const object of this.siteObjects().reverse())
+          this.sql.exec(
+            `DROP ${object.type.toUpperCase()} IF EXISTS ${quoteName(object.name)}`,
+          );
+        this.sql.exec("DELETE FROM _naru_migrations");
+        this.sql.exec("DELETE FROM _naru_roles");
+        for (const sql of staged.schema) {
+          for (const statement of statements(sql))
+            classify(statement.tokens, ["schema"]);
+          this.sql.exec(sql);
+        }
+        const objects = new Map(
+          this.siteObjects()
+            .filter((object) => object.type === "table")
+            .map((object) => [object.name, object.virtual]),
+        );
+        let rows = 0;
+        // Column names come from this object's own schema, never the dump.
+        const copy = (table: string, target: string, virtual: boolean) => {
+          const stage = staged.tables.get(table);
+          if (!stage) return;
+          const columns = [
+            ...(virtual ? ["rowid"] : []),
+            ...this.rows("SELECT name FROM pragma_table_info(?)", target).map(
+              (column) => String(column.name),
+            ),
+          ];
+          const present = columns.filter((column) =>
+            stage.keys.includes(column),
+          );
+          if (!present.length)
+            throw new DataError(
+              400,
+              `The dump's rows of ${table} have none of its columns.`,
+            );
+          this.sql.exec(
+            `INSERT INTO ${quoteName(target)} (${present.map(quoteName).join(", ")}) SELECT ${present.map((column) => `c${stage.keys.indexOf(column)}`).join(", ")} FROM ${stage.stage} ORDER BY rowid`,
+          );
+          rows += stage.rows;
+        };
+        for (const table of staged.tables.keys()) {
+          if (!table.startsWith(SITE_TABLE_PREFIX)) continue;
+          const name = table.slice(SITE_TABLE_PREFIX.length);
+          if (!objects.has(name))
+            throw new DataError(
+              400,
+              `The dump's table ${table} is not the site's.`,
+            );
+          copy(table, name, objects.get(name)!);
+        }
+        copy("_naru_migrations", "_naru_migrations", false);
+        copy("_naru_roles", "_naru_roles", false);
+        for (const table of DUMP_TABLES) {
+          if (options.keepPresent && table === "rate_limits") continue;
+          this.sql.exec(`DELETE FROM ${table}`);
+          copy(table, table, false);
+        }
+        if (options.keepPresent) {
+          for (const row of this.rows("SELECT key FROM meta"))
+            if (PRESENT_META.test(String(row.key)))
+              this.sql.exec("DELETE FROM meta WHERE key = ?", row.key);
+          for (const row of present)
+            this.sql.exec(
+              "INSERT INTO meta (key, value) VALUES (?, ?)",
+              row.key,
+              row.value,
+            );
+        }
+        for (const row of this.rows(
+          "SELECT key, value FROM meta WHERE key LIKE 'unique:%'",
+        ))
+          for (const field of JSON.parse(String(row.value)) as string[])
+            this.sql.exec(
+              this.uniqueIndex(String(row.key).slice(7), field).create,
+            );
+        for (const row of this.rows(
+          "SELECT key, value FROM meta WHERE key LIKE 'indexes:%'",
+        ))
+          for (const field of JSON.parse(String(row.value)) as string[])
+            this.sql.exec(fieldIndex(String(row.key).slice(8), field).create);
+        for (const stage of staged.tables.values())
+          this.sql.exec(`DROP TABLE ${stage.stage}`);
+        this.budget = undefined;
+        return { rows };
+      });
+    } finally {
+      // Refused, the transaction kept them: they go either way.
+      this.dropInternal(STAGE);
+    }
   }
 
   /** Erases the site, for account deletion. */

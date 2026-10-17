@@ -17,6 +17,7 @@ import { serveSdk, type SdkEnv } from "./sdk";
 import type { SiteData } from "./site";
 import { Standby, type Mode, type StandbyEnv } from "./standby";
 import type { Outcome } from "./types";
+import { DUMP_CONTENT_TYPE } from "../../control-plane/src/lib/site-data/dump-format";
 import { website, type WebsiteEnv } from "./website";
 
 export { PageviewLog } from "./pageview-log";
@@ -52,7 +53,10 @@ export interface Env
 // /v1/pageviews/<operation> and /v1/domains/replace are the control plane's
 // own: POST with a JSON body, answered with `{ value }` or
 // `{ error: { status, message, code } }` at that status. A site's object is
-// named by the site, so every request for a site meets the same one.
+// named by the site, so every request for a site meets the same one. Dumps
+// (DUMP_OPERATIONS) are NDJSON instead (dump-format.ts), streamed both ways:
+// `dump` answers one as its body, and `restore` and `replace` take one as
+// theirs; their refusals are JSON as above.
 const OPERATIONS = [
   "execute",
   "batch",
@@ -82,8 +86,18 @@ const OPERATIONS = [
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
-const TEST_OPERATIONS = ["export", "import", "putFunctions"] as const;
+const TEST_OPERATIONS = [
+  "export",
+  "import",
+  "putFunctions",
+  // What dumps and restores leave of their own tables, and a restore point
+  // planted in R2 as an older release wrote it.
+  "internalTables",
+  "putRestorePoint",
+] as const;
 type Operation = (typeof OPERATIONS)[number] | (typeof TEST_OPERATIONS)[number];
+/** The operations whose request body is a dump, read as it arrives. */
+const DUMP_OPERATIONS: readonly string[] = ["restore", "replace"];
 
 // Site names.
 const SITE = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -133,6 +147,10 @@ function dispatch(
       return stub.restoreFrom(input);
     case "dump":
       return stub.dump();
+    case "internalTables":
+      return stub.internalTables(input);
+    case "putRestorePoint":
+      return stub.putRestorePoint(input);
     case "fingerprint":
       return stub.fingerprint();
     case "markStandby":
@@ -400,11 +418,15 @@ export default {
       return failure(404, "Not found.");
     if (request.method !== "POST") return failure(405, "Method not allowed.");
     let input: unknown;
-    try {
-      input = await request.json();
-    } catch {
-      return failure(400, "Expected a JSON body.");
-    }
+    if (DUMP_OPERATIONS.includes(operation!)) {
+      if (!request.body) return failure(400, "Expected a dump.");
+      input = request.body;
+    } else
+      try {
+        input = await request.json();
+      } catch {
+        return failure(400, "Expected a JSON body.");
+      }
     // A restore point is read from the site the URL names, whose object
     // this is, never one the body names.
     if (operation === "restoreFrom")
@@ -418,6 +440,10 @@ export default {
     )) as Outcome<unknown>;
     if (outcome.ok && operation === "replace")
       await standbyObject(env)!.held(site);
+    if (outcome.ok && operation === "dump")
+      return new Response(outcome.value as ReadableStream<Uint8Array>, {
+        headers: { "Content-Type": DUMP_CONTENT_TYPE },
+      });
     return outcome.ok
       ? // JSON drops `undefined`; the caller tells success by `value`.
         Response.json({ value: outcome.value ?? null })
