@@ -5,7 +5,8 @@ import {
   validRoute,
   withHead,
 } from "../../control-plane/src/lib/site-functions/routes";
-import { servePage, type PagesEnv, type RenderRoute } from "./pages";
+import { notFound, servePage, type PagesEnv, type RenderRoute } from "./pages";
+import { ROUTES_OFF } from "./types";
 
 // Routes (1.1.0): which path a route answers, what it may answer, and the
 // page Worker serving it, against a bucket held in memory and a stand-in for
@@ -293,5 +294,26 @@ describe("serving", () => {
     });
     answer = { ok: false, error: { status: 503, message: "away" } };
     expect((await navigate("/posts/12", "dave")).status).toBe(404);
+  });
+
+  test("a site whose paid status has lapsed answers its route paths 404, never the outage page", async () => {
+    // The site's object's own refusal (site.ts `render`).
+    answer = {
+      ok: false,
+      error: {
+        status: 404,
+        message: "Not Found",
+        details: { reason: ROUTES_OFF },
+      },
+    };
+    for (const response of [await navigate("/posts/12"), await get("/go")]) {
+      expect(response.status).toBe(404);
+      // As any unknown path answers, not a route's error page.
+      expect(await response.text()).toBe(await notFound().text());
+      expect(response.headers.get("Retry-After")).toBeNull();
+    }
+    // A route's own 404 is still its own page.
+    answer = { ok: false, error: { status: 404, message: "없는 글" } };
+    expect(await (await navigate("/posts/12")).text()).toContain("없는 글");
   });
 });

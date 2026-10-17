@@ -106,7 +106,7 @@ import type {
   Snapshot,
   Usage,
 } from "./types";
-import { DUMP_TABLES } from "./types";
+import { DUMP_TABLES, ROUTES_OFF } from "./types";
 import {
   DUMP_VERSION,
   DumpFormatError,
@@ -646,18 +646,16 @@ export class SiteData extends DurableObject<Env> {
   }
   private failure(error: DataError): Outcome<never> {
     return {
-          ok: false,
-          error: {
-            status: error.status,
-            message: error.message,
-            code: error.code,
-            ...(error.details === undefined ? {} : { details: error.details }),
-            ...(error.site ? { site: true } : {}),
-            ...(error instanceof BudgetSpent
-              ? { resetsAt: error.resetsAt }
-              : {}),
-          },
-        };
+      ok: false,
+      error: {
+        status: error.status,
+        message: error.message,
+        code: error.code,
+        ...(error.details === undefined ? {} : { details: error.details }),
+        ...(error.site ? { site: true } : {}),
+        ...(error instanceof BudgetSpent ? { resetsAt: error.resetsAt } : {}),
+      },
+    };
   }
 
   private rows(query: string, ...bindings: SqlValue[]): Row[] {
@@ -1934,8 +1932,9 @@ export class SiteData extends DurableObject<Env> {
   /**
    * A route's page (1.1.0), for the edge Worker serving the site (pages.ts):
    * its module's default export, run as a visitor's query with the path, its
-   * parameters and the query string. Refused (503) while the edge may not
-   * answer the site's visitors, as `visit` passes them on.
+   * parameters and the query string. Refused while the edge may not answer
+   * the site's visitors, as `visit` passes them on: a 404 with
+   * `details.reason` ROUTES_OFF, which tells it from the mini being away.
    */
   async render(input: {
     site: string;
@@ -1958,9 +1957,10 @@ export class SiteData extends DurableObject<Env> {
       return {
         ok: false,
         error: {
-          status: 503,
-          message: "Routes are unavailable.",
-          code: "UNAVAILABLE",
+          status: 404,
+          message: "Not Found",
+          code: "NOT_FOUND",
+          details: { reason: ROUTES_OFF },
         },
       };
     const outcome = await this.call({
@@ -2762,7 +2762,11 @@ export class SiteData extends DurableObject<Env> {
     const sql = this.sql;
     async function* bytes(): AsyncGenerator<Uint8Array> {
       const buffer = new LineBuffer();
-      buffer.add({ type: "header", version: DUMP_VERSION, schema: snapshot.schema });
+      buffer.add({
+        type: "header",
+        version: DUMP_VERSION,
+        schema: snapshot.schema,
+      });
       let rows = 0;
       for (const { table, snap } of snapshot.tables) {
         const columns = sql
@@ -2931,7 +2935,10 @@ export class SiteData extends DurableObject<Env> {
             table !== "_naru_roles"
           : !site || reserved(site)
       )
-        throw new DataError(400, `The dump's table ${table} is not the site's.`);
+        throw new DataError(
+          400,
+          `The dump's table ${table} is not the site's.`,
+        );
       stage = {
         stage: `${STAGE}${staged.tables.size}`,
         keys: Object.keys(row),

@@ -520,6 +520,32 @@ integration("routes", () => {
     ).toEqual({
       result: { body: "<rss>첫 글,둘째</rss>", type: "application/rss+xml" },
     });
+
+    // A site whose paid status has lapsed, or is not confirmed, renders
+    // nothing: a 404 with its reason, which the edge answers as a missing
+    // path rather than as the mini being away (edge/src/pages.ts).
+    const configure = (entitledUntil: number | null, confirmedUntil: number) =>
+      callSiteObject(site, "configure", {
+        ownerId,
+        entitledUntil,
+        confirmedUntil,
+      });
+    try {
+      for (const [entitledUntil, confirmedUntil] of [
+        [Date.now() - 1000, Date.now() + 60_000],
+        [null, Date.now() - 1000],
+      ] as const) {
+        await configure(entitledUntil, confirmedUntil);
+        await expect(render("1")).rejects.toMatchObject({
+          status: 404,
+          code: "NOT_FOUND",
+          details: { reason: "routes_off" },
+        });
+      }
+    } finally {
+      await configure(null, Date.now() + 60_000);
+    }
+    expect(await render("1")).toMatchObject({ result: { cache: 30 } });
   });
 });
 

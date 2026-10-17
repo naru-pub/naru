@@ -240,12 +240,18 @@ async function renderRoute(
   );
   const body = (await response.json().catch(() => null)) as {
     value?: { result: unknown };
-    error?: { status: number; message: string };
+    error?: { status: number; message: string; details?: unknown };
   } | null;
   if (response.ok && body?.value) return { ok: true, value: body.value };
+  // The site's object's own refusal (a lapsed site's is a 404 with its
+  // reason, pages.ts) comes at its status; anything else, such as Caddy's
+  // 502 while workerd is down, is the mini being away.
   return {
     ok: false,
-    error: body?.error ?? { status: 503, message: "The site did not answer." },
+    error:
+      body?.error && body.error.status === response.status
+        ? body.error
+        : { status: 503, message: "The site did not answer." },
   };
 }
 

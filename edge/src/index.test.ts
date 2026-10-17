@@ -5,6 +5,7 @@ vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
 vi.mock("./site", () => ({ SiteData: class {} }));
 const { default: worker } = await import("./index");
 const { default: local } = await import("./local");
+const { notFound } = await import("./pages");
 
 // The Worker on Cloudflare serves no Data SDK and no data API: a hosted
 // site's own /sdk/ and /api/data/v1/ paths, on its subdomain or a custom
@@ -74,6 +75,81 @@ describe("the platform's hosts on Cloudflare", () => {
     for (const path of ["/sdk/1.0.0/naru.js", "/api/data/v1/alice/posts"]) {
       const response = await get(worker, `https://edge.naru.pub${path}`);
       expect(response.status).toBe(401);
+    }
+  });
+});
+
+describe("a route's page rendered on the mini, through the Standby object", () => {
+  const routed = (forward: (request: Request) => Promise<Response>) => ({
+    ...(env as object),
+    SDK_ORIGIN_SECRET: "secret",
+    SITE_FILES: {
+      async get(key: string) {
+        const body =
+          key === "_naru-runtime/bob/routes.json"
+            ? JSON.stringify({ routes: ["posts/_id"] })
+            : key === "bob/index.html"
+              ? "<p>bob's app</p>"
+              : null;
+        if (body === null) return null;
+        return {
+          size: body.length,
+          httpEtag: '"1"',
+          httpMetadata: { contentType: "text/html" },
+          body: new Response(body).body,
+          json: async () => JSON.parse(body),
+        };
+      },
+    },
+    STANDBY: {
+      idFromName: () => ({}),
+      get: () => ({ forward }),
+    },
+  });
+  const navigate = (forward: (request: Request) => Promise<Response>) =>
+    worker.fetch!(
+      new Request("https://bob.naru.pub/posts/1", {
+        headers: { "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document" },
+      }) as never,
+      routed(forward) as never,
+      ctx,
+    );
+  const refusal = (status: number, error: object) =>
+    Response.json({ error: { status, ...error } }, { status });
+
+  test("a lapsed site's refusal is a plain 404", async () => {
+    const page = await navigate(async () =>
+      refusal(404, {
+        message: "Not Found",
+        code: "NOT_FOUND",
+        details: { reason: "routes_off" },
+      }),
+    );
+    expect(page.status).toBe(404);
+    expect(await page.text()).toBe(await notFound().text());
+  });
+
+  test("the mini away is the site's index.html at 503", async () => {
+    for (const forward of [
+      // Caddy with workerd down, or the line timing out.
+      async () => new Response("<html>502 Bad Gateway</html>", { status: 502 }),
+      async () => new Response("", { status: 504 }),
+      // The object itself unavailable.
+      async () =>
+        refusal(503, { message: "Function failed.", code: "UNAVAILABLE" }),
+      // A JSON body whose status is not the response's is not the object's.
+      async () =>
+        refusal(404, { details: { reason: "routes_off" } })
+          .json()
+          .then((body) => Response.json(body, { status: 502 })),
+      async () => {
+        throw new Error("connection refused");
+      },
+    ]) {
+      const page = await navigate(forward);
+      expect(page.status).toBe(503);
+      expect(await page.text()).toBe("<p>bob's app</p>");
+      expect(page.headers.get("Retry-After")).toBe("60");
     }
   });
 });

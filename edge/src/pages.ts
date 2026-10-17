@@ -13,6 +13,7 @@ import {
 } from "../../control-plane/src/lib/site-functions/routes";
 import { routesKey } from "../../control-plane/src/lib/site-functions/revisions";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
+import { ROUTES_OFF } from "./types";
 
 // Hosted sites, <login>.naru.pub or a custom domain (domains.ts), answered at
 // the edge from the site bucket, so they stay up while the control plane is
@@ -256,8 +257,21 @@ export type RenderRoute = (input: {
   clientIp?: string;
 }) => Promise<
   | { ok: true; value: { result: unknown } }
-  | { ok: false; error: { status: number; message: string } }
+  | {
+      ok: false;
+      error: { status: number; message: string; details?: unknown };
+    }
 >;
+
+/**
+ * Whether the site's object refused the render because the site is not
+ * served now (lapsed or unconfirmed paid status): its own answer, never what
+ * Caddy or a failed connection gives while the mini is away.
+ */
+const routesOff = (error: { status: number; details?: unknown }) =>
+  error.status === 404 &&
+  (error.details as { reason?: unknown } | null | undefined)?.reason ===
+    ROUTES_OFF;
 
 /** Each site's routes, as its active release lists them, kept a little while. */
 const ROUTES_SECONDS = 30;
@@ -341,10 +355,14 @@ async function serveRoute(
     console.error(`Rendering ${login}'s ${match.route} failed`, error);
     return away(request, env, ctx, login);
   }
-  if (!outcome.ok)
+  if (!outcome.ok) {
+    // A site whose paid status has lapsed: its route paths are not found, as
+    // any unknown path is, not the page served while the mini is away.
+    if (routesOff(outcome.error)) return notFound();
     return outcome.error.status === 503
       ? away(request, env, ctx, login)
       : routeError(outcome.error.status, outcome.error.message);
+  }
   let answer: RouteAnswer;
   try {
     answer = routeAnswer(outcome.value.result);
@@ -410,8 +428,8 @@ async function serveRoute(
 }
 
 /**
- * A route that could not be rendered: the mini, where site databases live,
- * is away, or the site's routes are off. A page's navigation gets the site's
+ * A route that could not be rendered because the mini, where site databases
+ * live, is away: unreachable, or answering 502/503/504. A page's navigation gets the site's
  * own index.html, at 503, so an app's shell still loads and can say so;
  * anything else, or a site without index.html, is answered as if there were
  * no routes (null).

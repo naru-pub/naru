@@ -80,6 +80,14 @@ export type Snapshot = {
   functions?: { revision: string; generation: string | null };
 };
 
+/**
+ * `details.reason` of a route render the site's object refuses because the
+ * site is not served now: its paid status has lapsed or is unconfirmed, or
+ * it was never configured (site.ts `render`). pages.ts answers 404 for it,
+ * never the page it serves while the mini is away.
+ */
+export const ROUTES_OFF = "routes_off";
+
 /** Errors cross the RPC boundary as values: a thrown error loses its fields. */
 export type Outcome<T> =
   | { ok: true; value: T }

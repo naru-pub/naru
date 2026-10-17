@@ -64,7 +64,7 @@
 
 - 사이트의 정적 파일은 엣지 Worker가 R2에서 계속 서빙합니다.
 - 데이터 호출은 실패합니다. SDK는 `UNAVAILABLE` 오류로 알립니다. control plane도 같은 맥 미니에 있어 로그인과 관리 화면도 멈춥니다.
-- 라우트 경로로 들어온 페이지 이동에는 사이트의 `index.html`을 상태 503으로 돌려줍니다(`Cache-Control: no-store`, `Retry-After: 60`). 앱의 껍데기는 뜨고, 잠시 뒤에 다시 시도할 수 있습니다.
+- 라우트 경로로 들어온 페이지 이동에는 사이트의 `index.html`을 상태 503으로 돌려줍니다(`Cache-Control: no-store`, `Retry-After: 60`). 앱의 껍데기는 뜨고, 잠시 뒤에 다시 시도할 수 있습니다. 결제가 끝나 라우트가 꺼진 사이트는 이 화면 대신, 없는 경로처럼 404를 받습니다.
 - 엣지 Worker의 cron이 매분 `origin.sdk.naru.pub`(workerd와 사이트 데이터베이스)과 `naru.pub/api/health`(control plane)를 동시에 확인합니다. 각각 따로 세어 3분 연속 응답이 없으면 어느 쪽인지 밝혀 Discord로 알리고, 다시 응답하면 한 번 더 알립니다. 한쪽만 멈춰도 그쪽만 알립니다.
 
 자세한 내용은 [사이트 데이터베이스](docs/database.md#when-the-mini-is-away) 문서에 있습니다.
