@@ -44,4 +44,5 @@ standby's copies can be overwritten (`replace`); this Worker refuses it.
 
 Moving sites here from Cloudflare: with the control plane's `SITE_DATA_URL`
 pointing at this Worker, `node dist/cli/move-site-data.mjs` copies each site's
-database (`dump` there, `restore` here) and compares the copy table by table.
+database (`dump` there piped into `restore` here, as NDJSON) and compares the
+copy table by table.

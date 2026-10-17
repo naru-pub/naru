@@ -79,7 +79,7 @@ modules. The control plane sends a release's migrations with
 `activateFunctions`; the object refuses a release that edits, removes or
 names a migration before one already applied (recorded in `_naru_migrations`
 with its digest), writes a dump of the database to
-`_naru-runtime/<site>/restore-points/<generation>.json` when any are pending,
+`_naru-runtime/<site>/restore-points/<generation>.ndjson` when any are pending,
 then applies them in name order and switches the pointer in one transaction.
 A migration's statements may create, alter and drop tables, indexes and views
 and write rows; each passes the checks of `ctx.sql` (`edge/src/sql.ts`), and a
@@ -89,16 +89,21 @@ its row instead of retrying, and leaves the active release.
 
 ### Restore points
 
-`_naru-runtime/<site>/restore-points/` holds `<generation>.json`, kept before
-a release's migrations, and `before-restore-<ms>.json`, kept before a restore
-(names: `control-plane/src/lib/site-functions/restore-points.ts`). The owner
-lists and restores them on the control panel (`/api/account/restore-points`,
-`lib/site-functions/restore.ts`), which calls the object's `restoreFrom({ name
-})`; index.ts sets `site` from the URL, so an object only reads its own
-site's prefix. Under `blockConcurrencyWhile`, the object dumps the present to
-`before-restore-<ms>.json`, then in one transaction empties and refills
-DUMP_TABLES and the site's tables, migrations and roles from the restore
-point, as `replace` does, and re-runs every live query. What describes the
+`_naru-runtime/<site>/restore-points/` holds `<generation>.ndjson`, kept
+before a release's migrations, and `before-restore-<ms>.ndjson`, kept before
+a restore (names: `control-plane/src/lib/site-functions/restore-points.ts`).
+Each is a dump (below). Those written before dumps were NDJSON end in `.json`
+and hold the whole dump as one JSON object (`tables` and `site`); they are
+listed and restored as well, read whole and converted to lines
+(`legacyDumpLines`). The owner lists and restores them on the control panel
+(`/api/account/restore-points`, `lib/site-functions/restore.ts`), which calls
+the object's `restoreFrom({ name })`; index.ts sets `site` from the URL, so an
+object only reads its own site's prefix. Under `blockConcurrencyWhile`, the
+object reads the restore point into staging tables, so one that is not a
+whole dump is refused before anything is kept or changed; dumps the present
+to `before-restore-<ms>.ndjson`; then in one transaction empties and refills
+DUMP_TABLES and the site's tables, migrations and roles from the staging
+tables, as `replace` does, and re-runs every live query. What describes the
 present stays: the meta keys of the owner, paid status and limits, the
 month's budget and counts (flushed from memory first), the standby's
 fingerprint and the active release (`functions_revision` and
@@ -109,8 +114,42 @@ minutes after), and `rate_limits`. The rest of meta (`unique:`, `indexes:`,
 the restore point had not applied are pending again and apply with the next
 release. The control plane then writes `routes.json` for the active release
 again; nothing cached is purged, as releases purge nothing. The standby takes
-the restored site at its next sync. A restore point is read and parsed whole,
-as large as the site's dump.
+the restored site at its next sync.
+
+### Dumps
+
+A dump (`control-plane/src/lib/site-data/dump-format.ts`) is NDJSON, one JSON
+value per line:
+
+```
+{"type":"header","version":2,"schema":["CREATE TABLE …", …]}
+{"type":"row","table":"meta","row":{…}}            Naru's tables, by name
+{"type":"row","table":"site:posts","row":{…}}       the site's own tables
+{"type":"row","table":"_naru_migrations","row":{…}}
+{"type":"row","table":"_naru_roles","row":{…}}
+{"type":"end","rows":<how many row lines>}
+```
+
+A BLOB is `{ "$base64": … }`; a full-text table's rows carry `rowid`, and its
+own storage tables are left out. A dump without its end line, or with the
+wrong count there, is refused. The object writes one (`openDump`, `dump.ts`)
+by copying every table it carries into `_naru_snap_<n>` in one synchronous
+transaction, the snapshot, which held the object about 30 ms for a 28 MiB
+site under local workerd in tests; it then reads them a keyset page at a time, with
+ordinary awaits between pages, into 5 MiB parts of an R2 multipart upload (one
+put when smaller; aborted on failure) or the `dump` response, and drops them,
+however the dump ends (a reader that leaves a dump unread for five minutes
+gives it up). Writes during the dump land after the snapshot and are not in
+it. A restore (`stage`) reads lines as they arrive into `_naru_stage_<n>`
+(columns `c0`, `c1`… for the rows' keys) a batch to a short transaction, then
+swaps them in in one transaction (`swapIn`): Naru's tables emptied, the site's
+objects dropped, the schema created again (checked as a migration's is), every
+table filled by `INSERT … SELECT` with column names from the object's own
+schema, unique and field indexes made again, and the staging tables dropped.
+`_naru…` names are reserved from site SQL and left out of dumps and
+listings; the site's quota leaves out what snapshot and staging tables take.
+One dump or restore runs at a time per object, and each first drops what a
+crash may have left of these tables.
 
 ## Limits and cleanup
 
