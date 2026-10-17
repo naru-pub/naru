@@ -339,11 +339,11 @@ async function serveRoute(
     });
   } catch (error) {
     console.error(`Rendering ${login}'s ${match.route} failed`, error);
-    return null;
+    return away(request, env, ctx, login);
   }
   if (!outcome.ok)
     return outcome.error.status === 503
-      ? null
+      ? away(request, env, ctx, login)
       : routeError(outcome.error.status, outcome.error.message);
   let answer: RouteAnswer;
   try {
@@ -407,6 +407,39 @@ async function serveRoute(
     answer.cache > 0 ? SITE_CACHE_CONTROL : "no-store",
   );
   return response;
+}
+
+/**
+ * A route that could not be rendered: the mini, where site databases live,
+ * is away, or the site's routes are off. A page's navigation gets the site's
+ * own index.html, at 503, so an app's shell still loads and can say so;
+ * anything else, or a site without index.html, is answered as if there were
+ * no routes (null).
+ */
+async function away(
+  request: Request,
+  env: PagesEnv,
+  ctx: Pick<ExecutionContext, "waitUntil">,
+  login: string,
+): Promise<Response | null> {
+  const kind = classify(request);
+  if (kind !== "navigation" && kind !== "frame") return null;
+  let file: SiteFile | null;
+  try {
+    file = await readFile(env, ctx, login, `${login}/index.html`);
+  } catch (error) {
+    console.error(`Reading ${login}/index.html failed`, error);
+    return null;
+  }
+  if (!file) return null;
+  return new Response(file.body, {
+    status: 503,
+    headers: {
+      "Content-Type": file.contentType || "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Retry-After": "60",
+    },
+  });
 }
 
 /** Answers a request for one of the sites `siteOf` names. */

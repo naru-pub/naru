@@ -240,12 +240,58 @@ describe("serving", () => {
     const missing = await get("/posts/9");
     expect(missing.status).toBe(404);
     expect(await missing.text()).toContain("그런 글은 없어요 &#60;b&#62;");
-    // Unavailable: the path is served as a file, as it would be without routes.
+    // Unavailable, and not a page's navigation: the path is served as a
+    // file, as it would be without routes.
     answer = { ok: false, error: { status: 503, message: "away" } };
     expect((await get("/go")).status).toBe(404);
     // Paths no route matches never reach the object.
     const before = asked.length;
     expect(await (await get("/about.html")).text()).toBe("about");
     expect(asked.length).toBe(before);
+  });
+
+  const navigate = (path: string, site = "carol") =>
+    servePage(
+      new Request(`https://${site}.naru.pub${path}`, {
+        headers: { "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document" },
+      }),
+      env,
+      site,
+      ctx,
+      () => {},
+      render,
+    );
+
+  test("while the mini is away, a navigation to a route gets the site's index.html at 503", async () => {
+    answer = { ok: false, error: { status: 503, message: "away" } };
+    const page = await navigate("/posts/12");
+    expect(page.status).toBe(503);
+    expect(await page.text()).toBe(files["carol/index.html"]);
+    expect(page.headers.get("Cache-Control")).toBe("no-store");
+    expect(page.headers.get("Retry-After")).toBe("60");
+    // The same when the mini cannot be reached at all.
+    const thrown: RenderRoute = async () => {
+      throw new Error("connection refused");
+    };
+    const unreachable = await servePage(
+      new Request("https://carol.naru.pub/posts/12", {
+        headers: { "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document" },
+      }),
+      env,
+      "carol",
+      ctx,
+      () => {},
+      thrown,
+    );
+    expect(unreachable.status).toBe(503);
+    expect(await unreachable.text()).toBe(files["carol/index.html"]);
+  });
+
+  test("a site without index.html is answered as without routes while the mini is away", async () => {
+    files["_naru-runtime/dave/routes.json"] = JSON.stringify({
+      routes: ["posts/_id"],
+    });
+    answer = { ok: false, error: { status: 503, message: "away" } };
+    expect((await navigate("/posts/12", "dave")).status).toBe(404);
   });
 });
