@@ -21,13 +21,15 @@ const unavailable = () =>
 /**
  * Calls one operation on a site's object. A refusal the object made arrives
  * as the DataError it threw; anything else the Worker answers is logged and
- * reported as unavailable.
+ * reported as unavailable. `timeoutMs` lets a long operation, such as a
+ * restore, wait longer than WORKER_TIMEOUT_MS.
  */
 export function callSiteObject<T>(
   site: string,
   operation: string,
   input: unknown,
   signal?: AbortSignal,
+  timeoutMs?: number,
 ): Promise<T> {
   return callSiteObjectAt<T>(
     siteDataWorker(site),
@@ -35,6 +37,7 @@ export function callSiteObject<T>(
     operation,
     input,
     signal,
+    timeoutMs,
   );
 }
 
@@ -68,6 +71,7 @@ export function callSiteObjectAt<T>(
   operation: string,
   input: unknown,
   signal?: AbortSignal,
+  timeoutMs?: number,
 ): Promise<T> {
   return callWorker<T>(
     `/v1/sites/${encodeURIComponent(site)}/${operation}`,
@@ -75,6 +79,7 @@ export function callSiteObjectAt<T>(
     input,
     signal,
     target,
+    timeoutMs,
   );
 }
 
@@ -117,12 +122,13 @@ async function callWorker<T>(
   input: unknown,
   signal?: AbortSignal,
   { base, secret }: WorkerTarget = edgeWorker(),
+  timeoutMs = WORKER_TIMEOUT_MS,
 ): Promise<T> {
   if (!base || !secret) {
     console.error(`No Worker URL or secret for ${what}`);
     throw unavailable();
   }
-  const timeout = AbortSignal.timeout(WORKER_TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
     response = await fetch(new URL(path, base), {
