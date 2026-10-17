@@ -82,6 +82,12 @@ const config :Workerd.Config = (
   sockets = [
     (name = "http", address = "127.0.0.1:8787", http = (), service = "main"),
   ],
+  # The most V8 keeps for JavaScript objects (MB), in the one isolate every
+  # site's object and the Worker share: past it V8 aborts workerd, and
+  # launchd starts it again. ArrayBuffers and SQLite are not counted; the
+  # mini's watchdog (~/Git/infra, naru-sdk-watchdog) kills workerd past 4 GB
+  # in all. See README.md, "Memory".
+  v8Flags = ["--max-old-space-size=2048"],
 );
 
 const worker :Workerd.Worker = (

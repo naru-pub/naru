@@ -50,6 +50,19 @@ How it differs from Cloudflare:
   pause is in the site's object, and the control plane's
   `edge-breaker-alerts` job posts each to Discord: this Worker needs no
   webhook.
+- **Memory is bounded twice.** Every site's object and the Worker share one
+  isolate in one process, and Cloudflare's per-isolate limit is not
+  standalone workerd's. `config.capnp` caps V8's heap at 2 GB
+  (`v8Flags`, `--max-old-space-size=2048`, in `build.mjs`): past it V8 aborts
+  workerd ("Reached heap limit", signal 6) and launchd starts it again,
+  dropping what was in flight. That cap does not count ArrayBuffers or
+  SQLite's own memory, so the mini's watchdog (`~/Git/infra`,
+  `kr-seongsu-m4/bin/naru-sdk-watchdog`) also kills workerd once its
+  footprint has been over 4 GB for 10 seconds; launchd's
+  `HardResourceLimits` cannot, as macOS refuses `RLIMIT_RSS`. In use it is
+  about 30 MB (October 2026). The watchdog also restarts it when `/healthz`
+  has not answered for 30 seconds: stopped statements queued behind each
+  other hold the thread one after another (five at once, 12 seconds).
 - **No edge cache.** Visitors' reads are answered by the object each time
   (`EDGE_CACHE=off`), which is a local query here.
 - **R2 through its S3 API** (`src/r2-s3.ts`), since workerd has no R2 binding.
