@@ -484,6 +484,17 @@ await ctx.sql`SELECT c.id, (SELECT json_group_array(title) FROM
   (SELECT title FROM titles WHERE titles.ch = c.id ORDER BY ord)) AS titles FROM chars c`;
 // Past 1,000 rows: keyset paging, the next page after the last key.
 await ctx.sql`SELECT * FROM items WHERE id > ${after} ORDER BY id LIMIT 1000`;
+// A post's previous and next: their own statements, not a correlated
+// `(SELECT ... WHERE q.id < p.id ORDER BY q.id DESC LIMIT 1)` per row, which
+// is refused. Each reads one row from the index on (board, id).
+const [previous] = (
+  await ctx.sql`SELECT id FROM posts WHERE board = ${board}
+  AND id < ${id} ORDER BY id DESC LIMIT 1`
+).rows;
+const [next] = (
+  await ctx.sql`SELECT id FROM posts WHERE board = ${board}
+  AND id > ${id} ORDER BY id LIMIT 1`
+).rows;
 ```
 
 The ordered aggregate needs an index on `titles (ch, ord)`; without one its
