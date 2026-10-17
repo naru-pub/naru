@@ -431,6 +431,14 @@ refused as in `ctx.sql`. What has run is history: a release that edits or
 removes an applied migration, or adds one whose name sorts before the last
 applied, is refused, so a fix is a new file. A migration that fails refuses
 the whole release, which changes nothing: the previous code and tables stay.
+Before a release applies migrations, Naru keeps a restore point of the whole
+site database; the owner can return the site to one on the control panel
+(데이터베이스 → 복원 지점). A restore brings back collections, documents,
+the site's tables and rows, the applied migrations and members' roles as they
+were, replacing everything since, after keeping a restore point of the present
+so it can be undone. The site's code stays the current release; migrations it
+has that the restore point had not applied are pending again and apply with
+the next release, so edit or remove one first to keep it from running.
 The site's tables count toward the site's database quota with its
 collections. `pnpm naru-dev` writes `_naru/types/database.d.ts`, the tables
 as the migrations left them, for `ctx.sql` and query builders.

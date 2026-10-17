@@ -87,6 +87,31 @@ write the plan check as well. A refusal is a 422 with `details.reason`
 `migration_failed`; the release task then deletes the refused revision and
 its row instead of retrying, and leaves the active release.
 
+### Restore points
+
+`_naru-runtime/<site>/restore-points/` holds `<generation>.json`, kept before
+a release's migrations, and `before-restore-<ms>.json`, kept before a restore
+(names: `control-plane/src/lib/site-functions/restore-points.ts`). The owner
+lists and restores them on the control panel (`/api/account/restore-points`,
+`lib/site-functions/restore.ts`), which calls the object's `restoreFrom({ name
+})`; index.ts sets `site` from the URL, so an object only reads its own
+site's prefix. Under `blockConcurrencyWhile`, the object dumps the present to
+`before-restore-<ms>.json`, then in one transaction empties and refills
+DUMP_TABLES and the site's tables, migrations and roles from the restore
+point, as `replace` does, and re-runs every live query. What describes the
+present stays: the meta keys of the owner, paid status and limits, the
+month's budget and counts (flushed from memory first), the standby's
+fingerprint and the active release (`functions_revision` and
+`functions_generation`, which `site_function_releases` names; a release's
+restore point holds the release before it, whose files are deleted five
+minutes after), and `rate_limits`. The rest of meta (`unique:`, `indexes:`,
+`media_refs`) is the restore point's. Migrations of the active release that
+the restore point had not applied are pending again and apply with the next
+release. The control plane then writes `routes.json` for the active release
+again; nothing cached is purged, as releases purge nothing. The standby takes
+the restored site at its next sync. A restore point is read and parsed whole,
+as large as the site's dump.
+
 ## Limits and cleanup
 
 Each graph allows 64 modules and 1 MiB of source; each file allows 256 KiB. A
@@ -110,4 +135,4 @@ revision after the grace period to fail; retrying uses the active revision.
 Imports load before the database transaction, so missing imports do not
 leave partial writes. A rollback must publish a new revision and generation,
 and cannot undo an applied migration: what has run is history, and a fix is
-a new migration.
+a new migration, or the data returned to a restore point (above).

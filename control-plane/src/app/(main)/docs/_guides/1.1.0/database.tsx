@@ -845,6 +845,16 @@ CREATE INDEX posts_author ON posts (author);`}</Code>
                   쓰입니다. 오류를 고친 파일을 다시 올리세요.
                 </li>
                 <li>
+                  적용된 마이그레이션이 데이터를 잘못 바꿨다면 제어판의
+                  데이터베이스 → 복원 지점에서 그 릴리스 직전으로 복원할 수
+                  있습니다. 컬렉션과 문서, 테이블과 행, 적용된 마이그레이션
+                  기록, 회원 역할이 그 시점으로 돌아가고 그 뒤의 변경은
+                  사라집니다. 복원 직전 상태도 복원 지점으로 남으니 되돌릴 수
+                  있습니다. 사이트 코드는 지금 릴리스 그대로라서, 복원 지점에
+                  없던 마이그레이션은 다음에 <code>_naru</code> 파일을 올릴 때
+                  다시 적용됩니다. 그 전에 그 마이그레이션을 고치거나 지우세요.
+                </li>
+                <li>
                   나루가 쓰는 이름(<code>collections</code>,{" "}
                   <code>documents</code>, <code>meta</code>, <code>usage</code>,{" "}
                   <code>rate_limits</code>, <code>media_refs</code>와{" "}
