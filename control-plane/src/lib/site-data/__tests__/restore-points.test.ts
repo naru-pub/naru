@@ -181,6 +181,46 @@ integration("restore points", () => {
     expect((await restoreFrom(recent)).saved).toMatch(/\.ndjson\.gz$/);
   });
 
+  test("the owner keeps a restore point now, one at a time and three an hour", async () => {
+    const save = (body: Record<string, unknown> = {}) =>
+      callSiteObject<{ name: string; bytes: number }>(
+        site,
+        "saveRestorePoint",
+        body,
+      );
+    const before = await call("query", "list");
+    // A site named in the body is not the one kept: the URL's is.
+    const kept = await save({ site: other });
+    expect(kept.name).toMatch(/^manual-\d+\.ndjson\.gz$/);
+    expect(kept.bytes).toBeGreaterThan(0);
+    await call("mutation", "add", { body: "넷" });
+    expect(await call("query", "list")).toEqual([
+      ...(before as string[]),
+      "넷",
+    ]);
+    // It restores like any other.
+    await restoreFrom(kept.name);
+    expect(await call("query", "list")).toEqual(before);
+    // At once, one is written at a time: a save that meets another being
+    // written is refused (409), and three an hour are kept in all (429).
+    const outcomes = await Promise.allSettled([save(), save(), save(), save()]);
+    let saved = 1 + outcomes.filter((o) => o.status === "fulfilled").length;
+    for (const outcome of outcomes)
+      if (outcome.status === "rejected")
+        expect([409, 429]).toContain(
+          (outcome.reason as { status: number }).status,
+        );
+    while (saved < 3) {
+      await save();
+      saved++;
+    }
+    expect(saved).toBe(3);
+    await expect(save()).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+    });
+  });
+
   test("a restore point outside the site's own is refused", async () => {
     // Another site's restore point, under its own prefix.
     await callSiteObject(other, "erase", {});

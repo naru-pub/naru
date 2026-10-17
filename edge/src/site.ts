@@ -19,10 +19,13 @@ import {
 import { uuidv7 } from "../../control-plane/src/lib/uuid";
 import {
   beforeRestoreName,
+  MANUAL_RESTORE_POINTS_PER_HOUR,
+  manualRestorePointName,
   pruneRestorePoints,
   releaseRestorePointName,
   RESTORE_POINT_CONTENT_TYPE,
   restorePointName,
+  restorePointOf,
   restorePointsPrefix,
 } from "../../control-plane/src/lib/site-functions/restore-points";
 import { runFunction, type Host } from "./functions";
@@ -2746,6 +2749,63 @@ export class SiteData extends DurableObject<Env> {
     if (outcome.ok) await this.pruneRestorePoints(input.site);
     return outcome;
   }
+
+  /**
+   * A restore point the owner asked for, now: `manual-<ms>.ndjson.gz`, kept
+   * for the same week as the others. One is made at a time, and at most
+   * MANUAL_RESTORE_POINTS_PER_HOUR in an hour, counted from the points in R2
+   * (their names say when), so nothing else is kept. `site` is the object's
+   * own, from the URL (index.ts).
+   */
+  async saveRestorePoint(input: {
+    site: string;
+  }): Promise<Outcome<{ name: string; bytes: number }>> {
+    if (this.savingRestorePoint)
+      return this.run(() => {
+        throw new DataError(
+          409,
+          "A restore point is already being made.",
+          "CONFLICT",
+        );
+      });
+    this.savingRestorePoint = true;
+    try {
+      const prefix = restorePointsPrefix(input.site);
+      const outcome = await this.settle(async () => {
+        const now = Date.now();
+        let recent = 0;
+        let cursor: string | undefined;
+        do {
+          const page = await this.env.SITE_FILES.list({
+            prefix: `${prefix}manual-`,
+            cursor,
+          });
+          for (const object of page.objects) {
+            const point = restorePointOf(object.key.slice(prefix.length));
+            if (point?.kind === "manual" && now - point.createdAt < 3_600_000)
+              recent++;
+          }
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+        if (recent >= MANUAL_RESTORE_POINTS_PER_HOUR)
+          throw new DataError(
+            429,
+            `At most ${MANUAL_RESTORE_POINTS_PER_HOUR} restore points an hour can be made. Try again later.`,
+            "RATE_LIMITED",
+          );
+        const name = manualRestorePointName(now);
+        const bytes = await this.exclusive(() =>
+          this.writeRestorePoint(`${prefix}${name}`),
+        );
+        return { name, bytes };
+      });
+      if (outcome.ok) await this.pruneRestorePoints(input.site);
+      return outcome;
+    } finally {
+      this.savingRestorePoint = false;
+    }
+  }
+  private savingRestorePoint = false;
 
   /** Whether this object's database answers, for the health check. */
   async ping(): Promise<Outcome<null>> {

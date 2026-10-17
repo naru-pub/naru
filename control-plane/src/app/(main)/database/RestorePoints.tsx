@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import {
+  MANUAL_RESTORE_POINTS_PER_HOUR,
   RESTORE_POINT_DAYS,
   RESTORE_POINT_KEEP_MS,
 } from "@/lib/site-functions/restore-points";
@@ -10,7 +11,7 @@ import {
 type RestorePoint = {
   name: string;
   createdAt: number;
-  kind: "release" | "before-restore";
+  kind: "release" | "before-restore" | "manual";
   generation: string | null;
   size: number;
 };
@@ -27,7 +28,7 @@ const size = (bytes: number) =>
     ? `${Math.max(1, Math.round(bytes / 1024)).toLocaleString("ko-KR")} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
-async function send<T>(body?: { name: string }): Promise<T> {
+async function send<T>(body?: { name: string } | { create: true }): Promise<T> {
   const response = await fetch(
     "/api/account/restore-points",
     body
@@ -48,7 +49,8 @@ async function send<T>(body?: { name: string }): Promise<T> {
 
 /**
  * The site's restore points (1.1.0): one is kept before each release's
- * migrations run, and one before each restore, so a restore can be undone.
+ * migrations run, one before each restore, so a restore can be undone, and
+ * one whenever the owner asks. Each downloads as its gzip NDJSON.
  */
 export default function RestorePoints() {
   const confirm = useConfirm();
@@ -74,6 +76,23 @@ export default function RestorePoints() {
       active = false;
     };
   }, []);
+
+  async function create() {
+    setBusy(true);
+    setError("");
+    setDone("");
+    try {
+      const { saved } = await send<{ saved: RestorePoint }>({ create: true });
+      setDone(`${when(saved.createdAt)} 복원 지점을 만들었습니다.`);
+      await load();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "복원 지점을 만들지 못했습니다.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function restore(point: RestorePoint) {
     if (
@@ -110,17 +129,25 @@ export default function RestorePoints() {
 
   return (
     <section className="min-w-0 border p-5 space-y-4">
-      <h2 className="font-bold">복원 지점</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-bold">복원 지점</h2>
+        <Button size="sm" disabled={busy} onClick={() => void create()}>
+          지금 복원 지점 만들기
+        </Button>
+      </div>
       <p className="text-sm text-muted-foreground">
         릴리스가 새 마이그레이션(<code>_naru/migrations/</code>)을 적용하기
         직전, 그리고 복원하기 직전에 사이트 데이터 전체를 복원 지점으로
-        남깁니다. 복원하면 컬렉션과 문서, SQL 테이블, 적용된 마이그레이션 기록,
-        회원 역할이 그 시점으로 돌아갑니다. 사이트 코드, 요금제와 이용 한도는
-        그대로입니다.
+        남깁니다. 지금 상태를 직접 남길 수도 있습니다(한 시간에{" "}
+        {MANUAL_RESTORE_POINTS_PER_HOUR}개까지). 복원하면 컬렉션과 문서, SQL
+        테이블, 적용된 마이그레이션 기록, 회원 역할이 그 시점으로 돌아갑니다.
+        사이트 코드, 요금제와 이용 한도는 그대로입니다.
       </p>
       <p className="text-sm text-muted-foreground">
-        복원 지점은 만든 때부터 {RESTORE_POINT_DAYS}일 동안 보관하고, 그 뒤에
-        삭제합니다.
+        직접 만든 것을 포함해 복원 지점은 만든 때부터 {RESTORE_POINT_DAYS}일
+        동안 보관하고, 그 뒤에 삭제합니다. 더 오래 두려면 내려받아 보관하세요.
+        내려받은 파일은 gzip으로 압축한 NDJSON으로, 사이트 데이터 전체가 한 줄에
+        한 행씩 들어 있습니다.
       </p>
       {error && (
         <p role="alert" className="text-destructive">
@@ -139,7 +166,7 @@ export default function RestorePoints() {
                 <th>크기</th>
                 <th>보관</th>
                 <th>
-                  <span className="sr-only">복원</span>
+                  <span className="sr-only">내려받기와 복원</span>
                 </th>
               </tr>
             </thead>
@@ -155,6 +182,8 @@ export default function RestorePoints() {
                           {point.generation}
                         </span>
                       </>
+                    ) : point.kind === "manual" ? (
+                      "직접 만듦"
                     ) : (
                       "복원 직전"
                     )}
@@ -163,7 +192,15 @@ export default function RestorePoints() {
                   <td>
                     {day(point.createdAt + RESTORE_POINT_KEEP_MS)} 삭제 예정
                   </td>
-                  <td className="py-2 text-right">
+                  <td className="space-x-2 whitespace-nowrap py-2 text-right">
+                    <Button variant="ghost" size="sm" asChild>
+                      <a
+                        href={`/api/account/restore-points?download=${encodeURIComponent(point.name)}`}
+                        download
+                      >
+                        내려받기
+                      </a>
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

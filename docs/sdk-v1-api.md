@@ -492,9 +492,29 @@ site database; the owner can return the site to one on the control panel
 the site's tables and rows, the applied migrations and members' roles as they
 were, replacing everything since, after keeping a restore point of the present
 so it can be undone; a restore point that cannot be read whole changes
-nothing. Restore points are kept for seven days, then deleted. The site's code stays the current release; migrations it
+nothing. The owner can also keep one of the present at any time (지금 복원
+지점 만들기; one at a time, three an hour) and download any of them. Restore
+points, the owner's own included, are kept for seven days, then deleted: to
+keep one longer, download it. The site's code stays the current release; migrations it
 has that the restore point had not applied are pending again and apply with
 the next release, so edit or remove one first to keep it from running.
+
+**A restore point's file.** A download, `<site>-<name>.ndjson.gz`, is the
+whole site database as gzip-compressed NDJSON: one JSON value per line, read
+with `gunzip -c alice-manual-1790000000000.ndjson.gz | jq -c .` or any
+NDJSON reader. The first line is
+`{"type":"header","version":2,"schema":[…]}`, the `CREATE` statements of the
+site's own tables, indexes and views as the migrations left them. Then one
+line per row, `{"type":"row","table":…,"row":{column: value}}`: the site's
+tables as `site:<name>` (a full-text table's rows carry their `rowid`; its
+own storage tables are left out), Naru's tables by their names
+(`collections`, `documents` with each document's JSON in `data`, `meta`,
+`usage`, `media_refs`, `rate_limits` and the like) and `_naru_migrations` and
+`_naru_roles` (members' roles). A value is a string, a number or null; a BLOB
+is `{"$base64": …}`. The last line is `{"type":"end","rows":<count>}`: a file
+without it, or with another count, was cut short. Uploads are not in it:
+their files stay in Naru Media, and rows hold their URLs. Naru does not take
+a downloaded file back yet; restoring is from the restore points it keeps.
 The site's tables count toward the site's database quota with its
 collections. `pnpm naru-dev` writes `_naru/types/database.d.ts`, the tables
 as the migrations left them, for `ctx.sql` and query builders.

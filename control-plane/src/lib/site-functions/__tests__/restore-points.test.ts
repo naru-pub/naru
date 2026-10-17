@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
 import {
   beforeRestoreName,
+  manualRestorePointName,
   pruneRestorePoints,
   RESTORE_POINT_KEEP_MS,
   type RestorePointBucket,
@@ -17,8 +18,12 @@ test("restore point names are a release's generation or a restore's time, as gzi
     releaseRestorePointName(generation),
     `${generation}.ndjson.gz`,
     beforeRestoreName(1_790_000_000_000),
+    manualRestorePointName(1_790_000_000_000),
   ])
     expect(restorePointName(name)).toBe(true);
+  expect(manualRestorePointName(1_790_000_000_000)).toBe(
+    "manual-1790000000000.ndjson.gz",
+  );
   expect(beforeRestoreName(1_790_000_000_000)).toBe(
     "before-restore-1790000000000.ndjson.gz",
   );
@@ -41,6 +46,9 @@ test("restore point names are a release's generation or a restore's time, as gzi
     "before-restore-12.json.ndjson",
     "before-restore-12.ndjson.json",
     "before-restore-12.json.gz",
+    "manual-.ndjson.gz",
+    "manual-12.ndjson",
+    "manual-x.ndjson.gz",
     `${generation}.gz`,
     `${generation}.ndjson.gz.gz`,
     "routes.json",
@@ -68,6 +76,12 @@ test("a restore point's name tells when it was made and what it preceded", () =>
       },
     );
   }
+  expect(restorePointOf("manual-1790000000000.ndjson.gz")).toEqual({
+    name: "manual-1790000000000.ndjson.gz",
+    createdAt: 1_790_000_000_000,
+    kind: "manual",
+    generation: null,
+  });
   expect(restorePointOf("manifest.json")).toBeNull();
   expect(restorePointOf(`${generation}.json`)).toBeNull();
   expect(restorePointsPrefix("alice")).toBe(
@@ -125,6 +139,9 @@ describe("keeping restore points a week", () => {
       },
       { key: `${prefix}before-restore-${NOW - 6 * DAY}.ndjson.gz` },
       { key: `${prefix}before-restore-${NOW - 8 * DAY}.ndjson.gz` },
+      // The owner's own go after the same week.
+      { key: `${prefix}manual-${NOW - 6 * DAY}.ndjson.gz` },
+      { key: `${prefix}manual-${NOW - 8 * DAY}.ndjson.gz` },
       // Outside restore-points/, however old.
       {
         key: "_naru-runtime/alice/revisions/x/manifest.json",
@@ -142,10 +159,11 @@ describe("keeping restore points a week", () => {
         `${made(NOW - 8 * DAY)}.ndjson.gz`,
         `${made(NOW - 30 * DAY, 2)}.json`,
         `before-restore-${NOW - 8 * DAY}.ndjson.gz`,
+        `manual-${NOW - 8 * DAY}.ndjson.gz`,
       ].sort(),
     );
     expect(deleted.flat().every((key) => key.startsWith(prefix))).toBe(true);
-    expect(deleted.flat()).toHaveLength(3);
+    expect(deleted.flat()).toHaveLength(4);
   });
 
   test("a name that is not a restore point's is aged by its upload time", async () => {

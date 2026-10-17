@@ -33,6 +33,7 @@ const fetchMock = global.fetch as jest.Mock<typeof fetch>;
 let collections: { name: string; read_access: string; write_access: string }[];
 const deleted: string[] = [];
 const restored: string[] = [];
+let created = 0;
 let requests = 0;
 let failing = false;
 const json = (value: unknown, ok = true) =>
@@ -41,6 +42,7 @@ const json = (value: unknown, ok = true) =>
 beforeEach(() => {
   deleted.length = 0;
   restored.length = 0;
+  created = 0;
   requests = 0;
   failing = false;
   collections = ["alpha", "beta", "gamma"].map((name) => ({
@@ -64,6 +66,18 @@ beforeEach(() => {
       return json({ deleted: names });
     }
     if (url === "/api/account/restore-points") {
+      if (method === "POST" && JSON.parse(String(init?.body)).create) {
+        created += 1;
+        return json({
+          saved: {
+            name: "manual-1790000000000.ndjson.gz",
+            createdAt: 1_790_000_000_000,
+            kind: "manual",
+            generation: null,
+            size: 4096,
+          },
+        });
+      }
       if (method === "POST") {
         restored.push(JSON.parse(String(init?.body)).name);
         return json({
@@ -181,5 +195,28 @@ test("a restore point is restored after a confirmation that says what happens", 
   );
   expect(await screen.findByRole("status")).toHaveTextContent(
     /복원 전 상태는 .* 복원 지점으로 남겼습니다/,
+  );
+});
+
+test("a restore point is made on request, and each one downloads", async () => {
+  renderManager();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "복원 지점" }), {
+    button: 0,
+  });
+  const row = (await screen.findByText(/릴리스 직전/)).closest("tr")!;
+  expect(within(row).getByRole("link", { name: "내려받기" })).toHaveAttribute(
+    "href",
+    "/api/account/restore-points?download=019a2b3c-4d5e-7000-8000-000000000001.json",
+  );
+  // Kept the same week as the others, which the page says.
+  expect(screen.getByText(/직접 만든 것을 포함해/)).toHaveTextContent(
+    /7일 동안 보관/,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "지금 복원 지점 만들기" }),
+  );
+  await waitFor(() => expect(created).toBe(1));
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    /복원 지점을 만들었습니다/,
   );
 });

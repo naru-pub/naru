@@ -117,6 +117,27 @@ export const restorePointStorage: RestorePointBucket = {
   },
 };
 
+/**
+ * A restore point's bytes as R2 streams them, for the owner to download:
+ * never read whole here. Null when there is no such object.
+ */
+export async function openRestorePoint(
+  key: string,
+): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null> {
+  try {
+    const object = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucket(), Key: key }),
+    );
+    return {
+      body: object.Body!.transformToWebStream() as ReadableStream<Uint8Array>,
+      size: object.ContentLength!,
+    };
+  } catch (error: any) {
+    if (error.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+}
+
 /** The site names with a `_naru-runtime/<site>/` folder in the bucket. */
 export async function runtimeSites(): Promise<string[]> {
   const sites: string[] = [];

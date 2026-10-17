@@ -93,8 +93,9 @@ its row instead of retrying, and leaves the active release.
 ### Restore points
 
 `_naru-runtime/<site>/restore-points/` holds `<generation>.ndjson.gz`, kept
-before a release's migrations, and `before-restore-<ms>.ndjson.gz`, kept
-before a restore (names: `control-plane/src/lib/site-functions/restore-points.ts`).
+before a release's migrations, `before-restore-<ms>.ndjson.gz`, kept
+before a restore, and `manual-<ms>.ndjson.gz`, kept when the owner asks
+(names: `control-plane/src/lib/site-functions/restore-points.ts`).
 Each is a dump (below), gzip-compressed: the NDJSON writer is piped through
 `CompressionStream("gzip")` (`gzip`, `edge/src/dump.ts`) and the compressed
 bytes packed into the multipart parts, stored as `application/gzip` with no
@@ -122,8 +123,20 @@ the restore point had not applied are pending again and apply with the next
 release. The control plane then writes `routes.json` for the active release
 again; nothing cached is purged, as releases purge nothing.
 
+The owner keeps one now with POST `{ create: true }`, which calls the
+object's `saveRestorePoint` (index.ts sets `site` from the URL): under
+`exclusive`, as any dump, it writes `manual-<ms>.ndjson.gz` and prunes. One is
+written at a time per object (a second meanwhile is a 409 `CONFLICT`), and
+at most `MANUAL_RESTORE_POINTS_PER_HOUR` (3) an hour, counted from the
+`manual-` names in R2, so nothing else is stored (then 429 `RATE_LIMITED`).
+GET `?download=<name>` streams a point from the bucket through the control
+plane (`openRestorePoint`, never read whole) as `application/gzip` with
+`Content-Disposition: attachment; filename="<site>-<name>"`, for the signed-in
+owner's own site only.
+
 Restore points are kept for seven days (`RESTORE_POINT_DAYS`): a point's age
-is the time in its name (a UUIDv7's milliseconds, or `before-restore-<ms>`),
+is the time in its name (a UUIDv7's milliseconds, `before-restore-<ms>` or
+`manual-<ms>`: the owner's are kept no longer than the others),
 or, for a name that is not a restore point's, when it was uploaded.
 `pruneRestorePoints` deletes the expired ones under a site's
 `restore-points/`, and nothing outside it, in batches of 50: the site's object

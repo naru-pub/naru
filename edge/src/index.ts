@@ -81,8 +81,10 @@ const OPERATIONS = [
   "configure",
   "call",
   "activateFunctions",
-  // Returning a site to a restore point its object kept in R2 (1.1.0).
+  // Returning a site to a restore point its object kept in R2 (1.1.0), and
+  // keeping one when the owner asks.
   "restoreFrom",
+  "saveRestorePoint",
   "disconnect",
   // A site's whole database, as NDJSON (control-plane lib/edge/dumps.ts).
   "dump",
@@ -151,6 +153,8 @@ function dispatch(
       return stub.disconnect(input);
     case "restoreFrom":
       return stub.restoreFrom(input);
+    case "saveRestorePoint":
+      return stub.saveRestorePoint(input);
     case "dump":
       return stub.dump();
     case "internalTables":
@@ -357,9 +361,9 @@ export default {
       } catch {
         return failure(400, "Expected a JSON body.");
       }
-    // A restore point is read from the site the URL names, whose object
-    // this is, never one the body names.
-    if (operation === "restoreFrom")
+    // A restore point is read from (or written to) the site the URL names,
+    // whose object this is, never one the body names.
+    if (operation === "restoreFrom" || operation === "saveRestorePoint")
       input = { ...(input as object), site } satisfies { site: string };
     const stub = env.SITES.get(env.SITES.idFromName(site));
     // Each operation takes one argument object; the object validates it.

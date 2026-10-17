@@ -1,14 +1,18 @@
 import { validateRequest } from "@/lib/auth";
+import { RESTORE_POINT_CONTENT_TYPE } from "@/lib/site-functions/restore-points";
 import {
+  createRestorePoint,
+  downloadRestorePoint,
   listRestorePoints,
   restoreRestorePoint,
 } from "@/lib/site-functions/restore";
 import { DataError, jsonBody, protocolError, sameOrigin } from "./validation";
 
 /**
- * The owner's restore points on the control panel: GET lists them, POST
- * `{ name }` restores one. Same origin and the owner's session only, as
- * membership administration (membership-http.ts).
+ * The owner's restore points on the control panel: GET lists them, GET
+ * `?download=<name>` streams one as a file, POST `{ name }` restores one and
+ * POST `{ create: true }` keeps one now. Same origin and the owner's session
+ * only, as membership administration (membership-http.ts).
  */
 export async function restorePointsOwnerRequest(request: Request) {
   const headers = { "Cache-Control": "no-store", Vary: "Origin" };
@@ -16,12 +20,29 @@ export async function restorePointsOwnerRequest(request: Request) {
     sameOrigin(request);
     const { user } = await validateRequest();
     if (!user) throw new DataError(401, "Sign in required.");
+    const download = new URL(request.url).searchParams.get("download");
+    if (request.method === "GET" && download !== null) {
+      const point = await downloadRestorePoint(user.id, download);
+      // Site and restore point names are ASCII ([a-zA-Z0-9_-] and the
+      // name's own), so the filename needs no encoding.
+      return new Response(point.body, {
+        headers: {
+          ...headers,
+          "Content-Type": RESTORE_POINT_CONTENT_TYPE,
+          "Content-Length": String(point.size),
+          "Content-Disposition": `attachment; filename="${point.filename}"`,
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     if (request.method === "GET")
       return Response.json(
         { restorePoints: await listRestorePoints(user.id) },
         { headers },
       );
     const body = await jsonBody(request);
+    if (body.create === true)
+      return Response.json(await createRestorePoint(user.id), { headers });
     return Response.json(await restoreRestorePoint(user.id, body.name), {
       headers,
     });

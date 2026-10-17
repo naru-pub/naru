@@ -3,7 +3,8 @@
 // `_naru-runtime/<site>/restore-points/` for RESTORE_POINT_DAYS. The site's
 // object writes one before a release's migrations run,
 // `<generation>.ndjson.gz`, and one before each restore,
-// `before-restore-<ms>.ndjson.gz`, so a restore can be undone. Points in
+// `before-restore-<ms>.ndjson.gz`, so a restore can be undone, and one
+// whenever the owner asks, `manual-<ms>.ndjson.gz`. Points in
 // earlier formats (`.json`, `.ndjson`) are no restore points: not listed nor
 // restored, and pruned by their upload time. Shared by the edge (site.ts) and
 // the control plane.
@@ -15,11 +16,12 @@ export const restorePointsPrefix = (site: string) =>
 const GENERATION =
   /^(([a-f0-9]{8})-([a-f0-9]{4})-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.ndjson\.gz$/;
 const BEFORE_RESTORE = /^before-restore-(\d{1,15})\.ndjson\.gz$/;
+const MANUAL = /^manual-(\d{1,15})\.ndjson\.gz$/;
 
-/** Whether `name` names a restore point: either kind, and nothing else. */
+/** Whether `name` names a restore point: any kind, and nothing else. */
 export const restorePointName = (name: unknown): name is string =>
   typeof name === "string" &&
-  (GENERATION.test(name) || BEFORE_RESTORE.test(name));
+  (GENERATION.test(name) || BEFORE_RESTORE.test(name) || MANUAL.test(name));
 
 /** The type restore points are stored with: no Content-Encoding, ever. */
 export const RESTORE_POINT_CONTENT_TYPE = "application/gzip";
@@ -27,6 +29,16 @@ export const RESTORE_POINT_CONTENT_TYPE = "application/gzip";
 /** The name of the restore point a restore keeps of what it replaces. */
 export const beforeRestoreName = (now = Date.now()) =>
   `before-restore-${now}.ndjson.gz`;
+
+/** The name of a restore point the owner asked for. */
+export const manualRestorePointName = (now = Date.now()) =>
+  `manual-${now}.ndjson.gz`;
+
+/**
+ * How many restore points the owner may ask for in an hour, one at a time:
+ * each is a whole copy of the site, kept as long as any other.
+ */
+export const MANUAL_RESTORE_POINTS_PER_HOUR = 3;
 
 /** The name of the restore point kept before a release's migrations. */
 export const releaseRestorePointName = (generation: string) =>
@@ -40,8 +52,8 @@ export type RestorePoint = {
   name: string;
   /** When it was made, epoch ms. */
   createdAt: number;
-  /** Before a release's migrations, or before a restore. */
-  kind: "release" | "before-restore";
+  /** Before a release's migrations, before a restore, or asked for. */
+  kind: "release" | "before-restore" | "manual";
   /** The release it preceded (its generation), for a release's. */
   generation: string | null;
 };
@@ -66,6 +78,14 @@ export function restorePointOf(name: string): RestorePoint | null {
       name,
       createdAt: Number(restore[1]),
       kind: "before-restore",
+      generation: null,
+    };
+  const manual = MANUAL.exec(name);
+  if (manual)
+    return {
+      name,
+      createdAt: Number(manual[1]),
+      kind: "manual",
       generation: null,
     };
   return null;

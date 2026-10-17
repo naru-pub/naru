@@ -853,7 +853,13 @@ CREATE INDEX posts_author ON posts (author);`}</Code>
                   있습니다. 사이트 코드는 지금 릴리스 그대로라서, 복원 지점에
                   없던 마이그레이션은 다음에 <code>_naru</code> 파일을 올릴 때
                   다시 적용됩니다. 그 전에 그 마이그레이션을 고치거나 지우세요.
-                  복원 지점은 만든 때부터 7일 동안 보관하고, 그 뒤에 삭제합니다.
+                  지금 상태를 &lsquo;지금 복원 지점 만들기&rsquo;로 직접 남길
+                  수도 있습니다(한 시간에 3개까지). 복원 지점은 직접 만든 것도
+                  만든 때부터 7일 동안 보관하고, 그 뒤에 삭제합니다. 더 오래
+                  두려면 내려받으세요. 내려받은 파일은 gzip으로 압축한
+                  NDJSON으로, 첫 줄에 테이블 정의, 그 뒤로 한 줄에 한
+                  행씩(사이트 테이블은 <code>site:이름</code>), 마지막 줄에 행
+                  수가 있습니다.
                 </li>
                 <li>
                   나루가 쓰는 이름(<code>collections</code>,{" "}
@@ -1124,8 +1130,10 @@ export async function add(ctx, { post, text }) {
               </p>
               <p>
                 <code>ctx</code>의 타입은{" "}
-                <a href="https://sdk.naru.pub/sdk/1.1.0/functions.d.ts">functions.d.ts</a>에 모두
-                적혀 있습니다. 내려받아 <code>_naru/types/</code>에 두고
+                <a href="https://sdk.naru.pub/sdk/1.1.0/functions.d.ts">
+                  functions.d.ts
+                </a>
+                에 모두 적혀 있습니다. 내려받아 <code>_naru/types/</code>에 두고
                 JSDoc으로 쓰면 편집기가 <code>ctx</code>를 알아봅니다. 로컬 개발
                 서버 naru-dev로 사이트를 돌리면 마이그레이션이 만든 테이블마다
                 행의 타입을 <code>_naru/types/database.d.ts</code>에 써 줍니다.
@@ -1140,13 +1148,12 @@ export const latest = async (ctx, { board }) =>
                 <code>URLSearchParams</code>, <code>structuredClone</code>,{" "}
                 <code>Math.random()</code>, <code>Date.now()</code>,{" "}
                 <code>performance.now()</code>를 쓸 수 있습니다.{" "}
-                <code>Intl</code>, <code>TextEncoder</code>,{" "}
-                <code>atob</code>/<code>btoa</code>, <code>crypto</code>,{" "}
-                <code>console</code>, 네트워크와 타이머는 없습니다. 시각은{" "}
-                <code>ctx.now</code>를 쓰고, 서버의 지역 시간대가 한국이
-                아닐 수 있으니 UTC 메서드로 계산하세요.
-                사이트 코드 파일은 사이트의 다른 파일처럼 누구나 볼 수 있으니
-                비밀값을 넣지 마세요.
+                <code>Intl</code>, <code>TextEncoder</code>, <code>atob</code>/
+                <code>btoa</code>, <code>crypto</code>, <code>console</code>,
+                네트워크와 타이머는 없습니다. 시각은 <code>ctx.now</code>를
+                쓰고, 서버의 지역 시간대가 한국이 아닐 수 있으니 UTC 메서드로
+                계산하세요. 사이트 코드 파일은 사이트의 다른 파일처럼 누구나 볼
+                수 있으니 비밀값을 넣지 마세요.
               </p>
             </Section>
 
