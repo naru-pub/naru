@@ -39,6 +39,21 @@ export const SCHEMA = `
     roles TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS _naru_breaker_trips (
+    id TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    file TEXT NOT NULL,
+    name TEXT NOT NULL,
+    breaker TEXT NOT NULL,
+    statement TEXT,
+    text TEXT,
+    strikes INTEGER NOT NULL,
+    until INTEGER NOT NULL,
+    repeated INTEGER NOT NULL,
+    cleared_at INTEGER,
+    notified_at INTEGER
+  );
   CREATE TABLE IF NOT EXISTS _naru_migrations (
     name TEXT PRIMARY KEY,
     digest TEXT NOT NULL,

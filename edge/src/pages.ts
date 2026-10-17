@@ -13,7 +13,7 @@ import {
 } from "../../control-plane/src/lib/site-functions/routes";
 import { routesKey } from "../../control-plane/src/lib/site-functions/revisions";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
-import { ROUTES_OFF } from "./types";
+import { ROUTES_OFF, STATEMENT_PAUSED } from "./types";
 
 // Hosted sites, <login>.naru.pub or a custom domain (domains.ts), answered at
 // the edge from the site bucket, so they stay up while the control plane is
@@ -366,7 +366,12 @@ async function serveRoute(
     // A site whose paid status has lapsed: its route paths are not found, as
     // any unknown path is, not the page served while the mini is away.
     if (routesOff(outcome.error)) return notFound();
-    return outcome.error.status === 503
+    // A statement of the route the runtime stopped too often is paused
+    // (breaker.ts): the mini is there, and says so.
+    const paused =
+      (outcome.error.details as { reason?: unknown } | null | undefined)
+        ?.reason === STATEMENT_PAUSED;
+    return outcome.error.status === 503 && !paused
       ? away(request, env, ctx, login)
       : routeError(
           outcome.error.status,

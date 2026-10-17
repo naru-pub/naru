@@ -456,12 +456,13 @@ every table joined to it, and every correlated subquery, finds its rows by
 `=`. A full-text search goes first, with the rest found by `rowid`. Other
 limits:
 
-| Limit                  | Value                                     |
-| ---------------------- | ----------------------------------------- |
-| Bound values           | 100 per statement                         |
-| Rows and size returned | 1,000 rows and 1 MiB per statement        |
-| Rows read              | 500,000 per call, all statements together |
-| Statement time         | 3 seconds for any one step of a statement |
+| Limit                  | Value                                      |
+| ---------------------- | ------------------------------------------ |
+| Bound values           | 100 per statement                          |
+| Rows and size returned | 1,000 rows and 1 MiB per statement         |
+| Rows read              | 500,000 per call, all statements together  |
+| Statement time         | 3 seconds for any one step of a statement  |
+| Stopped statements     | 3 stops in a minute pause it for 5 minutes |
 
 The plan does not show everything. An `=` on an index that is not unique
 counts as degree 0 however many rows share the value, so `posts p1 JOIN posts
@@ -476,7 +477,19 @@ stopped; give it an index or read less." A stopped read fails only its call.
 A stopped write (an `INSERT`, `UPDATE` or `DELETE`) also rolls back
 everything the call wrote and restarts the site's database object: the call
 fails the same way, and the next request finds the site as it was before the
-call. While a statement runs, requests to every Naru site wait for it. (Naru
+call. While a statement runs, requests to every Naru site wait for it, so a
+statement stopped 3 times within a minute is paused: the same statement (its
+text, whitespace aside) in the same query, mutation or route of the site is
+then refused before it runs, for 5 minutes, or 30 when it is paused again
+within the hour, with 503 `UNAVAILABLE`, `details.reason`
+`"statement_paused"`, a `Retry-After` of the seconds left, and "This
+statement of the site's code ran too long and was stopped 3 times within a
+minute, so it is paused for N more minutes. The site's owner has been told."
+The site's other statements, and other sites, are not affected. A paused
+route's page answers 503 with that message. The owner sees each pause, with
+its SQL, on the control panel's database page (중지된 쿼리), and can let it
+run again (다시 허용); a new release lets every paused statement of the site
+run again. (Naru
 may one day estimate such fan-out from `sqlite_stat1`, as `ANALYZE` makes it;
 it does not now.) The other way, a few linear statements are refused because
 the plan does not show what keeps them linear: a correlated range ended by

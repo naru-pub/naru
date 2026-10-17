@@ -19,6 +19,13 @@ import type { Outcome } from "./types";
 import { DUMP_CONTENT_TYPE } from "../../control-plane/src/lib/site-data/dump-format";
 import type { DataError } from "../../control-plane/src/lib/site-data/validation";
 import { interruptedCall } from "./sql";
+import {
+  admit,
+  breakers,
+  settle,
+  type CallIdentity,
+  type Paused,
+} from "./breaker";
 
 export { PageviewLog } from "./pageview-log";
 // No SiteData here: site databases live on the mini (seoul.ts exports it
@@ -96,6 +103,11 @@ const OPERATIONS = [
   // A site's whole database, as NDJSON (control-plane lib/edge/dumps.ts).
   "dump",
   "restore",
+  // The site's paused statements (breaker.ts): its latest pauses, the
+  // operators told of them, and the owner letting one run again.
+  "breakerTrips",
+  "ackBreakerTrips",
+  "clearBreaker",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
@@ -172,7 +184,35 @@ function dispatch(
       return stub.restore(input);
     case "putFunctions":
       return stub.putFunctions(input);
+    case "breakerTrips":
+      return stub.breakerTrips(input);
+    case "ackBreakerTrips":
+      return stub.ackBreakerTrips(input);
+    case "clearBreaker":
+      return stub.clearBreakerTrips(input);
   }
+}
+
+/** The site's function a call or a render runs, as breakers name it. */
+function callOf(operation: string, input: unknown): CallIdentity | null {
+  const given = input as {
+    kind?: unknown;
+    file?: unknown;
+    name?: unknown;
+    route?: unknown;
+  } | null;
+  if (
+    operation === "call" &&
+    typeof given?.file === "string" &&
+    typeof given.name === "string" &&
+    (given.kind === "query" ||
+      given.kind === "mutation" ||
+      given.kind === "route")
+  )
+    return { kind: given.kind, file: given.file, name: given.name };
+  if (operation === "render" && typeof given?.route === "string")
+    return { kind: "route", file: given.route, name: "default" };
+  return null;
 }
 
 function failure(
@@ -360,6 +400,12 @@ export default {
     if (!(await authorized(request, env.EDGE_WORKER_SECRET)))
       return failure(401, "Unauthorized.");
     if (pathname === "/v1/domains/replace") return replaceDomains(request, env);
+    // Sites with pauses the operators have not been told of (breaker.ts),
+    // for the control plane's alerts; ackBreakerTrips takes a site off.
+    if (pathname === "/v1/breakers/unnotified")
+      return request.method === "POST"
+        ? Response.json({ value: { sites: [...breakers.unnotified] } })
+        : failure(405, "Method not allowed.");
     const pageview = /^\/v1\/pageviews\/([a-z]+)$/.exec(pathname);
     if (pageview) return pageviewOperation(request, env, pageview[1]);
     const match = /^\/v1\/sites\/([^/]+)\/([A-Za-z]+)$/.exec(pathname);
@@ -391,6 +437,39 @@ export default {
     // whose object this is, never one the body names.
     if (operation === "restoreFrom" || operation === "saveRestorePoint")
       input = { ...(input as object), site } satisfies { site: string };
+    // A call or a render of the site's code: refused here when its function
+    // is paused, else told the site's paused statements (breaker.ts).
+    const call = callOf(operation!, input);
+    if (call) {
+      const admitted = admit(site, call);
+      if (admitted.refusal)
+        return Response.json(
+          {
+            error: {
+              status: admitted.refusal.status,
+              message: admitted.refusal.message,
+              code: admitted.refusal.code,
+              details: admitted.refusal.details,
+              retryAfter: admitted.refusal.retryAfter,
+            },
+          },
+          {
+            status: admitted.refusal.status,
+            headers: { "Retry-After": String(admitted.refusal.retryAfter) },
+          },
+        );
+      input = { ...(input as object), site, paused: admitted.paused };
+    }
+    // The owner lets a paused statement (or all) run again: forgotten here,
+    // and the object told what is still paused.
+    if (operation === "clearBreaker") {
+      const key = (input as { key?: unknown }).key;
+      breakers.clear(site, typeof key === "string" ? key : undefined);
+      input = {
+        ...(input as object),
+        paused: breakers.paused(site, Date.now()) satisfies Paused[],
+      };
+    }
     const stub = env.SITES.get(env.SITES.idFromName(site));
     // Each operation takes one argument object; the object validates it.
     let outcome: Outcome<unknown>;
@@ -400,7 +479,9 @@ export default {
         operation!,
         input as never,
       )) as Outcome<unknown>;
+      if (call) settle(env.SITES, ctx, site, call);
     } catch (error) {
+      if (call) settle(env.SITES, ctx, site, call, error);
       // A write the runtime stopped at its step budget reset the object
       // (sql.ts, `interrupted`): the site's own statement in a call or a
       // release's migrations, or one of Naru's.
@@ -416,6 +497,38 @@ export default {
       if (!refusal) throw error;
       return failure(refusal.status, refusal.message, refusal);
     }
+    // A new release's code starts with no statement paused.
+    if (
+      outcome.ok &&
+      (operation === "activateFunctions" ||
+        (operation === "putFunctions" &&
+          (input as { publish?: unknown }).publish === true))
+    )
+      breakers.clear(site);
+    if (outcome.ok && operation === "breakerTrips") {
+      // Whether each is paused now: this Worker's memory, not the record.
+      const paused = new Map(
+        breakers
+          .paused(site, Date.now())
+          .map((pause) => [pause.key, pause.until]),
+      );
+      outcome = {
+        ok: true,
+        value: (outcome.value as { key: string; until: number }[]).map(
+          (trip) => ({
+            ...trip,
+            pausedUntil:
+              paused.get(trip.key) === trip.until ? trip.until : null,
+          }),
+        ),
+      };
+    }
+    if (
+      outcome.ok &&
+      operation === "ackBreakerTrips" &&
+      (outcome.value as { unnotified: number }).unnotified === 0
+    )
+      breakers.unnotified.delete(site);
     if (outcome.ok && operation === "dump")
       return new Response(outcome.value as ReadableStream<Uint8Array>, {
         headers: { "Content-Type": DUMP_CONTENT_TYPE },

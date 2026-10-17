@@ -88,6 +88,13 @@ export type Snapshot = {
  */
 export const ROUTES_OFF = "routes_off";
 
+/**
+ * `details.reason` of a call refused because its statement is paused: the
+ * runtime stopped it too often (breaker.ts). pages.ts answers a route's
+ * with the refusal itself, not the page it serves while the mini is away.
+ */
+export const STATEMENT_PAUSED = "statement_paused";
+
 /** Errors cross the RPC boundary as values: a thrown error loses its fields. */
 export type Outcome<T> =
   | { ok: true; value: T }

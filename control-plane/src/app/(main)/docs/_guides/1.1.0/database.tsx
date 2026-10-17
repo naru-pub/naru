@@ -1049,6 +1049,18 @@ try {
                   모두 합쳐 500,000행까지 읽습니다.
                 </li>
                 <li>
+                  그래도 한 문장이 3초를 넘기면 멈추고{" "}
+                  <code>INVALID_REQUEST</code>로 실패합니다. 쓰기였다면 그
+                  호출이 쓴 것은 모두 되돌려집니다. 같은 문장이 1분 안에 3번
+                  멈추면 5분 동안(1시간 안에 다시 그러면 30분) 실행하지 않고
+                  바로 <code>UNAVAILABLE</code>로 거절합니다(
+                  <code>error.details.reason</code>은{" "}
+                  <code>&quot;statement_paused&quot;</code>). 사이트의 다른
+                  문장은 그대로 됩니다. 멈춘 문장은 관리 화면의 데이터베이스
+                  페이지 &lsquo;중지된 쿼리&rsquo;에 SQL과 함께 나오고, 거기서
+                  다시 허용하거나 고친 코드를 새로 릴리스하면 다시 실행됩니다.
+                </li>
+                <li>
                   <code>UNIQUE</code> 열에 이미 있는 값을 쓰면{" "}
                   <code>CONFLICT</code>로 실패하고{" "}
                   <code>error.details.unique</code>에 그 열 이름이 담깁니다.

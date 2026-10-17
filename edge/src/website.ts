@@ -18,6 +18,7 @@ import {
 } from "../../control-plane/src/lib/site-data/validation";
 import type { SiteData } from "./site";
 import { interruptedCall } from "./sql";
+import { admit, breakers, settle, type CallIdentity } from "./breaker";
 import {
   OWNER_TICKET,
   verifyLiveTicket,
@@ -92,6 +93,8 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
         // a visitor's are limited by.
         "X-Naru-Site": site,
         "X-Naru-Client-Ip": request.headers.get("cf-connecting-ip") ?? "",
+        // Its statements the runtime stopped too often (breaker.ts).
+        "X-Naru-Paused": JSON.stringify(breakers.paused(site, Date.now())),
         ...(member === OWNER_TICKET
           ? { "X-Naru-Owner": "1" }
           : member
@@ -110,6 +113,7 @@ async function live(request: Request, env: WebsiteEnv, site: string) {
 async function visit(
   request: Request,
   env: WebsiteEnv,
+  ctx: Pick<ExecutionContext, "waitUntil">,
   site: string,
   path: string[],
   headers: Record<string, string>,
@@ -118,15 +122,30 @@ async function visit(
   try {
     const { file, fn } = functionReference(path.slice(1).join("/"));
     const body = await jsonBody(request);
+    const kind = CALLS[path[0]];
+    const call: CallIdentity = { kind, file, name: fn };
+    // Refused here when the whole function is paused (breaker.ts).
+    const { paused, refusal } = admit(site, call);
+    if (refusal) return refusalResponse(refusal, headers);
     const stub = env.SITES.get(env.SITES.idFromName(site));
-    const outcome = (await stub.visit({
-      site,
-      kind: CALLS[path[0]],
-      file,
-      name: fn,
-      args: body?.args ?? null,
-      clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
-    })) as Outcome<{ pass: true } | { pass?: undefined; result: unknown }>;
+    let outcome: Outcome<
+      { pass: true } | { pass?: undefined; result: unknown }
+    >;
+    try {
+      outcome = (await stub.visit({
+        site,
+        kind,
+        file,
+        name: fn,
+        args: body?.args ?? null,
+        clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
+        paused,
+      })) as typeof outcome;
+    } catch (error) {
+      settle(env.SITES, ctx, site, call, error);
+      throw error;
+    }
+    settle(env.SITES, ctx, site, call);
     if (!outcome.ok) return refusalResponse(outcome.error, headers);
     if (outcome.value.pass) return passThrough(original, env);
     return Response.json({ result: outcome.value.result }, { headers });
@@ -199,7 +218,7 @@ export async function website(
     !request.headers.has("authorization") &&
     NAME.test(site)
   )
-    return visit(request, env, site, path, headers);
+    return visit(request, env, ctx, site, path, headers);
   if (
     !NAME.test(site) ||
     request.headers.has("authorization") ||

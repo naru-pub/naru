@@ -43,7 +43,13 @@ How it differs from Cloudflare:
   workerd has no such limit and runs every object on one thread, so one
   statement could hold up every site. Naru's workerd stops it after 3
   seconds instead (`workerd/README.md`); the plan rule (`src/plan.ts`) stays
-  the early, explained refusal.
+  the early, explained refusal. A statement stopped 3 times within a minute
+  is paused for 5 minutes (30 when again within the hour), refused before it
+  runs (`src/breaker.ts`, `docs/database.md`). The strikes and pauses are in
+  the Worker's memory: restarting workerd forgets them. The record of each
+  pause is in the site's object, and the control plane's
+  `edge-breaker-alerts` job posts each to Discord: this Worker needs no
+  webhook.
 - **No edge cache.** Visitors' reads are answered by the object each time
   (`EDGE_CACHE=off`), which is a local query here.
 - **R2 through its S3 API** (`src/r2-s3.ts`), since workerd has no R2 binding.

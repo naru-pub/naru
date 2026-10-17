@@ -12,6 +12,7 @@ import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
 import MembershipManager from "./MembershipManager";
 import RestorePoints from "./RestorePoints";
+import StoppedQueries from "./StoppedQueries";
 import DeclaredCollections from "./DeclaredCollections";
 import { MAX_DOCUMENTS, MAX_SITE_BYTES } from "@/lib/site-data/validation";
 import { SDK_URL } from "@/lib/const";
@@ -202,6 +203,7 @@ export default function DatabaseManager({
           </Button>
         </div>
       </header>
+      <StoppedQueries />
       <DeclaredCollections onApplied={() => void run(refresh)} />
       <Tabs value={view} onValueChange={setView} className="space-y-6">
         <TabsList aria-label="데이터베이스 메뉴">

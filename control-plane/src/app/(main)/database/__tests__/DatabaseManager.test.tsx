@@ -33,6 +33,7 @@ const fetchMock = global.fetch as jest.Mock<typeof fetch>;
 let collections: { name: string; read_access: string; write_access: string }[];
 const deleted: string[] = [];
 const restored: string[] = [];
+const allowed: string[] = [];
 let created = 0;
 let requests = 0;
 let failing = false;
@@ -42,6 +43,7 @@ const json = (value: unknown, ok = true) =>
 beforeEach(() => {
   deleted.length = 0;
   restored.length = 0;
+  allowed.length = 0;
   created = 0;
   requests = 0;
   failing = false;
@@ -98,6 +100,32 @@ beforeEach(() => {
             kind: "release",
             generation: "019a2b3c-4d5e-7000-8000-000000000001",
             size: 2048,
+          },
+        ],
+      });
+    }
+    if (url === "/api/account/stopped-queries") {
+      if (method === "POST") {
+        allowed.push(JSON.parse(String(init?.body)).key);
+        return json({ cleared: allowed.at(-1) });
+      }
+      return json({
+        trips: [
+          {
+            id: "019a2b3c-4d5e-7000-8000-000000000009",
+            at: 1_790_000_000_000,
+            kind: "query",
+            file: "posts",
+            name: "list",
+            key: "query:posts:list:abc",
+            statement: "abc",
+            text: "SELECT count(*) FROM posts p1 JOIN posts p2 ON p2.board = p1.board",
+            strikes: 3,
+            until: 1_790_000_300_000,
+            repeated: false,
+            clearedAt: allowed.length ? 1_790_000_100_000 : null,
+            notifiedAt: null,
+            pausedUntil: allowed.length ? null : 1_790_000_300_000,
           },
         ],
       });
@@ -219,4 +247,20 @@ test("a restore point is made on request, and each one downloads", async () => {
   expect(await screen.findByRole("status")).toHaveTextContent(
     /복원 지점을 만들었습니다/,
   );
+});
+
+test("a paused statement is shown with its SQL and let run again", async () => {
+  renderManager();
+  const section = (
+    await screen.findByRole("heading", { name: "중지된 쿼리" })
+  ).closest("section")!;
+  expect(section).toHaveTextContent("posts:list");
+  expect(section).toHaveTextContent(/JOIN posts p2 ON p2.board = p1.board/);
+  expect(section).toHaveTextContent(/까지 멈춤/);
+  fireEvent.click(within(section).getByRole("button", { name: "다시 허용" }));
+  await waitFor(() => expect(allowed).toEqual(["query:posts:list:abc"]));
+  expect(await within(section).findByText(/다시 허용됨/)).toBeInTheDocument();
+  expect(
+    within(section).queryByRole("button", { name: "다시 허용" }),
+  ).not.toBeInTheDocument();
 });

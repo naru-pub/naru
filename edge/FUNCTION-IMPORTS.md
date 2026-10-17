@@ -118,7 +118,10 @@ paged or linear in the site's 100 MiB). Schema statements in migrations
 (`CREATE TABLE ... AS SELECT`, `CREATE INDEX`) are held only to the budget.
 The plan rule stays the early refusal, with the reason; the budget is what
 keeps one statement from holding up every site on the mini's one workerd
-thread. Estimating fan-out from `sqlite_stat1` (`ANALYZE`) would close the
+thread, and the breaker (`src/breaker.ts`) what keeps a statement stopped 3
+times within a minute from doing so again: it is refused before it runs, 503
+`UNAVAILABLE` `statement_paused`, for 5 minutes (30 when again within the
+hour), until the owner lets it run again or a release replaces the code. Estimating fan-out from `sqlite_stat1` (`ANALYZE`) would close the
 gap; it is not done.
 `src/plan.test.ts` measures `src/plan.corpus.ts` in workerd at N and 4N rows
 (how to add a statement is at the top of the corpus); the user-facing limits

@@ -107,6 +107,16 @@ export const MAINTENANCE_JOBS = [
     alertAfterMinutes: 30,
   },
   {
+    // Tells the operators of site statements the mini paused after its
+    // runtime stopped them repeatedly (lib/edge/breakers.ts). The Worker
+    // keeps them until told: report only failures that last half an hour.
+    name: "edge-breaker-alerts",
+    script: "alert-breaker-trips.ts",
+    minutes: 1,
+    timeout: 120,
+    alertAfterMinutes: 30,
+  },
+  {
     // Counts hosted sites' requests and blocks those past their monthly
     // allowance (lib/edge/site-requests.ts).
     name: "site-request-limits",

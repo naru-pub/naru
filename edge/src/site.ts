@@ -32,6 +32,17 @@ import {
 } from "../../control-plane/src/lib/site-functions/restore-points";
 import { runFunction, type Host } from "./functions";
 import {
+  breakerKey,
+  pausedList,
+  pausedRefusal,
+  reportStop,
+  statementId,
+  TRIP_TEXT_CHARS,
+  type CallIdentity,
+  type Paused,
+  type Trip,
+} from "./breaker";
+import {
   bindings,
   checkPlan,
   classify,
@@ -231,6 +242,8 @@ const unsupported = () =>
   new DataError(400, "Data contains unsupported characters or numbers.");
 /** Anonymous requests a site may make each calendar month (UTC). */
 const DEFAULT_MONTHLY_REQUESTS = 5_000_000;
+/** The pauses of a site's statements kept for its owner (breaker.ts). */
+const BREAKER_TRIPS_KEPT = 50;
 /** The count is kept in memory and written every this many requests. */
 const BUDGET_SAVE_EVERY = 25;
 
@@ -329,6 +342,11 @@ function encode(data: unknown) {
 
 export class SiteData extends DurableObject<Env> {
   private sql: SqlStorage;
+  /**
+   * The site's paused statements (breaker.ts), as the Worker last passed
+   * them, which ctx.sql refuses: with each call, and with each trip.
+   */
+  private paused: Paused[] = [];
   /** This month's anonymous requests, ahead of what is saved in `meta`. */
   private budget?: { month: string; used: number; unsaved: number };
   /**
@@ -381,6 +399,13 @@ export class SiteData extends DurableObject<Env> {
     if (!spent.ok)
       return new Response(spent.error.message, { status: spent.error.status });
     const member = request.headers.get("X-Naru-Member") || null;
+    // The site's paused statements, for its live queries' runs.
+    try {
+      const paused = request.headers.get("X-Naru-Paused");
+      if (paused) this.paused = pausedList(JSON.parse(paused));
+    } catch {
+      /* none, then */
+    }
     const pair = new WebSocketPair();
     const socket: LiveSocket = {
       id: randomUUID(),
@@ -1366,9 +1391,21 @@ export class SiteData extends DurableObject<Env> {
     values: unknown,
     readonly: boolean,
     budget: { rowsRead: number; tables: SqlTables },
+    call?: CallIdentity & { site: string },
   ) {
     if (typeof text !== "string" || text.length > 64 * 1024)
       throw new DataError(400, "ctx.sql takes a statement of at most 64 KiB.");
+    // A statement the runtime stopped too often is paused (breaker.ts):
+    // refused before SQLite sees it.
+    const statement = statementId(text);
+    if (call && this.paused.length) {
+      const key = breakerKey({ ...call, statement });
+      const now = Date.now();
+      const paused = this.paused.find(
+        (pause) => pause.key === key && pause.until > now,
+      );
+      if (paused) throw pausedRefusal(paused.until, now);
+    }
     const parsed = statements(text);
     if (parsed.length !== 1)
       throw new DataError(400, "ctx.sql runs one statement at a time.");
@@ -1416,8 +1453,18 @@ export class SiteData extends DurableObject<Env> {
           );
       }
     } catch (error) {
-      // A write the runtime stopped has reset this object: its caller's
-      // stub says so (interruptedCall), whatever this throws.
+      // Told to the Worker, which counts it against the statement
+      // (breaker.ts): a write the runtime stopped has reset this object, and
+      // this is all that leaves it. Its caller's stub says so
+      // (interruptedCall), whatever this throws.
+      if (call && interrupted(error))
+        reportStop(call.site, {
+          kind: call.kind,
+          file: call.file,
+          name: call.name,
+          statement,
+          text: text.slice(0, TRIP_TEXT_CHARS),
+        });
       throw sqlFailure(error, statementBudget(this.env));
     }
     // Each statement is held to one pass by its plan; a call, to a few.
@@ -1532,8 +1579,13 @@ export class SiteData extends DurableObject<Env> {
       return { revision: this.meta("functions_revision"), switching };
     });
     if (!activated.ok) return activated;
-    // New code may answer live queries differently: every one runs again.
-    if (activated.value.switching) this.scheduleRefresh(["*"]);
+    if (activated.value.switching) {
+      // New code may answer live queries differently: every one runs again.
+      this.scheduleRefresh(["*"]);
+      // Its statements start afresh (the Worker clears its breakers too).
+      this.paused = [];
+      this.run(() => this.clearTrips(null));
+    }
     return { ok: true, value: { revision: activated.value.revision } };
   }
 
@@ -1757,6 +1809,7 @@ export class SiteData extends DurableObject<Env> {
    */
   private siteHost(
     tables: SqlTables = { read: new Set(), written: new Set() },
+    call?: CallIdentity & { site: string },
   ): Host {
     const sqlBudget = { rowsRead: 0, tables };
     return (operation, args) => {
@@ -1770,7 +1823,13 @@ export class SiteData extends DurableObject<Env> {
           return null;
         case "sql":
           // [text, values, read-only], the last from the call, not the code.
-          return this.siteSql(args[0], args[1], args[2] === true, sqlBudget);
+          return this.siteSql(
+            args[0],
+            args[1],
+            args[2] === true,
+            sqlBudget,
+            call,
+          );
         case "passwordHash": {
           const password = args[0];
           if (
@@ -1832,7 +1891,10 @@ export class SiteData extends DurableObject<Env> {
      * and a re-run after a write ("refresh") is not counted as a call.
      */
     live?: "subscribe" | "refresh";
+    /** The site's paused statements (breaker.ts), from the Worker. */
+    paused?: unknown;
   }): Promise<Outcome<{ result: unknown; tables?: string[] }>> {
+    if (input.paused !== undefined) this.paused = pausedList(input.paused);
     const visitor = input.member === null && input.visitor === true;
     const kind = input.kind;
     const readonly = kind === "query" || kind === "route";
@@ -1911,7 +1973,12 @@ export class SiteData extends DurableObject<Env> {
                   ? []
                   : (this.memberRoles([input.member])[input.member] ?? []),
             },
-            this.siteHost(tables),
+            this.siteHost(tables, {
+              site: input.site,
+              kind,
+              file: input.file,
+              name: input.name,
+            }),
           ),
         ),
         ...(input.live ? { tables: [...tables.read].sort() } : {}),
@@ -1946,6 +2013,7 @@ export class SiteData extends DurableObject<Env> {
     args: unknown;
     clientIp?: string;
     kind: "query" | "mutation";
+    paused?: unknown;
   }): Promise<Outcome<{ pass: true } | { pass?: undefined; result: unknown }>> {
     const ownerId = this.meta("owner_id");
     const until = this.meta("entitled_until");
@@ -1983,6 +2051,7 @@ export class SiteData extends DurableObject<Env> {
     params: Record<string, string>;
     query: Record<string, string>;
     clientIp?: string;
+    paused?: unknown;
   }): Promise<Outcome<{ result: unknown }>> {
     const ownerId = this.meta("owner_id");
     const until = this.meta("entitled_until");
@@ -2008,6 +2077,7 @@ export class SiteData extends DurableObject<Env> {
       member: null,
       visitor: true,
       clientIp: input.clientIp,
+      paused: input.paused,
       file: input.route,
       name: "default",
       args: {
@@ -3368,6 +3438,122 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /** Erases the site, for account deletion. */
+  /**
+   * Keeps a pause of one of the site's statements (breaker.ts) for its owner
+   * and the operators, and the site's pauses as they now are. The Worker
+   * calls this after the strike that paused it, as a call of its own: a
+   * stopped write reset the object, and its own call's work with it.
+   */
+  async recordBreakerTrip(input: { trip: Trip; paused: unknown }) {
+    this.paused = pausedList(input.paused);
+    return this.run(() => {
+      const trip = input.trip;
+      this.sql.exec(
+        `INSERT INTO _naru_breaker_trips
+           (id, at, kind, file, name, breaker, statement, text, strikes, until, repeated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        uuidv7(),
+        trip.at,
+        trip.kind,
+        trip.file,
+        trip.name,
+        trip.key,
+        trip.statement,
+        trip.text === null ? null : trip.text.slice(0, TRIP_TEXT_CHARS),
+        trip.strikes,
+        trip.until,
+        trip.repeated ? 1 : 0,
+      );
+      // The latest are what anyone looks at.
+      this.sql.exec(
+        `DELETE FROM _naru_breaker_trips WHERE id NOT IN
+           (SELECT id FROM _naru_breaker_trips ORDER BY id DESC LIMIT ?)`,
+        BREAKER_TRIPS_KEPT,
+      );
+      return null;
+    });
+  }
+
+  /**
+   * The site's latest pauses, newest first; `unnotified`, only those the
+   * operators have not been told of (ackBreakerTrips).
+   */
+  async breakerTrips(input: { unnotified?: boolean } = {}) {
+    return this.run(() =>
+      this.rows(
+        `SELECT id, at, kind, file, name, breaker, statement, text, strikes, until,
+           repeated, cleared_at, notified_at
+         FROM _naru_breaker_trips
+         ${input?.unnotified === true ? "WHERE notified_at IS NULL" : ""}
+         ORDER BY id DESC LIMIT ?`,
+        BREAKER_TRIPS_KEPT,
+      ).map((row) => ({
+        id: String(row.id),
+        at: Number(row.at),
+        kind: String(row.kind),
+        file: String(row.file),
+        name: String(row.name),
+        key: String(row.breaker),
+        statement: row.statement === null ? null : String(row.statement),
+        text: row.text === null ? null : String(row.text),
+        strikes: Number(row.strikes),
+        until: Number(row.until),
+        repeated: Number(row.repeated) === 1,
+        clearedAt: row.cleared_at === null ? null : Number(row.cleared_at),
+        notifiedAt: row.notified_at === null ? null : Number(row.notified_at),
+      })),
+    );
+  }
+
+  /** Marks pauses the operators were told of; answers how many are left. */
+  async ackBreakerTrips(input: { ids?: unknown }) {
+    return this.run(() => {
+      const ids = Array.isArray(input?.ids)
+        ? input.ids.filter((id): id is string => typeof id === "string")
+        : [];
+      if (ids.length > BREAKER_TRIPS_KEPT)
+        throw new DataError(400, "Too many trips.");
+      if (ids.length)
+        this.sql.exec(
+          `UPDATE _naru_breaker_trips SET notified_at = ?
+           WHERE notified_at IS NULL AND id IN (${ids.map(() => "?").join(",")})`,
+          Date.now(),
+          ...ids,
+        );
+      return {
+        unnotified: Number(
+          this.rows(
+            "SELECT count(*) AS n FROM _naru_breaker_trips WHERE notified_at IS NULL",
+          )[0].n,
+        ),
+      };
+    });
+  }
+
+  /**
+   * The owner let a paused statement (`key`), or all of them, run again: the
+   * Worker forgot their breakers and passes what is still paused.
+   */
+  async clearBreakerTrips(input: { key?: unknown; paused?: unknown }) {
+    this.paused = pausedList(input?.paused);
+    return this.run(() => {
+      if (input?.key !== undefined && typeof input.key !== "string")
+        throw new DataError(400, "Invalid breaker.");
+      this.clearTrips((input?.key as string | undefined) ?? null);
+      return null;
+    });
+  }
+
+  /** Marks the pauses of `key` (null: every one) as let run again. */
+  private clearTrips(key: string | null) {
+    this.sql.exec(
+      `UPDATE _naru_breaker_trips SET cleared_at = ?
+       WHERE cleared_at IS NULL ${key === null ? "" : "AND breaker = ?"}`,
+      Date.now(),
+      ...(key === null ? [] : [key]),
+    );
+  }
+
   async erase(): Promise<Outcome<null>> {
     await this.ctx.storage.deleteAll();
     this.budget = undefined;
