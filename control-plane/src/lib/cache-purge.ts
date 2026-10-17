@@ -18,15 +18,34 @@ import { getSiteBucketUrl, getUserObjectKey } from "@/lib/site-urls";
 // under their URL there. Both are purged. A failed purge only delays a
 // change, so it is reported and not thrown.
 
+type PurgeOptions = {
+  /**
+   * The workflow deployment making the change, whose site code activates
+   * after the purge returns (publishSiteFunctions).
+   */
+  deploymentId?: string;
+};
+
 /** Purges these paths of the user's site. */
-export function purgeSiteFiles(loginName: string, paths: string[]) {
+export function purgeSiteFiles(
+  loginName: string,
+  paths: string[],
+  options?: PurgeOptions,
+) {
   return purgeSiteObjects(
     paths.map((path) => getUserObjectKey(loginName, path)),
+    options,
   );
 }
 
-/** Purges these keys of the site bucket, each `<login>/<path>`. */
-export async function purgeSiteObjects(keys: string[]) {
+/**
+ * Purges these keys of the site bucket, each `<login>/<path>`. Returns the
+ * function releases the change published, by site.
+ */
+export async function purgeSiteObjects(
+  keys: string[],
+  options: PurgeOptions = {},
+) {
   const sites = new Set(
     keys.flatMap((key) => {
       const match =
@@ -36,7 +55,12 @@ export async function purgeSiteObjects(keys: string[]) {
       return match ? [match[1]] : [];
     }),
   );
-  for (const site of sites) await publishSiteFunctions(site);
+  const releases = new Map<string, { revision: string; generation: string }>();
+  for (const site of sites)
+    releases.set(
+      site,
+      await publishSiteFunctions(site, { deploymentId: options.deploymentId }),
+    );
   // After the site's code, as before: a declaration installs on its own.
   const declaring = new Set(
     keys.flatMap((key) => {
@@ -63,6 +87,7 @@ export async function purgeSiteObjects(keys: string[]) {
   // then stay for a day (SITE_FILE_CACHE_SECONDS), so a page could load a new
   // index.html with an old module. Purge again once such reads are done.
   setTimeout(() => void purgeUrls(urls), REPURGE_AFTER_MS).unref?.();
+  return releases;
 }
 
 /** How long after a purge it is repeated, past any read still storing. */

@@ -228,3 +228,70 @@ integration(
     ).toEqual([]);
   },
 );
+
+integration(
+  "a workflow deployment's release activates in its task, which records whether the site took it",
+  async () => {
+    const deployment = async (id: string) => {
+      await db
+        .insertInto("github_deployments")
+        .values({ id } as any)
+        .execute();
+      return id;
+    };
+    const outcome = (id: string) =>
+      db
+        .selectFrom("github_deployments")
+        .select(["functions_status", "functions_error"])
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
+    const latestTask = async () =>
+      (
+        await sql<{
+          params: FunctionRelease;
+        }>`select params from absurd.t_maintenance where task_name = 'function-release-v1' order by params->>'generation' desc limit 1`.execute(
+          db,
+        )
+      ).rows[0].params;
+
+    mockObjects.set(
+      `${site}/_naru/mutations/shop.js`,
+      "export function buy() { return 4; }",
+    );
+    const accepted = await deployment("deferred-accepted");
+    const release = await publishSiteFunctions(site, {
+      deploymentId: accepted,
+    });
+    // Not activated before the task runs.
+    expect(
+      await callSiteObject<{ revision: string }>(site, "activateFunctions", {
+        revision: release.revision,
+        generation: "00000000-0000-7000-8000-000000000000",
+      }),
+    ).not.toEqual({ revision: release.revision });
+    expect(await outcome(accepted)).toEqual({
+      functions_status: "activating",
+      functions_error: null,
+    });
+    await runFunctionRelease(await latestTask(), context());
+    expect(await outcome(accepted)).toEqual({
+      functions_status: "active",
+      functions_error: null,
+    });
+
+    mockObjects.set(
+      `${site}/_naru/migrations/0003_broken.sql`,
+      "INSERT INTO missing VALUES (1);",
+    );
+    const refusedDeployment = await deployment("deferred-refused");
+    await publishSiteFunctions(site, { deploymentId: refusedDeployment });
+    await runFunctionRelease(await latestTask(), context());
+    expect(await outcome(refusedDeployment)).toMatchObject({
+      functions_status: "refused",
+      functions_error: {
+        details: { reason: "migration_failed", migration: "0003_broken.sql" },
+      },
+    });
+    mockObjects.delete(`${site}/_naru/migrations/0003_broken.sql`);
+  },
+);

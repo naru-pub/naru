@@ -106,6 +106,11 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await sql`create index site_function_releases_user_generation on site_function_releases(user_id, id)`.execute(
     db,
   );
+  // Only what a release's durable task records on a workflow deployment.
+  await sql`create table github_deployments (id text primary key,
+    functions_release_id uuid, functions_status text, functions_error jsonb)`.execute(
+    db,
+  );
 }
 export async function teardownTestDatabase() {
   // The last migrations cannot be reversed, so the schema goes as a whole.

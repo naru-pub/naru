@@ -25,6 +25,28 @@ import { GitHubActionsClaims } from "./githubOidc";
 const MAX_DEPLOY_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const DEPLOYMENT_TTL_MS = 60 * 60 * 1000;
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+// Staged files are checked and copied this many at a time: one by one, a
+// deploy of a few hundred files outlasts Cloudflare's 100-second limit on the
+// finalize request.
+const PUBLISH_CONCURRENCY = 16;
+
+async function eachLimit<T>(
+  items: T[],
+  limit: number,
+  run: (item: T) => Promise<unknown>,
+) {
+  let next = 0;
+  let failed = false;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (!failed && next < items.length)
+        await run(items[next++]).catch((error) => {
+          failed = true;
+          throw error;
+        });
+    }),
+  );
+}
 
 export type DeployManifestFile = {
   path: string;
@@ -498,6 +520,9 @@ function loadDeployment(id: string) {
       "github_deployments.uploaded_paths",
       "github_deployments.deploy_generation",
       "github_deployments.expires_at",
+      "github_deployments.error_message",
+      "github_deployments.functions_status",
+      "github_deployments.functions_error",
       "github_deploy_targets.enabled",
       "github_deploy_targets.github_repository_id as current_github_repository_id",
       "github_deploy_targets.deploy_generation as current_deploy_generation",
@@ -528,7 +553,42 @@ export async function finalizeGitHubDeployment(params: {
   if (params.claims.sha !== deployment.github_sha) {
     throw new Error("GitHub commit does not match this deployment");
   }
-  return publishDeployment(deployment);
+  // The site's code activates in its durable task: activation applies the
+  // release's migrations after a restore point, which can take minutes. The
+  // workflow asks how it went (githubDeploymentStatus).
+  return publishDeployment(deployment, { deferFunctions: true });
+}
+
+/**
+ * What a workflow's finalized deployment published, and whether the site
+ * code it changed is active yet: `functions` is null when it changed none,
+ * else `activating` until the durable task activates it (`active`) or the
+ * site refuses it for good (`refused`, with why, as 422 migration_failed).
+ */
+export async function githubDeploymentStatus(params: {
+  claims: GitHubActionsClaims;
+  deploymentId: string;
+}) {
+  const deployment = await loadDeployment(params.deploymentId);
+  if (
+    !deployment ||
+    deployment.github_repository_id !== params.claims.repository_id
+  ) {
+    throw new Error("Deployment was not found");
+  }
+  assertGitHubClaimsAllowed(params.claims, deployment);
+  return {
+    status: deployment.status,
+    error: deployment.error_message,
+    functions: deployment.functions_status
+      ? {
+          status: deployment.functions_status,
+          ...(deployment.functions_error
+            ? { error: deployment.functions_error }
+            : {}),
+        }
+      : null,
+  };
 }
 
 /**
@@ -544,7 +604,10 @@ export async function publishPlannedDeployment(deploymentId: string) {
   return publishDeployment(deployment);
 }
 
-async function publishDeployment(deployment: LoadedDeployment) {
+async function publishDeployment(
+  deployment: LoadedDeployment,
+  options: { deferFunctions?: boolean } = {},
+) {
   if (deployment.status !== "planned") {
     throw new Error("Deployment is not ready to finalize");
   }
@@ -578,10 +641,11 @@ async function publishDeployment(deployment: LoadedDeployment) {
     );
   }
 
+  const uploadedFiles = manifest.files.filter((file) =>
+    uploadedPathSet.has(file.path),
+  );
   try {
-    for (const file of manifest.files.filter((file) =>
-      uploadedPathSet.has(file.path),
-    )) {
+    await eachLimit(uploadedFiles, PUBLISH_CONCURRENCY, async (file) => {
       const stagingKey = `${deployment.upload_prefix}/${file.path}`;
       const head = await s3Client.send(
         new HeadObjectCommand({
@@ -600,7 +664,7 @@ async function publishDeployment(deployment: LoadedDeployment) {
           `Uploaded checksum does not match manifest for ${file.path}`,
         );
       }
-    }
+    });
 
     const rootIndex = manifest.files.find((file) => file.path === "index.html");
     const rootIndexKey =
@@ -613,9 +677,7 @@ async function publishDeployment(deployment: LoadedDeployment) {
       ? extractHtmlTitle(await readObjectText(rootIndexKey))
       : null;
 
-    for (const file of manifest.files.filter((file) =>
-      uploadedPathSet.has(file.path),
-    )) {
+    await eachLimit(uploadedFiles, PUBLISH_CONCURRENCY, async (file) => {
       const stagingKey = `${deployment.upload_prefix}/${file.path}`;
       const targetPath = publicPath(deployment.target_prefix, file.path);
       const publicKey = getUserObjectKey(deployment.login_name, targetPath);
@@ -632,7 +694,7 @@ async function publishDeployment(deployment: LoadedDeployment) {
           MetadataDirective: "REPLACE",
         }),
       );
-    }
+    });
 
     const publicDeleteKeys = deletedPaths.map((path) =>
       getUserObjectKey(
@@ -642,12 +704,21 @@ async function publishDeployment(deployment: LoadedDeployment) {
     );
     await deleteObjects(publicDeleteKeys);
 
-    await purgeSiteFiles(deployment.login_name, [
-      ...manifest.files.map((file) =>
-        publicPath(deployment.target_prefix, file.path),
-      ),
-      ...deletedPaths.map((path) => publicPath(deployment.target_prefix, path)),
-    ]);
+    const releases = await purgeSiteFiles(
+      deployment.login_name,
+      [
+        ...manifest.files.map((file) =>
+          publicPath(deployment.target_prefix, file.path),
+        ),
+        ...deletedPaths.map((path) =>
+          publicPath(deployment.target_prefix, path),
+        ),
+      ],
+      options.deferFunctions ? { deploymentId: deployment.id } : {},
+    );
+    const release = options.deferFunctions
+      ? releases.get(deployment.login_name)
+      : undefined;
 
     await deleteObjects(
       manifest.files.map((file) => `${deployment.upload_prefix}/${file.path}`),
@@ -693,6 +764,8 @@ async function publishDeployment(deployment: LoadedDeployment) {
       deployedFiles: manifest.files.length,
       uploadedFiles: uploadedPaths.length,
       deletedFiles: deletedPaths.length,
+      // Site code still activating: poll /api/deploy/github/status.
+      functions: release ? { status: "activating" as const } : null,
     };
   } catch (error) {
     await db

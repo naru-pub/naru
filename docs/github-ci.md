@@ -35,7 +35,17 @@ the deploy action at `naru-pub/actions/deploy@v1` is also a good shape.
    - deletes files previously managed by the same target when configured,
    - updates `site_updated_at`, `site_title`, deployment manifest, and home
      directory size,
-   - purges Cloudflare cache.
+   - purges Cloudflare cache,
+   - when the commit changes the site's code (`_naru/`), publishes its
+     release and answers `functions: { status: "activating" }` without
+     waiting: activation applies the release's migrations after a restore
+     point, which can outlast Cloudflare's 100-second limit on the request.
+     The release activates in its durable task (`function-release-v1`).
+5. `POST /api/deploy/github/status` with the same `deploymentId`, until
+   `functions.status` is `active`, or `refused` with `functions.error`
+   (`{ message, details }`, as a 422 `migration_failed`): the files are
+   published either way, and a refused release leaves the previous code
+   active. `functions` is null when the commit changed no site code.
 
 Finalize is the publish step. If it is skipped, uploaded objects remain in the
 staging prefix and do not change the public site.

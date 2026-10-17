@@ -15,7 +15,7 @@ const { purgeSiteFiles, purgeSiteObjects } =
 const publish = jest.mocked(publishSiteFunctions);
 beforeEach(() => {
   publish.mockReset();
-  publish.mockResolvedValue({ revision: "one" });
+  publish.mockResolvedValue({ revision: "one", generation: "g1" });
 });
 
 test("bulk edits publish once per affected site, including deleted nested keys", async () => {
@@ -28,11 +28,14 @@ test("bulk edits publish once per affected site, including deleted nested keys",
     "dave/_naru/functions/a.js",
     "dave/_naru/rules/auth.js",
   ]);
-  expect(publish.mock.calls).toEqual([["alice"], ["bob"]]);
+  expect(publish.mock.calls).toEqual([
+    ["alice", {}],
+    ["bob", {}],
+  ]);
 });
 test("file editor preserves the directory when activating its site", async () => {
   await purgeSiteFiles("alice", ["_naru/modules/shared.js"]);
-  expect(publish).toHaveBeenCalledWith("alice");
+  expect(publish).toHaveBeenCalledWith("alice", {});
 });
 test("ordinary frontend changes need no function publication", async () => {
   await purgeSiteFiles("alice", ["index.html", "_naru/README.md"]);
@@ -41,7 +44,17 @@ test("ordinary frontend changes need no function publication", async () => {
 test("migrations and routes publish like queries, since they ride in revisions", async () => {
   await purgeSiteFiles("alice", ["_naru/migrations/0001_posts.sql"]);
   await purgeSiteFiles("bob", ["_naru/routes/index.js"]);
-  expect(publish.mock.calls).toEqual([["alice"], ["bob"]]);
+  expect(publish.mock.calls).toEqual([
+    ["alice", {}],
+    ["bob", {}],
+  ]);
+});
+test("a workflow deployment's code is published for its task to activate", async () => {
+  const releases = await purgeSiteFiles("alice", ["_naru/queries/a.js"], {
+    deploymentId: "d1",
+  });
+  expect(publish).toHaveBeenCalledWith("alice", { deploymentId: "d1" });
+  expect(releases.get("alice")).toEqual({ revision: "one", generation: "g1" });
 });
 test("publication failures reach the caller so saves cannot report activation", async () => {
   publish.mockRejectedValue(new Error("Missing import"));

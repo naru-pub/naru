@@ -368,6 +368,9 @@ export interface GithubDeployments {
   error_message: string | null;
   expires_at: Timestamp;
   finalized_at: Timestamp | null;
+  functions_error: ColumnType<{ message: string; details?: unknown } | null, string | null, string | null>;
+  functions_release_id: string | null;
+  functions_status: "activating" | "active" | "refused" | null;
   github_ref: string;
   github_repository: string;
   github_repository_id: string | null;

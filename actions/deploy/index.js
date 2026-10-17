@@ -235,6 +235,39 @@ async function uploadFiles(uploads, fileByPath, concurrency = 4) {
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
+// Finalize publishes the files and answers before the site's code (its
+// queries, mutations, routes and migrations) is active: activation can take
+// minutes. Wait for it, so a release the site refuses fails the workflow.
+const FUNCTIONS_TIMEOUT_MS = 15 * 60 * 1000;
+const FUNCTIONS_POLL_MS = 5000;
+
+async function waitForFunctions(endpoint, audience, deploymentId) {
+  const deadline = Date.now() + FUNCTIONS_TIMEOUT_MS;
+  for (;;) {
+    const status = await postJson(
+      apiUrl(endpoint, "/api/deploy/github/status"),
+      await getOidcToken(audience),
+      { deploymentId },
+    );
+    const functions = status.functions;
+    if (!functions || functions.status === "active") return;
+    if (functions.status === "refused") {
+      const details = functions.error?.details;
+      throw new Error(
+        `Naru refused the site's code: ${functions.error?.message ?? "unknown error"}${
+          details ? ` ${JSON.stringify(details)}` : ""
+        }. The files are published; the previous code stays active.`,
+      );
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        "The site's code is still activating after 15 minutes; Naru keeps trying.",
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, FUNCTIONS_POLL_MS));
+  }
+}
+
 async function main() {
   const site = getInput("site", { required: true });
   const dir = getInput("dir", { required: true });
@@ -296,6 +329,11 @@ async function main() {
       deploymentId: plan.deploymentId,
     },
   );
+
+  if (finalize.functions?.status === "activating") {
+    info("Activating the site's code");
+    await waitForFunctions(endpoint, audience, plan.deploymentId);
+  }
 
   await setOutput("deployed-files", finalize.deployedFiles ?? "");
   await setOutput("uploaded-files", finalize.uploadedFiles ?? "");

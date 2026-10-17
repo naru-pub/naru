@@ -31,6 +31,15 @@ jest.mock("@/lib/database", () => ({
       };
       return query;
     },
+    // How a workflow deployment's release went (none here).
+    updateTable: () => {
+      const query = {
+        set: () => query,
+        where: () => query,
+        execute: async () => [],
+      };
+      return query;
+    },
     deleteFrom: () => {
       const query = {
         where: (key: string, _op: string, value: string) => {
