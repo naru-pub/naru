@@ -42,6 +42,7 @@ This host holds the only copy of each site's database; nightly backups to B2
 (~/Git/infra) are what recovers it. While it is away, sites' static files are
 still served from R2 by Cloudflare, but their data calls fail and their routes
 answer with their index.html (status 503). The edge Worker on Cloudflare
-probes `https://origin.sdk.naru.pub/healthz/deep` each minute and posts to
-Discord when this host has failed three minutes in a row, and again when it
+probes `https://origin.sdk.naru.pub/healthz/deep` each minute, and
+`https://naru.pub/api/health` for the control plane apart, and posts to
+Discord when either has failed three minutes in a row, and again when it
 answers: see `docs/database.md`, "When the mini is away".

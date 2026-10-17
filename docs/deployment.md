@@ -75,8 +75,10 @@ deleted the standby's copies); `wrangler dev --env local` adds it back for
 tests and naru-dev. The Worker
 renders sites' routes there, at `origin.sdk.naru.pub` (secret
 `SDK_ORIGIN_SECRET`, the mini's `EDGE_WORKER_SECRET`), and its cron probes
-the mini each minute and posts to `DISCORD_WEBHOOK` (secret) when it is down
-and when it is back: it alerts, and fails nothing over. See
+the mini each minute, workerd and the control plane
+(`CONTROL_PLANE_HEALTH_URL`, `https://naru.pub/api/health`) apart, and posts
+to `DISCORD_WEBHOOK` (secret) when either is down and when it is back: it
+alerts, and fails nothing over. See
 [database.md](database.md#when-the-mini-is-away).
 
 `wrangler.jsonc` declares the `edge.naru.pub` custom domain and the

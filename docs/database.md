@@ -448,10 +448,16 @@ The mini holds the only copy of each site's database; there is no standby
   Other requests to a route path, and sites without `index.html`, are
   answered as if the site had no routes (`edge/src/pages.ts`).
 - The edge Worker's cron runs the `Standby` object each minute
-  (`edge/src/standby.ts`, named for the standby it once was). It probes
-  `https://origin.sdk.naru.pub/healthz/deep`, the mini's own name, and posts
-  to Discord when the mini has failed three minutes in a row, and again when
-  it answers. It only alerts: nothing changes over. The same object forwards
+  (`edge/src/standby.ts`, named for the standby it once was). It probes two
+  hosts at once, each with its own count of failed minutes:
+  `https://origin.sdk.naru.pub/healthz/deep`, the mini's own name (workerd
+  and a site database), and `https://naru.pub/api/health`
+  (`CONTROL_PLANE_HEALTH_URL`), the control plane through Caddy and the
+  nginx gateway, which is up only when it answers 200 with
+  `{"status":"ok"}` as JSON (a 502, a redirect or a gateway's own page is
+  down). Each posts to Discord, naming its host, when it has failed three
+  minutes in a row, and again when it answers, so one host's outage neither
+  hides nor repeats the other's. It only alerts: nothing changes over. The same object forwards
   route renders to the mini, since Cloudflare's Los Angeles location could
   not connect to the home line directly in a drill.
 

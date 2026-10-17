@@ -77,10 +77,12 @@
     // The mini's own name: probed by the health check, and where routes are
     // rendered (src/standby.ts).
     "SDK_ORIGIN_HOST": "origin.sdk.naru.pub",
+    // The control plane's health, also on the mini, probed apart (standby.ts).
+    "CONTROL_PLANE_HEALTH_URL": "https://naru.pub/api/health",
   },
   "observability": { "enabled": true },
-  // The mini's health check, each minute (src/standby.ts): it alerts, and
-  // changes nothing. Its secret, set with `wrangler secret put`:
+  // The mini's health check, each minute (src/standby.ts): sdk.naru.pub and
+  // naru.pub, each alerted on apart; it changes nothing. Its secret, set with `wrangler secret put`:
   // DISCORD_WEBHOOK. Routes also need SDK_ORIGIN_SECRET.
   "triggers": { "crons": ["* * * * *"] },
   // Local runs: this Worker with every site's database in it, as SiteData
