@@ -126,6 +126,19 @@ import {
   type DumpBucket,
 } from "./dump";
 
+/**
+ * A scan of the site's tables for uploads (`tableMediaReferences`): rows a
+ * page, and when it stops, partial. A whole 100 MiB database is within both.
+ */
+const TABLE_SCAN_ROWS = 1000;
+/** Uploads asked about at once: a site's whole library (MAX_MEDIA_FILES). */
+const TABLE_SCAN_IDS = 10_000;
+const TABLE_SCAN_MS = 8000;
+const TABLE_SCAN_CHARS = 256 * 1024 * 1024;
+const UPLOAD_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ANY_UUID =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 /** A dump's snapshot tables (`openDump`) and a restore's staging tables (`stage`). */
 const SNAP = "_naru_snap_";
 const STAGE = "_naru_stage_";
@@ -2134,29 +2147,153 @@ export class SiteData extends DurableObject<Env> {
             ).length > 0,
         ),
       );
-      // The site's own tables (1.1.0) keep upload URLs in text columns,
-      // which no reference is recorded for: searched for the rest.
-      let rest = ids.filter((id) => !used.has(id));
-      const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
-      for (const table of this.siteObjects())
-        if (table.type === "table")
-          for (const column of this.rows(
-            "SELECT name, type FROM pragma_table_info(?)",
-            table.name,
-          ))
-            if (rest.length && /TEXT|CHAR|CLOB|^$/i.test(String(column.type))) {
-              const col = quote(String(column.name));
-              for (const row of this.rows(
-                `SELECT ${col} AS v FROM ${quote(table.name)} WHERE ${rest.map(() => `instr(${col}, ?) > 0`).join(" OR ")} LIMIT 1000`,
-                ...rest,
-              ))
-                for (const id of rest)
-                  if (String(row.v).includes(id)) used.add(id);
-              rest = rest.filter((id) => !used.has(id));
-            }
       return ids.filter((id) => used.has(id));
     });
   }
+
+  /**
+   * Where the site's own tables (1.1.0) name each of `ids` (uploads), for
+   * the media library: asked when the owner looks, never recorded. A table
+   * names an upload when any TEXT value in it (a URL, a bare ID, JSON or
+   * HTML) contains the upload's ID, which no other upload or row can share.
+   * Full-text tables are left out (they copy their sources), as are Naru's.
+   * Rows are read a page at a time, the object free for other requests
+   * between pages; past TABLE_SCAN_MS or TABLE_SCAN_CHARS the answer stops,
+   * `partial`. One scan runs at a time in an object.
+   */
+  async tableMediaReferences(input: {
+    ids?: unknown;
+    /** Tests only (TEST_OPERATIONS): a smaller TABLE_SCAN_CHARS. */
+    maxChars?: unknown;
+  }): Promise<
+    Outcome<{
+      references: Record<string, { table: string; column: string }[]>;
+      partial: boolean;
+      ms: number;
+      chars: number;
+    }>
+  > {
+    const ids = new Set(
+      (Array.isArray(input?.ids) ? input.ids : [])
+        .filter(
+          (id): id is string => typeof id === "string" && UPLOAD_ID.test(id),
+        )
+        .slice(0, TABLE_SCAN_IDS)
+        .map((id) => id.toLowerCase()),
+    );
+    const maxChars =
+      (this.env as { TEST_OPERATIONS?: string }).TEST_OPERATIONS === "1" &&
+      typeof input?.maxChars === "number"
+        ? input.maxChars
+        : TABLE_SCAN_CHARS;
+    const before = this.scanning;
+    let done!: () => void;
+    this.scanning = new Promise<void>((resolve) => (done = resolve));
+    await before;
+    try {
+      const started = Date.now();
+      const found = new Map<
+        string,
+        Map<string, { table: string; column: string }>
+      >();
+      let chars = 0;
+      let partial = false;
+      const tables = ids.size
+        ? this.siteObjects().filter(
+            (object) => object.type === "table" && !object.virtual,
+          )
+        : [];
+      scan: for (const table of tables) {
+        let columns: string[];
+        try {
+          columns = this.rows(
+            "SELECT name FROM pragma_table_info(?)",
+            table.name,
+          ).map((column) => String(column.name));
+        } catch {
+          continue;
+        }
+        if (!columns.length) continue;
+        // The rowid by a name no column has, or pages by offset for a table
+        // without one.
+        const key = /\bWITHOUT\s+ROWID\b/i.test(table.sql)
+          ? undefined
+          : ["rowid", "_rowid_", "oid"].find(
+              (name) =>
+                !columns.some((column) => column.toLowerCase() === name),
+            );
+        const texts = columns
+          .map((column) => {
+            const quoted = quoteName(column);
+            return `CASE WHEN typeof(${quoted}) = 'text' THEN ${quoted} END`;
+          })
+          .join(", ");
+        let after = -Infinity;
+        let offset = 0;
+        for (;;) {
+          if (Date.now() - started > TABLE_SCAN_MS || chars > maxChars) {
+            partial = true;
+            break scan;
+          }
+          let page: unknown[][];
+          try {
+            page = [
+              ...(key
+                ? this.sql.exec(
+                    `SELECT ${key}, ${texts} FROM ${quoteName(table.name)} WHERE ${key} > ? ORDER BY ${key} LIMIT ${TABLE_SCAN_ROWS}`,
+                    after,
+                  )
+                : this.sql.exec(
+                    `SELECT NULL, ${texts} FROM ${quoteName(table.name)} LIMIT ${TABLE_SCAN_ROWS} OFFSET ${offset}`,
+                  )
+              ).raw(),
+            ];
+          } catch {
+            // Dropped or changed by a release between pages.
+            continue scan;
+          }
+          for (const values of page) {
+            if (key) after = Number(values[0]);
+            for (let i = 1; i < values.length; i++) {
+              const value = values[i];
+              if (typeof value !== "string") continue;
+              chars += value.length;
+              for (const match of value.matchAll(ANY_UUID)) {
+                const id = match[0].toLowerCase();
+                if (!ids.has(id)) continue;
+                const column = columns[i - 1];
+                const places = found.get(id) ?? new Map();
+                found.set(id, places);
+                if (places.size < 10)
+                  places.set(`${table.name}\u0000${column}`, {
+                    table: table.name,
+                    column,
+                  });
+              }
+            }
+          }
+          offset += page.length;
+          if (page.length < TABLE_SCAN_ROWS) break;
+          // Other requests may run between pages.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+      return {
+        ok: true,
+        value: {
+          references: Object.fromEntries(
+            [...found].map(([id, places]) => [id, [...places.values()]]),
+          ),
+          partial,
+          ms: Date.now() - started,
+          chars,
+        },
+      };
+    } finally {
+      done();
+    }
+  }
+  private scanning: Promise<void> = Promise.resolve();
 
   /**
    * Tests only: the snapshot and staging tables that are left, and how long

@@ -67,3 +67,11 @@ lost when a tab closes before it is sent. Never infer IDs from external/legacy U
 This change does not migrate neo-avocado's existing images or add app reference
 tracking. Moderators cannot delete another member's media through a member token;
 that requires an explicitly authorized owner or a later server cleanup API.
+
+Before deleting an upload by hand, the owner's media library shows whether
+anything names it: collection documents (recorded as they are written) and the
+site's own SQL tables (searched for the upload's URL or ID when the library
+opens, with the table and column shown; docs/sdk-v1-api.md "Upload
+references"). An upload marked 참조 없음 is named by neither, unless the
+library says it searched only part of the tables. Site files and other sites
+are not searched.

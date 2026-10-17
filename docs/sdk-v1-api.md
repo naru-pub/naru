@@ -589,13 +589,25 @@ holds at most 1,000 connections at once.
 
 ## Upload references (1.1.0)
 
-Naru records which of the site's documents name each upload: any document
-whose JSON contains the upload's URL, in a plain field or inside HTML, from
-any write path (pages and batches). References only mark uploads: the owner's
-media library shows those no document names, and nothing is deleted on
-Naru's judgement, since media may be linked from anywhere (site files, the
-site's tables, other sites). Uploads are deleted by the owner, or by the
-member who made them (`media.delete(id)`); site code cannot delete them.
+The owner's media library marks the uploads nothing names as unreferenced
+(참조 없음), and shows where the others are named. Nothing is deleted on
+Naru's judgement, since media may be linked from anywhere (site files, other
+sites); uploads are deleted by the owner, or by the member who made them
+(`media.delete(id)`); site code cannot delete them.
+
+- **Collection documents.** Naru records which documents name each upload:
+  any document whose JSON contains the upload's URL, in a plain field or
+  inside HTML, from any write path (pages and batches).
+- **The site's own tables.** Nothing is recorded as site SQL writes; when the
+  owner opens the media library, Naru searches every TEXT value of the site's
+  tables (not full-text tables, which copy their sources, nor BLOBs) for each
+  upload's ID: its URL (`https://media.naru.pub/<owner>/<id>.<ext>`), a bare
+  ID as `upload()` returns it, or either inside JSON or HTML. The library
+  lists the table and column of each. A row deleted or edited is seen on the
+  next look. The search is bounded (8 seconds, 256 Mi characters of text): past
+  that, the library says it looked at only part of the tables, and an
+  upload marked unreferenced may still be named in the rest. A ~100 MiB
+  database is searched whole in about half a second.
 
 ## Documents, pages, and queries
 

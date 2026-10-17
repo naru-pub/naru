@@ -608,7 +608,7 @@ integration("guest passwords and uploads in tables", () => {
     ).rejects.toMatchObject({ status: 429, code: "RATE_LIMITED" });
   });
 
-  test("an upload named in a table counts as used", async () => {
+  test("an upload named in a table is found where it is (table-media-references.test.ts)", async () => {
     const used = "0190f5a0-0000-7000-8000-00000000abcd";
     const unused = "0190f5a0-0000-7000-8000-00000000dcba";
     await put(
@@ -621,9 +621,19 @@ integration("guest passwords and uploads in tables", () => {
     await code("mutation", "image", {
       url: `https://media.naru.pub/${ownerId}/${used}.png`,
     });
+    // Documents' references are another question, which tables do not
+    // answer: they are searched as the owner's library asks.
     expect(
       await callSiteObject(site, "mediaReferences", { ids: [used, unused] }),
-    ).toEqual([used]);
+    ).toEqual([]);
+    expect(
+      await callSiteObject(site, "tableMediaReferences", {
+        ids: [used, unused],
+      }),
+    ).toMatchObject({
+      references: { [used]: [{ table: "guest_posts", column: "body" }] },
+      partial: false,
+    });
   });
 });
 

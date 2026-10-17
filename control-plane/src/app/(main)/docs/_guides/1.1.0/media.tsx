@@ -127,9 +127,12 @@ await admin.collection("posts").set("hello", {
                 어디에서든 쓰일 수 있기 때문입니다. 대신 어떤 문서나 사이트
                 테이블의 행이 파일의 URL을 담고 있는지 살피고, 담은 곳이 하나도
                 없는 파일을 미디어 라이브러리에 &lsquo;참조 없음&rsquo;으로
-                표시합니다. 문서의 일반 필드든 HTML 안이든, 테이블의 텍스트
-                열이든 URL이 들어 있으면 참조로 셉니다. 사이트 파일이 쓰는지는
-                보지 않으니, 필요 없는 파일만 그곳에서 지우세요.
+                표시합니다. 문서는 일반 필드든 HTML 안이든 URL이 들어 있으면
+                참조로 셉니다. SQL 테이블은 미디어 라이브러리를 열 때 텍스트
+                열을 모두 살펴, 파일의 URL이나 ID(JSON·HTML 안 포함)를 담은
+                테이블과 열을 파일 옆에 보여 줍니다. 테이블이 아주 크면 일부만
+                살피고 그렇다고 알려 줍니다. 사이트 파일이 쓰는지는 보지 않으니,
+                필요 없는 파일만 그곳에서 지우세요.
               </p>
               <Code>{`const image = await admin.media.upload(file);
 await admin.collection("posts").set("spring", { title: "사진", image: image.url });

@@ -983,6 +983,81 @@ integration("site members", () => {
       }
     });
 
+    test("the owner's library finds uploads the site's tables name, as it asks", async () => {
+      const bob = await signIn("bob");
+      const authorized = await media(bob.accessToken, "POST", [], file);
+      const inTable = (await media(bob.accessToken, "PUT", [authorized.id]))
+        .file;
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "migrations",
+        file: "0001_gallery",
+        source: "CREATE TABLE gallery (id INTEGER PRIMARY KEY, image TEXT);",
+        publish: false,
+      });
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "mutations",
+        file: "gallery",
+        source: `export async function add(ctx, { image }) { await ctx.sql\`INSERT INTO gallery (image) VALUES (\${image})\`; }
+          export async function clear(ctx) { await ctx.sql\`DELETE FROM gallery\`; }`,
+      });
+      const gallery = (name: string, args: unknown = null) =>
+        callSiteObject("alice", "call", {
+          ownerId: String(owner),
+          site: "alice",
+          member: null,
+          kind: "mutation",
+          file: "gallery",
+          name,
+          args,
+        });
+      const tables = () =>
+        executeMedia({
+          site: "alice",
+          path: [],
+          method: "GET",
+          body: {},
+          adminUserId: owner,
+          tableReferences: true,
+        }) as Promise<Record<string, any>>;
+      await gallery("add", { image: inTable.url });
+      expect(await tables()).toEqual({
+        tableReferences: {
+          [inTable.id]: [{ table: "gallery", column: "image" }],
+        },
+        partial: false,
+      });
+      // The listing itself is the documents' answer, which no table changes.
+      const listed = (
+        (await executeMedia({
+          site: "alice",
+          path: [],
+          method: "GET",
+          body: {},
+          adminUserId: owner,
+          size: 100,
+        })) as { files: Record<string, unknown>[] }
+      ).files;
+      expect(listed.find((entry) => entry.id === inTable.id)).toMatchObject({
+        referenced: false,
+      });
+      // Only the owner's control panel asks.
+      await expect(
+        executeMedia({
+          site: "alice",
+          path: [],
+          method: "GET",
+          body: {},
+          bearer: { token: bob.accessToken, origin },
+          tableReferences: true,
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      // Nothing is kept: the next look sees the row gone.
+      await gallery("clear");
+      expect(await tables()).toEqual({ tableReferences: {}, partial: false });
+    });
+
     test("a site's first media listing records the references its documents already had", async () => {
       // Documents written while only some uploads were tracked: an
       // imported site has documents and no references at all.

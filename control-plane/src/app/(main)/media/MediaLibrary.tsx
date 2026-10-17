@@ -27,8 +27,13 @@ type MediaFile = {
   url: string;
   createdAt: string;
   updatedAt: string;
-  /** For a finished upload: whether any of the site's documents names it. */
+  /**
+   * For a finished upload: whether any of the site's collection documents
+   * names it (the listing's answer), or, once merged, any of its tables.
+   */
   referenced?: boolean;
+  /** Where the site's own tables name it (`?references=tables`). */
+  tableReferences?: { table: string; column: string }[];
   /** An upload that was started but never finished. */
   unfinished?: boolean;
   /** Until when the unfinished upload's signed address still accepts it. */
@@ -99,7 +104,12 @@ function TypeIcon({ type }: { type: string }) {
   return <FileText aria-hidden="true" />;
 }
 
-type Library = { files: MediaFile[]; usage: Usage };
+type Library = {
+  files: MediaFile[];
+  usage: Usage;
+  /** The search of the site's tables stopped short, or failed. */
+  tablesPartial: boolean;
+};
 
 async function fetchLibrary(): Promise<Library> {
   // The listing pages now. Search and sort below run over the whole library,
@@ -116,7 +126,23 @@ async function fetchLibrary(): Promise<Library> {
   } while (cursor);
   // The quota is its own request and no longer rides along with the listing.
   const { usage } = await api("?usage=1");
-  return { files, usage };
+  // Documents' references come with the listing; the site's own tables are
+  // searched once, now, for every upload. A search that fails leaves the
+  // documents' answer, said to be partial.
+  let tablesPartial = false;
+  try {
+    const { tableReferences, partial } = await api("?references=tables");
+    tablesPartial = partial;
+    for (const file of files) {
+      const places = tableReferences[file.id];
+      if (!places?.length || file.referenced === undefined) continue;
+      file.referenced = true;
+      file.tableReferences = places;
+    }
+  } catch {
+    tablesPartial = true;
+  }
+  return { files, usage, tablesPartial };
 }
 
 export default function MediaLibrary() {
@@ -136,9 +162,12 @@ export default function MediaLibrary() {
   const [copied, setCopied] = useState("");
   const confirm = useConfirm();
 
+  const [tablesPartial, setTablesPartial] = useState(false);
+
   function show(library: Library) {
     setFiles(library.files);
     setUsage(library.usage);
+    setTablesPartial(library.tablesPartial);
   }
 
   async function refresh() {
@@ -406,6 +435,12 @@ export default function MediaLibrary() {
           {error}
         </p>
       )}
+      {tablesPartial && (
+        <p className="text-sm text-warning" role="status">
+          사이트 SQL 테이블을 다 확인하지 못했습니다. &lsquo;참조 없음&rsquo;인
+          파일도 테이블 어딘가에서 쓰고 있을 수 있습니다.
+        </p>
+      )}
       {busy && !files.length && (
         <div className="flex items-center justify-center gap-2 border border-dashed p-12 text-sm text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
@@ -478,9 +513,24 @@ export default function MediaLibrary() {
                 {file.referenced === false && (
                   <p
                     className="mt-2 inline-block border border-warning px-1.5 py-0.5 text-xs text-warning"
-                    title="어떤 데이터베이스 문서도 이 파일의 URL을 담고 있지 않습니다. 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
+                    title={
+                      tablesPartial
+                        ? "어떤 컬렉션 문서도 이 파일의 URL을 담고 있지 않습니다. 사이트 SQL 테이블은 일부만 확인했습니다. 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
+                        : "어떤 컬렉션 문서도, 사이트 SQL 테이블의 어떤 행도 이 파일의 URL이나 ID를 담고 있지 않습니다. 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
+                    }
                   >
                     참조 없음
+                  </p>
+                )}
+                {!!file.tableReferences?.length && (
+                  <p
+                    className="mt-2 truncate text-xs text-muted-foreground"
+                    title="이 파일의 URL이나 ID를 담은 사이트 SQL 테이블과 열입니다."
+                  >
+                    테이블:{" "}
+                    {file.tableReferences
+                      .map((place) => `${place.table}.${place.column}`)
+                      .join(", ")}
                   </p>
                 )}
               </div>
