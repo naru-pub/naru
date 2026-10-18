@@ -30,7 +30,7 @@ import {
   restorePointsPrefix,
 } from "../../control-plane/src/lib/site-functions/restore-points";
 import { runFunction, type Host } from "./functions";
-import { siteObjectsOf, tableRows } from "./table-rows";
+import { ownerQuery, siteObjectsOf, tableRows } from "./table-rows";
 import {
   breakerKey,
   pausedList,
@@ -148,6 +148,8 @@ import {
  * page, and when it stops, partial. A whole 100 MiB database is within both.
  */
 const TABLE_SCAN_ROWS = 1000;
+/** Statements the owner's console may run in a minute (ownerQuery). */
+const OWNER_QUERIES_PER_MINUTE = 30;
 /** Uploads asked about at once: a site's whole library (MAX_MEDIA_FILES). */
 const TABLE_SCAN_IDS = 10_000;
 const TABLE_SCAN_MS = 8000;
@@ -1822,6 +1824,40 @@ export class SiteData extends DurableObject<Env> {
       ),
     );
   }
+
+  /**
+   * One read-only statement of the owner's own SQL, from the control
+   * panel's console (table-rows.ts). Outside the site's breakers and
+   * visitors' rows per minute; the runtime's step budget stops a long one,
+   * and OWNER_QUERIES_PER_MINUTE keep an open tab from keeping the object
+   * busy.
+   */
+  async ownerQuery(input: { text?: unknown }) {
+    return this.run(() => {
+      const now = Date.now();
+      this.ownerQueries = this.ownerQueries.filter((at) => now - at < 60_000);
+      if (this.ownerQueries.length >= OWNER_QUERIES_PER_MINUTE)
+        throw rateLimited(
+          `At most ${OWNER_QUERIES_PER_MINUTE} queries a minute can be run. Try again shortly.`,
+          secondsUntil(this.ownerQueries[0] + 60_000),
+        );
+      this.ownerQueries.push(now);
+      let read: { rowsRead: number } | undefined;
+      try {
+        return ownerQuery((query) => {
+          const cursor = this.sql.exec(query);
+          read = cursor;
+          return { columns: cursor.columnNames, rows: cursor.raw() };
+        }, input ?? {});
+      } catch (error) {
+        throw sqlFailure(error, statementBudget(this.env));
+      } finally {
+        this.rowsRead += read?.rowsRead ?? 0;
+      }
+    });
+  }
+  /** When the owner's console ran its queries in the last minute. */
+  private ownerQueries: number[] = [];
 
   /**
    * Test fixture and naru-dev only: production snapshots are created in the

@@ -2,6 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vitest";
 import { SCHEMA, USAGE_SCHEMA } from "./query";
 import {
+  ownerQuery,
+  QUERY_ROWS,
   siteObjectsOf,
   TABLE_CELL_CHARS,
   TABLE_COUNT_ROWS,
@@ -32,7 +34,19 @@ const site = (sql: string) => {
     );
   const page = (input: Record<string, unknown>) =>
     tableRows(raw, objects(), input);
-  return { db, page, objects };
+  const query = (text: unknown) =>
+    ownerQuery(
+      (sql) => {
+        const statement = db.prepare(sql);
+        statement.setReturnArrays(true);
+        return {
+          columns: statement.columns().map((column) => column.name),
+          rows: statement.iterate() as unknown as Iterable<unknown[]>,
+        };
+      },
+      { text },
+    );
+  return { db, page, objects, query };
 };
 const refusal = (work: () => unknown) => {
   try {
@@ -170,6 +184,72 @@ describe("a site table's rows", () => {
       columns: ["body"],
       rows: [],
       next: null,
+    });
+  });
+});
+
+describe("the owner's console", () => {
+  const posts = () => {
+    const made = site(
+      `CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT, cover BLOB);
+       INSERT INTO posts VALUES (1, 'first', zeroblob(10)), (2, 'second', NULL);`,
+    );
+    return made;
+  };
+
+  test("reads the site's tables, joins and Naru's readable views", () => {
+    const { query } = posts();
+    expect(
+      query("SELECT id, title, cover FROM posts ORDER BY id DESC -- newest"),
+    ).toEqual({
+      columns: ["id", "title", "cover"],
+      rows: [
+        [2, "second", null],
+        [1, "first", { blob: 10 }],
+      ],
+      more: false,
+    });
+    expect(
+      query(
+        "WITH t AS (SELECT count(*) AS n FROM posts) SELECT n, (SELECT count(*) FROM _naru_uploads) AS uploads FROM t;",
+      ).rows,
+    ).toEqual([[2, 0]]);
+    expect(query("VALUES (1, 'x')").rows).toEqual([[1, "x"]]);
+    expect(query(`SELECT '${"y".repeat(1500)}'`).rows[0][0]).toMatchObject({
+      length: 1500,
+    });
+  });
+
+  test("shows at most QUERY_ROWS rows and says more followed", () => {
+    const { db, query } = posts();
+    db.exec(
+      `WITH RECURSIVE c(x) AS (SELECT 3 UNION ALL SELECT x + 1 FROM c WHERE x < ${QUERY_ROWS + 10}) INSERT INTO posts (id) SELECT x FROM c`,
+    );
+    const answer = query("SELECT id FROM posts");
+    expect(answer.rows).toHaveLength(QUERY_ROWS);
+    expect(answer.more).toBe(true);
+  });
+
+  test("refuses writes, schema changes, Naru's tables and more than one statement", () => {
+    const { db, query } = posts();
+    for (const text of [
+      "DELETE FROM posts",
+      "UPDATE posts SET title = 'x'",
+      "INSERT INTO posts (id) VALUES (3) RETURNING id",
+      "WITH x AS (SELECT 1) DELETE FROM posts",
+      "DROP TABLE posts",
+      "CREATE TABLE t (a)",
+      "PRAGMA table_info(posts)",
+      "ATTACH 'x' AS y",
+      "SELECT * FROM documents",
+      "SELECT * FROM meta",
+      "SELECT 1; DELETE FROM posts",
+      "",
+      42,
+    ])
+      expect(refusal(() => query(text)).status).toBe(400);
+    expect(db.prepare("SELECT count(*) AS n FROM posts").get()).toEqual({
+      n: 2,
     });
   });
 });

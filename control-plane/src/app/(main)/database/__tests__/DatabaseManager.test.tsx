@@ -35,6 +35,7 @@ const deleted: string[] = [];
 const restored: string[] = [];
 const allowed: string[] = [];
 const tablePages: string[] = [];
+const queries: string[] = [];
 let created = 0;
 let requests = 0;
 let failing = false;
@@ -46,6 +47,7 @@ beforeEach(() => {
   restored.length = 0;
   allowed.length = 0;
   tablePages.length = 0;
+  queries.length = 0;
   created = 0;
   requests = 0;
   failing = false;
@@ -131,6 +133,28 @@ beforeEach(() => {
           },
         ],
       });
+    }
+    if (url === "/api/account/site-tables" && method === "POST") {
+      const { query } = JSON.parse(String(init?.body));
+      queries.push(query);
+      return query.startsWith("DELETE")
+        ? json(
+            {
+              error: {
+                status: 400,
+                message: "Invalid SQL: a read-only query cannot write.",
+              },
+            },
+            false,
+          )
+        : json({
+            columns: ["id", "n"],
+            rows: [
+              [1, 2],
+              [3, null],
+            ],
+            more: true,
+          });
     }
     if (url === "/api/account/site-tables")
       return json({
@@ -351,4 +375,35 @@ test("a site's table is paged read only", async () => {
     .getByRole("heading", { name: "테이블" })
     .closest("section")!;
   expect(within(panel).queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+test("the owner runs a read-only query beside the tables", async () => {
+  renderManager();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "테이블" }), {
+    button: 0,
+  });
+  const panel = (
+    await screen.findByRole("heading", { name: "SQL 조회" })
+  ).closest("section")!;
+  const sql = within(panel).getByRole("textbox", { name: "SQL" });
+  // The example names the site's first table, not a view.
+  await waitFor(() =>
+    expect(sql).toHaveAttribute("placeholder", "SELECT * FROM posts LIMIT 10"),
+  );
+  const run = within(panel).getByRole("button", { name: "실행" });
+  expect(run).toBeDisabled();
+  fireEvent.change(sql, { target: { value: "SELECT id, n FROM posts" } });
+  fireEvent.click(run);
+  expect(
+    await within(panel).findByText("처음 2개 행만 보입니다."),
+  ).toBeInTheDocument();
+  expect(within(panel).getByRole("table")).toHaveTextContent("NULL");
+  // Cmd/Ctrl+Enter runs too, and the object's refusal is shown as it is.
+  fireEvent.change(sql, { target: { value: "DELETE FROM posts" } });
+  fireEvent.keyDown(sql, { key: "Enter", metaKey: true });
+  expect(await within(panel).findByRole("alert")).toHaveTextContent(
+    "a read-only query cannot write",
+  );
+  expect(within(panel).queryByRole("table")).not.toBeInTheDocument();
+  expect(queries).toEqual(["SELECT id, n FROM posts", "DELETE FROM posts"]);
 });

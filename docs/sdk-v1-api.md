@@ -575,7 +575,11 @@ a downloaded file back yet; restoring is from the restore points it keeps.
 The owner can browse the site's tables on the control panel (데이터베이스 →
 테이블), read only: a table's rows 100 at a time in rowid order (key order WITHOUT ROWID), long text cut
 to its first 1,000 characters and a BLOB shown as its size; views, Naru's
-tables and a full-text table's storage are not browsed.
+tables and a full-text table's storage are not browsed. Beside it, SQL 조회
+runs one read-only statement of the owner's own (SELECT, VALUES or WITH …
+SELECT, with the same refusals as site SQL; `_naru_member_roles` and
+`_naru_uploads` read too) and shows its first 1,000 rows, 30 statements a
+minute.
 The site's tables count toward the site's database quota with its
 collections. naru-dev (`npx @naru-pub/dev`) writes `_naru/types/database.d.ts`, the tables
 as the migrations left them, for `ctx.sql` and query builders.

@@ -3,6 +3,7 @@ import { callSiteObject } from "@/lib/edge/client";
 import { siteOf } from "@/lib/site-functions/restore";
 import {
   DataError,
+  jsonBody,
   protocolError,
   sameOrigin,
   withRetryAfter,
@@ -24,12 +25,19 @@ export type TableRowsPage = {
   next: number | null;
   count?: { rows: number; more: boolean };
 };
+/** One statement's rows from the owner's console (edge/src/table-rows.ts). */
+export type OwnerQueryAnswer = {
+  columns: string[];
+  rows: TableCell[][];
+  more: boolean;
+};
 
 /**
  * The owner's view of the site's own tables on the control panel, read
  * only: GET lists them, GET `?table=<name>&after=<next>` is a page of one
- * (`tableRows`, edge/src/table-rows.ts). Same origin and the owner's
- * session only, as restore points (restore-points-http.ts).
+ * (`tableRows`, edge/src/table-rows.ts), and POST `{ query }` runs one
+ * read-only statement of the owner's own SQL (`ownerQuery`). Same origin
+ * and the owner's session only, as restore points (restore-points-http.ts).
  */
 export async function siteTablesOwnerRequest(request: Request) {
   const headers = { "Cache-Control": "no-store", Vary: "Origin" };
@@ -38,6 +46,15 @@ export async function siteTablesOwnerRequest(request: Request) {
     const { user } = await validateRequest();
     if (!user) throw new DataError(401, "Sign in required.");
     const site = await siteOf(user.id);
+    if (request.method === "POST") {
+      const body = await jsonBody(request);
+      return Response.json(
+        await callSiteObject<OwnerQueryAnswer>(site, "ownerQuery", {
+          text: body.query,
+        }),
+        { headers },
+      );
+    }
     const params = new URL(request.url).searchParams;
     const table = params.get("table");
     if (table === null)

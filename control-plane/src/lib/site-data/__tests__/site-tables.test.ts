@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { describe, expect, test } from "@jest/globals";
 import { callSiteObject } from "@/lib/edge/client";
-import type { TableRowsPage } from "../site-tables-http";
+import type { OwnerQueryAnswer, TableRowsPage } from "../site-tables-http";
 
 // The owner's read-only view of a site's own tables (1.1.0), end to end in
 // the site's Durable Object (scripts/with-edge-worker.sh): `siteTables`
@@ -28,6 +28,8 @@ const run = (text: string, values: unknown[] = []) =>
   });
 const page = (input: Record<string, unknown>) =>
   callSiteObject<TableRowsPage>(site, "tableRows", input);
+const query = (text: string) =>
+  callSiteObject<OwnerQueryAnswer>(site, "ownerQuery", { text });
 
 integration("a site's tables on the control panel", () => {
   test("the owner pages a table's rows, and nothing that isn't the site's table", async () => {
@@ -88,5 +90,36 @@ integration("a site's tables on the control panel", () => {
     await expect(page({ table: "posts", limit: 500 })).rejects.toMatchObject({
       status: 400,
     });
+  });
+
+  test("the owner's console reads, and changes nothing", async () => {
+    expect(
+      await query(
+        "SELECT p.id, p.title, p.cover, (SELECT count(*) FROM _naru_member_roles) AS roles FROM posts p WHERE p.id <= 2 ORDER BY p.id",
+      ),
+    ).toEqual({
+      columns: ["id", "title", "cover", "roles"],
+      rows: [
+        [1, "post 1", { blob: 2048 }, 0],
+        [2, "post 2", null, 0],
+      ],
+      more: false,
+    });
+    const all = await query("SELECT id FROM posts");
+    expect(all.rows).toHaveLength(150);
+    expect(all.more).toBe(false);
+    for (const text of [
+      "DELETE FROM posts",
+      "UPDATE posts SET title = 'x'",
+      "DROP TABLE posts",
+      "SELECT * FROM documents",
+      "SELECT 1; DELETE FROM posts",
+    ])
+      await expect(query(text)).rejects.toMatchObject({ status: 400 });
+    await expect(query("SELECT nope FROM posts")).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/no such column/),
+    });
+    expect((await query("SELECT count(*) FROM posts")).rows).toEqual([[150]]);
   });
 });

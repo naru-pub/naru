@@ -39,6 +39,12 @@ const request = (query = "", origin = "http://localhost") =>
   new Request(`http://localhost/api/account/site-tables${query}`, {
     headers: { Origin: origin },
   });
+const post = (body: unknown, origin = "http://localhost") =>
+  new Request("http://localhost/api/account/site-tables", {
+    method: "POST",
+    headers: { Origin: origin, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -85,4 +91,29 @@ test("passes the object's refusals on, and refuses an odd page itself", async ()
   expect(await refused.json()).toMatchObject({
     error: { message: "The site has no table meta." },
   });
+});
+
+test("runs the owner's query, from the same origin only", async () => {
+  expect(
+    (
+      await siteTablesOwnerRequest(
+        post({ query: "SELECT 1" }, "https://alice.naru.pub"),
+      )
+    ).status,
+  ).toBe(403);
+  expect(call).not.toHaveBeenCalled();
+  const answer = { columns: ["1"], rows: [[1]], more: false };
+  call.mockResolvedValueOnce(answer);
+  const ran = await siteTablesOwnerRequest(post({ query: "SELECT 1" }));
+  expect(await ran.json()).toEqual(answer);
+  expect(call).toHaveBeenLastCalledWith("alice", "ownerQuery", {
+    text: "SELECT 1",
+  });
+  call.mockRejectedValueOnce(
+    new DataError(400, "Invalid SQL: a read-only query cannot write."),
+  );
+  const refused = await siteTablesOwnerRequest(
+    post({ query: "DELETE FROM posts" }),
+  );
+  expect(refused.status).toBe(400);
 });

@@ -90,6 +90,8 @@ const OPERATIONS = [
   "siteTables",
   // A page of one of the site's tables, for the owner's control panel.
   "tableRows",
+  // One read-only statement of the owner's own SQL, from the same tab.
+  "ownerQuery",
   "rolesOfMembers",
   "setMemberRoles",
   // Uploads as Naru Media finishes and deletes them, for site SQL's _naru_uploads.
@@ -157,6 +159,8 @@ function dispatch(
       return stub.siteTables();
     case "tableRows":
       return stub.tableRows(input);
+    case "ownerQuery":
+      return stub.ownerQuery(input);
     case "rolesOfMembers":
       return stub.rolesOfMembers(input);
     case "render":

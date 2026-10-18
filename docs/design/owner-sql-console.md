@@ -1,6 +1,6 @@
 # Owner SQL console and row edits (데이터베이스 → 테이블)
 
-Status: proposal, 2026-10-18. Nothing here is built yet.
+Status: option A built (2026-10-18, `ownerQuery`); B and C are proposals.
 
 The 테이블 tab (85c25223) browses a site's 1.1.0 tables read only, a page of
 100 rows at a time (`tableRows`, edge/src/table-rows.ts). Owners have asked
@@ -31,20 +31,20 @@ weighs both and proposes an order.
 A textarea and a 실행 button on the 테이블 tab. Results show in the same
 grid, using the same cell shaping (long text cut, BLOBs as their size).
 
-- **Edge:** a new `ownerQuery({ text, values? })` operation. It parses one
-  statement with `statements`, runs `classify(tokens, ["read"])`, and
-  executes it in `transactionSync`, then rolls back on purpose (by throwing
-  after reading) so nothing can persist even if `classify` let a write
-  through. If workerd accepts `PRAGMA query_only` on the object's
-  connection, that's a stronger second guard; check before relying on it.
-- **Limits:** the same as a site call: 64 KiB of text, 1,000 rows and 1 MiB
-  returned (a page of up to 1,000 rows, plus a note when the limit was hit),
-  `MAX_ROWS_READ`, and the step budget. These statements stay out of the
+- **Edge (as built):** `ownerQuery({ text })`. It parses one statement with
+  `statements`, runs `classify(tokens, ["read"])`, and runs it as
+  `SELECT * FROM (<statement>) LIMIT 1001`. No write parses as a subquery, so
+  nothing can change even if `classify` let a write through. Bound values
+  aren't taken.
+- **Limits (as built):** 64 KiB of text; at most 1,000 rows and about 1 MiB
+  of shaped JSON returned, with `more` when rows were left out. The step
+  budget stops a long read. `MAX_ROWS_READ` isn't applied: it is checked
+  after a statement finishes, which saves nothing for a read. These statements stay out of the
   site's breakers (breaker.ts): an owner's slow query shouldn't pause the
   site's own statements, and the step budget already bounds each one. The
   console doesn't count toward visitors' rows-per-minute either.
-- **Throttle:** a small per-site rate limit (for example 30 statements a
-  minute), so an open tab can't keep the object busy.
+- **Throttle (as built):** 30 statements a minute per site object, kept in
+  memory, refused as 429 with `Retry-After`.
 - **Risk:** low. It only reads, `classify` already guards site SQL, and the
   object is the site's own. The worst case is one slow read, which the step
   budget stops.

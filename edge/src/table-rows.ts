@@ -1,6 +1,6 @@
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
 import type { SqlValue } from "./query";
-import { reserved } from "./sql";
+import { classify, reserved, statements } from "./sql";
 
 /** The most rows one page of a table holds on the control panel. */
 export const TABLE_PAGE_ROWS = 100;
@@ -179,4 +179,79 @@ export function tableRows(
     };
   }
   return answer;
+}
+
+/** The most rows the owner's console shows of one statement. */
+export const QUERY_ROWS = 1000;
+/** About how much of a statement's rows, as JSON, the console shows. */
+export const QUERY_BYTES = 1024 * 1024;
+/** The longest statement the console takes, as site SQL (ctx.sql). */
+export const QUERY_CHARS = 64 * 1024;
+
+/** A value as the console shows it, as a page of a table does (Cell). */
+export function cellOf(value: unknown): Cell {
+  if (value === null || value === undefined) return null;
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value))
+    return { blob: value.byteLength };
+  if (typeof value === "string" && value.length > TABLE_CELL_CHARS)
+    return { text: value.slice(0, TABLE_CELL_CHARS), length: value.length };
+  if (typeof value === "bigint") return Number(value);
+  return value as number | string;
+}
+
+export type QueryAnswer = {
+  columns: string[];
+  rows: Cell[][];
+  /** More rows followed than were shown (QUERY_ROWS, QUERY_BYTES). */
+  more: boolean;
+};
+
+/** A query's column names and its rows as arrays, read to their end. */
+export type QueryCursor = (query: string) => {
+  columns: string[];
+  rows: Iterable<unknown[]>;
+};
+
+/**
+ * One read-only statement of the owner's own SQL, from the control panel's
+ * console: SELECT, VALUES or WITH … SELECT over the site's tables and the
+ * views of Naru's that site SQL reads (classify, sql.ts). It runs as a
+ * subquery with a LIMIT, which no write parses as, so nothing it names can
+ * change; at most QUERY_ROWS rows come back, long text and BLOBs as a page
+ * of a table shows them.
+ */
+export function ownerQuery(
+  cursor: QueryCursor,
+  input: { text?: unknown },
+): QueryAnswer {
+  const text = input.text;
+  if (typeof text !== "string" || !text.trim() || text.length > QUERY_CHARS)
+    throw new DataError(
+      400,
+      `A query is one statement of at most ${QUERY_CHARS / 1024} KiB.`,
+    );
+  const parsed = statements(text);
+  if (parsed.length !== 1)
+    throw new DataError(400, "A query is one statement at a time.");
+  classify(parsed[0].tokens, ["read"]);
+  // On lines of their own: a statement may end in a -- comment.
+  const { columns, rows } = cursor(
+    `SELECT * FROM (\n${parsed[0].text}\n) LIMIT ${QUERY_ROWS + 1}`,
+  );
+  const shown: Cell[][] = [];
+  let bytes = 0;
+  let more = false;
+  // Read to the end even past what is shown: a statement left open keeps
+  // SQLite from dropping a table. The LIMIT bounds it.
+  for (const row of rows) {
+    if (more) continue;
+    if (shown.length === QUERY_ROWS || bytes > QUERY_BYTES) {
+      more = true;
+      continue;
+    }
+    const cells = row.map(cellOf);
+    bytes += JSON.stringify(cells).length;
+    shown.push(cells);
+  }
+  return { columns, rows: shown, more };
 }
