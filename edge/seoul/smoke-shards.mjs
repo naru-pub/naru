@@ -415,20 +415,23 @@ try {
     writes.direct.push(await timed(write(shardOrigin(1))));
     writes.routed.push(await timed(write(router)));
   }
+  // The fastest of each series is what the router costs, with the machine's
+  // scheduling noise mostly left out; medians on a shared CI runner are not.
+  const fastest = (values) => Math.min(...values);
   const overhead = {
-    read: median(routed) - median(direct),
-    write: median(writes.routed) - median(writes.direct),
+    read: fastest(routed) - fastest(direct),
+    write: fastest(writes.routed) - fastest(writes.direct),
   };
   console.log(
-    `router: a read ${median(direct).toFixed(2)} ms straight, ${median(routed).toFixed(2)} ms routed (+${overhead.read.toFixed(2)}); ` +
-      `a write ${median(writes.direct).toFixed(2)} ms straight, ${median(writes.routed).toFixed(2)} ms routed (+${overhead.write.toFixed(2)})`,
+    `router (medians): a read ${median(direct).toFixed(2)} ms straight, ${median(routed).toFixed(2)} ms routed; ` +
+      `a write ${median(writes.direct).toFixed(2)} ms straight, ${median(writes.routed).toFixed(2)} ms routed; ` +
+      `added, fastest to fastest: +${overhead.read.toFixed(2)} ms a read, +${overhead.write.toFixed(2)} ms a write`,
   );
-  // About 0.1 ms on the mini; a shared CI runner measures up to about 1 ms.
-  // The bound only has to catch the router buffering or reconnecting, which
-  // costs tens of milliseconds.
-  assert.ok(overhead.read < 5, `the router adds ${overhead.read} ms to a read`);
+  // About 0.1 ms on the mini. The bound only has to catch the router
+  // buffering or reconnecting, which costs tens of milliseconds.
+  assert.ok(overhead.read < 2, `the router adds ${overhead.read} ms to a read`);
   assert.ok(
-    overhead.write < 5,
+    overhead.write < 2,
     `the router adds ${overhead.write} ms to a write`,
   );
 
