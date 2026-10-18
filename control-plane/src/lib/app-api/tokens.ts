@@ -27,7 +27,7 @@ export const APP_CLIENTS = ["ios", "macos", "android"] as const;
 export type AppClient = (typeof APP_CLIENTS)[number];
 export const APP_REDIRECT_URI = "pub.naru:/auth";
 
-/** naru.pub's own page the Apple app's sign-in returns to. */
+/** naru.pub's own page the app's sign-in returns to. */
 export function appHttpsCallback() {
   const origin =
     process.env.SITE_DATA_CONTROL_PLANE_ORIGIN ||
