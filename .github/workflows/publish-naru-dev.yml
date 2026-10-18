@@ -1,0 +1,43 @@
+# Publishes @naru-pub/dev (naru-dev/) to npm when a tag dev-v<version> is
+# pushed, <version> being naru-dev/package.json's: the package is built,
+# packed and checked as main.yml's naru-dev-package job checks it, and that
+# very tarball is published, with provenance. Needs the NPM_TOKEN secret
+# (naru-dev/README.md, "Publishing").
+name: publish-naru-dev
+on:
+  push:
+    tags:
+      - "dev-v*"
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      # npm provenance: the tarball is signed as built here, from this commit.
+      id-token: write
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: The tag names the package's version
+        run: |
+          version=$(node -p "require('./naru-dev/package.json').version")
+          if [[ "$GITHUB_REF_NAME" != "dev-v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME, but naru-dev/package.json is $version: tag dev-v$version." >&2
+            exit 1
+          fi
+      - run: npm install --global pnpm@11.5.2
+      - run: pnpm install --frozen-lockfile
+        working-directory: edge
+      - run: pnpm install --frozen-lockfile
+        working-directory: naru-dev
+      - run: pnpm typecheck
+        working-directory: naru-dev
+      - run: naru-dev/scripts/check-package.sh "$RUNNER_TEMP/naru-dev"
+      - name: Publish the checked tarball
+        run: npm publish "$RUNNER_TEMP"/naru-dev/naru-pub-dev-*.tgz --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

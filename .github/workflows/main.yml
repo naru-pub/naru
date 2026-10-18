@@ -186,6 +186,40 @@ jobs:
           path: edge/naru-sdk-seoul-macos-arm64.tar.gz
           retention-days: 30
 
+  # @naru-pub/dev (naru-dev/), as a developer installs it: built and packed
+  # as npm would publish it, the tarball installed in an empty folder outside
+  # the checkout, and its smoke test run there (the command on a fixture
+  # site's pages, query, mutation, route and collection, and the testing
+  # API), on Linux and macOS, on the oldest Node it supports and the current
+  # LTS. publish-naru-dev.yml runs the same before publishing.
+  naru-dev-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04-arm, macos-15]
+        node: [20, 24]
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # The installed package runs on matrix.node; the build on 24.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: echo "NARU_DEV_SMOKE_NODE=$(command -v node)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@11.5.2
+      - run: pnpm install --frozen-lockfile
+        working-directory: edge
+      - run: pnpm install --frozen-lockfile
+        working-directory: naru-dev
+      - run: pnpm typecheck
+        working-directory: naru-dev
+      - run: naru-dev/scripts/check-package.sh "$RUNNER_TEMP/naru-dev"
+
   # Runs the images just pushed as a deploy would. A deploy takes only a
   # commit whose whole run succeeded, so a failure here keeps it off the server.
   smoke-test-control-plane:
