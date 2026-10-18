@@ -117,7 +117,7 @@ tell), 503 `UNAVAILABLE` for any other operation (Naru's own statements, kept
 paged or linear in the site's 100 MiB). Schema statements in migrations
 (`CREATE TABLE ... AS SELECT`, `CREATE INDEX`) are held only to the budget.
 The plan rule stays the early refusal, with the reason; the budget is what
-keeps one statement from holding up every site on the mini's one workerd
+keeps one statement from holding up every site on its workerd shard's
 thread, and the breaker (`src/breaker.ts`) what keeps a statement stopped 3
 times within a minute from doing so again: it is refused before it runs, 503
 `UNAVAILABLE` `statement_paused`, for 5 minutes (30 when again within the

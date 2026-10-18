@@ -39,7 +39,7 @@ interrupts the step once the deadline has passed.
 Naru's edge code turns both into its own errors (`src/sql.ts`,
 `interrupted`, `sqlFailure`, `interruptedCall`; `docs/database.md`, "Site
 code"). The launch agent sets the budget to 3000 (`~/Git/infra`,
-`apps/naru-sdk/launchd/com.limeburst.naru-sdk.plist`), and `seoul/build.mjs`
+`apps/naru-sdk/launchd/pub.naru.sdk-shard-<i>.plist`, each shard's), and `seoul/build.mjs`
 passes the same variable to the Worker as `SQLITE_STATEMENT_TIMEOUT_MS`, for
 saying how long a stopped statement ran.
 

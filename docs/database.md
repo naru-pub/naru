@@ -537,8 +537,9 @@ Three guards keep one caller, or one site, from spending what others need
   counted from each query's `rowsRead` (`metered`), at most 5,000,000 a minute
   (`SITE_ROWS_PER_MINUTE`, or `rowsPerMinute` in `configure` for one site).
   Past it the site refuses its members and visitors with 429 `RATE_LIMITED`
-  until the next minute, never its owner. Every site shares one workerd
-  thread, so a site whose queries scan slows itself rather than the others.
+  until the next minute, never its owner. A site shares its workerd
+  shard's one thread with the other sites hashed to it (edge/seoul/README.md,
+  "Shards"), so a site whose queries scan slows itself rather than the others.
 - The owner's /database shows the month's requests against the budget
   (`usage.requests` in the owner's collection listing), marked from 80%.
 

@@ -20,15 +20,7 @@
 나루는 세 부분으로 이루어져 있습니다. 서울의 맥 미니(kr-seongsu-m4)에서 도는 control plane과 사이트 데이터베이스, 그리고 Cloudflare의 엣지 Worker입니다. 한국에서 Cloudflare로 가는 요청은 로스앤젤레스를 거치므로, control plane(`naru.pub`)과 Data SDK(`sdk.naru.pub`)는 Cloudflare를 거치지 않고 맥 미니의 Caddy에 바로 연결합니다. Cloudflare에는 사이트(`<login>.naru.pub`, 커스텀 도메인)를 서빙하는 엣지 Worker와 R2가 남습니다.
 
 <p align="center">
-  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서 받고, 관리 화면(naru.pub)과 Data SDK(sdk.naru.pub)는 맥 미니의 Caddy에 바로 연결합니다. Caddy는 naru.pub을 nginx 게이트웨이와 control plane으로, sdk.naru.pub을 workerd로 보냅니다." width="100%">
-</p>
-
-#### 계획: 사이트를 workerd 넷에 나눠 두기
-
-지금은 workerd 프로세스 하나가 모든 사이트를 한 스레드로 처리해서, 한 사이트의 느린 작업이 다른 모든 사이트를 기다리게 합니다. 사이트를 이름으로 네 개의 workerd 샤드에 나누고, 지금의 포트(40100)에는 요청을 샤드로 보내는 가벼운 라우터를 둘 계획입니다. Caddy, control plane, Cloudflare는 그대로 라우터를 부르고, 한 샤드가 멈춰도 다른 샤드의 사이트는 기다리지 않습니다. 워치독은 멈추거나 메모리를 넘은 샤드만 다시 시작합니다.
-
-<p align="center">
-  <img src="docs/images/architecture-sharded.svg" alt="샤딩 후 나루의 구조 (계획): 맥 미니의 Caddy가 sdk.naru.pub을 workerd 라우터로 보내고, 라우터는 사이트 이름으로 네 개의 workerd 샤드 중 하나로 보냅니다. Cloudflare와 바깥 서비스는 지금과 같습니다." width="100%">
+  <img src="docs/images/architecture.svg" alt="나루의 구조: 브라우저는 사이트 페이지를 Cloudflare의 엣지 Worker에서 받고, 관리 화면(naru.pub)과 Data SDK(sdk.naru.pub)는 맥 미니의 Caddy에 바로 연결합니다. Caddy는 naru.pub을 nginx 게이트웨이와 control plane으로, sdk.naru.pub을 workerd 라우터로 보내고, 라우터는 사이트 이름으로 네 workerd 샤드 중 하나를 고릅니다." width="100%">
 </p>
 
 ### 1. Control Plane (Next.js)
@@ -52,15 +44,16 @@
 
 ### 3. 사이트 데이터베이스와 Data SDK (맥 미니, `sdk.naru.pub`)
 
-- **위치**: `edge/src/seoul.ts`, `edge/seoul/` (같은 Worker 코드를 workerd로 실행)
+- **위치**: `edge/src/seoul.ts`, `edge/src/router.ts`, `edge/seoul/` (같은 Worker 코드를 workerd로 실행)
+- **구성**: 라우터 하나(127.0.0.1:40100)와 workerd 샤드 넷(40101–40104). 라우터는 SDK 파일을 직접 주고, 사이트의 요청은 사이트 이름의 해시로 고른 샤드로 보냅니다. workerd는 프로세스마다 스레드 하나로 돌기 때문에, 사이트를 나눠 두면 한 사이트의 느린 작업이 다른 샤드의 사이트를 기다리게 하지 않습니다. 자세한 내용은 `edge/seoul/README.md`와 infra의 `docs/naru-sdk-shards.md`에 있습니다.
 - **주요 기능**:
-  - 사이트마다 SQLite 데이터베이스 하나(`SiteData`)
+  - 사이트마다 SQLite 데이터베이스 하나(`SiteData`), 사이트가 속한 샤드에
   - 데이터 API, 사이트 코드(쿼리, 뮤테이션, 라우트)와 사이트 테이블, 실시간 쿼리
   - 한국에서 한 번 왕복에 수십 ms (Cloudflare 경유 때는 약 1초)
 
 ### Data SDK 요청이 지나는 길
 
-방문자의 읽기는 맥 미니의 workerd가 바로 답합니다. 로그인한 요청은 workerd가 같은 호스트의 control plane에 넘겨 PostgreSQL로 권한을 확인한 뒤, 다시 workerd의 사이트 데이터베이스에서 처리합니다. `naru.js` 파일도 같은 workerd(`sdk.naru.pub/sdk/`)에서 받고, 브라우저가 하루 동안 보관합니다.
+방문자의 읽기는 맥 미니에서 사이트가 속한 workerd 샤드가 바로 답합니다(라우터를 거치는 데 0.1 ms쯤). 로그인한 요청은 샤드가 같은 호스트의 control plane에 넘겨 PostgreSQL로 권한을 확인한 뒤, 다시 샤드의 사이트 데이터베이스에서 처리합니다. `naru.js` 파일은 라우터(`sdk.naru.pub/sdk/`)에서 받고, 브라우저가 하루 동안 보관합니다.
 
 <p align="center">
   <img src="docs/images/sdk-request.svg" alt="Data SDK 요청이 지나는 길: SDK 파일은 sdk.naru.pub의 workerd에서, 방문자의 읽기는 workerd가 사이트 SQLite에서 바로, 로그인한 요청은 control plane이 PostgreSQL로 확인한 뒤 사이트 객체에서 처리합니다." width="100%">
@@ -68,7 +61,7 @@
 
 ### 맥 미니가 멈추면
 
-사이트 데이터베이스는 맥 미니에만 있습니다. 대기본은 없고, 맥 미니를 잃으면 Backblaze B2의 백업으로 복구합니다. 사이트 데이터베이스는 매시, 전체(PostgreSQL과 R2 버킷 포함)는 매일 밤 백업합니다. 맥 미니가 멈춘 동안에는:
+사이트 데이터베이스는 맥 미니에만 있습니다. 대기본은 없고, 맥 미니를 잃으면 Backblaze B2의 백업으로 복구합니다. 사이트 데이터베이스는 5분마다, 전체(PostgreSQL과 R2 버킷 포함)는 매일 밤 백업합니다. 맥 미니가 멈춘 동안에는:
 
 - 사이트의 정적 파일은 엣지 Worker가 R2에서 계속 서빙합니다.
 - 데이터 호출은 실패합니다. SDK는 `UNAVAILABLE` 오류로 알립니다. control plane도 같은 맥 미니에 있어 로그인과 관리 화면도 멈춥니다.
