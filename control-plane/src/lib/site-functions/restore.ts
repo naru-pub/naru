@@ -1,7 +1,11 @@
 import { db } from "@/lib/database";
 import { callSiteObject } from "@/lib/edge/client";
+import { configureEdge } from "@/lib/edge/sync";
 import { userHasFeature } from "@/lib/entitlements";
+import { recordAllUploads } from "@/lib/site-data/media";
 import { DataError } from "@/lib/site-data/validation";
+import { publishSiteFunctions } from "./releases";
+import { NO_ROUTES } from "./routes";
 import { FunctionRevisions, routesKey } from "./revisions";
 import {
   restorePointName,
@@ -106,4 +110,56 @@ export async function downloadRestorePoint(ownerId: string, name: unknown) {
   if (!object)
     throw new DataError(404, "There is no such restore point.", "NOT_FOUND");
   return { ...object, filename: `${site}-${name}` };
+}
+
+/**
+ * Empties the site's database, as the owner asks by typing the site's name:
+ * a restore point of all of it is kept first (one to undo this with), then
+ * every collection, table, applied migration, member role and record of
+ * uploads goes (`erase`, edge/src/site.ts). The site's paid status is
+ * confirmed to it again, and its _naru code released anew, so its
+ * migrations make its tables from nothing. Files, uploads and the site's
+ * members on Naru stay. Answers the restore point kept and the release made
+ * (null, with its error, when the code was not released).
+ */
+export async function resetSiteDatabase(
+  ownerId: string,
+  confirmation: unknown,
+) {
+  const site = await siteOf(ownerId);
+  if (confirmation !== site)
+    throw new DataError(
+      400,
+      "Type the site's name to reset its database.",
+      "INVALID_REQUEST",
+    );
+  const saved = await callSiteObject<{ name: string; bytes: number }>(
+    site,
+    "saveRestorePoint",
+    {},
+    undefined,
+    SAVE_TIMEOUT_MS,
+  );
+  await callSiteObject(site, "erase", {});
+  await configureEdge(site, ownerId);
+  await recordAllUploads(site, ownerId);
+  let revision: string | null = null;
+  let releaseError: string | null = null;
+  try {
+    revision = (await publishSiteFunctions(site)).revision;
+  } catch (error) {
+    if (!(error instanceof DataError)) throw error;
+    // Code the release refuses: the site serves files, and routes nothing,
+    // until _naru is put right.
+    releaseError = error.message;
+    await revisionStorage.put(
+      routesKey(site),
+      JSON.stringify({ revision: null, ...NO_ROUTES }),
+    );
+  }
+  return {
+    saved: { ...restorePointOf(saved.name)!, size: saved.bytes },
+    revision,
+    releaseError,
+  };
 }

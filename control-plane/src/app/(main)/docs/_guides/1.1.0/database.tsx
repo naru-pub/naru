@@ -862,6 +862,16 @@ CREATE INDEX posts_author ON posts (author);`}</Code>
                   수가 있습니다.
                 </li>
                 <li>
+                  첫 공개 전에 마이그레이션을 하나로 합치는 것처럼 이미 적용된
+                  마이그레이션을 바꿔야 한다면, 데이터베이스 → 복원 지점의
+                  &lsquo;데이터베이스 초기화&rsquo;로 처음부터 시작할 수
+                  있습니다. 사이트 이름을 입력해 확인하면 지금 상태를 복원
+                  지점으로 남긴 뒤 컬렉션과 문서, 테이블과 행, 적용된
+                  마이그레이션 기록, 회원 역할을 모두 지우고, 사이트 코드를 다시
+                  릴리스해 마이그레이션을 빈 데이터베이스에 적용합니다. 사이트
+                  파일과 미디어, 사이트 회원 목록은 그대로입니다.
+                </li>
+                <li>
                   나루가 쓰는 이름(<code>collections</code>,{" "}
                   <code>documents</code>, <code>meta</code>, <code>usage</code>,{" "}
                   <code>rate_limits</code>, <code>media_refs</code>와{" "}

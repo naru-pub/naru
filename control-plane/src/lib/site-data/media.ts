@@ -176,6 +176,31 @@ async function recordUploads(
   }
 }
 
+/**
+ * Every finished upload of the owner's, recorded in the site's object again
+ * (`_naru_uploads`), as after its database was reset.
+ */
+export async function recordAllUploads(site: string, ownerId: string) {
+  const ready = await db
+    .selectFrom("site_data_files")
+    .where("user_id", "=", ownerId)
+    .where("status", "=", "ready")
+    .where("deleted_at", "is", null)
+    .select([
+      "id",
+      "object_key",
+      "member_id",
+      "original_name",
+      "content_type",
+      "size_bytes",
+      "created_at",
+    ])
+    .orderBy("created_at", "desc")
+    .limit(MAX_MEDIA_FILES)
+    .execute();
+  await recordUploads(site, ready, true);
+}
+
 export async function executeMedia(command: MediaCommand) {
   if (command.path.length > 1) throw new DataError(404, "Not found.");
   const { owner, allowedIds, memberId } = await resolveSiteAccess({

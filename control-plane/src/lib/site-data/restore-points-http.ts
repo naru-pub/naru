@@ -4,6 +4,7 @@ import {
   createRestorePoint,
   downloadRestorePoint,
   listRestorePoints,
+  resetSiteDatabase,
   restoreRestorePoint,
 } from "@/lib/site-functions/restore";
 import {
@@ -17,7 +18,8 @@ import {
 /**
  * The owner's restore points on the control panel: GET lists them, GET
  * `?download=<name>` streams one as a file, POST `{ name }` restores one and
- * POST `{ create: true }` keeps one now. Same origin and the owner's session
+ * POST `{ create: true }` keeps one now and POST `{ reset: "<site>" }`
+ * empties the site's database, keeping one first. Same origin and the owner's session
  * only, as membership administration (membership-http.ts).
  */
 export async function restorePointsOwnerRequest(request: Request) {
@@ -49,6 +51,10 @@ export async function restorePointsOwnerRequest(request: Request) {
     const body = await jsonBody(request);
     if (body.create === true)
       return Response.json(await createRestorePoint(user.id), { headers });
+    if (body.reset !== undefined)
+      return Response.json(await resetSiteDatabase(user.id, body.reset), {
+        headers,
+      });
     return Response.json(await restoreRestorePoint(user.id, body.name), {
       headers,
     });

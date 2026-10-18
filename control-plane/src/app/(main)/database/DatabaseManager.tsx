@@ -617,7 +617,9 @@ export default function DatabaseManager({
         </TabsContent>
         {/* Loaded when opened: most visits never list restore points. */}
         <TabsContent value="restore">
-          {view === "restore" && <RestorePoints />}
+          {view === "restore" && (
+            <RestorePoints site={site} onReset={() => void run(refresh)} />
+          )}
         </TabsContent>
         <TabsContent
           value="sdk"

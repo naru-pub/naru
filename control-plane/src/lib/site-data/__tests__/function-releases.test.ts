@@ -42,6 +42,16 @@ jest.mock("@/lib/site-functions/storage", () => ({
         mockObjects.delete(key);
   },
 }));
+// The owner's plan, for the reset: a site with the database feature.
+jest.mock("@/lib/entitlements", () => ({
+  ...jest.requireActual<object>("@/lib/entitlements"),
+  userHasFeature: async () => true,
+  getUserEntitlement: async () => ({
+    isSupporter: true,
+    comp: true,
+    plan: "supporter",
+  }),
+}));
 const { publishSiteFunctions, runFunctionRelease } = jest.requireActual<
   typeof import("@/lib/site-functions/releases")
 >("@/lib/site-functions/releases");
@@ -298,4 +308,74 @@ integration(
     });
     mockObjects.delete(`${site}/_naru/migrations/0003_broken.sql`);
   },
+);
+
+integration(
+  "resetting the database empties it, keeps a restore point, and releases the code anew",
+  async () => {
+    const { resetSiteDatabase } = jest.requireActual<
+      typeof import("@/lib/site-functions/restore")
+    >("@/lib/site-functions/restore");
+    const { id: ownerId } = await db
+      .selectFrom("users")
+      .select("id")
+      .where("login_name", "=", site)
+      .executeTakeFirstOrThrow();
+    for (const key of [...mockObjects.keys()])
+      if (key.startsWith(`${site}/_naru/`)) mockObjects.delete(key);
+    // From nothing, whatever the tests before left applied.
+    await callSiteObject(site, "erase", {});
+    mockObjects.set(
+      `${site}/_naru/migrations/0001_notes.sql`,
+      "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL);",
+    );
+    await callSiteObject(site, "configure", {
+      ownerId,
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    await publishSiteFunctions(site);
+    // The site's tables and their columns, as its migrations made them.
+    const tables = async () =>
+      (
+        await callSiteObject<{ name: string; columns: { name: string }[] }[]>(
+          site,
+          "siteTables",
+          {},
+        )
+      ).map((table) => [
+        table.name,
+        table.columns.map((column) => column.name),
+      ]);
+    expect(await tables()).toEqual([["notes", ["id", "body"]]]);
+    // The migrations squashed into one: the release refuses it, as the
+    // applied one is gone.
+    mockObjects.delete(`${site}/_naru/migrations/0001_notes.sql`);
+    mockObjects.set(
+      `${site}/_naru/migrations/0001_schema.sql`,
+      "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL, at INTEGER);",
+    );
+    await expect(publishSiteFunctions(site)).rejects.toMatchObject({
+      status: 422,
+    });
+    await expect(
+      resetSiteDatabase(ownerId, "someone-else"),
+    ).rejects.toMatchObject({ status: 400 });
+    const reset = await resetSiteDatabase(ownerId, site);
+    expect(reset).toMatchObject({
+      saved: { kind: "manual" },
+      revision: expect.any(String),
+      releaseError: null,
+    });
+    // Made again by the squashed migration, and the site paid for again.
+    expect(await tables()).toEqual([["notes", ["id", "body", "at"]]]);
+    expect(
+      (await callSiteObject<{ ownerId: string | null }>(site, "export", {}))
+        .ownerId,
+    ).toBe(String(ownerId));
+    expect(
+      JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!),
+    ).toMatchObject({ revision: reset.revision, include: [] });
+  },
+  60_000,
 );

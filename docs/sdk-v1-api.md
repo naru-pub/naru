@@ -544,6 +544,16 @@ keep one longer, download it. The site's code stays the current release; migrati
 has that the restore point had not applied are pending again and apply with
 the next release, so edit or remove one first to keep it from running.
 
+**Resetting the database.** To change migrations already applied, as when
+squashing them before a first release, the owner can empty the database
+(데이터베이스 → 복원 지점 → 데이터베이스 초기화, typing the site's name). Naru
+keeps a restore point of the present first, then removes every collection,
+document, table, applied migration, member role and record of uploads,
+confirms the site's plan to it again, and releases its `_naru` code anew, so
+its migrations apply to the empty database. The site's files, its uploads and
+its members on Naru stay. A release the code fails leaves the database empty
+and routes nothing until `_naru` is fixed.
+
 **A restore point's file.** A download, `<site>-<name>.ndjson.gz`, is the
 whole site database as gzip-compressed NDJSON: one JSON value per line, read
 with `gunzip -c alice-manual-1790000000000.ndjson.gz | jq -c .` or any
