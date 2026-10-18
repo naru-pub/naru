@@ -209,13 +209,13 @@ parts = [
     t(C[0], 302, "맥 미니로 바로 연결", "label-direct"),
     # The mini.
     box(C[0], MINI2[0], W, H, "Caddy :443", "naru.pub · sdk.naru.pub"),
-    box(C[1], MINI2[0], W, H, "workerd 라우터 :40100", "사이트 이름으로 샤드 선택"),
+    box(C[1], MINI2[0], W, H, "workerd 라우터 :40100", "샤드 선택, SDK 파일"),
     box(C[0], MINI2[1], W, H, "nginx 게이트웨이", "naru.pub"),
     box(C[1], MINI2[1], W, H, "Control plane", "Next.js, blue/green"),
     box(C[0], MINI2[2], W, H, "백업 (launchd)", "사이트 DB 5분마다, 전체 매일"),
     box(C[1], MINI2[2], W, H, "PostgreSQL", "계정, 결제, 토큰"),
     box(C[2], MINI2[2], W, H, "작업 워커", "결제, 페이지뷰, 스크린샷"),
-    box(C[3], MINI2[2], W, H, "워치독 (launchd)", "멈추거나 4 GB 넘으면 재시작"),
+    box(C[3], MINI2[2], W, H, "워치독 (launchd)", "멈추거나 커진 프로세스만 재시작"),
     # Outside.
     box(C[0], EXT2, W, H, "Backblaze B2", "백업", "box-ext"),
     box(C[2], EXT2, W, H, "SES, Sentry, Discord", "메일, 오류, 알림", "box-ext"),

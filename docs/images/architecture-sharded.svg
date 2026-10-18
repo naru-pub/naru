@@ -87,7 +87,7 @@
   <text x="285.0" y="554.0" class="sub" text-anchor="middle">naru.pub · sdk.naru.pub</text>
   <rect x="420" y="510" width="190" height="60" rx="8" class="box"/>
   <text x="515.0" y="537.0" class="title" text-anchor="middle">workerd 라우터 :40100</text>
-  <text x="515.0" y="554.0" class="sub" text-anchor="middle">사이트 이름으로 샤드 선택</text>
+  <text x="515.0" y="554.0" class="sub" text-anchor="middle">샤드 선택, SDK 파일</text>
   <rect x="190" y="620" width="190" height="60" rx="8" class="box"/>
   <text x="285.0" y="647.0" class="title" text-anchor="middle">nginx 게이트웨이</text>
   <text x="285.0" y="664.0" class="sub" text-anchor="middle">naru.pub</text>
@@ -105,7 +105,7 @@
   <text x="745.0" y="774.0" class="sub" text-anchor="middle">결제, 페이지뷰, 스크린샷</text>
   <rect x="880" y="730" width="190" height="60" rx="8" class="box"/>
   <text x="975.0" y="757.0" class="title" text-anchor="middle">워치독 (launchd)</text>
-  <text x="975.0" y="774.0" class="sub" text-anchor="middle">멈추거나 4 GB 넘으면 재시작</text>
+  <text x="975.0" y="774.0" class="sub" text-anchor="middle">멈추거나 커진 프로세스만 재시작</text>
   <rect x="190" y="850" width="190" height="60" rx="8" class="box-ext"/>
   <text x="285.0" y="877.0" class="title" text-anchor="middle">Backblaze B2</text>
   <text x="285.0" y="894.0" class="sub" text-anchor="middle">백업</text>
