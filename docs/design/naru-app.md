@@ -87,8 +87,14 @@ The same rows as `/sites`: discoverable users with a rendered screenshot,
 With an app token it leaves out the sites the account hid, and is not cached.
 
 `GET /showcase?q=<search>&page=<n>` searches the same rows: sites whose name
-or title contains `q` (case-insensitive, at most 50 characters, else 400), a
-site named exactly `q` first.
+or title contains `q` (case-insensitive, at most 50 characters, else 400). A
+site named exactly `q` comes first, and is found even when it is not
+discoverable (its address is public; a lookup is not a listing), as long as it
+has been published. Its card then has `screenshotUrl` of the placeholder
+`/app/no-preview.png`, never a stale render.
+
+Sites operators moderated (`users.site_moderation`, `hidden` or `suspended`)
+are in neither the showcase nor any search.
 
 ### Stars
 
@@ -205,8 +211,10 @@ with the notification's text when the reporter received it. Signed in, it also
 hides the site for the reporter (`hidden: true`); signed out the app hides it
 on the device. 20 reports an hour per account, or per address signed out
 (the gateway's `X-Real-IP`); past that, 429. Operators act with
-`users.discoverable` (out of the showcase) and
-`users.app_notifications_disabled` (no notifications).
+`users.site_moderation` (`hidden`: out of every listing and search;
+`suspended`: not served either) and `users.app_notifications_disabled` (no
+notifications). The owner's own `users.discoverable` is theirs, not a
+moderation switch.
 
 ## Push payloads
 

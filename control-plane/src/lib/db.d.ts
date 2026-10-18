@@ -713,6 +713,15 @@ export interface SiteMemberTokens {
   session_id: string;
 }
 
+export interface SiteModerationActions {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  level: "hidden" | "suspended" | null;
+  operator_user_id: string | null;
+  reason: string;
+  site_user_id: string;
+}
+
 export interface SiteRequestDays {
   date: Timestamp;
   id: Generated<string>;
@@ -833,6 +842,7 @@ export interface Users {
   site_member_admission: ColumnType<"open" | "approval" | "closed", "open" | "approval" | "closed" | undefined>;
   site_member_verified_email: Generated<boolean>;
   site_members_free: Generated<boolean>;
+  site_moderation: "hidden" | "suspended" | null;
   site_rendered_at: Timestamp | null;
   site_title: string | null;
   site_updated_at: Timestamp | null;
@@ -904,6 +914,7 @@ export interface DB {
   site_member_codes: SiteMemberCodes;
   site_member_tokens: SiteMemberTokens;
   site_members: SiteMembers;
+  site_moderation_actions: SiteModerationActions;
   site_request_days: SiteRequestDays;
   site_request_months: SiteRequestMonths;
   site_request_overrides: SiteRequestOverrides;

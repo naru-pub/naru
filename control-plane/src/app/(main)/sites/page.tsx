@@ -24,6 +24,7 @@ export default async function SitesPage({
   const discoverable = db
     .selectFrom("users")
     .where("discoverable", "=", true)
+    .where("site_moderation", "is", null)
     .where("site_rendered_at", "is not", null);
 
   const { count } = await discoverable

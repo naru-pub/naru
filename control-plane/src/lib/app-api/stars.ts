@@ -1,11 +1,13 @@
 import { db } from "@/lib/database";
-import { getRenderedSiteUrl } from "@/lib/site-urls";
+import { cardScreenshotUrl } from "./showcase";
 import { siteOrigins } from "./sites";
 import type { AppUser } from "./tokens";
 
 // The apps' 별표 in 둘러보기: the account's stars (lib/site-stars.ts) as
 // showcase cards. Unlike the showcase, a starred site is listed whether or
-// not it is discoverable: the account chose it. Hiding a site unstars it.
+// not it is discoverable or hidden by operators (with the placeholder for a
+// screenshot): the account chose it. A suspended site is left out. Hiding a
+// site unstars it.
 // Signed out, the apps keep stars on the device and star them here after
 // sign-in.
 
@@ -16,12 +18,17 @@ export async function listStarredSites(user: AppUser) {
     .innerJoin("users as s", "s.id", "st.site_user_id")
     .select([
       "s.login_name",
+      "s.discoverable",
+      "s.site_moderation",
       "s.site_rendered_at",
       "s.site_updated_at",
       "st.created_at",
     ])
     .where("st.user_id", "=", user.id)
     .where("s.deleted_at", "is", null)
+    .where((eb) =>
+      eb.or([eb("s.site_moderation", "is", null), eb("s.site_moderation", "!=", "suspended")]),
+    )
     .orderBy("st.created_at", "desc")
     .execute();
   const origins = await siteOrigins(rows.map((row) => row.login_name));
@@ -29,7 +36,7 @@ export async function listStarredSites(user: AppUser) {
     sites: rows.map((row) => ({
       name: row.login_name,
       url: origins.get(row.login_name)!,
-      screenshotUrl: getRenderedSiteUrl(row.login_name, row.site_rendered_at),
+      screenshotUrl: cardScreenshotUrl(row),
       updatedAt: new Date(
         row.site_updated_at ?? row.site_rendered_at ?? row.created_at,
       ).toISOString(),

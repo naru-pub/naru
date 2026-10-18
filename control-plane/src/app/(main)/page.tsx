@@ -127,6 +127,7 @@ export default async function Home() {
         .selectFrom("users")
         .select(["id", "login_name", "site_rendered_at"])
         .where("discoverable", "=", true)
+        .where("site_moderation", "is", null)
         .orderBy("site_updated_at", "desc")
         .where("site_rendered_at", "is not", null)
         // The rest are on /sites.

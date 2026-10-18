@@ -78,6 +78,7 @@ async function selectTargets(
     .selectFrom("users")
     .select(["id", "login_name"])
     .where("discoverable", "=", true)
+    .where("site_moderation", "is", null)
     .orderBy("site_updated_at", "desc");
 
   if (loginName) {

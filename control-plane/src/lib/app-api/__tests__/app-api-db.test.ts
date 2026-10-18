@@ -183,6 +183,31 @@ integration("the Naru app's API", () => {
     expect(await names("%")).toEqual([]);
   });
 
+  test("finds a site by its exact name, listed or not, unless operators hid it", async () => {
+    const found = async (search: string) =>
+      (await showcasePage(1, undefined, search)).sites.map((site) => [
+        site.name,
+        site.screenshotUrl.endsWith("/app/no-preview.png"),
+      ]);
+    // app-reader is not discoverable: only its exact name finds it, and its
+    // card has no screenshot. Before anything is published, not even that.
+    expect(await found("app-reader")).toEqual([]);
+    await db.updateTable("users").set({ site_updated_at: new Date() }).where("id", "=", reader).execute();
+    expect(await found("APP-READER")).toEqual([["app-reader", true]]);
+    expect(await found("app-read")).toEqual([]);
+    // The exact match first, then the listed sites that contain it.
+    expect(await found("app-site")).toEqual([["app-site", false]]);
+
+    // Hidden by operators: out of the showcase and every search.
+    for (const level of ["hidden", "suspended"] as const) {
+      await db.updateTable("users").set({ site_moderation: level }).where("id", "in", [siteId, reader]).execute();
+      expect((await showcasePage(1)).sites.map((site) => site.name)).not.toContain("app-site");
+      expect(await found("app-site")).toEqual([]);
+      expect(await found("app-reader")).toEqual([]);
+    }
+    await db.updateTable("users").set({ site_moderation: null }).where("id", "in", [siteId, reader]).execute();
+  });
+
   test("stars sites for an account, discoverable or not", async () => {
     const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
     const user = (await tokens.appTokenUser(token))!;
@@ -198,6 +223,16 @@ integration("the Naru app's API", () => {
     await expect(siteStars.starSite(user.id, "no-such-site")).rejects.toMatchObject({
       status: 404,
     });
+    // A site operators suspended is left out; one they hid stays, without
+    // its screenshot.
+    await siteStars.starSite(user.id, "app-site");
+    await db.updateTable("users").set({ site_moderation: "hidden" }).where("id", "=", siteId).execute();
+    expect((await stars.listStarredSites(user)).sites).toMatchObject([
+      { name: "app-site", screenshotUrl: expect.stringMatching(/\/app\/no-preview\.png$/) },
+    ]);
+    await db.updateTable("users").set({ site_moderation: "suspended" }).where("id", "=", siteId).execute();
+    expect((await stars.listStarredSites(user)).sites).toEqual([]);
+    await db.updateTable("users").set({ site_moderation: null }).where("id", "=", siteId).execute();
     // Hiding a starred site unstars it.
     await moderation.hideSite(user, "app-site");
     expect((await stars.listStarredSites(user)).sites).toEqual([]);
