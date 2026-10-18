@@ -264,3 +264,30 @@ test("a paused statement is shown with its SQL and let run again", async () => {
     within(section).queryByRole("button", { name: "다시 허용" }),
   ).not.toBeInTheDocument();
 });
+
+test("each tab has a permalink: ?tab= opens it, and opening a tab puts it in the address", async () => {
+  window.history.replaceState(null, "", "/database?tab=restore");
+  render(
+    <ConfirmProvider>
+      <DatabaseManager
+        site="alice"
+        websiteUrl="https://alice.naru.pub/"
+        tab="restore"
+      />
+    </ConfirmProvider>,
+  );
+  expect(screen.getByRole("tab", { name: "복원 지점" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(await screen.findByText(/릴리스 직전/)).toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "사이트 회원" }), {
+    button: 0,
+  });
+  expect(window.location.search).toBe("?tab=members");
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "컬렉션과 문서" }), {
+    button: 0,
+  });
+  expect(window.location.pathname + window.location.search).toBe("/database");
+  window.history.replaceState(null, "", "/");
+});

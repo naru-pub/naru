@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isTab, type Tab } from "./tabs";
 import { useConfirm } from "@/components/ui/confirm";
 import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
@@ -73,11 +74,22 @@ function failureMessage(e: unknown) {
 export default function DatabaseManager({
   site,
   websiteUrl,
+  tab = "collections",
 }: {
   site: string;
   websiteUrl: string;
+  tab?: Tab;
 }) {
-  const [view, setView] = useState("collections");
+  const [view, setView] = useState<Tab>(tab);
+  // Keeps the address a permalink to the open tab, without a server round trip.
+  const openTab = (next: string) => {
+    if (!isTab(next)) return;
+    setView(next);
+    const url = new URL(window.location.href);
+    if (next === "collections") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(window.history.state, "", url);
+  };
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selected, setSelected] = useState("");
   // Collections checked for deleting several at once.
@@ -205,7 +217,7 @@ export default function DatabaseManager({
       </header>
       <StoppedQueries />
       <DeclaredCollections onApplied={() => void run(refresh)} />
-      <Tabs value={view} onValueChange={setView} className="space-y-6">
+      <Tabs value={view} onValueChange={openTab} className="space-y-6">
         <TabsList aria-label="데이터베이스 메뉴">
           <TabsTrigger value="collections">컬렉션과 문서</TabsTrigger>
           <TabsTrigger value="access">웹사이트 관리자 로그인</TabsTrigger>
