@@ -302,8 +302,10 @@ Tapping opens `url` and marks the notification read.
 - Environment: `APNS_KEY_ID`, `APNS_TEAM_ID` and the key, as a file
   (`APNS_PRIVATE_KEY_FILE`; production mounts infra's encrypted
   `AuthKey_<id>.p8` into the worker at `/run/secrets/apns.p8`) or inline
-  (`APNS_PRIVATE_KEY`, PEM with `\n`); `FCM_SERVICE_ACCOUNT` (JSON). Without
-  them a platform's pushes are skipped.
+  (`APNS_PRIVATE_KEY`, PEM with `\n`); the FCM service account, as a file
+  (`FCM_SERVICE_ACCOUNT_FILE`; production mounts infra's encrypted
+  `firebase-service-account.json` at `/run/secrets/fcm.json`) or inline
+  (`FCM_SERVICE_ACCOUNT`, JSON). Without them a platform's pushes are skipped.
 - naru-dev runs `ctx.notify` like production; nothing delivers there, so the
   rows stay in the site's outbox.
 

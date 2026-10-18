@@ -48,4 +48,22 @@ describe("the push sender", () => {
       }),
     ).toThrow();
   });
+
+  test("takes the FCM service account as a JSON file", () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const file = join(mkdtempSync(join(tmpdir(), "fcm-")), "service-account.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        type: "service_account",
+        project_id: "naru-test",
+        client_email: "push@naru-test.iam.gserviceaccount.com",
+        private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
+      }),
+    );
+    pushSender({ FCM_SERVICE_ACCOUNT_FILE: file }).close();
+    expect(() =>
+      pushSender({ FCM_SERVICE_ACCOUNT_FILE: join(tmpdir(), "missing.json") }),
+    ).toThrow();
+  });
 });

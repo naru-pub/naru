@@ -9,7 +9,9 @@ import http2 from "node:http2";
 // - APNS_KEY_ID, APNS_TEAM_ID, and the token-based key: APNS_PRIVATE_KEY_FILE,
 //   the path of the .p8 as Apple issued it, or APNS_PRIVATE_KEY, its PEM
 //   with newlines as \n.
-// - FCM_SERVICE_ACCOUNT: the Firebase project's service-account JSON.
+// - FCM_SERVICE_ACCOUNT_FILE, the path of the Firebase project's
+//   service-account JSON as Google issued it, or FCM_SERVICE_ACCOUNT, the
+//   JSON itself.
 
 export interface PushMessage {
   /** app_notifications.id */
@@ -268,7 +270,10 @@ export function pushSender(
     env.APNS_KEY_ID && env.APNS_TEAM_ID && apnsKey
       ? new Apns(env.APNS_KEY_ID, env.APNS_TEAM_ID, apnsKey)
       : null;
-  const fcm = env.FCM_SERVICE_ACCOUNT ? new Fcm(env.FCM_SERVICE_ACCOUNT) : null;
+  const fcmAccount = env.FCM_SERVICE_ACCOUNT_FILE
+    ? readFileSync(env.FCM_SERVICE_ACCOUNT_FILE, "utf8")
+    : env.FCM_SERVICE_ACCOUNT;
+  const fcm = fcmAccount ? new Fcm(fcmAccount) : null;
   return {
     async send(device, message) {
       const sender = device.platform === "apns" ? apns : fcm;
