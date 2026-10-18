@@ -22,7 +22,13 @@ jest.mock("@/lib/operator-alerts", () => ({
 const { db } = require("@/lib/database") as typeof import("@/lib/database");
 const { closeAccountLockPool } =
   require("@/lib/payments/account-lock") as typeof import("@/lib/payments/account-lock");
-const { applyStoreState, revokeStoreTransaction, StoreOwnershipError } =
+const {
+  applyStoreState,
+  moveStoreSubscription,
+  revokeStoreTransaction,
+  StoreOwnershipError,
+  StoreTransferError,
+} =
   require("@/lib/payments/store/ledger") as typeof import("@/lib/payments/store/ledger");
 const { supporterStatus } =
   require("@/lib/payments/store/sync") as typeof import("@/lib/payments/store/sync");
@@ -42,6 +48,15 @@ const integration =
 
 const DAY = 24 * 60 * 60 * 1000;
 let counter = 0;
+
+async function loginOf(userId: string): Promise<string> {
+  const row = await db
+    .selectFrom("users")
+    .select("login_name")
+    .where("id", "=", userId)
+    .executeTakeFirstOrThrow();
+  return row.login_name;
+}
 
 async function makeUser(): Promise<string> {
   counter++;
@@ -283,5 +298,92 @@ integration("store subscriptions", () => {
       source: "toss",
       purchase: { allowed: false },
     });
+  });
+  test("an operator moves a subscription to another account", async () => {
+    const from = await makeUser();
+    const to = await makeUser();
+    const past = new Date(Date.now() - 10 * DAY);
+    const current = new Date(Date.now() + 20 * DAY);
+    const applied = await applyStoreState(
+      appleState(from, {
+        transactions: [
+          { id: "t1", end: past },
+          { id: "t2", end: current },
+        ],
+      }),
+      { claimedBy: from },
+    );
+    if (!applied.applied) throw new Error("not applied");
+    const moved = await moveStoreSubscription({
+      subscriptionId: applied.subscriptionId,
+      toLoginName: await loginOf(to),
+      operator: { id: from, loginName: "yang" },
+      reason: "같은 사람의 다른 계정",
+    });
+    expect(moved).toEqual({ from, to, movedUntil: current });
+    // The current period goes with it; the one already over stays.
+    expect(await paidUntil(from)).toEqual(past);
+    expect(await paidUntil(to)).toEqual(current);
+
+    // Renewals follow the subscription, though the store bound it to `from`.
+    const renewal = new Date(Date.now() + 50 * DAY);
+    await applyStoreState(
+      appleState(from, { transactions: [{ id: "t3", end: renewal }] }),
+    );
+    expect(await paidUntil(to)).toEqual(renewal);
+    expect(await paidUntil(from)).toEqual(past);
+    // Restoring it is the new owner's, and no longer the old one's.
+    await applyStoreState(
+      appleState(from, { transactions: [{ id: "t3", end: renewal }] }),
+      { claimedBy: to },
+    );
+    await expect(
+      applyStoreState(
+        appleState(from, { transactions: [{ id: "t3", end: renewal }] }),
+        { claimedBy: from },
+      ),
+    ).rejects.toBeInstanceOf(StoreOwnershipError);
+
+    const events = await db
+      .selectFrom("payment_events")
+      .select("user_id")
+      .where("kind", "=", "store_moved")
+      .execute();
+    expect(events.map((event) => event.user_id).sort()).toEqual(
+      [from, to].sort(),
+    );
+    expect(await checkPaymentInvariants()).toEqual({});
+  });
+
+  test("a move that would charge twice is refused", async () => {
+    const from = await makeUser();
+    const to = await makeUser();
+    const end = new Date(Date.now() + 20 * DAY);
+    const applied = await applyStoreState(
+      appleState(from, { transactions: [{ id: "t1", end }] }),
+    );
+    if (!applied.applied) throw new Error("not applied");
+    await applyStoreState(
+      appleState(to, {
+        store: "google",
+        key: "token-2",
+        transactions: [{ id: "GPA.2", end }],
+      }),
+    );
+    const move = (toLoginName: string) =>
+      moveStoreSubscription({
+        subscriptionId: applied.subscriptionId,
+        toLoginName,
+        operator: { id: from, loginName: "yang" },
+        reason: "test",
+      });
+    await expect(move(await loginOf(to))).rejects.toBeInstanceOf(
+      StoreTransferError,
+    );
+    await expect(move(await loginOf(from))).rejects.toBeInstanceOf(
+      StoreTransferError,
+    );
+    await expect(move("nobody")).rejects.toBeInstanceOf(StoreTransferError);
+    expect(await paidUntil(from)).toEqual(end);
   });
 });

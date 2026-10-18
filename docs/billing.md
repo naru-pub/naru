@@ -148,6 +148,7 @@
 - 이용 기한: 새 결제 기간은 `extendPaidTime`으로 늘립니다. 스토어가 환불·회수한 기간(`revoked_at`)은 빠지고 `recomputePaidTime`이 줄입니다. 원장 계산(`recomputePaidTime`, `repairPaidTime`, 데이터 확인, 이용 기한 복구)은 Toss 결제와 회수되지 않은 스토어 기간을 함께 봅니다. 스토어 기간은 스토어가 정한 날짜라 압축하지 않습니다.
 - Play 확인(acknowledge): 사흘 안에 확인하지 않은 구매는 Play가 환불합니다. 계정에 반영한 뒤 확인하고, 실패하면 대조가 다시 합니다(실패가 6시간 이어지면 알림).
 - 한 번에 정기 결제 하나: 갱신될 스토어 구독이 있으면 웹은 Toss 정기 결제와 한 번만 결제를 시작하지 않고(`renewingStoreSubscription`) `/supporter`에 스토어 관리 안내를 보여 줍니다. 앱은 Toss 정기 결제 중이거나, 다른 스토어에서 갱신 중이거나, 웹에서 산 이용 기간이 남아 있으면 팔지 않습니다(`supporterStatus`) — 스토어 구독은 나중에 시작할 수 없어 겹치는 기간을 두 번 사게 되기 때문입니다. 스토어 구독을 해지하면 남은 기간이 끝난 뒤로 Toss 정기 결제가 예약됩니다(`scheduledRecurringStart`).
+- 계정 옮기기: 같은 사람의 다른 계정으로 운영자가 옮깁니다(`/admin/users/<계정>`의 앱 구독 → 다른 계정으로 옮기기, `moveStoreSubscription`). 지금 기간까지 옮겨 원래 계정의 이용 기한에서 빼고 새 계정에 더하며, 이후 갱신과 복원은 새 계정의 것입니다(스토어의 계정 연결은 바뀌지 않지만 나루에 기록된 주인을 따릅니다). 새 계정에 웹 정기 결제나 갱신되는 다른 스토어 구독이 있거나, 원래 계정의 웹 정기 결제가 이 기간 뒤로 예약되어 있으면 거절합니다. 두 계정 모두 `store_moved` 이벤트가 남습니다.
 - 계정 삭제: Play 구독은 대조가 자동 갱신을 끕니다(`cancel_requested_at`). App Store 구독은 구독자만 해지할 수 있어 삭제 화면이 먼저 해지하라고 안내합니다.
 - 샌드박스: TestFlight와 App Review의 구매, Play 테스트 구매도 받아들이고 `environment = sandbox`로 표시합니다(`/admin/supporters`).
 

@@ -63,9 +63,11 @@ export type AppliedStoreState =
   | { applied: false; reason: "unbound" };
 
 // Records a verified store report and moves paid time with it. `claimedBy`
-// is the signed-in account when the app sent it: a purchase is that account's
-// only if the store bound it there (or nowhere) and no other account holds it
-// already. A subscription never moves between accounts.
+// is the signed-in account when the app sent it. A subscription 나루 already
+// has is its recorded owner's — the account the store bound it to, or the one
+// an operator moved it to (moveStoreSubscription) — whatever the store's
+// binding says. A new one is the claimer's if the store bound it there, or
+// nowhere.
 export async function applyStoreState(
   state: StoreState,
   opts: { claimedBy?: string } = {},
@@ -78,11 +80,13 @@ export async function applyStoreState(
       .where("store_key", "=", state.storeKey)
       .executeTakeFirst();
     const bound = parseUuid(state.accountToken);
-    if (opts.claimedBy) {
-      if (bound && bound !== opts.claimedBy) throw new StoreOwnershipError();
-      if (existing && existing.user_id !== opts.claimedBy)
-        throw new StoreOwnershipError();
-    }
+    if (
+      opts.claimedBy &&
+      (existing
+        ? existing.user_id !== opts.claimedBy
+        : bound && bound !== opts.claimedBy)
+    )
+      throw new StoreOwnershipError();
     const owner =
       existing?.user_id ??
       opts.claimedBy ??
@@ -239,6 +243,126 @@ export async function revokeStoreTransaction(
     });
     await recomputePaidTime(trx, row.user_id);
     return true;
+  });
+}
+
+export class StoreTransferError extends Error {
+  constructor(
+    message: string,
+    readonly status = 409,
+  ) {
+    super(message);
+    this.name = "StoreTransferError";
+  }
+}
+
+// An operator moves a store subscription to another account of the same
+// person (verified outside 나루): from now on its renewals are the new
+// account's, and so is the period it is in — taken from the old account's
+// paid time and given to the new one's. Periods already over stay where they
+// were. Refused where it would charge twice or leave a gap: beside the new
+// account's Toss plan or other renewing store subscription, or with a Toss
+// plan of the old account scheduled to start when this one's time ends.
+export async function moveStoreSubscription(opts: {
+  subscriptionId: string;
+  toLoginName: string;
+  operator: { id: string; loginName: string };
+  reason: string;
+  now?: Date;
+}): Promise<{ from: string; to: string; movedUntil: Date | null }> {
+  const now = opts.now ?? new Date();
+  return db.transaction().execute(async (trx) => {
+    const sub = await trx
+      .selectFrom("store_subscriptions")
+      .select(["id", "user_id", "store", "product_id", "status"])
+      .where("id", "=", opts.subscriptionId)
+      .executeTakeFirst();
+    if (!sub) throw new StoreTransferError("구독을 찾지 못했습니다.", 404);
+    const from = sub.user_id;
+    const target = await trx
+      .selectFrom("users")
+      .select(["id", "login_name", "supporter_comp"])
+      .where("login_name", "=", opts.toLoginName)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    if (!target) throw new StoreTransferError("옮길 계정이 없습니다.", 404);
+    if (target.id === from)
+      throw new StoreTransferError("이미 이 계정의 구독입니다.", 400);
+    if (target.supporter_comp)
+      throw new StoreTransferError("옮길 계정은 평생 후원자입니다.");
+
+    // Grants and refunds lock in one order: payments, users, subscriptions.
+    // The old account's refunded periods may be compacted below.
+    await trx
+      .selectFrom("payments")
+      .select("id")
+      .where("user_id", "=", from)
+      .orderBy("id")
+      .forUpdate()
+      .execute();
+    for (const id of [from, target.id].sort()) await lockPaidTime(trx, id);
+    await trx
+      .selectFrom("store_subscriptions")
+      .select("id")
+      .where("id", "=", sub.id)
+      .forUpdate()
+      .execute();
+
+    const targetPlan = await trx
+      .selectFrom("subscriptions")
+      .select("status")
+      .where("user_id", "=", target.id)
+      .where("status", "in", ["active", "scheduled", "past_due"])
+      .executeTakeFirst();
+    if (targetPlan)
+      throw new StoreTransferError(
+        "옮길 계정이 웹사이트에서 정기 결제 중입니다.",
+      );
+    const targetStore = await renewingStoreSubscription(trx, target.id);
+    if (targetStore)
+      throw new StoreTransferError(
+        `옮길 계정에 ${STORE_LABELS[targetStore.store]}에서 갱신되는 구독이 이미 있습니다.`,
+      );
+    const scheduled = await trx
+      .selectFrom("subscriptions")
+      .select("id")
+      .where("user_id", "=", from)
+      .where("status", "=", "scheduled")
+      .executeTakeFirst();
+    if (scheduled)
+      throw new StoreTransferError(
+        "이 계정의 웹 정기 결제가 남은 이용 기간 뒤로 예약되어 있습니다. 먼저 해지하거나 기다려 주세요.",
+      );
+
+    await trx
+      .updateTable("store_subscriptions")
+      .set({ user_id: target.id, updated_at: now })
+      .where("id", "=", sub.id)
+      .execute();
+    const moved = await trx
+      .updateTable("store_transactions")
+      .set({ user_id: target.id, updated_at: now })
+      .where("store_subscription_id", "=", sub.id)
+      .where("revoked_at", "is", null)
+      .where("period_end", ">", now)
+      .returning("period_end")
+      .execute();
+    const movedUntil = moved.reduce<Date | null>(
+      (max, row) => (!max || row.period_end > max ? row.period_end : max),
+      null,
+    );
+    await recomputePaidTime(trx, from);
+    if (movedUntil) await extendPaidTime(trx, target.id, movedUntil);
+
+    const source = await trx
+      .selectFrom("users")
+      .select("login_name")
+      .where("id", "=", from)
+      .executeTakeFirstOrThrow();
+    const summary = `${STORE_LABELS[sub.store]} ${sub.product_id} 구독을 ${source.login_name} → ${target.login_name}로 옮김${movedUntil ? ` (${movedUntil.toISOString()}까지의 기간 포함)` : ""} · 운영자 ${opts.operator.loginName} (${opts.operator.id}): ${opts.reason}`;
+    for (const userId of [from, target.id])
+      await recordPaymentEvent(trx, { kind: "store_moved", userId, summary });
+    return { from, to: target.id, movedUntil };
   });
 }
 

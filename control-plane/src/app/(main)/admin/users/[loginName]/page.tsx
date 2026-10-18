@@ -18,6 +18,8 @@ import { formatDate, formatKrw } from "../../_components/format";
 import { SUBSCRIPTION_STATUS_LABELS } from "../../_components/metrics";
 import { requireOperator } from "../../_components/requireOperator";
 import { SiteMembersFreeToggle } from "../../_components/SiteMembersFreeToggle";
+import { MoveStoreSubscriptionButton } from "../../_components/MoveStoreSubscriptionButton";
+import { STORE_LABELS } from "@/lib/payments/store/products";
 import {
   formatValue,
   METRICS,
@@ -64,57 +66,73 @@ export default async function AccountPage({
     .executeTakeFirst();
   if (!user) notFound();
 
-  const [usage, payments, applications, board] = await Promise.all([
-    readAccountUsage(now, user.id),
-    db
-      .selectFrom("payments")
-      .select([
-        "id",
-        "created_at",
-        "status",
-        "amount",
-        "refunded_amount",
-        "period_end",
-      ])
-      .where("user_id", "=", user.id)
-      .orderBy("created_at", "desc")
-      .limit(RECENT)
-      .execute(),
-    db
-      .selectFrom("board_template_applications as a")
-      .leftJoin("board_template_versions as v", "v.id", "a.version_id")
-      .leftJoin("board_templates as t", "t.id", "v.template_id")
-      .leftJoin("board_posts as p", "p.id", "t.post_id")
-      .select([
-        "a.id",
-        "a.created_at",
-        "v.version",
-        "t.id as template_id",
-        "p.title",
-      ])
-      .where("a.user_id", "=", user.id)
-      .orderBy("a.created_at", "desc")
-      .limit(RECENT)
-      .execute(),
-    db
-      .selectFrom("users")
-      .select((eb) => [
-        eb
-          .selectFrom("board_posts")
-          .select(eb.fn.countAll<number>().as("count"))
-          .where("board_posts.user_id", "=", user.id)
-          .where("board_posts.deleted_at", "is", null)
-          .as("posts"),
-        eb
-          .selectFrom("board_replies")
-          .select(eb.fn.countAll<number>().as("count"))
-          .where("board_replies.user_id", "=", user.id)
-          .where("board_replies.deleted_at", "is", null)
-          .as("replies"),
-      ])
-      .where("users.id", "=", user.id)
-      .executeTakeFirstOrThrow(),
-  ]);
+  const [usage, payments, applications, board, storeSubscriptions] =
+    await Promise.all([
+      readAccountUsage(now, user.id),
+      db
+        .selectFrom("payments")
+        .select([
+          "id",
+          "created_at",
+          "status",
+          "amount",
+          "refunded_amount",
+          "period_end",
+        ])
+        .where("user_id", "=", user.id)
+        .orderBy("created_at", "desc")
+        .limit(RECENT)
+        .execute(),
+      db
+        .selectFrom("board_template_applications as a")
+        .leftJoin("board_template_versions as v", "v.id", "a.version_id")
+        .leftJoin("board_templates as t", "t.id", "v.template_id")
+        .leftJoin("board_posts as p", "p.id", "t.post_id")
+        .select([
+          "a.id",
+          "a.created_at",
+          "v.version",
+          "t.id as template_id",
+          "p.title",
+        ])
+        .where("a.user_id", "=", user.id)
+        .orderBy("a.created_at", "desc")
+        .limit(RECENT)
+        .execute(),
+      db
+        .selectFrom("users")
+        .select((eb) => [
+          eb
+            .selectFrom("board_posts")
+            .select(eb.fn.countAll<number>().as("count"))
+            .where("board_posts.user_id", "=", user.id)
+            .where("board_posts.deleted_at", "is", null)
+            .as("posts"),
+          eb
+            .selectFrom("board_replies")
+            .select(eb.fn.countAll<number>().as("count"))
+            .where("board_replies.user_id", "=", user.id)
+            .where("board_replies.deleted_at", "is", null)
+            .as("replies"),
+        ])
+        .where("users.id", "=", user.id)
+        .executeTakeFirstOrThrow(),
+      db
+        .selectFrom("store_subscriptions")
+        .select([
+          "id",
+          "store",
+          "product_id",
+          "environment",
+          "status",
+          "expires_at",
+          "auto_renews",
+          "created_at",
+        ])
+        .where("user_id", "=", user.id)
+        .orderBy("created_at", "desc")
+        .execute(),
+    ]);
 
   const until = user.supporter_until ? new Date(user.supporter_until) : null;
   const plan = user.supporter_comp
@@ -308,6 +326,61 @@ export default async function AccountPage({
           </Table>
         </Card>
       </div>
+
+      {storeSubscriptions.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="font-bold">앱 구독</h3>
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>스토어</TableHead>
+                  <TableHead>상품</TableHead>
+                  <TableHead>상태</TableHead>
+                  <TableHead>만료</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {storeSubscriptions.map((sub) => (
+                  <TableRow key={sub.id}>
+                    <TableCell className="whitespace-nowrap">
+                      {STORE_LABELS[sub.store]}
+                      {sub.environment === "sandbox" && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          샌드박스
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>{sub.product_id}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{sub.status}</Badge>
+                      {!sub.auto_renews && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          해지됨
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">
+                      {formatDate(sub.expires_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {!user.deleted_at &&
+                        (sub.status === "active" ||
+                          sub.status === "billing_retry") && (
+                          <MoveStoreSubscriptionButton
+                            subscriptionId={sub.id}
+                            from={user.login_name}
+                          />
+                        )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </div>
+      )}
 
       <div className="space-y-2">
         <h3 className="font-bold">최근 템플릿 적용</h3>
