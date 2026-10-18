@@ -14,6 +14,13 @@ export function getHomepageUrl(username: string) {
     : `http://${username}.${process.env.NEXT_PUBLIC_DOMAIN}`;
 }
 
+// Where the Naru Media bucket serves its objects.
+export const mediaOrigin = () =>
+  (process.env.SITE_DATA_MEDIA_ORIGIN || "https://media.naru.pub").replace(
+    /\/$/,
+    "",
+  );
+
 // The public URL of an object in the site bucket.
 export function getSiteBucketUrl(key: string) {
   return `https://r2.${process.env.NEXT_PUBLIC_DOMAIN}/${key}`;

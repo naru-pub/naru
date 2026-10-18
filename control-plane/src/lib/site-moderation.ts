@@ -1,4 +1,3 @@
-import { purgeSite } from "@/lib/cache-purge";
 import {
   cloudflareZone,
   createCustomRule,
@@ -12,8 +11,11 @@ import {
   operatorAlertsConfigured,
   sendOperatorAlert,
 } from "@/lib/operator-alerts";
-import { mediaOrigin } from "@/lib/site-data/media";
-import { getSiteBucketUrl, getSiteScreenshotKey } from "@/lib/site-urls";
+import {
+  getSiteBucketUrl,
+  getSiteScreenshotKey,
+  mediaOrigin,
+} from "@/lib/site-urls";
 
 // What operators do about a site (/admin/moderation), apart from the owner's
 // own discoverable switch (users.site_moderation):
@@ -163,7 +165,11 @@ export async function setSiteModeration(
   if ((before === "suspended") !== (level === "suspended")) {
     await attempt("Cloudflare 규칙", applySuspensions);
     if (level === "suspended")
-      await attempt("캐시 비우기", () => purgeSite(site.login));
+      await attempt("캐시 비우기", async () => {
+        // Loaded here: it brings the S3 client, which the jsdom tests cannot load.
+        const { purgeSite } = await import("@/lib/cache-purge");
+        await purgeSite(site.login);
+      });
     // Its object learns now, not at the next sync, whether it may answer.
     await attempt("사이트 데이터", () => configureEdge(site.login, site.id));
   }
