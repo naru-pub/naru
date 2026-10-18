@@ -84,20 +84,33 @@ integration("the Naru app's API", () => {
     await db.destroy();
   });
 
-  async function signIn() {
+  async function signIn(redirectUri = tokens.APP_REDIRECT_URI) {
     const input = tokens.authorizeInput({
       client: "ios",
-      redirect_uri: tokens.APP_REDIRECT_URI,
+      redirect_uri: redirectUri,
       state: "s".repeat(32),
       code_challenge: s256(verifier),
       code_challenge_method: "S256",
     });
     const redirect = new URL(await tokens.approveAuthorization(reader, input));
-    expect(redirect.protocol).toBe("pub.naru:");
+    expect(redirect.href.startsWith(redirectUri + "?")).toBe(true);
     expect(redirect.searchParams.get("state")).toBe("s".repeat(32));
     const code = redirect.searchParams.get("code")!;
-    return { code, redirectUri: tokens.APP_REDIRECT_URI };
+    return { code, redirectUri };
   }
+
+  test("returns the Apple app's sign-in to naru.pub's own page", async () => {
+    expect(tokens.appHttpsCallback()).toMatch(/^https:\/\/[^/]+\/app\/callback$/);
+    const grant = await signIn(tokens.appHttpsCallback());
+    // A code returns only to the address it was asked for.
+    await expect(
+      tokens.exchangeCode({ ...grant, redirectUri: tokens.APP_REDIRECT_URI, verifier }),
+    ).rejects.toMatchObject({ status: 400 });
+    const fresh = await signIn(tokens.appHttpsCallback());
+    expect((await tokens.exchangeCode({ ...fresh, verifier })).account).toEqual({
+      loginName: "app-reader",
+    });
+  });
 
   test("signs in with a code and its PKCE verifier, once", async () => {
     const grant = await signIn();
@@ -136,6 +149,8 @@ integration("the Naru app's API", () => {
   test("refuses sign-in requests the app could not have made", () => {
     for (const params of [
       { redirect_uri: "https://evil.example/" },
+      { redirect_uri: "https://evil.example/app/callback" },
+      { redirect_uri: "naru://auth" },
       { client: "web" },
       { code_challenge_method: "plain" },
     ])

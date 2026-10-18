@@ -6,19 +6,34 @@ import { DataError } from "@/lib/site-data/validation";
 // /app/authorize in the system browser (ASWebAuthenticationSession, a Custom
 // Tab), where the person signs in to naru.pub however naru.pub signs people in
 // — so TOTP, passkeys and other methods added there need no app release — and
-// approves the app. Naru redirects to pub.naru:/auth (RFC 8252 private-use
-// scheme, the reversed domain) with a one-time code, which
-// the app exchanges with its PKCE verifier for a token.
+// approves the app. Naru redirects back with a one-time code, which the app
+// exchanges with its PKCE verifier for a token. The redirect is one of:
 //
-// The scheme is not exclusive: another app may register it and see the redirect.
-// PKCE makes a seen code useless without the verifier, which never leaves the
-// app that started the sign-in.
+// - https://naru.pub/app/callback (APP_HTTPS_CALLBACK): the iOS and macOS app,
+//   whose ASWebAuthenticationSession takes it because naru.pub's
+//   apple-app-site-association names the app (RFC 8252 §7.2: no other app
+//   can claim it);
+// - pub.naru:/auth (APP_REDIRECT_URI, RFC 8252 §7.1's private-use scheme, the
+//   reversed domain): Android, and the Apple app against a development server.
+//   Another app may register the scheme and see the redirect; PKCE makes a
+//   seen code useless without the verifier, which never leaves the app that
+//   started the sign-in.
 //
 // The token lasts until revoked: sign-out in the app, or deleting the account.
 
 export const APP_CLIENTS = ["ios", "macos", "android"] as const;
 export type AppClient = (typeof APP_CLIENTS)[number];
 export const APP_REDIRECT_URI = "pub.naru:/auth";
+
+/** naru.pub's own page the Apple app's sign-in returns to. */
+export function appHttpsCallback() {
+  const origin =
+    process.env.SITE_DATA_CONTROL_PLANE_ORIGIN ||
+    `https://${process.env.NEXT_PUBLIC_DOMAIN || "naru.pub"}`;
+  return new URL("/app/callback", origin).href;
+}
+
+const appRedirects = () => [APP_REDIRECT_URI, appHttpsCallback()];
 const CODE_SECONDS = 10 * 60;
 /** last_used_at is written at most this often per token. */
 const TOUCH_SECONDS = 60 * 60;
@@ -40,7 +55,8 @@ export function authorizeInput(params: Record<string, unknown>) {
   const client = params.client;
   if (!APP_CLIENTS.includes(client as AppClient))
     throw new DataError(400, "알 수 없는 앱입니다.");
-  if (params.redirect_uri !== APP_REDIRECT_URI)
+  const redirectUri = params.redirect_uri;
+  if (typeof redirectUri !== "string" || !appRedirects().includes(redirectUri))
     throw new DataError(400, "앱으로 돌아갈 주소가 올바르지 않습니다.");
   const challenge = params.code_challenge;
   const state = params.state;
@@ -54,7 +70,7 @@ export function authorizeInput(params: Record<string, unknown>) {
     throw new DataError(400, "로그인 요청이 올바르지 않습니다.");
   return {
     client: client as AppClient,
-    redirectUri: APP_REDIRECT_URI,
+    redirectUri,
     challenge,
     state,
   };
@@ -77,15 +93,11 @@ export async function approveAuthorization(
       expires_at: new Date(Date.now() + CODE_SECONDS * 1000),
     })
     .execute();
-  return callback(input.state, { code });
+  return callback(input.redirectUri, input.state, { code });
 }
 
-export function deniedCallback(state: string) {
-  return callback(state, { error: "access_denied" });
-}
-
-function callback(state: string, params: Record<string, string>) {
-  const url = new URL(APP_REDIRECT_URI);
+function callback(redirectUri: string, state: string, params: Record<string, string>) {
+  const url = new URL(redirectUri);
   for (const [key, value] of Object.entries(params))
     url.searchParams.set(key, value);
   url.searchParams.set("state", state);
@@ -101,7 +113,8 @@ export async function exchangeCode(body: Record<string, unknown>) {
     typeof code !== "string" ||
     typeof verifier !== "string" ||
     !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) ||
-    redirectUri !== APP_REDIRECT_URI
+    typeof redirectUri !== "string" ||
+    !appRedirects().includes(redirectUri)
   )
     throw failed();
   // Spent before it is checked, in its own statement: a wrong verifier must

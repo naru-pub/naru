@@ -87,33 +87,37 @@ With an app token it leaves out the sites the account hid, and is not cached.
 
 ### Sign-in (authorization code + PKCE)
 
-Sign-in happens on naru.pub, in the system browser, so whatever naru.pub
-asks (a password today; TOTP or passkeys later) needs no app release, and the
-app never sees the password.
-
-1. The app opens `https://naru.pub/app/authorize?client=<ios|macos|android>&redirect_uri=pub.naru:/auth&state=<random>&code_challenge=<S256>&code_challenge_method=S256`
+1. The app opens `https://naru.pub/app/authorize?client=<ios|macos|android>&redirect_uri=<callback>&state=<random>&code_challenge=<S256>&code_challenge_method=S256`
    in ASWebAuthenticationSession / Custom Tabs. Naru signs the person in with
    its normal session, asks to connect the app, and redirects to
-   `pub.naru:/auth?code=…&state=…` (or `?error=access_denied&state=…`).
+   `<callback>?code=…&state=…` (or `?error=access_denied&state=…`).
 2. `POST /token` `{ code, verifier, redirectUri }` →
-   `{ token, account: { loginName } }`. The code lives 10 minutes and is spent
-   by its first exchange, right or wrong. The token (`a.` and 43 characters)
-   lasts until revoked: sign-out in the app, or deleting the account; it is
-   stored in the Keychain / Android Keystore.
+   `{ token, account: { loginName } }`. The code lives 10 minutes, is spent
+   by its first exchange, right or wrong, and returns only to the callback it
+   was asked for. The token (`a.` and 43 characters) lasts until revoked:
+   sign-out in the app, or deleting the account; it is stored in the
+   Keychain / Android Keystore.
 
-`pub.naru` is a private-use scheme in RFC 8252's form, naru.pub reversed.
-Any app can register a scheme, so a code may be seen by another app; PKCE
-makes it useless without the verifier, which never leaves the app that
-started the sign-in. A claimed HTTPS redirect (Universal Links / App Links on
-naru.pub) would close that too. naru.pub already serves
-`/.well-known/apple-app-site-association` for team `K4CQ85R27U`, bundle
-`pub.naru` (`webcredentials`, which ASWebAuthenticationSession's HTTPS
-callback needs, and `applinks` for `/app/callback` only), and the Apple app
-declares `webcredentials:naru.pub` and `applinks:naru.pub`; switching its
-callback to `https://naru.pub/app/callback` is what remains, and on Android
-`assetlinks.json` once the release signing key's fingerprint is known. On
-iOS the risk is low already: ASWebAuthenticationSession receives its own
-callback whatever other apps registered.
+The callback is one of two:
+
+- `https://naru.pub/app/callback`: the iOS and macOS app
+  (`.https(host: "naru.pub", path: "/app/callback")`). RFC 8252 §7.2: only an
+  app naru.pub names can take it, through its
+  `/.well-known/apple-app-site-association` (team `K4CQ85R27U`, bundle
+  `pub.naru`: `webcredentials`, which the HTTPS callback needs, and `applinks`
+  for `/app/callback` alone) and the app's `webcredentials:naru.pub` and
+  `applinks:naru.pub`. naru.pub serves a plain page there for the rare
+  browser that opens it.
+- `pub.naru:/auth`: Android (until its App Links have the release key's
+  fingerprint in `assetlinks.json`), and the Apple app against a development
+  server, since only naru.pub is associated with it. A private-use scheme in
+  RFC 8252 §7.1's form, naru.pub reversed; any app can register a scheme, so
+  a code may be seen by another app, and PKCE makes it useless without the
+  verifier, which never leaves the app that started the sign-in.
+
+Sign-in happens on naru.pub, so whatever naru.pub asks (a password today;
+TOTP or passkeys later) needs no app release, and the app never sees the
+password.
 
 `DELETE /session` revokes the token and removes the devices registered with it.
 
