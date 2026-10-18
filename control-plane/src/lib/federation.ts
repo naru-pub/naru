@@ -478,9 +478,11 @@ const COOLDOWN_WINDOW = sql<Date>`now() - interval '24 hours'`;
  *   2. editing has been quiet for at least the trailing window, and
  *   3. the 24h cooldown has elapsed.
  *
- * Calling this on a user that doesn't qualify is a safe no-op.
+ * Calling this on a user that doesn't qualify is a safe no-op. Answers
+ * whether it claimed the slot: the same gate pushes the update to the
+ * accounts that starred the site (lib/app-api/starred-updates.ts).
  */
-export async function dispatchSiteUpdate(userId: string): Promise<void> {
+export async function dispatchSiteUpdate(userId: string): Promise<boolean> {
   const claimed = await db
     .updateTable("users")
     .set({ last_activity_sent_at: sql`now()` })
@@ -506,7 +508,7 @@ export async function dispatchSiteUpdate(userId: string): Promise<void> {
     .returning("login_name")
     .executeTakeFirst();
 
-  if (!claimed) return;
+  if (!claimed) return false;
 
   const identifier = claimed.login_name;
   const siteDomain = process.env.NEXT_PUBLIC_DOMAIN ?? "naru.pub";
@@ -565,6 +567,7 @@ export async function dispatchSiteUpdate(userId: string): Promise<void> {
   } catch (err) {
     console.error("[federation] sendActivity failed", err);
   }
+  return true;
 }
 
 /**

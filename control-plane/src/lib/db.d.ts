@@ -749,7 +749,6 @@ export interface SiteRequestOverrides {
 export interface SiteStars {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
-  notified_at: Timestamp | null;
   site_user_id: string;
   user_id: string;
 }

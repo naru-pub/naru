@@ -122,14 +122,13 @@ is discoverable. Hiding a site unstars it. Signed out, the apps keep stars on
 the device (the cards themselves) and star them on the account (`PUT` each)
 once it signs in.
 
-Starred sites' updates (`users.site_updated_at`) are pushed at most once a day
-(`control-plane/src/lib/app-api/starred-updates.ts`, the daily
-`starred-site-updates` job at 10:00 UTC): one push an account, naming the
-sites updated since it was last told of each (`site_stars.notified_at`) or
-since the star, and opening the most recently updated. Updates older than two
-days, the account's own site and suspended sites are left out. The push is
-Naru's, so it needs no consent and is not stored in the inbox: its `id` is
-fresh, `site` is `naru-starred`.
+A site's update is pushed to the accounts that starred it when federation
+announces it (`dispatchSiteUpdate`, from the `site-update-dispatcher` job;
+`control-plane/src/lib/app-api/starred-updates.ts`), behind the same gate:
+ten quiet minutes after the last edit, at most once a day a site
+(`users.last_activity_sent_at`). Left out: the site's own account, and sites
+suspended or with notifications turned off. The push is Naru's, so it needs no
+consent and is not stored in the inbox: its `id` is fresh.
 
 ### Sign-in (authorization code + PKCE)
 
