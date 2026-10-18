@@ -29,9 +29,11 @@ export async function siteOf(ownerId: string) {
     throw new DataError(403, "Database access is not enabled for this site.");
   const user = await db
     .selectFrom("users")
-    .select("login_name")
+    .select(["login_name", "site_moderation"])
     .where("id", "=", ownerId)
     .executeTakeFirstOrThrow();
+  if (user.site_moderation === "suspended")
+    throw new DataError(403, "This site is suspended.");
   return user.login_name;
 }
 

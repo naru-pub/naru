@@ -10,6 +10,9 @@ import { CONFIRMATION_MS, replaceEdgeDomains } from "./client";
 // The whole table is sent each time, so a domain removed here, or whose owner
 // lapsed, is gone from the edge on the next push. syncEdge pushes it every few
 // minutes; a change to a domain pushes it at once.
+//
+// It also lists the sites operators suspended (site-moderation.ts), which the
+// edge refuses on every host; a suspension pushes it at once.
 
 /** Sends the edge the current table; returns how many domains it serves. */
 export async function pushEdgeDomains() {
@@ -44,7 +47,18 @@ export async function pushEdgeDomains() {
       entitledUntil,
     };
   }
-  await replaceEdgeDomains({ confirmedUntil: now + CONFIRMATION_MS, domains });
+  const suspended = await db
+    .selectFrom("users")
+    .select("login_name")
+    .where("site_moderation", "=", "suspended")
+    .where("deleted_at", "is", null)
+    .orderBy("login_name")
+    .execute();
+  await replaceEdgeDomains({
+    confirmedUntil: now + CONFIRMATION_MS,
+    domains,
+    suspended: suspended.map((row) => row.login_name),
+  });
   return Object.keys(domains).length;
 }
 

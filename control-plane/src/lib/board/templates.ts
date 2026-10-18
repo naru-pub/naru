@@ -36,6 +36,7 @@ import {
   templatePrefix,
 } from "./preview";
 import * as storage from "./storage";
+import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 
 // Where applying a template keeps the files it replaced.
 export const BACKUP_DIRECTORY = ".backup";
@@ -679,6 +680,7 @@ export async function applyTemplate(
   versionId: string,
   input: { targetPath: unknown; backup: unknown; createCollections: unknown },
 ): Promise<ApplicationResult> {
+  if (await siteSuspended(user.id)) throw new BoardError(403, SUSPENDED_MESSAGE);
   await assertUnderHourlyLimit(
     "board_template_applications",
     user.id,

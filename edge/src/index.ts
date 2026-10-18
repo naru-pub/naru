@@ -1,5 +1,6 @@
 import {
   domainSite,
+  siteSuspended,
   invalidTable,
   storeDomains,
   type DomainsEnv,
@@ -7,6 +8,7 @@ import {
 } from "./domains";
 import {
   notFound,
+  suspended,
   servePage,
   siteOf,
   type PagesEnv,
@@ -281,6 +283,7 @@ async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
     ? siteOf(host, env)
     : await domainSite(host, env);
   if (!login) return notFound();
+  if (await siteSuspended(login, env)) return suspended();
   return servePage(
     request,
     env,

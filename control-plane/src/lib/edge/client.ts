@@ -67,10 +67,14 @@ export const siteDataWorker = (): WorkerTarget =>
  */
 export const CONFIRMATION_MS = 3 * 24 * 60 * 60 * 1000;
 
-/** Replaces the edge's custom domain table (edge/src/domains.ts). */
+/**
+ * Replaces the edge's custom domain table (edge/src/domains.ts), with the
+ * sites operators suspended.
+ */
 export function replaceEdgeDomains(table: {
   confirmedUntil: number;
   domains: Record<string, { login: string; entitledUntil: number | null }>;
+  suspended: string[];
 }) {
   return callWorker<null>("/v1/domains/replace", "domain table", table);
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertSameOriginRequest } from "@/lib/utils";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { validateRequest } from "@/lib/auth";
+import { refuseSuspendedSite } from "@/lib/site-suspension";
 import { s3Client } from "@/lib/s3";
 import { getUserObjectKey } from "@/lib/site-urls";
 import { assertNoPathTraversal, assertPlainFilename } from "@/lib/file-paths";
@@ -144,6 +145,8 @@ export async function POST(request: NextRequest) {
         { status: 401 },
       );
     }
+    const suspended = await refuseSuspendedSite(user.id);
+    if (suspended) return suspended;
 
     const formData = await request.formData();
     const directory = formData.get("directory") as string;

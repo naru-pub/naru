@@ -10,6 +10,10 @@ import { LOGIN_NAME_REGEX } from "../../control-plane/src/lib/const";
 // complimentary accounts. The table is confirmed like a site's paid status
 // (site.ts): past `confirmedUntil`, which each sync renews, no domain is
 // served, so a revocation is never outlived by a stale table.
+//
+// The same push lists the sites operators suspended (control plane,
+// site-moderation.ts), which are refused on every host. Unlike the domains,
+// the list is kept past `confirmedUntil`: a stale table still refuses them.
 
 export interface DomainsEnv {
   /** Holds the table under DOMAINS_KEY. */
@@ -27,6 +31,8 @@ export type DomainTable = {
       entitledUntil: number | null;
     }
   >;
+  /** Logins of the sites operators suspended. Absent from older pushes. */
+  suspended?: string[];
 };
 
 const DOMAINS_KEY = "domains";
@@ -61,6 +67,11 @@ export async function domainSite(host: string, env: DomainsEnv) {
   return domain.login;
 }
 
+/** Whether operators suspended the site, by the last table pushed. */
+export async function siteSuspended(login: string, env: DomainsEnv) {
+  return (await table(env))?.suspended?.includes(login) ?? false;
+}
+
 /** Checks a table from the control plane; the reason it is refused, or null. */
 export function invalidTable(input: unknown): string | null {
   const value = input as Partial<DomainTable> | null;
@@ -79,6 +90,14 @@ export function invalidTable(input: unknown): string | null {
     )
       return `entitledUntil for ${host} must be epoch ms or null.`;
   }
+  if (
+    value.suspended !== undefined &&
+    (!Array.isArray(value.suspended) ||
+      !value.suspended.every(
+        (login) => typeof login === "string" && LOGIN_NAME_REGEX.test(login),
+      ))
+  )
+    return "suspended must be a list of logins.";
   return null;
 }
 

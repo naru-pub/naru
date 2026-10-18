@@ -17,6 +17,11 @@ import {
   type MaintenanceName,
   type MaintenanceJob,
 } from "./jobs";
+import { runSiteQuarantine } from "@/lib/site-quarantine";
+import {
+  SITE_QUARANTINE_TASK,
+  type SiteQuarantine,
+} from "@/lib/site-suspension";
 
 export type ScriptResult = {
   code: number | null;
@@ -188,6 +193,10 @@ export async function runMaintenanceWorker(signal: AbortSignal): Promise<void> {
   workflows.registerTask<FunctionRelease>(
     { name: FUNCTION_RELEASE_TASK },
     runFunctionRelease,
+  );
+  workflows.registerTask<SiteQuarantine>(
+    { name: SITE_QUARANTINE_TASK },
+    runSiteQuarantine,
   );
   const worker = await workflows.startWorker({
     workerId: `maintenance:${process.pid}`,

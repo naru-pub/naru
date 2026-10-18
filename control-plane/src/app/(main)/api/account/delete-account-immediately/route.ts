@@ -18,6 +18,7 @@ import { dispatchActorDelete } from "@/lib/federation";
 import { deleteCustomDomainsForUser } from "@/lib/customDomains";
 import { verify } from "@node-rs/argon2";
 import { deleteUserMedia } from "@/lib/site-data/media";
+import { deleteQuarantined } from "@/lib/site-quarantine";
 import { eraseSiteData } from "@/lib/edge/client";
 import { deleteUserTemplateObjects } from "@/lib/board/templates";
 import { deleteUserExports } from "@/lib/export-storage";
@@ -136,6 +137,8 @@ export async function POST(request: NextRequest) {
     // The edge keeps no deleted page.
     await purgeSite(user.loginName);
     await deleteUserMedia(user.id);
+    // A suspended site's files and uploads wait under _suspended/.
+    await deleteQuarantined(user.loginName, user.id);
     // The site's database is a Durable Object, outside this database.
     await eraseSiteData(user.loginName);
     // Template snapshots, export zips and the site screenshot live outside

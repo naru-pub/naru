@@ -7,6 +7,7 @@ import { db } from "@/lib/database";
 const tables: {
   confirmedUntil: number;
   domains: Record<string, { login: string; entitledUntil: number | null }>;
+  suspended: string[];
 }[] = [];
 jest.mock("@/lib/edge/client", () => ({
   CONFIRMATION_MS: 60_000,
@@ -87,6 +88,15 @@ integration("edge custom domains", () => {
       expect(
         Math.round((table.domains["paid.example"].entitledUntil! - paid) / day),
       ).toBe(4);
+      expect(table.suspended).toEqual([]);
+      // A suspended site is listed, for the edge to refuse on every host.
+      await db
+        .updateTable("users")
+        .set({ site_moderation: "suspended" })
+        .where("login_name", "=", "edge-paid")
+        .execute();
+      await pushEdgeDomains();
+      expect(tables.at(-1)!.suspended).toEqual(["edge-paid"]);
     } finally {
       await db.deleteFrom("users").where("id", "in", users).execute();
     }

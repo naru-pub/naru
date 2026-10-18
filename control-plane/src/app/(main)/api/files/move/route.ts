@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { validateRequest } from "@/lib/auth";
+import { refuseSuspendedSite } from "@/lib/site-suspension";
 import { s3Client } from "@/lib/s3";
 import { assertJsonContentType } from "@/lib/utils";
 import { collapseSlashes, getUserObjectKey } from "@/lib/site-urls";
@@ -78,6 +79,8 @@ export async function POST(request: NextRequest) {
         { status: 401 },
       );
     }
+    const suspended = await refuseSuspendedSite(user.id);
+    if (suspended) return suspended;
 
     try {
       await s3Client.send(

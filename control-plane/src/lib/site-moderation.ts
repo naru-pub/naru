@@ -1,32 +1,33 @@
 import {
   cloudflareZone,
   createCustomRule,
-  deleteCustomRule,
   listCustomRules,
   updateCustomRule,
 } from "@/lib/cloudflare/firewall";
 import { db } from "@/lib/database";
+import { pushEdgeDomains } from "@/lib/edge/domains";
 import { configureEdge } from "@/lib/edge/sync";
 import {
   operatorAlertsConfigured,
   sendOperatorAlert,
 } from "@/lib/operator-alerts";
-import {
-  getSiteBucketUrl,
-  getSiteScreenshotKey,
-  mediaOrigin,
-} from "@/lib/site-urls";
+import { QUARANTINE_PREFIX, enqueueQuarantine } from "@/lib/site-suspension";
+import { getSiteBucketUrl, mediaOrigin } from "@/lib/site-urls";
 
 // What operators do about a site (/admin/moderation), apart from the owner's
 // own discoverable switch (users.site_moderation):
 //
 // - hidden: out of everything that lists or searches sites, the home page,
 //   /sites and the apps' showcase and search. Still served.
-// - suspended: hidden, and Naru stops serving it:
-//   - its pages, custom domains and files: a WAF rule at Cloudflare blocks
-//     its hosts and its paths in the site and media buckets (r2., media.),
-//     which visitors reach without the edge Worker; its cached pages are
+// - suspended: hidden, and Naru stops serving it, however many sites are:
+//   - its pages and custom domains: the edge Worker refuses it on every host
+//     (the domain table lists it, edge/domains.ts), and its cached pages are
 //     purged;
+//   - its files in the buckets' public hosts, which visitors reach without
+//     the Worker: a durable task moves them under _suspended/
+//     (site-quarantine.ts), which one fixed Cloudflare rule blocks, and back
+//     when the suspension is lifted; its owner cannot write meanwhile
+//     (site-suspension.ts);
 //   - its data: its object is told it has no database feature, so it hands
 //     every request to the control plane, which refuses a suspended site
 //     (site-data/service.ts);
@@ -34,8 +35,9 @@ import {
 //     show its sites or notifications (app-api).
 //
 // Every change is kept in site_moderation_actions with who made it and why,
-// and posted to the operators' Discord. The rule is applied at once and again
-// by the site-request-limits job, so a Cloudflare error is retried.
+// and posted to the operators' Discord. What fails to apply at once is
+// retried: the edge table by the edge-sync job, the rule by the
+// site-request-limits job, the file move by its task.
 
 export const MODERATION_LEVELS = ["hidden", "suspended"] as const;
 export type ModerationLevel = (typeof MODERATION_LEVELS)[number];
@@ -46,75 +48,33 @@ export const MODERATION_LABELS: Record<ModerationLevel, string> = {
 
 export const SUSPENDED_RULE_REF = "naru-suspended-sites";
 
-/** Where Cloudflare blocks the suspended sites, or null when none is. */
-export async function suspensionExpression() {
-  const sites = await db
-    .selectFrom("users")
-    .select(["id", "login_name"])
-    .where("site_moderation", "=", "suspended")
-    .where("deleted_at", "is", null)
-    .orderBy("login_name")
-    .execute();
-  if (!sites.length) return null;
-  const domains = await db
-    .selectFrom("custom_domains")
-    .select("hostname")
-    .where(
-      "user_id",
-      "in",
-      sites.map((site) => site.id),
-    )
-    .orderBy("hostname")
-    .execute();
-  const quote = (text: string) => JSON.stringify(text);
+/** What the rule blocks: quarantined files on the buckets' public hosts. */
+export function quarantineExpression() {
   const hosts = [
-    ...sites.map(
-      (site) => `${site.login_name}.${process.env.NEXT_PUBLIC_DOMAIN}`,
-    ),
-    ...domains.map((domain) => domain.hostname.toLowerCase()),
+    new URL(getSiteBucketUrl("")).host,
+    new URL(mediaOrigin()).host,
   ];
-  const under = (origin: string, prefixes: string[]) => {
-    const host = new URL(origin).host;
-    const paths = prefixes
-      .map((prefix) => `starts_with(http.request.uri.path, ${quote(prefix)})`)
-      .join(" or ");
-    return `(http.host eq ${quote(host)} and (${paths}))`;
-  };
-  return [
-    `(http.host in {${hosts.map(quote).join(" ")}})`,
-    under(getSiteBucketUrl(""), [
-      ...sites.map((site) => `/${site.login_name}/`),
-      ...sites.map((site) => `/${getSiteScreenshotKey(site.login_name)}`),
-    ]),
-    under(
-      mediaOrigin(),
-      sites.map((site) => `/${site.id}/`),
-    ),
-  ].join(" or ");
+  return `(http.host in {${hosts.map((host) => JSON.stringify(host)).join(" ")}} and starts_with(http.request.uri.path, ${JSON.stringify(`/${QUARANTINE_PREFIX}`)}))`;
 }
 
-/** Makes the managed rule block exactly the suspended sites. */
+/** Makes sure the one fixed rule blocking quarantined files is in place. */
 export async function applySuspensions() {
   if (!cloudflareZone()) return { applied: false };
-  const expression = await suspensionExpression();
+  const expression = quarantineExpression();
   const current = (await listCustomRules()).find(
     (rule) => rule.ref === SUSPENDED_RULE_REF,
   );
   const rule = {
     ref: SUSPENDED_RULE_REF,
     description:
-      "Naru: sites suspended in /admin/moderation (managed by the control plane)",
-    expression: expression ?? "",
+      "Naru: files of sites suspended in /admin/moderation, moved under /_suspended/ (managed by the control plane)",
+    expression,
     action: "block",
     enabled: true,
   };
-  if (!expression) {
-    if (current) await deleteCustomRule(current.id);
-  } else if (!current) {
-    await createCustomRule(rule);
-  } else if (current.expression !== expression || !current.enabled) {
+  if (!current) await createCustomRule(rule);
+  else if (current.expression !== expression || !current.enabled)
     await updateCustomRule(current.id, rule);
-  }
   return { applied: true };
 }
 
@@ -141,7 +101,7 @@ export async function setSiteModeration(
       .set({ site_moderation: level })
       .where("id", "=", site.id)
       .execute();
-    await tx
+    const action = await tx
       .insertInto("site_moderation_actions")
       .values({
         site_user_id: site.id,
@@ -149,7 +109,16 @@ export async function setSiteModeration(
         reason,
         operator_user_id: operator.id,
       })
-      .execute();
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    // The files move with the change, or not at all.
+    if ((row.site_moderation === "suspended") !== (level === "suspended"))
+      await enqueueQuarantine(tx, {
+        userId: site.id,
+        login: site.login,
+        direction: level === "suspended" ? "in" : "out",
+        actionId: action.id,
+      });
     return row.site_moderation;
   });
 
@@ -163,7 +132,10 @@ export async function setSiteModeration(
     }
   };
   if ((before === "suspended") !== (level === "suspended")) {
-    await attempt("Cloudflare 규칙", applySuspensions);
+    // The edge refuses it, or serves it again, now rather than at the next sync.
+    await attempt("엣지 차단 목록", pushEdgeDomains);
+    if (level === "suspended")
+      await attempt("Cloudflare 규칙", applySuspensions);
     if (level === "suspended")
       await attempt("캐시 비우기", async () => {
         // Loaded here: it brings the S3 client, which the jsdom tests cannot load.

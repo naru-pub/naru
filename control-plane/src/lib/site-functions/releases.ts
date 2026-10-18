@@ -32,10 +32,14 @@ export async function publishSiteFunctions(
     // Serialize publications for this owner, including snapshot reads and the task outbox.
     const user = await tx
       .selectFrom("users")
-      .select("id")
+      .select(["id", "site_moderation"])
       .where("login_name", "=", site)
       .forUpdate()
       .executeTakeFirstOrThrow();
+    // A suspended site's _naru/ is quarantined (site-quarantine.ts): reading
+    // it now would publish an empty release.
+    if (user.site_moderation === "suspended")
+      throw new DataError(403, "This site is suspended.");
     const previous = await tx
       .selectFrom("site_function_releases")
       .select(["id", "revision"])

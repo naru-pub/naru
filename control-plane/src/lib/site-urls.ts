@@ -14,6 +14,10 @@ export function getHomepageUrl(username: string) {
     : `http://${username}.${process.env.NEXT_PUBLIC_DOMAIN}`;
 }
 
+// The Naru Media bucket, which members' and owners' uploads go to.
+export const mediaBucket = () =>
+  process.env.SITE_DATA_MEDIA_BUCKET || "naru-media";
+
 // Where the Naru Media bucket serves its objects.
 export const mediaOrigin = () =>
   (process.env.SITE_DATA_MEDIA_ORIGIN || "https://media.naru.pub").replace(

@@ -429,7 +429,7 @@ integration("the Naru app's API", () => {
     ).rejects.toMatchObject({ status: 429 });
   });
 
-  test("suspends a site: kept, blocked at Cloudflare, without data or notifications", async () => {
+  test("suspends a site: kept, its files moved, without data or notifications", async () => {
     const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
     const user = (await tokens.appTokenUser(token))!;
     // Earlier tests left the site reported, so hidden for this account.
@@ -443,11 +443,19 @@ integration("the Naru app's API", () => {
       await db.selectFrom("site_moderation_actions").select(["level", "reason", "operator_user_id"])
         .where("site_user_id", "=", siteId).execute(),
     ).toEqual([{ level: "suspended", reason: "불법 촬영물", operator_user_id: reader }]);
-    const expression = (await siteModeration.suspensionExpression())!;
-    expect(expression).toContain(`"app-site.${process.env.NEXT_PUBLIC_DOMAIN}"`);
-    expect(expression).toContain(`starts_with(http.request.uri.path, "/app-site/")`);
-    expect(expression).toContain(`starts_with(http.request.uri.path, "/_screenshots/app-site.png")`);
-    expect(expression).toContain(`starts_with(http.request.uri.path, "/${siteId}/")`);
+    // Its files move with the change, by a task queued in the same transaction.
+    const quarantines = async () =>
+      (
+        await sql<{ params: { direction: string; login: string } }>`
+          select params from absurd.t_maintenance
+          where task_name = 'site-quarantine-v1' and params->>'userId' = ${String(siteId)}
+          order by task_id`.execute(db)
+      ).rows.map((row) => `${row.params.login} ${row.params.direction}`);
+    expect(await quarantines()).toEqual(["app-site in"]);
+    // One fixed rule, whatever is suspended.
+    expect(siteModeration.quarantineExpression()).toBe(
+      `(http.host in {"r2.${process.env.NEXT_PUBLIC_DOMAIN}" "media.naru.pub"} and starts_with(http.request.uri.path, "/_suspended/"))`,
+    );
     // Its object answers nothing; the apps no longer show it.
     expect(await databaseEntitledUntil(siteId)).toBe(0);
     expect((await inbox.listSites(user)).sites).toEqual([]);
@@ -455,11 +463,12 @@ integration("the Naru app's API", () => {
 
     // Hidden only: served, out of the listings, nothing blocked.
     await siteModeration.setSiteModeration(site, "hidden", "스팸", operator);
-    expect(await siteModeration.suspensionExpression()).toBeNull();
+    expect(await quarantines()).toEqual(["app-site in", "app-site out"]);
     expect(await databaseEntitledUntil(siteId)).toBeNull();
     expect((await inbox.listSites(user)).sites).toHaveLength(1);
 
     await siteModeration.setSiteModeration(site, null, "확인 결과 문제 없음", operator);
+    expect(await quarantines()).toHaveLength(2);
     expect((await showcasePage(1)).sites.map((s) => s.name)).toContain("app-site");
   });
 });

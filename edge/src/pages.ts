@@ -175,6 +175,21 @@ export function notFound() {
   });
 }
 
+/** A site operators suspended (domains.ts): gone, as long as it lasts. */
+export function suspended() {
+  return new Response(
+    "이 사이트는 나루 운영 정책에 따라 서비스가 중지되었습니다.\n" +
+      "This site has been suspended by Naru.\n",
+    {
+      status: 410,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
 // A 5xx, never a 404, for failures on our side, as the proxy answered.
 function unavailable() {
   return new Response(text("Service Unavailable"), {

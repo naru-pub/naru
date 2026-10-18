@@ -21,6 +21,7 @@ import {
 import { s3Client } from "@/lib/s3";
 import { getUserHomeDirectory, getUserObjectKey } from "@/lib/site-urls";
 import { GitHubActionsClaims } from "./githubOidc";
+import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 
 const MAX_DEPLOY_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const DEPLOYMENT_TTL_MS = 60 * 60 * 1000;
@@ -432,6 +433,8 @@ export async function planDeployment(params: {
   skippedPaths?: string[];
 }) {
   const { target, manifest } = params;
+  // Its files are quarantined (site-quarantine.ts); nothing is staged for it.
+  if (await siteSuspended(target.user_id)) throw new Error(SUSPENDED_MESSAGE);
   const targetPrefix = target.target_prefix;
   const previousFiles = manifestFiles(target.last_manifest);
 
@@ -527,6 +530,7 @@ function loadDeployment(id: string) {
       "github_deploy_targets.github_repository_id as current_github_repository_id",
       "github_deploy_targets.deploy_generation as current_deploy_generation",
       "users.login_name",
+      "users.site_moderation",
     ])
     .where("github_deployments.id", "=", id)
     .executeTakeFirst();
@@ -613,6 +617,9 @@ async function publishDeployment(
   }
   if (!deployment.enabled) {
     throw new Error("Deploy target is disabled");
+  }
+  if (deployment.site_moderation === "suspended") {
+    throw new Error(SUSPENDED_MESSAGE);
   }
   if (deployment.current_deploy_generation !== deployment.deploy_generation) {
     throw new Error(

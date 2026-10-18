@@ -236,12 +236,16 @@ lists reports and sets `users.site_moderation`
 
 - `hidden`: out of the home page, `/sites` and the apps' showcase and search.
   Still served; starred, it stays in 별표 without its screenshot.
-- `suspended`: hidden, and not served. A managed Cloudflare WAF rule blocks
-  its hosts (`<login>.naru.pub`, its custom domains) and its paths in the
-  site and media buckets; its cached pages are purged; its object is told it
-  has no database feature and the control plane refuses its data requests;
-  what it sends through `ctx.notify` is dropped, and the apps show neither it
-  nor its notifications.
+- `suspended`: hidden, and not served, however many sites are suspended.
+  The edge Worker refuses it on every host with a 410 (the domain table it is
+  pushed lists suspended sites); a durable task moves its files, screenshot
+  and uploads under `_suspended/` in their buckets, which one fixed Cloudflare
+  rule blocks on `r2.` and `media.`, and back when lifted
+  (`control-plane/src/lib/site-quarantine.ts`); its owner cannot change its
+  files, deploy or apply templates meanwhile; its object is told it has no
+  database feature and the control plane refuses its data requests; what it
+  sends through `ctx.notify` is dropped, and the apps show neither it nor its
+  notifications.
 
 `users.app_notifications_disabled` still turns off only a site's
 notifications. The owner's own `users.discoverable` is theirs, not a

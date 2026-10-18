@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import {
   domainSite,
   invalidTable,
+  siteSuspended,
   storeDomains,
   type DomainTable,
   type DomainsEnv,
@@ -78,5 +79,32 @@ describe("validation", () => {
     [table({ "example.com": { login: "a", entitledUntil: "soon" as never } })],
   ])("refuses %j", (input) => {
     expect(invalidTable(input)).not.toBeNull();
+  });
+});
+
+describe("suspended sites", () => {
+  test("lists the sites operators suspended, even past confirmation", async () => {
+    await storeDomains(env, {
+      confirmedUntil: Date.now() - 1,
+      domains: {},
+      suspended: ["alice"],
+    });
+    expect(await siteSuspended("alice", env)).toBe(true);
+    expect(await siteSuspended("bob", env)).toBe(false);
+  });
+
+  test("an older push without the list suspends nothing", async () => {
+    await storeDomains(env, { confirmedUntil: Date.now() + hour, domains: {} });
+    expect(await siteSuspended("alice", env)).toBe(false);
+  });
+
+  test("refuses a list that is not of logins", () => {
+    for (const suspended of ["alice", [1], ["../x"]])
+      expect(
+        invalidTable({ confirmedUntil: 1, domains: {}, suspended }),
+      ).toMatch(/suspended/);
+    expect(
+      invalidTable({ confirmedUntil: 1, domains: {}, suspended: ["alice"] }),
+    ).toBeNull();
   });
 });

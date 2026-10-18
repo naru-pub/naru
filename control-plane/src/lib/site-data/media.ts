@@ -15,7 +15,7 @@ import { resolveSiteAccess } from "./service";
 import { callSiteObject } from "@/lib/edge/client";
 import { DataError, uuidId } from "./validation";
 import { decodeCursor, encodeCursor, sorting } from "./pagination";
-import { mediaOrigin } from "@/lib/site-urls";
+import { mediaBucket, mediaOrigin } from "@/lib/site-urls";
 
 export const MAX_MEDIA_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_MEDIA_SITE_BYTES = 250 * 1024 * 1024;
@@ -27,7 +27,6 @@ export const MAX_MEDIA_FILES = 10000;
 // Members upload into the site's quota, which one of them could otherwise
 // fill for everyone; the owner's own uploads are not limited.
 export const MEMBER_UPLOADS_PER_HOUR = 30;
-const mediaBucket = () => process.env.SITE_DATA_MEDIA_BUCKET || "naru-media";
 const allowedTypes = new Set<string>(MEDIA_TYPES);
 
 /** The external object-store boundary, kept narrow so API contracts can run locally. */
