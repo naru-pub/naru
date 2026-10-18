@@ -1,6 +1,9 @@
 import { callerKey } from "./addresses";
 import { FunctionRevisions, migrationPath } from "./function-revisions";
-import { routeModule } from "../../control-plane/src/lib/site-functions/routes";
+import {
+  routeModule,
+  type RouteParams,
+} from "../../control-plane/src/lib/site-functions/routes";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -2101,7 +2104,7 @@ export class SiteData extends DurableObject<Env> {
     route: string;
     path: string;
     origin?: string;
-    params: Record<string, string>;
+    params: RouteParams;
     query: Record<string, string>;
     clientIp?: string;
     paused?: unknown;

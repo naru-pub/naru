@@ -577,16 +577,20 @@ A site may answer some paths with pages rendered on Naru, for link previews,
 feeds or pages that should work without JavaScript. Each file in
 `_naru/routes/` answers the path it is named for, with its default export:
 
-| File                    | Answers                       |
-| ----------------------- | ----------------------------- |
-| `routes/index.js`       | `/`                           |
-| `routes/about.js`       | `/about`                      |
-| `routes/posts/index.js` | `/posts` and `/posts/`        |
-| `routes/posts/_id.js`   | `/posts/<id>`, as `params.id` |
-| `routes/feed.xml.js`    | `/feed.xml`                   |
+| File                      | Answers                                                     |
+| ------------------------- | ----------------------------------------------------------- |
+| `routes/index.js`         | `/`                                                         |
+| `routes/about.js`         | `/about`                                                    |
+| `routes/posts/index.js`   | `/posts` and `/posts/`                                      |
+| `routes/posts/_id.js`     | `/posts/<id>`, as `params.id`                               |
+| `routes/docs/_...path.js` | `/docs`, `/docs/a/b`, as `params.path` (`[]`, `["a", "b"]`) |
+| `routes/feed.xml.js`      | `/feed.xml`                                                 |
 
-A segment starting with `_` takes any one path segment; a fixed segment wins
-over it. Paths no route answers are the site's files, as before. A route's
+A segment starting with `_` takes any one path segment. One starting with
+`_...` takes the rest of the path, none or more segments, as a list; it is
+only a route's last segment, never its first, so the site's files stay
+reachable. From the first segment on, a fixed segment wins over `_name`, and
+`_name` over `_...name`. Paths no route answers are the site's files, as before. A route's
 default export receives `{ path, origin, params, query }`; `origin` is the
 subdomain or custom domain the page was asked on, such as
 `https://alice.naru.pub`, for absolute URLs like `og:url`.

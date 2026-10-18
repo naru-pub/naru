@@ -10,6 +10,7 @@ import {
   routeAnswer,
   withHead,
   type RouteAnswer,
+  type RouteParams,
 } from "../../control-plane/src/lib/site-functions/routes";
 import { routesKey } from "../../control-plane/src/lib/site-functions/revisions";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
@@ -252,7 +253,7 @@ export type RenderRoute = (input: {
   path: string;
   /** The page's own origin, such as https://alice.naru.pub, for absolute links. */
   origin?: string;
-  params: Record<string, string>;
+  params: RouteParams;
   query: Record<string, string>;
   clientIp?: string;
 }) => Promise<

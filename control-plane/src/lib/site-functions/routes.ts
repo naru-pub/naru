@@ -8,8 +8,13 @@ import { DataError } from "../site-data/validation";
 //   routes/about.js        /about
 //   routes/posts/index.js  /posts and /posts/
 //   routes/posts/_id.js    /posts/<id>, as params.id
+//   routes/docs/_...path.js  /docs, /docs/a, /docs/a/b, as params.path
+//                            ([], ["a"], ["a", "b"])
 //
-// A segment that starts with _ takes any one path segment. Paths that match
+// A segment that starts with _ takes any one path segment; one that starts
+// with _... takes the rest of the path, none or more segments, and is only
+// the last segment, never the first (so the site's files stay reachable).
+// A fixed segment wins over _name, and _name over _...name. Paths that match
 // no route are the site's static files, as before. The edge Worker matches
 // paths (pages.ts), naru-dev too, and both shape what a route answered.
 
@@ -18,17 +23,28 @@ export function routeOf(filename: string) {
   return filename.replace(/^routes\//, "").replace(/\.m?js$/, "");
 }
 
+/** Whether a route's segment takes the rest of the path (`_...name`). */
+const isRest = (part: string) => /^_\.\.\.[A-Za-z0-9_]+$/.test(part);
+
 /**
  * Whether `route` names a route: segments of letters, digits, _, - and
- * dots (feed.xml.js answers /feed.xml), never "." or "..".
+ * dots (feed.xml.js answers /feed.xml), never "." or "..", with a rest
+ * segment (`_...name`) only last and never first.
  */
-export const validRoute = (route: string) =>
-  route
-    .split("/")
-    .every(
-      (part) =>
-        /^[A-Za-z0-9_.-]{1,64}$/.test(part) && part !== "." && part !== "..",
-    );
+export const validRoute = (route: string) => {
+  const parts = route.split("/");
+  return parts.every(
+    (part, index) =>
+      /^[A-Za-z0-9_.-]{1,64}$/.test(part) &&
+      part !== "." &&
+      part !== ".." &&
+      (!part.startsWith("_...") ||
+        (isRest(part) && index > 0 && index === parts.length - 1)),
+  );
+};
+
+/** A route's parameters: one segment each, or a rest segment's list. */
+export type RouteParams = Record<string, string | string[]>;
 
 /** `route`, checked, as the site's object is asked to render it. */
 export function routeModule(value: unknown): string {
@@ -52,7 +68,10 @@ const BODY_TYPES = [
   "application/json",
 ];
 
-/** The route matching `pathname`, preferring fixed segments to parameters. */
+/**
+ * The route matching `pathname`: at each segment, from the first, a fixed
+ * segment wins over a parameter, and a parameter over a rest segment.
+ */
 export function matchRoute(routes: readonly string[], pathname: string) {
   let segments: string[];
   try {
@@ -64,41 +83,50 @@ export function matchRoute(routes: readonly string[], pathname: string) {
     return null;
   }
   // "/posts" may be routes/posts.js or routes/posts/index.js; "/posts/"
-  // only the index.
+  // only the index. A rest segment takes the path's own segments alone.
   const candidates = pathname.endsWith("/")
     ? [[...segments, "index"]]
     : [segments, [...segments, "index"]];
-  let best: {
-    route: string;
-    params: Record<string, string>;
-    score: string;
-  } | null = null;
-  for (const wanted of candidates)
-    for (const route of routes) {
-      const pattern = route.split("/");
-      if (pattern.length !== wanted.length) continue;
-      const params: Record<string, string> = {};
-      let score = "";
-      const matches = pattern.every((part, index) => {
-        if (part === wanted[index]) {
-          score += "1";
-          return true;
-        }
-        if (
-          part.startsWith("_") &&
-          part.length > 1 &&
-          wanted[index] !== "index"
-        ) {
-          params[part.slice(1)] = wanted[index];
-          score += "0";
-          return true;
-        }
-        return false;
-      });
-      if (matches && (!best || score > best.score))
-        best = { route, params, score };
+  let best: { route: string; params: RouteParams; score: string } | null = null;
+  for (const route of routes) {
+    const rest = isRest(route.split("/").at(-1) ?? "");
+    for (const wanted of rest ? [segments] : candidates) {
+      const found = matchOne(route, wanted);
+      if (found && (!best || found.score > best.score))
+        best = { route, ...found };
     }
+  }
   return best && { route: best.route, params: best.params };
+}
+
+/**
+ * How `route` matches the segments `wanted`: its parameters, and a score
+ * (2 a fixed segment, 1 a parameter, 0 the rest) that orders matches.
+ */
+function matchOne(route: string, wanted: string[]) {
+  const pattern = route.split("/");
+  const rest = isRest(pattern.at(-1) ?? "");
+  const fixed = rest ? pattern.slice(0, -1) : pattern;
+  if (rest ? wanted.length < fixed.length : fixed.length !== wanted.length)
+    return null;
+  const params: RouteParams = {};
+  let score = "";
+  for (const [index, part] of fixed.entries()) {
+    if (part === wanted[index]) score += "2";
+    else if (
+      part.startsWith("_") &&
+      part.length > 1 &&
+      wanted[index] !== "index"
+    ) {
+      params[part.slice(1)] = wanted[index];
+      score += "1";
+    } else return null;
+  }
+  if (rest) {
+    params[pattern.at(-1)!.slice(4)] = wanted.slice(fixed.length);
+    score += "0";
+  }
+  return { params, score };
 }
 
 /** What a route answered, as the page is served. */

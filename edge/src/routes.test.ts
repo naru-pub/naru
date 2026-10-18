@@ -64,6 +64,62 @@ describe("matching", () => {
   });
 });
 
+describe("rest segments", () => {
+  const routes = [
+    "index",
+    "docs/index",
+    "docs/_...path",
+    "docs/api/_name",
+    "boards/_board/_...rest",
+    "boards/_board/page/_page",
+  ];
+  test("_...name takes the rest of the path, after fixed segments and parameters", () => {
+    expect(matchRoute(routes, "/docs")).toEqual({
+      route: "docs/index",
+      params: {},
+    });
+    expect(matchRoute(routes, "/docs/a/%EA%B8%80")).toEqual({
+      route: "docs/_...path",
+      params: { path: ["a", "글"] },
+    });
+    expect(matchRoute(routes, "/docs/api/fetch")).toEqual({
+      route: "docs/api/_name",
+      params: { name: "fetch" },
+    });
+    expect(matchRoute(routes, "/docs/api/fetch/more")).toEqual({
+      route: "docs/_...path",
+      params: { path: ["api", "fetch", "more"] },
+    });
+    expect(matchRoute(routes, "/boards/free")).toEqual({
+      route: "boards/_board/_...rest",
+      params: { board: "free", rest: [] },
+    });
+    expect(matchRoute(routes, "/boards/free/")).toEqual({
+      route: "boards/_board/_...rest",
+      params: { board: "free", rest: [] },
+    });
+    expect(matchRoute(routes, "/boards/free/page/2")).toEqual({
+      route: "boards/_board/page/_page",
+      params: { board: "free", page: "2" },
+    });
+    expect(matchRoute(routes, "/boards/free/tag/x/y")).toEqual({
+      route: "boards/_board/_...rest",
+      params: { board: "free", rest: ["tag", "x", "y"] },
+    });
+    expect(matchRoute(routes, "/style.css")).toBeNull();
+  });
+  test("a rest segment is a route's last and never its first", () => {
+    expect(validRoute("docs/_...path")).toBe(true);
+    for (const route of [
+      "_...path",
+      "docs/_...path/x",
+      "docs/_...",
+      "docs/_...a-b",
+    ])
+      expect(validRoute(route), route).toBe(false);
+  });
+});
+
 describe("answers", () => {
   test("HTML, a file with a head, or a redirect, with a status and cache", () => {
     expect(routeAnswer("<p>hi</p>")).toEqual({

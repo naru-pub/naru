@@ -1253,17 +1253,28 @@ live.close();`}</Code>
                     </>,
                   ],
                   [
+                    <code key="f">routes/docs/_...path.js</code>,
+                    <>
+                      <code>/docs</code>, <code>/docs/a/b</code> (
+                      <code>params.path</code>는 <code>[]</code>,{" "}
+                      <code>[&quot;a&quot;, &quot;b&quot;]</code>)
+                    </>,
+                  ],
+                  [
                     <code key="f">routes/feed.xml.js</code>,
                     <code key="p">/feed.xml</code>,
                   ],
                 ]}
               />
               <p>
-                <code>_</code>로 시작하는 이름은 경로 한 칸의 무엇이든 받으며,
-                같은 주소에 맞는 파일이 둘이면 이름이 정해진 쪽이 먼저입니다.
-                라우트와 맞는 주소는 같은 이름의 사이트 파일보다 라우트가
-                답하고, 어떤 라우트와도 맞지 않는 주소는 전처럼 사이트 파일이
-                답합니다.
+                <code>_</code>로 시작하는 이름은 경로 한 칸의 무엇이든 받고,{" "}
+                <code>_...</code>로 시작하는 이름은 남은 경로 전부(없어도 됨)를
+                칸의 목록으로 받습니다. <code>_...</code>는 맨 끝 칸에만, 맨 앞
+                칸이 아닌 곳에 둘 수 있습니다. 같은 주소에 맞는 파일이 여럿이면
+                앞 칸부터 이름이 정해진 쪽, <code>_</code>, <code>_...</code>{" "}
+                순으로 먼저입니다. 라우트와 맞는 주소는 같은 이름의 사이트
+                파일보다 라우트가 답하고, 어떤 라우트와도 맞지 않는 주소는
+                전처럼 사이트 파일이 답합니다.
               </p>
               <Code>{`// _naru/modules/html.js
 export const escape = (value) =>
