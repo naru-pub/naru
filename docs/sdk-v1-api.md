@@ -570,6 +570,10 @@ is `{"$base64": …}`. The last line is `{"type":"end","rows":<count>}`: a file
 without it, or with another count, was cut short. Uploads are not in it:
 their files stay in Naru Media, and rows hold their URLs. Naru does not take
 a downloaded file back yet; restoring is from the restore points it keeps.
+The owner can browse the site's tables on the control panel (데이터베이스 →
+테이블), read only: a table's rows 100 at a time in rowid order (key order WITHOUT ROWID), long text cut
+to its first 1,000 characters and a BLOB shown as its size; views, Naru's
+tables and a full-text table's storage are not browsed.
 The site's tables count toward the site's database quota with its
 collections. naru-dev (`npx @naru-pub/dev`) writes `_naru/types/database.d.ts`, the tables
 as the migrations left them, for `ctx.sql` and query builders.

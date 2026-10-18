@@ -872,6 +872,12 @@ CREATE INDEX posts_author ON posts (author);`}</Code>
                   파일과 미디어, 사이트 회원 목록은 그대로입니다.
                 </li>
                 <li>
+                  테이블의 행은 제어판의 데이터베이스 → 테이블에서 볼 수
+                  있습니다. 테이블마다 한 번에 100행씩 넣은 순서대로 보이고, 긴
+                  텍스트는 앞부분만, BLOB은 크기만 보입니다. 읽기만 하며, 행은
+                  사이트의 뮤테이션이나 복원으로 바뀝니다.
+                </li>
+                <li>
                   나루가 쓰는 이름(<code>collections</code>,{" "}
                   <code>documents</code>, <code>meta</code>, <code>usage</code>,{" "}
                   <code>rate_limits</code>, <code>media_refs</code>와{" "}

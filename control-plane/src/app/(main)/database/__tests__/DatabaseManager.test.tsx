@@ -34,6 +34,7 @@ let collections: { name: string; read_access: string; write_access: string }[];
 const deleted: string[] = [];
 const restored: string[] = [];
 const allowed: string[] = [];
+const tablePages: string[] = [];
 let created = 0;
 let requests = 0;
 let failing = false;
@@ -44,6 +45,7 @@ beforeEach(() => {
   deleted.length = 0;
   restored.length = 0;
   allowed.length = 0;
+  tablePages.length = 0;
   created = 0;
   requests = 0;
   failing = false;
@@ -129,6 +131,34 @@ beforeEach(() => {
           },
         ],
       });
+    }
+    if (url === "/api/account/site-tables")
+      return json({
+        tables: [
+          { name: "posts", view: false, columns: [] },
+          { name: "titled", view: true, columns: [] },
+        ],
+      });
+    if (url.startsWith("/api/account/site-tables?")) {
+      const params = new URL(url, "http://localhost").searchParams;
+      tablePages.push(`${params.get("table")}:${params.get("after")}`);
+      return params.get("after") === null
+        ? json({
+            table: "posts",
+            columns: ["id", "title", "cover"],
+            rows: [
+              [1, { text: "a".repeat(1000), length: 1500 }, { blob: 2048 }],
+              [2, "second", null],
+            ],
+            next: 2,
+            count: { rows: 10_000, more: true },
+          })
+        : json({
+            table: "posts",
+            columns: ["id", "title", "cover"],
+            rows: [[3, "third", null]],
+            next: null,
+          });
     }
     if (url.startsWith("/api/account/site-members"))
       return json({
@@ -290,4 +320,35 @@ test("each tab has a permalink: ?tab= opens it, and opening a tab puts it in the
   });
   expect(window.location.pathname + window.location.search).toBe("/database");
   window.history.replaceState(null, "", "/");
+});
+
+test("a site's table is paged read only", async () => {
+  renderManager();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "테이블" }), {
+    button: 0,
+  });
+  // Views are listed, not browsed.
+  expect(await screen.findByText("titled (뷰)")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "posts" }));
+  const status = await screen.findByRole("status");
+  expect(status).toHaveTextContent("10,000개 이상 행 중 1–2번째");
+  const first = screen.getByText("second").closest("tr")!;
+  expect(first).toHaveTextContent("NULL");
+  expect(screen.getByText(/BLOB 2 KB/)).toBeInTheDocument();
+  expect(screen.getByText(/1,500자/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "이전" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+  expect(await screen.findByText("third")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "10,000개 이상 행 중 101–101번째",
+  );
+  expect(screen.getByRole("button", { name: "다음" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "이전" }));
+  expect(await screen.findByText("second")).toBeInTheDocument();
+  expect(tablePages).toEqual(["posts:null", "posts:2", "posts:null"]);
+  // Nothing on the page edits a row.
+  const panel = screen
+    .getByRole("heading", { name: "테이블" })
+    .closest("section")!;
+  expect(within(panel).queryByRole("textbox")).not.toBeInTheDocument();
 });

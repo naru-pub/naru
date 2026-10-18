@@ -88,6 +88,8 @@ const OPERATIONS = [
   // media library asks (1.1.0).
   "tableMediaReferences",
   "siteTables",
+  // A page of one of the site's tables, for the owner's control panel.
+  "tableRows",
   "rolesOfMembers",
   "setMemberRoles",
   // Uploads as Naru Media finishes and deletes them, for site SQL's _naru_uploads.
@@ -153,6 +155,8 @@ function dispatch(
       return stub.tableMediaReferences(input);
     case "siteTables":
       return stub.siteTables();
+    case "tableRows":
+      return stub.tableRows(input);
     case "rolesOfMembers":
       return stub.rolesOfMembers(input);
     case "render":

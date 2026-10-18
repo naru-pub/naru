@@ -30,6 +30,7 @@ import {
   restorePointsPrefix,
 } from "../../control-plane/src/lib/site-functions/restore-points";
 import { runFunction, type Host } from "./functions";
+import { siteObjectsOf, tableRows } from "./table-rows";
 import {
   breakerKey,
   pausedList,
@@ -1795,33 +1796,31 @@ export class SiteData extends DurableObject<Env> {
    * the order they can be created again: tables, then indexes, then views.
    */
   private siteObjects() {
-    const order: Record<string, number> = { table: 0, index: 1, view: 2 };
-    const rows = this.rows(
-      "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table', 'index', 'view') ORDER BY rowid",
-    ).filter((row) => !reserved(String(row.name)));
-    // A full-text table's own storage (<name>_data, _idx, _content,
-    // _docsize, _config) comes and goes with it: never the site's to list,
-    // dump or drop.
-    const virtual = new Set(
-      rows
-        .filter((row) => /^CREATE VIRTUAL TABLE/i.test(String(row.sql)))
-        .map((row) => String(row.name).toLowerCase()),
+    return siteObjectsOf(
+      this.rows(
+        "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table', 'index', 'view') ORDER BY rowid",
+      ),
     );
-    const shadow = (name: string) =>
-      [...virtual].some((table) =>
-        ["data", "idx", "content", "docsize", "config"].some(
-          (part) => name.toLowerCase() === `${table}_${part}`,
-        ),
-      );
-    return rows
-      .filter((row) => !shadow(String(row.name)))
-      .sort((a, b) => order[String(a.type)] - order[String(b.type)])
-      .map((row) => ({
-        type: String(row.type),
-        name: String(row.name),
-        sql: String(row.sql),
-        virtual: virtual.has(String(row.name).toLowerCase()),
-      }));
+  }
+
+  /** One page of a site table's rows, for its owner's control panel (table-rows.ts). */
+  async tableRows(input: {
+    table?: unknown;
+    after?: unknown;
+    limit?: unknown;
+  }) {
+    return this.run(() =>
+      tableRows(
+        (query, ...bindings) => {
+          const cursor = this.sql.exec(query, ...bindings);
+          const rows = [...cursor.raw()];
+          this.rowsRead += cursor.rowsRead;
+          return rows;
+        },
+        this.siteObjects(),
+        input ?? {},
+      ),
+    );
   }
 
   /**

@@ -1,6 +1,7 @@
 /** The /database tabs, by the `?tab=` value that links to each. */
 export const TABS = [
   "collections",
+  "tables",
   "access",
   "members",
   "restore",

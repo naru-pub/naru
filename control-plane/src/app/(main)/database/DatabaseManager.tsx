@@ -13,6 +13,7 @@ import CollectionName from "@/components/CollectionName";
 import WebsiteAccess from "./WebsiteAccess";
 import MembershipManager from "./MembershipManager";
 import RestorePoints from "./RestorePoints";
+import SiteTables from "./SiteTables";
 import StoppedQueries from "./StoppedQueries";
 import DeclaredCollections from "./DeclaredCollections";
 import { MAX_DOCUMENTS, MAX_SITE_BYTES } from "@/lib/site-data/validation";
@@ -220,6 +221,7 @@ export default function DatabaseManager({
       <Tabs value={view} onValueChange={openTab} className="space-y-6">
         <TabsList aria-label="데이터베이스 메뉴">
           <TabsTrigger value="collections">컬렉션과 문서</TabsTrigger>
+          <TabsTrigger value="tables">테이블</TabsTrigger>
           <TabsTrigger value="access">웹사이트 관리자 로그인</TabsTrigger>
           <TabsTrigger value="members">사이트 회원</TabsTrigger>
           <TabsTrigger value="restore">복원 지점</TabsTrigger>
@@ -612,6 +614,10 @@ export default function DatabaseManager({
               )}
             </div>
           </fieldset>
+        </TabsContent>
+        {/* Loaded when opened, as restore points. */}
+        <TabsContent value="tables">
+          {view === "tables" && <SiteTables />}
         </TabsContent>
         <TabsContent
           value="access"

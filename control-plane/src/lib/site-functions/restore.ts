@@ -24,7 +24,7 @@ const RESTORE_TIMEOUT_MS = 120_000;
 /** How long keeping a restore point may take: a whole site is written. */
 const SAVE_TIMEOUT_MS = 120_000;
 
-async function siteOf(ownerId: string) {
+export async function siteOf(ownerId: string) {
   if (!(await userHasFeature(ownerId, "database")))
     throw new DataError(403, "Database access is not enabled for this site.");
   const user = await db
