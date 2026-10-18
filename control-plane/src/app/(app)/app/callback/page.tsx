@@ -1,7 +1,8 @@
 import { APP_PANEL } from "../panel";
 
-// Where the Apple app's sign-in returns (lib/app-api/tokens.ts). The app's
-// ASWebAuthenticationSession takes this address before it loads, so a page
+// Where the app's sign-in returns (lib/app-api/tokens.ts). The Apple app's
+// ASWebAuthenticationSession and the Android app's Auth Tab take this address
+// before it loads, so a page
 // only shows when it is opened some other way, such as a browser that was
 // not the app's.
 export default function AppCallbackPage() {

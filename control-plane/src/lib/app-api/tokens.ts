@@ -11,10 +11,12 @@ import { DataError } from "@/lib/site-data/validation";
 //
 // - https://naru.pub/app/callback (APP_HTTPS_CALLBACK): the iOS and macOS app,
 //   whose ASWebAuthenticationSession takes it because naru.pub's
-//   apple-app-site-association names the app (RFC 8252 §7.2: no other app
-//   can claim it);
+//   apple-app-site-association names the app, and the Android app, whose
+//   Auth Tab takes it because assetlinks.json does (RFC 8252 §7.2: no other
+//   app can claim it);
 // - pub.naru:/auth (APP_REDIRECT_URI, RFC 8252 §7.1's private-use scheme, the
-//   reversed domain): Android, and the Apple app against a development server.
+//   reversed domain): Android without an Auth Tab, and either app against a
+//   development server.
 //   Another app may register the scheme and see the redirect; PKCE makes a
 //   seen code useless without the verifier, which never leaves the app that
 //   started the sign-in.
