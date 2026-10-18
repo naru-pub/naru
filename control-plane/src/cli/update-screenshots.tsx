@@ -16,9 +16,9 @@ import { Browser, chromium } from "playwright";
 
 // Usage:
 //   pnpm exec tsx src/cli/update-screenshots.tsx
-//     → render all discoverable users, and anyone with a live 사이트 자랑
-//       board post, whose site was updated after the last render (the cron
-//       path)
+//     → render all discoverable users, anyone with a live 사이트 자랑 board
+//       post, and any site an account starred, whose site was updated after
+//       the last render (the cron path)
 //   pnpm exec tsx src/cli/update-screenshots.tsx --user <login_name>
 //     → render a single user, still gated by the same predicate
 //   pnpm exec tsx src/cli/update-screenshots.tsx --force
@@ -78,8 +78,8 @@ async function selectTargets(
   let query = db
     .selectFrom("users")
     .select(["id", "login_name"])
-    // A 사이트 자랑 post shows the site's screenshot, so its author gets one
-    // even when their site isn't listed.
+    // A 사이트 자랑 post and the apps' 별표 show the site's screenshot, so its
+    // author gets one even when their site isn't listed.
     .where((eb) =>
       eb.or([
         eb("discoverable", "=", true),
@@ -90,6 +90,12 @@ async function selectTargets(
             .whereRef("p.user_id", "=", "users.id")
             .where("p.kind", "=", "site")
             .where("p.deleted_at", "is", null),
+        ),
+        eb.exists(
+          eb
+            .selectFrom("site_stars as st")
+            .select(sql.lit(1).as("one"))
+            .whereRef("st.site_user_id", "=", "users.id"),
         ),
       ]),
     )

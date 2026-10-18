@@ -235,6 +235,13 @@ integration("the Naru app's API", () => {
       "app-reader",
       "app-site",
     ]);
+    // With its screenshot once rendered, listed or not.
+    await db.updateTable("users").set({ site_rendered_at: new Date() }).where("id", "=", reader).execute();
+    expect((await stars.listStarredSites(user)).sites[0]).toMatchObject({
+      name: "app-reader",
+      screenshotUrl: expect.not.stringMatching(/\/app\/no-preview\.png$/),
+    });
+    await db.updateTable("users").set({ site_rendered_at: null }).where("id", "=", reader).execute();
     await siteStars.unstarSite(user.id, "app-reader");
     await expect(siteStars.starSite(user.id, "no-such-site")).rejects.toMatchObject({
       status: 404,
