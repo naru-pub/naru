@@ -101,7 +101,7 @@ makes it useless without the verifier, which never leaves the app that
 started the sign-in. A claimed HTTPS redirect (Universal Links / App Links on
 naru.pub) would close that too. naru.pub already serves
 `/.well-known/apple-app-site-association` for team `K4CQ85R27U`, bundle
-`pub.naru.app` (`webcredentials`, which ASWebAuthenticationSession's HTTPS
+`pub.naru` (`webcredentials`, which ASWebAuthenticationSession's HTTPS
 callback needs, and `applinks` for `/app/callback` only), and the Apple app
 declares `webcredentials:naru.pub` and `applinks:naru.pub`; switching its
 callback to `https://naru.pub/app/callback` is what remains, and on Android
@@ -195,9 +195,11 @@ Tapping opens `url` and marks the notification read.
   key, FCM v1 with a service-account JWT. `410`, `BadDeviceToken`,
   `DeviceTokenNotForTopic` and FCM `UNREGISTERED` forget the device. A failed
   push is not retried; the notification stays in the inbox.
-- Environment: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` (PEM, `\n`
-  allowed) and `FCM_SERVICE_ACCOUNT` (JSON). Without them a platform's pushes
-  are skipped.
+- Environment: `APNS_KEY_ID`, `APNS_TEAM_ID` and the key, as a file
+  (`APNS_PRIVATE_KEY_FILE`; production mounts infra's encrypted
+  `AuthKey_<id>.p8` into the worker at `/run/secrets/apns.p8`) or inline
+  (`APNS_PRIVATE_KEY`, PEM with `\n`); `FCM_SERVICE_ACCOUNT` (JSON). Without
+  them a platform's pushes are skipped.
 - naru-dev runs `ctx.notify` like production; nothing delivers there, so the
   rows stay in the site's outbox.
 

@@ -1,13 +1,13 @@
 // The Naru app's association with naru.pub (Apple fetches it through its CDN
 // when the app is installed; served as JSON, without a redirect). Team
-// K4CQ85R27U, bundle pub.naru.app: one target for iOS and macOS.
+// K4CQ85R27U, bundle pub.naru: one target for iOS and macOS.
 //
 // - webcredentials: lets ASWebAuthenticationSession return to the app through
 //   an HTTPS callback on naru.pub, which only this app can receive, and offers
 //   naru.pub's saved passwords in the app.
 // - applinks: only /app/callback opens the app, so no other naru.pub page,
 //   the sign-in pages included, is ever taken over by it.
-const APP_ID = "K4CQ85R27U.pub.naru.app";
+const APP_ID = "K4CQ85R27U.pub.naru";
 
 export const dynamic = "force-static";
 

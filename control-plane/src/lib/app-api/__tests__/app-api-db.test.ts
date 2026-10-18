@@ -163,7 +163,7 @@ integration("the Naru app's API", () => {
       platform: "apns",
       token: "ab".repeat(32),
       environment: "sandbox",
-      bundleId: "pub.naru.app",
+      bundleId: "pub.naru",
     });
     const sent: { token: string; title: string; badge: number }[] = [];
     const sender = {

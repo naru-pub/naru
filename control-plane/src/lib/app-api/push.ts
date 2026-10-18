@@ -1,12 +1,14 @@
 import { createPrivateKey, sign, type KeyObject } from "node:crypto";
+import { readFileSync } from "node:fs";
 import http2 from "node:http2";
 
 // Pushes to the Naru app's devices: APNs for iOS and macOS, FCM for Android.
 // Naru's own credentials, from the environment; without them that platform's
 // pushes are skipped and notifications wait in the app's inbox.
 //
-// - APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY: a token-based (.p8) key; the
-//   PEM may have its newlines as \n.
+// - APNS_KEY_ID, APNS_TEAM_ID, and the token-based key: APNS_PRIVATE_KEY_FILE,
+//   the path of the .p8 as Apple issued it, or APNS_PRIVATE_KEY, its PEM
+//   with newlines as \n.
 // - FCM_SERVICE_ACCOUNT: the Firebase project's service-account JSON.
 
 export interface PushMessage {
@@ -256,10 +258,15 @@ class Fcm {
 }
 
 /** The senders the environment configures. */
-export function pushSender(env = process.env): PushSender {
+export function pushSender(
+  env: Record<string, string | undefined> = process.env,
+): PushSender {
+  const apnsKey = env.APNS_PRIVATE_KEY_FILE
+    ? readFileSync(env.APNS_PRIVATE_KEY_FILE, "utf8")
+    : env.APNS_PRIVATE_KEY;
   const apns =
-    env.APNS_KEY_ID && env.APNS_TEAM_ID && env.APNS_PRIVATE_KEY
-      ? new Apns(env.APNS_KEY_ID, env.APNS_TEAM_ID, env.APNS_PRIVATE_KEY)
+    env.APNS_KEY_ID && env.APNS_TEAM_ID && apnsKey
+      ? new Apns(env.APNS_KEY_ID, env.APNS_TEAM_ID, apnsKey)
       : null;
   const fcm = env.FCM_SERVICE_ACCOUNT ? new Fcm(env.FCM_SERVICE_ACCOUNT) : null;
   return {
