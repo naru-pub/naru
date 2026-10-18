@@ -81,6 +81,21 @@ export async function markRead(user: AppUser, body: Record<string, unknown>) {
   return { unread: await unreadCount(user.id) };
 }
 
+/**
+ * Deletes one of the account's notifications. Gone already, or never the
+ * account's, is the same answer: the app may retry, and learns nothing of
+ * other accounts' ids.
+ */
+export async function deleteNotification(user: AppUser, id: string) {
+  if (!UUID.test(id)) throw new DataError(400, "지울 알림을 고르지 못했습니다.");
+  await db
+    .deleteFrom("app_notifications")
+    .where("id", "=", id)
+    .where("user_id", "=", user.id)
+    .execute();
+  return { unread: await unreadCount(user.id) };
+}
+
 /** Unread notifications from allowed sites: the badge. */
 export async function unreadCount(userId: string) {
   const row = await db

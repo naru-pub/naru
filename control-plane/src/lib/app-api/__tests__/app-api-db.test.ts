@@ -317,6 +317,14 @@ integration("the Naru app's API", () => {
     ]);
     expect(listed.notifications[0].site.url).toBe("https://board.example");
 
+    // One notification deleted: gone from the inbox and the badge; deleting it
+    // again, or an id that is not the account's, answers the same.
+    const [newest, older] = listed.notifications;
+    expect(await inbox.deleteNotification(user, newest.id)).toEqual({ unread: 1 });
+    expect((await inbox.listNotifications(user, null)).notifications.map((n) => n.id)).toEqual([older.id]);
+    expect(await inbox.deleteNotification(user, newest.id)).toEqual({ unread: 1 });
+    await expect(inbox.deleteNotification(user, "not-an-id")).rejects.toMatchObject({ status: 400 });
+
     expect(await inbox.markRead(user, { all: true })).toEqual({ unread: 0 });
 
     // Muted: forgotten, and nothing more arrives.
