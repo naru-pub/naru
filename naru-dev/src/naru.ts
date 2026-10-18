@@ -402,25 +402,41 @@ export async function start(
     }
   }
 
-  // A file saved twice in quick succession (an editor, a rebuild) is
-  // published once at a time: a change while one is under way publishes
-  // again once it's done, with whatever the file holds then.
-  const publishing = new Map<string, { again: boolean }>();
+  // Files changed under _naru/ (an editor's save, a rebuild) are published
+  // once they've been left alone a moment, and one at a time. A save that
+  // truncates the file before writing it fires the watcher in between, and a
+  // migration read then is empty, which the edge refuses as an applied
+  // migration changed; and two publishes at once each find the files changed
+  // under them. A change while one is under way publishes again once it's
+  // done, with whatever the file holds then. "A moment" is well past the
+  // 50 ms in which macOS hands the watcher its changes in batches, so a lull
+  // between batches isn't taken for the writes being over.
+  const SETTLE_MS = 200;
+  const changed = new Set<string>();
+  const settled = new Set<string>();
+  let settling: NodeJS.Timeout | undefined;
+  let draining = false;
   function republish(path: string) {
-    const running = publishing.get(path);
-    if (running) {
-      running.again = true;
-      return;
-    }
-    const pending = { again: false };
-    publishing.set(path, pending);
-    void (async () => {
-      do {
-        pending.again = false;
+    changed.add(path);
+    clearTimeout(settling);
+    settling = setTimeout(() => {
+      for (const path of changed) settled.add(path);
+      changed.clear();
+      void drain();
+    }, SETTLE_MS);
+  }
+  async function drain() {
+    if (draining) return;
+    draining = true;
+    try {
+      while (settled.size && !stopping) {
+        const [path] = settled;
+        settled.delete(path);
         await publish(path);
-      } while (pending.again && !stopping);
-      publishing.delete(path);
-    })();
+      }
+    } finally {
+      draining = false;
+    }
   }
 
   /**
@@ -1200,6 +1216,7 @@ self.addEventListener("fetch", (event) => {
     if (stopping) return;
     stopping = true;
     watcher?.close();
+    clearTimeout(settling);
     const closed = new Promise((done) => server.close(done));
     server.closeAllConnections();
     for (const socket of live) socket.destroy();

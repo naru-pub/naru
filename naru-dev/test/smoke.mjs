@@ -7,7 +7,7 @@
 //                           (CI copies test/ beside an installed tarball)
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -127,14 +127,25 @@ try {
   await timed("_naru/ rewritten many times at once", async () => {
     // As a rebuild of the site does while it runs: the same files written
     // over and over, so the watcher publishes them, and writes the same
-    // bucket keys, again and again.
+    // bucket keys, again and again. Each save empties the file a moment
+    // before writing it, as a slow writer does, which naru-dev mustn't
+    // publish (an applied migration, emptied, is one changed).
     const migration = join(site, "_naru/migrations/0002_tags.sql");
     const tags = await readFile(migration, "utf8");
     const query = join(site, "_naru/queries/count.js");
+    const save = async (path, text) => {
+      const file = await open(path, "w");
+      try {
+        await new Promise((done) => setTimeout(done, 3));
+        await file.writeFile(text);
+      } finally {
+        await file.close();
+      }
+    };
     for (let i = 0; i <= 40; i++) {
       await Promise.all([
-        writeFile(migration, tags),
-        writeFile(query, `export async function n(ctx) { return ${i}; }\n`),
+        save(migration, tags),
+        save(query, `export async function n(ctx) { return ${i}; }\n`),
       ]);
       await new Promise((done) => setTimeout(done, 5));
     }
@@ -149,7 +160,10 @@ try {
       );
       return response.ok && (await response.json()).result === 40;
     });
-    assert.doesNotMatch(naru.log(), /local bucket answered|cannot be changed/);
+    assert.doesNotMatch(
+      naru.log(),
+      /local bucket answered|cannot be changed|changed while publishing/,
+    );
   });
 
   await timed("data kept across a restart", async () => {
