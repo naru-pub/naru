@@ -236,7 +236,6 @@ export default function DatabaseManager({
         <TabsContent
           value="collections"
           forceMount
-          className="data-[state=inactive]:hidden"
         >
           <fieldset
             disabled={busy}
@@ -622,14 +621,12 @@ export default function DatabaseManager({
         <TabsContent
           value="access"
           forceMount
-          className="data-[state=inactive]:hidden"
         >
           <WebsiteAccess collections={collections} websiteUrl={websiteUrl} />
         </TabsContent>
         <TabsContent
           value="members"
           forceMount
-          className="data-[state=inactive]:hidden"
         >
           <MembershipManager />
         </TabsContent>
@@ -643,7 +640,6 @@ export default function DatabaseManager({
           value="sdk"
           forceMount
           asChild
-          className="data-[state=inactive]:hidden"
         >
           <section className="min-w-0 border p-5 space-y-4">
             <h2 className="font-bold">웹 SDK</h2>
