@@ -277,8 +277,9 @@ export default function RestorePoints({
           마이그레이션을 하나로 합치는 것처럼, 적용된 마이그레이션을 바꿔야 할
           때 씁니다. 지우기 전에 지금 상태를 복원 지점으로 남기고, 지운 뒤에는
           사이트 코드를 다시 릴리스해 <code>_naru/migrations/</code>를 빈
-          데이터베이스에 적용합니다. 사이트 파일과 미디어, 사이트 회원 목록은
-          그대로입니다.
+          데이터베이스에 적용합니다. 바꾼 마이그레이션을 먼저 올리세요(릴리스는
+          거절되지만 파일은 남고, 초기화가 그 파일을 릴리스합니다). 사이트
+          파일과 미디어, 사이트 회원 목록은 그대로입니다.
         </p>
         <label className="block space-y-1 text-sm" htmlFor="reset-site-name">
           <span>

@@ -552,7 +552,9 @@ document, table, applied migration, member role and record of uploads,
 confirms the site's plan to it again, and releases its `_naru` code anew, so
 its migrations apply to the empty database. The site's files, its uploads and
 its members on Naru stay. A release the code fails leaves the database empty
-and routes nothing until `_naru` is fixed.
+and routes nothing until `_naru` is fixed. Upload the changed migrations
+first: their release is refused, but the files stay, and the reset releases
+them.
 
 **A restore point's file.** A download, `<site>-<name>.ndjson.gz`, is the
 whole site database as gzip-compressed NDJSON: one JSON value per line, read
