@@ -35,7 +35,9 @@ const { appResponse, appUser } = require("../http") as typeof import("../http");
 const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/site-urls");
 const moderation = require("../moderation") as typeof import("../moderation");
 const stars = require("../stars") as typeof import("../stars");
-const { siteLine } = require("../sites") as typeof import("../sites");
+const { pushStarredUpdates } =
+  require("../starred-updates") as typeof import("../starred-updates");
+const { siteLine, siteOrigins } = require("../sites") as typeof import("../sites");
 const siteStars = require("@/lib/site-stars") as typeof import("@/lib/site-stars");
 const siteModeration =
   require("@/lib/site-moderation") as typeof import("@/lib/site-moderation");
@@ -470,5 +472,89 @@ integration("the Naru app's API", () => {
     await siteModeration.setSiteModeration(site, null, "확인 결과 문제 없음", operator);
     expect(await quarantines()).toHaveLength(2);
     expect((await showcasePage(1)).sites.map((s) => s.name)).toContain("app-site");
+  });
+
+  test("pushes starred sites' updates, at most once a day", async () => {
+    const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
+    const user = (await tokens.appTokenUser(token))!;
+    await inbox.registerDevice(user, {
+      platform: "fcm",
+      token: "starred-device-token",
+      environment: "production",
+      bundleId: "pub.naru",
+    });
+    const other = (
+      await sql<{ id: string }>`insert into users (login_name, password_hash)
+        values ('app-starred', 'x') returning id`.execute(db)
+    ).rows[0].id;
+    ids.push(other);
+    // Messages by id: the reader may have devices from earlier tests.
+    const messages = new Map<string, { siteTitle: string; body: string; url: string }>();
+    const sender = {
+      send: async (_: unknown, message: { id: string; siteTitle: string; body: string; url: string }) => {
+        messages.set(message.id, message);
+        return "delivered" as const;
+      },
+      close() {},
+    };
+    const run = async () => {
+      messages.clear();
+      const totals = await pushStarredUpdates(sender);
+      return { totals, messages: [...messages.values()] };
+    };
+    const update = (id: string, minutesAgo = 0) =>
+      db
+        .updateTable("users")
+        .set({ site_updated_at: new Date(Date.now() - minutesAgo * 60_000) })
+        .where("id", "=", id)
+        .execute();
+    // An earlier test gave app-site a custom domain, which the push opens.
+    const origins = await siteOrigins(["app-site", "app-starred"]);
+    const origin = (name: string) => origins.get(name)!;
+    const host = (name: string) => new URL(origin(name)).host;
+
+    for (const name of ["app-site", "app-starred", "app-reader"])
+      await siteStars.starSite(user.id, name);
+    // Updated before the star: not news.
+    expect((await run()).totals.accounts).toBe(0);
+
+    // The reader's own site is left out.
+    await update(siteId);
+    await update(reader);
+    const first = await run();
+    expect(first.totals.accounts).toBe(1);
+    expect(first.totals.pushed).toBeGreaterThan(0);
+    expect(first.messages).toEqual([
+      expect.objectContaining({
+        siteTitle: siteLine("앱 게시판", origin("app-site")),
+        body: `${host("app-site")}에 새 소식이 있습니다.`,
+        url: origin("app-site"),
+      }),
+    ]);
+
+    // Once a day: a later update waits for tomorrow.
+    await update(other);
+    expect((await run()).totals.accounts).toBe(0);
+    // A day passes: everything so far moves 21 hours back.
+    const tomorrow = async () => {
+      await sql`update site_stars set notified_at = notified_at - interval '21 hours',
+        created_at = created_at - interval '21 hours' where user_id = ${user.id}`.execute(db);
+      await sql`update users set site_updated_at = site_updated_at - interval '21 hours'
+        where id in (${siteId}, ${other}, ${reader})`.execute(db);
+    };
+    await tomorrow();
+    expect((await run()).messages).toMatchObject([
+      { body: `${host("app-starred")}에 새 소식이 있습니다.` },
+    ]);
+
+    await tomorrow();
+    await update(siteId, 1);
+    await update(other);
+    expect((await run()).messages).toMatchObject([
+      {
+        siteTitle: "별표한 사이트 2곳",
+        body: `${host("app-starred")}, ${host("app-site")}에 새 소식이 있습니다.`,
+      },
+    ]);
   });
 });

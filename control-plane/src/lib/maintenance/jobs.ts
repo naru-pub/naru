@@ -139,6 +139,16 @@ export const MAINTENANCE_JOBS = [
     alertAfterMinutes: 30,
   },
   {
+    // Pushes starred sites' updates to the Naru app, at most once a day an
+    // account (lib/app-api/starred-updates.ts): 10:00 UTC, 19:00 in Korea.
+    name: "starred-site-updates",
+    script: "push-starred-updates.ts",
+    minutes: 1440,
+    hour: 10,
+    minute: 0,
+    timeout: 600,
+  },
+  {
     // Counts hosted sites' requests and blocks those past their monthly
     // allowance (lib/edge/site-requests.ts).
     name: "site-request-limits",

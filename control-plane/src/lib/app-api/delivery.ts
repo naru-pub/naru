@@ -275,7 +275,7 @@ async function storeNotification(siteUserId: string, row: OutboxRow) {
 }
 
 /** To each of the account's devices; dead tokens are forgotten. Answers how many took it. */
-async function push(
+export async function push(
   sender: PushSender,
   userId: string,
   message: Omit<Parameters<PushSender["send"]>[1], "badge">,
