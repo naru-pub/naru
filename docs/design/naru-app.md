@@ -11,8 +11,9 @@ macOS) and [naru-pub/android](https://github.com/naru-pub/android)
 (Compose). Both are thin native apps with four tabs:
 
 - **둘러보기** — the showcase of naru.pub's front page and `/sites`: screenshots
-  of discoverable sites, newest update first. It needs no account, so the app
-  is useful (and reviewable) before anyone signs in.
+  of discoverable sites, newest update first, with a search field and a
+  최근 / 별표 switch for the sites the person starred. It needs no account, so
+  the app is useful (and reviewable) before anyone signs in.
 - **알림** — the inbox, or the sign-in prompt when signed out.
 - **사이트** — the per-site allow/mute list and the sites the account hid
   (signed in).
@@ -84,6 +85,23 @@ The same rows as `/sites`: discoverable users with a rendered screenshot,
 `site_updated_at` descending, 48 a page; `screenshotUrl` is
 `getRenderedSiteUrl`. `next` is null on the last page. Cacheable for a minute.
 With an app token it leaves out the sites the account hid, and is not cached.
+
+`GET /showcase?q=<search>&page=<n>` searches the same rows: sites whose name
+or title contains `q` (case-insensitive, at most 50 characters, else 400), a
+site named exactly `q` first.
+
+### Stars
+
+Sites a person keeps at hand, under 별표 in 둘러보기, starred from the ☆ on a
+card. They are the account's, in `site_stars` (`control-plane/src/lib/site-stars.ts`);
+the app's list is `control-plane/src/lib/app-api/stars.ts`.
+
+`PUT /starred-sites/<name>` → 204; `DELETE /starred-sites/<name>` → 204.
+`GET /starred-sites` → `{ sites: [{ name, url, screenshotUrl, updatedAt, starredAt }] }`,
+showcase cards, newest star first. A starred site is listed whether or not it
+is discoverable. Hiding a site unstars it. Signed out, the apps keep stars on
+the device (the cards themselves) and star them on the account (`PUT` each)
+once it signs in.
 
 ### Sign-in (authorization code + PKCE)
 

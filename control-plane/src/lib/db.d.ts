@@ -737,6 +737,13 @@ export interface SiteRequestOverrides {
   user_id: string;
 }
 
+export interface SiteStars {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  site_user_id: string;
+  user_id: string;
+}
+
 export interface Subscriptions {
   amount: number;
   billing_anchor_day: number | null;
@@ -900,6 +907,7 @@ export interface DB {
   site_request_days: SiteRequestDays;
   site_request_months: SiteRequestMonths;
   site_request_overrides: SiteRequestOverrides;
+  site_stars: SiteStars;
   subscriptions: Subscriptions;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;

@@ -34,6 +34,8 @@ const { showcasePage } = require("../showcase") as typeof import("../showcase");
 const { appResponse, appUser } = require("../http") as typeof import("../http");
 const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/site-urls");
 const moderation = require("../moderation") as typeof import("../moderation");
+const stars = require("../stars") as typeof import("../stars");
+const siteStars = require("@/lib/site-stars") as typeof import("@/lib/site-stars");
 
 // Runs against the disposable database of scripts/test-payments-db.sh.
 const integration =
@@ -170,6 +172,36 @@ integration("the Naru app's API", () => {
     const { sites } = await showcasePage(1);
     const site = sites.find((entry) => entry.name === "app-site");
     expect(site?.screenshotUrl).toContain("_screenshots/app-site.png");
+  });
+
+  test("searches the showcase by name and title", async () => {
+    const names = async (search: string) =>
+      (await showcasePage(1, undefined, search)).sites.map((site) => site.name);
+    expect(await names("APP-SITE")).toEqual(["app-site"]);
+    expect(await names("앱 게시")).toEqual(["app-site"]);
+    expect(await names("app_site")).toEqual([]);
+    expect(await names("%")).toEqual([]);
+  });
+
+  test("stars sites for an account, discoverable or not", async () => {
+    const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
+    const user = (await tokens.appTokenUser(token))!;
+    await siteStars.starSite(user.id, "app-site");
+    await siteStars.starSite(user.id, "app-site");
+    // The reader's own site is not discoverable, and can be starred all the same.
+    await siteStars.starSite(user.id, "app-reader");
+    expect((await stars.listStarredSites(user)).sites.map((site) => site.name)).toEqual([
+      "app-reader",
+      "app-site",
+    ]);
+    await siteStars.unstarSite(user.id, "app-reader");
+    await expect(siteStars.starSite(user.id, "no-such-site")).rejects.toMatchObject({
+      status: 404,
+    });
+    // Hiding a starred site unstars it.
+    await moderation.hideSite(user, "app-site");
+    expect((await stars.listStarredSites(user)).sites).toEqual([]);
+    await moderation.showSite(user, "app-site");
   });
 
   test("delivers ctx.notify to the member's account, after it allows the site", async () => {

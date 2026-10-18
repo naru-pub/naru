@@ -11,7 +11,7 @@ import type { AppUser } from "./tokens";
 //
 // A hidden site is left out of the account's showcase and inbox, and what it
 // sends the account is dropped (delivery.ts), until the account shows it
-// again. Signed out, the apps hide sites on the device alone.
+// again. Hiding a starred site unstars it. Signed out, the apps hide sites on the device alone.
 //
 // A report goes to the operators' Discord and is kept in app_reports. A
 // signed-in report hides the site for the reporter too; a signed-out one is
@@ -46,6 +46,11 @@ export async function hideSite(user: AppUser, name: string) {
     .insertInto("app_hidden_sites")
     .values({ user_id: user.id, site_user_id: site.id })
     .onConflict((conflict) => conflict.columns(["user_id", "site_user_id"]).doNothing())
+    .execute();
+  await db
+    .deleteFrom("site_stars")
+    .where("user_id", "=", user.id)
+    .where("site_user_id", "=", site.id)
     .execute();
 }
 

@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { getRenderedSiteUrl } from "@/lib/site-urls";
 import { hiddenSiteIds } from "./moderation";
@@ -5,17 +6,33 @@ import { siteOrigins } from "./sites";
 
 export const SHOWCASE_PAGE_SIZE = 48;
 
+/** Longest search the apps may send. */
+export const SEARCH_MAX_LENGTH = 50;
+
 /**
  * The apps' 둘러보기: the rows of /sites, discoverable sites with a screenshot,
  * newest update first; for a signed-in account, without the sites it hid.
+ * With a search, only the sites whose name or title contains it, a site named
+ * exactly that first.
  */
-export async function showcasePage(page: number, userId?: string) {
+export async function showcasePage(page: number, userId?: string, search?: string) {
   let query = db
     .selectFrom("users")
     .select(["login_name", "site_rendered_at", "site_updated_at"])
     .where("discoverable", "=", true)
     .where("deleted_at", "is", null)
     .where("site_rendered_at", "is not", null)
+    .$if(Boolean(search), (q) => {
+      const pattern = `%${search!.replace(/[\\%_]/g, "\\$&")}%`;
+      return q
+        .where((eb) =>
+          eb.or([
+            eb("login_name", "ilike", pattern),
+            eb("site_title", "ilike", pattern),
+          ]),
+        )
+        .orderBy(sql`lower(login_name) = lower(${search})`, "desc");
+    })
     .orderBy("site_updated_at", "desc")
     .orderBy("id", "desc")
     .limit(SHOWCASE_PAGE_SIZE + 1)
