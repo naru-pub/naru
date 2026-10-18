@@ -71,7 +71,8 @@ export function parseShards(
 }
 
 /** What the mini answers at all (seoul.ts); anything else is not found. */
-export const SERVED = /^\/(?:sdk\/|api\/data\/v1\/|v1\/sites\/|v1\/breakers\/)/;
+export const SERVED =
+  /^\/(?:sdk\/|api\/data\/v1\/|v1\/sites\/|v1\/breakers\/|v1\/notifications\/)/;
 
 const DATA = /^\/api\/data\/v1\/([^/]+)(?:\/|$)/;
 const SITES = /^\/v1\/sites\/([^/]+)(?:\/|$)/;

@@ -22,6 +22,8 @@ export const posts: Query<{ board: string }, { id: number }[]> = async (
   await ctx.get("posts", "1");
   // @ts-expect-error Only a mutation grants roles.
   await ctx.setRoles("m-1", []);
+  // @ts-expect-error Only a mutation notifies.
+  await ctx.notify(["m-1"], { title: "t" });
   // @ts-expect-error Only a mutation hashes passwords.
   await ctx.passwords.hash("pw");
   const { rows } = await ctx.sql<{
@@ -37,8 +39,9 @@ export const write: Mutation<{ title: string }, number> = async (
   if (!ctx.member.roles.includes("writer"))
     await ctx.setRoles(ctx.member.id, [...ctx.member.roles, "writer"]);
   const hash: string = await ctx.passwords.hash(title);
-  // @ts-expect-error Collections and live messages belong to no ctx.
-  ctx.notify(ctx.member.id, null);
+  await ctx.notify([ctx.member.id], { title: "새 글", path: "/posts/1" });
+  // @ts-expect-error A notification has a title, and members come as a list.
+  await ctx.notify(ctx.member.id, { body: "x" });
   return (
     await ctx.sql("INSERT INTO posts (title, hash) VALUES (?, ?)", [
       title,

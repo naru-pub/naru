@@ -16,7 +16,8 @@ import {
 // "Shards"). It answers /healthz and the SDK's files itself, sends each
 // site's requests to the shard that holds it (shards.ts), as they are,
 // headers, bodies and WebSockets alike, and asks every shard what only all
-// of them know: /healthz/deep and the breakers' unnotified sites.
+// of them know: /healthz/deep, the breakers' unnotified sites and the sites
+// with queued notifications.
 // Nothing but the default is exported: workerd takes every named export of a
 // Worker's main module as an entrypoint.
 
@@ -172,7 +173,11 @@ export default {
     if (!SERVED.test(url.pathname))
       return new Response("Not found.", { status: 404 });
     if (url.pathname.startsWith("/sdk/")) return serveSdk(request, env);
-    if (url.pathname === "/v1/breakers/unnotified")
+    // Both are each shard's memory, merged the same way.
+    if (
+      url.pathname === "/v1/breakers/unnotified" ||
+      url.pathname === "/v1/notifications/pending"
+    )
       return unnotified(request, shards, url.pathname + url.search);
     const site = siteOfPath(url.pathname);
     const shard =

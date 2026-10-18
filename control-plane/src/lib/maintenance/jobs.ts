@@ -117,6 +117,16 @@ export const MAINTENANCE_JOBS = [
     alertAfterMinutes: 30,
   },
   {
+    // Delivers what sites queued with ctx.notify to the Naru app
+    // (lib/app-api/delivery.ts). Site outboxes keep it until delivered:
+    // report only failures that last half an hour.
+    name: "app-notifications",
+    script: "deliver-app-notifications.ts",
+    minutes: 1,
+    timeout: 120,
+    alertAfterMinutes: 30,
+  },
+  {
     // Counts hosted sites' requests and blocks those past their monthly
     // allowance (lib/edge/site-requests.ts).
     name: "site-request-limits",

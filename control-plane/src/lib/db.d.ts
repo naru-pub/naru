@@ -171,6 +171,55 @@ export interface Activities {
   user_id: string;
 }
 
+export interface AppAuthCodes {
+  challenge: string;
+  client: "ios" | "macos" | "android";
+  expires_at: Timestamp;
+  hash: string;
+  redirect_uri: string;
+  user_id: string;
+}
+
+export interface AppDevices {
+  app_token_id: string;
+  bundle_id: string;
+  created_at: Generated<Timestamp>;
+  environment: "sandbox" | "production";
+  id: Generated<string>;
+  platform: "apns" | "fcm";
+  token: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface AppNotifications {
+  body: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  outbox_id: string;
+  path: string;
+  read_at: Timestamp | null;
+  site_user_id: string;
+  title: string;
+  user_id: string;
+}
+
+export interface AppSiteConsents {
+  created_at: Generated<Timestamp>;
+  site_user_id: string;
+  state: "pending" | "allowed" | "muted";
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface AppTokens {
+  client: "ios" | "macos" | "android";
+  created_at: Generated<Timestamp>;
+  hash: string;
+  id: Generated<string>;
+  last_used_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface BillingKeys {
   billing_key: string | null;
   card_company: string | null;
@@ -743,6 +792,7 @@ export interface UserKeys {
 }
 
 export interface Users {
+  app_notifications_disabled: Generated<boolean>;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
   discoverable: Generated<boolean>;
@@ -781,6 +831,11 @@ export interface DB {
   "absurd.w_payments": AbsurdWPayments;
   account_deletion_tokens: AccountDeletionTokens;
   activities: Activities;
+  app_auth_codes: AppAuthCodes;
+  app_devices: AppDevices;
+  app_notifications: AppNotifications;
+  app_site_consents: AppSiteConsents;
+  app_tokens: AppTokens;
   billing_keys: BillingKeys;
   board_notifications: BoardNotifications;
   board_post_likes: BoardPostLikes;

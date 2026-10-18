@@ -228,3 +228,20 @@ describe("the breakers' unnotified sites", () => {
     expect(await (await ask()).json()).toEqual({ value: { sites: ["beta"] } });
   });
 });
+
+describe("the sites with queued notifications", () => {
+  test("are every shard's, like the breakers'", async () => {
+    answer = (request) =>
+      Response.json({
+        value: { sites: request.url.startsWith(origins[2]) ? ["alpha"] : [] },
+      });
+    const response = await call("/v1/notifications/pending", {
+      method: "POST",
+      headers: { Authorization: "Bearer secret" },
+      body: "{}",
+    });
+    expect(await response.json()).toEqual({ value: { sites: ["alpha"] } });
+    expect(sent).toHaveLength(4);
+    expect(new URL(sent[0].url).pathname).toBe("/v1/notifications/pending");
+  });
+});

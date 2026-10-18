@@ -1033,6 +1033,12 @@ try {
                     <code key="c">setRoles(회원ID, 역할)</code>,
                     "회원의 역할을 바꿉니다 (뮤테이션만)",
                   ],
+                  [
+                    <code key="c">
+                      {"notify(회원ID 목록, { title, body, path })"}
+                    </code>,
+                    "회원에게 나루 앱 알림을 보냅니다 (뮤테이션만)",
+                  ],
                 ]}
               />
               <p>

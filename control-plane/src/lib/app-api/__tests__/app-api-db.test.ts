@@ -1,0 +1,247 @@
+import { afterAll, beforeAll, describe, expect, jest, test } from "@jest/globals";
+import { createHash } from "node:crypto";
+
+// The site's outbox, as the Worker would hold it (edge/src/notify.ts).
+const outboxes = new Map<string, { id: string; members: string[]; title: string; body: string; path: string; at: number }[]>();
+jest.mock("@/lib/edge/client", () => ({
+  siteDataWorker: () => ({ base: "http://worker", secret: "s" }),
+  requestWorker: async () =>
+    Response.json({
+      value: {
+        sites: [...outboxes].filter(([, rows]) => rows.length).map(([s]) => s),
+      },
+    }),
+  answerOf: async (response: Response) => (await response.json()).value,
+  callSiteObject: async (site: string, operation: string, input: any) => {
+    const rows = outboxes.get(site) ?? [];
+    if (operation === "notifyOutbox") return rows.slice(0, input.limit);
+    if (operation === "ackNotifyOutbox") {
+      outboxes.set(site, rows.filter((row) => !input.ids.includes(row.id)));
+      return { pending: outboxes.get(site)!.length };
+    }
+    throw new Error(`unexpected ${operation}`);
+  },
+}));
+
+// Required after the mocks: this transform does not hoist jest.mock above imports.
+const { sql } = require("kysely") as typeof import("kysely");
+const { db } = require("@/lib/database") as typeof import("@/lib/database");
+const tokens = require("../tokens") as typeof import("../tokens");
+const inbox = require("../inbox") as typeof import("../inbox");
+const { deliverAppNotifications } =
+  require("../delivery") as typeof import("../delivery");
+const { showcasePage } = require("../showcase") as typeof import("../showcase");
+const { appResponse, appUser } = require("../http") as typeof import("../http");
+const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/site-urls");
+
+// Runs against the disposable database of scripts/test-payments-db.sh.
+const integration =
+  process.env.NARU_PAYMENTS_DB_TEST === "1" ? describe : describe.skip;
+
+const s256 = (value: string) =>
+  createHash("sha256").update(value).digest("base64url");
+const verifier = "v".repeat(43);
+
+integration("the Naru app's API", () => {
+  let reader: string;
+  let siteId: string;
+  let memberId: string;
+  const ids: string[] = [];
+
+  beforeAll(async () => {
+    const insert = async (name: string, extra = sql``) => {
+      const id = (
+        await sql<{ id: string }>`insert into users (login_name, password_hash, supporter_comp)
+          values (${name}, 'x', true) returning id`.execute(db)
+      ).rows[0].id;
+      ids.push(id);
+      return id;
+    };
+    reader = await insert("app-reader");
+    siteId = await insert("app-site");
+    await db
+      .updateTable("users")
+      .set({
+        site_title: "앱 게시판",
+        discoverable: true,
+        site_rendered_at: new Date(),
+        site_updated_at: new Date(),
+      })
+      .where("id", "=", siteId)
+      .execute();
+    memberId = (
+      await db
+        .insertInto("site_members")
+        .values({ site_user_id: siteId, user_id: reader, status: "approved" })
+        .returning("id")
+        .executeTakeFirstOrThrow()
+    ).id;
+  });
+
+  afterAll(async () => {
+    await sql`delete from users where id in (${sql.join(ids)})`.execute(db);
+    await db.destroy();
+  });
+
+  async function signIn() {
+    const input = tokens.authorizeInput({
+      client: "ios",
+      redirect_uri: tokens.APP_REDIRECT_URI,
+      state: "s".repeat(32),
+      code_challenge: s256(verifier),
+      code_challenge_method: "S256",
+    });
+    const redirect = new URL(await tokens.approveAuthorization(reader, input));
+    expect(redirect.protocol).toBe("pub.naru:");
+    expect(redirect.searchParams.get("state")).toBe("s".repeat(32));
+    const code = redirect.searchParams.get("code")!;
+    return { code, redirectUri: tokens.APP_REDIRECT_URI };
+  }
+
+  test("signs in with a code and its PKCE verifier, once", async () => {
+    const grant = await signIn();
+    await expect(
+      tokens.exchangeCode({ ...grant, verifier: "w".repeat(43) }),
+    ).rejects.toMatchObject({ status: 400 });
+    // A wrong verifier spends the code too.
+    await expect(
+      tokens.exchangeCode({ ...grant, verifier }),
+    ).rejects.toMatchObject({ status: 400 });
+
+    const fresh = await signIn();
+    const { token, account } = await tokens.exchangeCode({ ...fresh, verifier });
+    expect(account).toEqual({ loginName: "app-reader" });
+    expect(token).toMatch(/^a\.[A-Za-z0-9_-]{43}$/);
+    const request = new Request("https://naru.pub/api/app/v1/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect((await appUser(request)).loginName).toBe("app-reader");
+  });
+
+  test("refuses an unknown token as AUTH_REQUIRED", async () => {
+    const response = await appResponse(async () =>
+      appUser(
+        new Request("https://naru.pub/", {
+          headers: { Authorization: `Bearer a.${"x".repeat(43)}` },
+        }),
+      ),
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "AUTH_REQUIRED" },
+    });
+  });
+
+  test("refuses sign-in requests the app could not have made", () => {
+    for (const params of [
+      { redirect_uri: "https://evil.example/" },
+      { client: "web" },
+      { code_challenge_method: "plain" },
+    ])
+      expect(() =>
+        tokens.authorizeInput({
+          client: "ios",
+          redirect_uri: tokens.APP_REDIRECT_URI,
+          state: "s".repeat(32),
+          code_challenge: s256(verifier),
+          code_challenge_method: "S256",
+          ...params,
+        }),
+      ).toThrow();
+  });
+
+  test("shows discoverable sites in the showcase", async () => {
+    const { sites } = await showcasePage(1);
+    const site = sites.find((entry) => entry.name === "app-site");
+    expect(site?.screenshotUrl).toContain("_screenshots/app-site.png");
+  });
+
+  test("delivers ctx.notify to the member's account, after it allows the site", async () => {
+    const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
+    const user = (await tokens.appTokenUser(token))!;
+    await inbox.registerDevice(user, {
+      platform: "apns",
+      token: "ab".repeat(32),
+      environment: "sandbox",
+      bundleId: "pub.naru.app",
+    });
+    const sent: { token: string; title: string; badge: number }[] = [];
+    const sender = {
+      send: async (device: { token: string }, message: { title: string; badge: number }) => {
+        sent.push({ token: device.token, title: message.title, badge: message.badge });
+        return "delivered" as const;
+      },
+      close() {},
+    };
+    const queue = (id: string, title: string) =>
+      outboxes.set("app-site", [
+        ...(outboxes.get("app-site") ?? []),
+        {
+          id,
+          // A stranger's id is skipped without a trace.
+          members: [memberId, "0199f2a4-7c1e-7d3a-9b2f-000000000000"],
+          title,
+          body: "본문",
+          path: "/posts/1",
+          at: Date.now(),
+        },
+      ]);
+
+    // First notification: the site becomes pending; stored, not pushed.
+    queue("0199f2a4-0000-7000-8000-000000000001", "첫 알림");
+    expect(await deliverAppNotifications(sender)).toMatchObject({ stored: 1, pushed: 0 });
+    expect(outboxes.get("app-site")).toEqual([]);
+    expect((await inbox.listSites(user)).sites).toMatchObject([
+      { site: { name: "app-site", title: "앱 게시판" }, state: "pending" },
+    ]);
+    expect((await inbox.listNotifications(user, null)).notifications).toEqual([]);
+
+    // Allowed: what was sent shows, and the next one is pushed.
+    await inbox.setSiteState(user, "app-site", { state: "allowed" });
+    expect((await inbox.listNotifications(user, null)).notifications).toMatchObject([
+      { title: "첫 알림", url: `${getHomepageUrl("app-site")}/posts/1`, readAt: null },
+    ]);
+    queue("0199f2a4-0000-7000-8000-000000000002", "둘째 알림");
+    expect(await deliverAppNotifications(sender)).toMatchObject({ stored: 1, pushed: 1 });
+    expect(sent).toEqual([{ token: "ab".repeat(32), title: "둘째 알림", badge: 2 }]);
+
+    // A row delivered twice (its acknowledgement lost) is stored once.
+    queue("0199f2a4-0000-7000-8000-000000000002", "둘째 알림");
+    expect(await deliverAppNotifications(sender)).toMatchObject({ stored: 0 });
+
+    // A site served at its own domain is opened there, where its members are
+    // signed in; the address is resolved when listed, so it follows changes.
+    await db.updateTable("users").set({ supporter_comp: true }).where("id", "=", siteId).execute();
+    await db
+      .insertInto("custom_domains")
+      .values({
+        user_id: siteId,
+        hostname: "Board.Example",
+        cloudflare_hostname_id: "cf-1",
+        cloudflare_status: "active",
+        ssl_status: "active",
+        verified_at: new Date(),
+      })
+      .execute();
+    const listed = await inbox.listNotifications(user, null);
+    expect(listed.notifications.map((n) => n.url)).toEqual([
+      "https://board.example/posts/1",
+      "https://board.example/posts/1",
+    ]);
+    expect(listed.notifications[0].site.url).toBe("https://board.example");
+
+    expect(await inbox.markRead(user, { all: true })).toEqual({ unread: 0 });
+
+    // Muted: forgotten, and nothing more arrives.
+    await inbox.setSiteState(user, "app-site", { state: "muted" });
+    queue("0199f2a4-0000-7000-8000-000000000003", "셋째 알림");
+    expect(await deliverAppNotifications(sender)).toMatchObject({ stored: 0, pushed: 0 });
+    expect((await inbox.listNotifications(user, null)).notifications).toEqual([]);
+
+    // Signing out stops pushes to the device it registered.
+    await tokens.revokeAppToken(user.tokenId);
+    expect(
+      await db.selectFrom("app_devices").selectAll().where("token", "=", "ab".repeat(32)).execute(),
+    ).toEqual([]);
+  });
+});

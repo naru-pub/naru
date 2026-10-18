@@ -89,6 +89,7 @@ describe("the site a path names", () => {
       "/healthz/deep",
       "/sdk/1/naru.js",
       "/v1/breakers/unnotified",
+      "/v1/notifications/pending",
       "/v1/pageviews/drain",
       "/v1/domains/replace",
       "/api/data/v1/",
@@ -104,6 +105,7 @@ describe("the site a path names", () => {
       "/api/data/v1/alpha",
       "/v1/sites/alpha/render",
       "/v1/breakers/unnotified",
+      "/v1/notifications/pending",
     ])
       expect(SERVED.test(path)).toBe(true);
     for (const path of ["/", "/v1/pageviews/drain", "/v1/domains/replace"])

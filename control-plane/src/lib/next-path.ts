@@ -5,6 +5,7 @@ const RETURN_PATHS = new Set([
   "/supporter",
   "/database/authorize",
   "/members/sign-in",
+  "/app/authorize",
 ]);
 
 export function safeNextPath(next: string | null | undefined): string | null {

@@ -73,6 +73,16 @@ export const SCHEMA = `
     cleared_at INTEGER,
     notified_at INTEGER
   );
+  -- ctx.notify's queue (notify.ts), until the control plane delivers it.
+  -- Not in dumps: it is Naru's work in flight, not the site's data.
+  CREATE TABLE IF NOT EXISTS _naru_notify_outbox (
+    id TEXT PRIMARY KEY,
+    members TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    path TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS _naru_migrations (
     name TEXT PRIMARY KEY,
     digest TEXT NOT NULL,

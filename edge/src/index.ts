@@ -19,6 +19,7 @@ import type { Outcome } from "./types";
 import { DUMP_CONTENT_TYPE } from "../../control-plane/src/lib/site-data/dump-format";
 import type { DataError } from "../../control-plane/src/lib/site-data/validation";
 import { interruptedCall } from "./sql";
+import { notifyPending } from "./notify";
 import {
   admit,
   breakers,
@@ -115,6 +116,9 @@ const OPERATIONS = [
   "breakerTrips",
   "ackBreakerTrips",
   "clearBreaker",
+  // ctx.notify's queue (notify.ts), for the control plane's app-notifications job.
+  "notifyOutbox",
+  "ackNotifyOutbox",
 ] as const;
 // Read and replace a whole site, ids and times included: for tests to plant
 // and inspect what the public operations cannot. Not found in production.
@@ -203,6 +207,10 @@ function dispatch(
       return stub.breakerTrips(input);
     case "ackBreakerTrips":
       return stub.ackBreakerTrips(input);
+    case "notifyOutbox":
+      return stub.notifyOutbox(input);
+    case "ackNotifyOutbox":
+      return stub.ackNotifyOutbox(input);
     case "clearBreaker":
       return stub.clearBreakerTrips(input);
   }
@@ -414,6 +422,12 @@ export default {
     if (!(await authorized(request, env.EDGE_WORKER_SECRET)))
       return failure(401, "Unauthorized.");
     if (pathname === "/v1/domains/replace") return replaceDomains(request, env);
+    // Sites with notifications ctx.notify queued (notify.ts), for the
+    // control plane's app-notifications job; ackNotifyOutbox takes a site off.
+    if (pathname === "/v1/notifications/pending")
+      return request.method === "POST"
+        ? Response.json({ value: { sites: [...notifyPending] } })
+        : failure(405, "Method not allowed.");
     // Sites with pauses the operators have not been told of (breaker.ts),
     // for the control plane's alerts; ackBreakerTrips takes a site off.
     if (pathname === "/v1/breakers/unnotified")
@@ -543,6 +557,12 @@ export default {
       (outcome.value as { unnotified: number }).unnotified === 0
     )
       breakers.unnotified.delete(site);
+    if (
+      outcome.ok &&
+      operation === "ackNotifyOutbox" &&
+      (outcome.value as { pending: number }).pending === 0
+    )
+      notifyPending.delete(site);
     if (outcome.ok && operation === "dump")
       return new Response(outcome.value as ReadableStream<Uint8Array>, {
         headers: { "Content-Type": DUMP_CONTENT_TYPE },

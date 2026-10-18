@@ -150,6 +150,17 @@ export interface MutationCtx extends QueryCtx {
    * them. Kept only if the mutation returns.
    */
   setRoles(member: string, roles: string[]): Promise<null>;
+  /**
+   * Notifies these members (at most 1,000 a call) in the Naru app, once the
+   * mutation returns: on their devices if they allowed the site there, or in
+   * the app's inbox until they do. Unknown, pending and banned members are
+   * skipped, and the site is not told who has the app. `path` (default "/")
+   * is a page of this site, opened when the notification is tapped.
+   */
+  notify(
+    members: string[],
+    message: { title: string; body?: string; path?: string },
+  ): Promise<null>;
 }
 
 /** `export async function name(ctx, args)` in `_naru/queries/` or `_naru/mutations/`. */

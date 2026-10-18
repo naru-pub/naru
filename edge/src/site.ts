@@ -30,6 +30,13 @@ import {
   restorePointsPrefix,
 } from "../../control-plane/src/lib/site-functions/restore-points";
 import { runFunction, type Host } from "./functions";
+import {
+  MAX_NOTIFY_RECIPIENTS,
+  MAX_OUTBOX_ROWS,
+  markNotifyPending,
+  notification,
+  type Notification,
+} from "./notify";
 import { ownerQuery, siteObjectsOf, tableRows } from "./table-rows";
 import {
   breakerKey,
@@ -368,6 +375,7 @@ export class SiteData extends DurableObject<Env> {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.createTables();
+    this.resumeNotifications();
     // Keepalives are answered without waking the object.
     ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair("ping", "pong"),
@@ -1898,8 +1906,21 @@ export class SiteData extends DurableObject<Env> {
     call?: CallIdentity & { site: string },
   ): Host {
     const sqlBudget = { rowsRead: 0, tables };
+    let recipients = 0;
     return (operation, args) => {
       switch (operation) {
+        case "notify": {
+          if (!call) throw new DataError(400, "ctx has no notify.");
+          const queued = notification(args[0], args[1]);
+          recipients += queued.members.length;
+          if (recipients > MAX_NOTIFY_RECIPIENTS)
+            throw new DataError(
+              400,
+              `ctx.notify: at most ${MAX_NOTIFY_RECIPIENTS} members a call.`,
+            );
+          this.queueNotification(call.site, queued);
+          return null;
+        }
         case "random":
           return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
         case "rolesOf":
@@ -3536,6 +3557,86 @@ export class SiteData extends DurableObject<Env> {
    * calls this after the strike that paused it, as a call of its own: a
    * stopped write reset the object, and its own call's work with it.
    */
+  /**
+   * ctx.notify, in the call's transaction: the outbox row, and the site's
+   * name for resumeNotifications. The pending mark is made now; a call that
+   * rolls back leaves an empty outbox, which ackNotifyOutbox clears.
+   */
+  private queueNotification(site: string, queued: Notification) {
+    const waiting = Number(
+      this.rows("SELECT count(*) AS n FROM _naru_notify_outbox")[0].n,
+    );
+    if (waiting >= MAX_OUTBOX_ROWS)
+      throw new DataError(
+        429,
+        "ctx.notify: too many notifications are waiting to be sent.",
+        "QUOTA_EXCEEDED",
+      );
+    this.sql.exec(
+      `INSERT INTO _naru_notify_outbox (id, members, title, body, path, at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      uuidv7(),
+      JSON.stringify(queued.members),
+      queued.title,
+      queued.body,
+      queued.path,
+      Date.now(),
+    );
+    if (this.meta("site_name") !== site) this.setMeta("site_name", site);
+    markNotifyPending(site);
+  }
+
+  /** On start: an outbox left from before a restart is pending again. */
+  private resumeNotifications() {
+    const site = this.meta("site_name");
+    if (
+      site !== null &&
+      this.rows("SELECT 1 FROM _naru_notify_outbox LIMIT 1").length
+    )
+      markNotifyPending(site);
+  }
+
+  /** The control plane's app-notifications job: queued notifications, oldest first. */
+  async notifyOutbox(input: { limit?: unknown } = {}) {
+    const limit =
+      typeof input?.limit === "number" && input.limit >= 1 && input.limit <= 500
+        ? Math.floor(input.limit)
+        : 100;
+    return this.run(() =>
+      this.rows(
+        "SELECT id, members, title, body, path, at FROM _naru_notify_outbox ORDER BY id LIMIT ?",
+        limit,
+      ).map((row) => ({
+        id: String(row.id),
+        members: JSON.parse(String(row.members)) as string[],
+        title: String(row.title),
+        body: String(row.body),
+        path: String(row.path),
+        at: Number(row.at),
+      })),
+    );
+  }
+
+  /** Delivered (or dropped) notifications leave the outbox; answers how many are left. */
+  async ackNotifyOutbox(input: { ids?: unknown }) {
+    return this.run(() => {
+      const ids = Array.isArray(input?.ids)
+        ? input.ids.filter((id): id is string => typeof id === "string")
+        : [];
+      if (ids.length > 500) throw new DataError(400, "Too many notifications.");
+      if (ids.length)
+        this.sql.exec(
+          `DELETE FROM _naru_notify_outbox WHERE id IN (${ids.map(() => "?").join(",")})`,
+          ...ids,
+        );
+      return {
+        pending: Number(
+          this.rows("SELECT count(*) AS n FROM _naru_notify_outbox")[0].n,
+        ),
+      };
+    });
+  }
+
   async recordBreakerTrip(input: { trip: Trip; paused: unknown }) {
     this.paused = pausedList(input.paused);
     return this.run(() => {

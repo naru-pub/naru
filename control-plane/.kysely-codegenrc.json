@@ -29,7 +29,12 @@
       "users.site_member_admission": "ColumnType<\"open\" | \"approval\" | \"closed\", \"open\" | \"approval\" | \"closed\" | undefined>",
       "github_deployments.functions_status": "\"activating\" | \"active\" | \"refused\" | null",
       "github_deployments.functions_error": "ColumnType<{ message: string; details?: unknown } | null, string | null, string | null>",
-      "site_members.status": "ColumnType<\"pending\" | \"approved\" | \"banned\", \"pending\" | \"approved\" | \"banned\" | undefined>"
+      "site_members.status": "ColumnType<\"pending\" | \"approved\" | \"banned\", \"pending\" | \"approved\" | \"banned\" | undefined>",
+      "app_tokens.client": "\"ios\" | \"macos\" | \"android\"",
+      "app_devices.platform": "\"apns\" | \"fcm\"",
+      "app_devices.environment": "\"sandbox\" | \"production\"",
+      "app_site_consents.state": "\"pending\" | \"allowed\" | \"muted\"",
+      "app_auth_codes.client": "\"ios\" | \"macos\" | \"android\""
     }
   }
 }

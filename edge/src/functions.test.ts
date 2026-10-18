@@ -433,7 +433,7 @@ describe("calling", () => {
         "media",
         "passwords",
       ]);
-    // A mutation may grant roles too.
+    // A mutation may grant roles and notify members too.
     expect(
       call("export function f(ctx) { return Object.keys(ctx); }", "mutation"),
     ).toEqual([
@@ -448,6 +448,7 @@ describe("calling", () => {
       "media",
       "passwords",
       "setRoles",
+      "notify",
     ]);
     // The caller's roles ride on ctx.member, frozen.
     expect(
@@ -474,8 +475,15 @@ describe("calling", () => {
         "query",
       ),
     ).toThrow(/a query has no ctx.setRoles/);
+    // Notifications go out only when something is written.
+    expect(() =>
+      call(
+        "export function f() { return __call('notify', [], { title: 't' }); }",
+        "query",
+      ),
+    ).toThrow(/a query has no ctx.notify/);
     // Nor reach anything but site SQL, whatever it asks the host.
-    for (const operation of ["get", "add", "notify", "secretMatches"])
+    for (const operation of ["get", "add", "publish", "secretMatches"])
       expect(() =>
         call(
           `export function f() { return __call('${operation}', 'posts', '1'); }`,

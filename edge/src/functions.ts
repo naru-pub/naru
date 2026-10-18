@@ -310,6 +310,8 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, 
   const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
   const rolesOf = __operation("rolesOf");
   const setRoles = __operation("setRoles");
+  // A notification in the Naru app for members, sent once the call commits.
+  const notify = __operation("notify");
   // The types Naru Media takes; the uploads are site SQL's _naru_uploads.
   const media = Object.freeze({ types: Object.freeze(mediaTypes) });
   // A guest's password, kept by the site as a hash.
@@ -384,7 +386,7 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, 
     rolesOf,
     media,
     passwords: kind === "mutation" ? passwords : Object.freeze({ verify: passwords.verify }),
-    ...(kind === "mutation" ? { setRoles } : {}),
+    ...(kind === "mutation" ? { setRoles, notify } : {}),
   });
   const fn = Object.hasOwn(globalThis.__exports, name)
     ? globalThis.__exports[name]
@@ -541,7 +543,9 @@ export function runFunction(
           !["sql", "random", "rolesOf", "passwordVerify"].includes(name) &&
           !(
             kind === "mutation" &&
-            (name === "setRoles" || name === "passwordHash")
+            (name === "setRoles" ||
+              name === "passwordHash" ||
+              name === "notify")
           )
         )
           throw failed(`a ${kind} has no ctx.${name}.`);

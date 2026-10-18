@@ -229,6 +229,36 @@ members, and may ban them ([site membership](site-membership.md)).
 An owner's and a member's sign-in can share a page: each only finishes the
 sign-in this tab started for it.
 
+**Notifications.** A mutation notifies members in the Naru app, Naru's iOS,
+macOS and Android app:
+
+```js
+// _naru/mutations/board.js
+export async function reply(ctx, { post, text }) {
+  if (!ctx.member) ctx.fail("AUTH_REQUIRED", "로그인이 필요합니다.");
+  const { rows } = await ctx.sql`SELECT author FROM posts WHERE id = ${post}`;
+  await ctx.sql`INSERT INTO replies (post, author, text) VALUES (${post}, ${ctx.member.id}, ${text})`;
+  if (rows[0].author !== ctx.member.id)
+    await ctx.notify([rows[0].author], {
+      title: "새 댓글",
+      body: text.slice(0, 80),
+      path: `/posts/${post}`,
+    });
+}
+```
+
+`ctx.notify(memberIds, { title, body, path })` takes member IDs (at most
+1,000 a call), a `title` of 1–100 characters, an optional `body` of up to 500
+and a `path` on the site (default `/`), opened when the notification is
+tapped. Notifications go out only if the mutation returns, within about a
+minute. Each account decides in the app which sites may notify it: a site's
+first notification asks, and the account allows or mutes it. Allowed
+sites' notifications are pushed to the account's devices; before that they
+wait in the app, and a muted site's are dropped. Members who are unknown,
+pending or banned, or who never installed the app, are skipped, and the site
+is not told which. A site stores at most 1,000 notifications an hour, all
+recipients counted; past that they are dropped.
+
 ## Site code (1.1.0)
 
 Rules a browser must not decide, such as who may edit a post, prices,
@@ -369,7 +399,8 @@ SDK's `MEDIA_TYPES`), and these methods, which return promises:
 - in mutations only, `passwords.hash(password)`, a salted PBKDF2-SHA256 hash
   of a 1–256 character password to keep in a table, and
   `setRoles(memberId, roles)`, which replaces a member's roles (at most 16
-  names; `[]` clears them) if the mutation returns.
+  names; `[]` clears them) if the mutation returns, and
+  `notify(memberIds, { title, body?, path? })` (see **Notifications**).
 
 Every promise a `ctx` method returns must be used: awaited, returned,
 chained with `then` or `catch`, or passed to `Promise.all`. Otherwise the call

@@ -24,13 +24,19 @@ async function main() {
     .deleteFrom("site_member_tokens")
     .where("expires_at", "<=", new Date())
     .executeTakeFirst();
+  // The Naru app's sign-in codes (lib/app-api/tokens.ts).
+  const expiredAppCodes = await db
+    .deleteFrom("app_auth_codes")
+    .where("expires_at", "<=", new Date())
+    .executeTakeFirst();
   const rows = (deleted: { numDeletedRows: bigint } | undefined) =>
     Number(deleted?.numDeletedRows ?? 0);
   console.log(
     `[site-data-cleanup] Removed ${rows(expiredCodes)} codes, ` +
       `${rows(expiredTokens)} tokens, ` +
       `${rows(expiredMemberCodes)} member codes, ` +
-      `${rows(expiredMemberTokens)} member tokens`,
+      `${rows(expiredMemberTokens)} member tokens, ` +
+      `${rows(expiredAppCodes)} app codes`,
   );
 }
 
