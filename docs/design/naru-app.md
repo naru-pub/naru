@@ -56,8 +56,12 @@ await ctx.notify([post.author], {
 
 ## Consent
 
-An account receives a site's notifications only after allowing it. The first
-notification a site sends to an account that has not decided creates a
+An account receives a site's notifications only after allowing it. Signing in
+to a site as a member (`/members/sign-in`) asks, with a box ticked unless the
+account turned the site off before: "<site> 사이트의 알림을 나루 앱으로
+받기". Approving sets the site allowed (or muted, unticked), so its first
+notification is pushed. The first notification from a site the account never
+decided on (it joined before the box, or a page sent no answer) creates a
 `pending` request (shown in the app, not pushed); what the site sends
 meanwhile is kept and listed once allowed. Allow → later notifications are
 pushed; mute → what it sent is forgotten and later ones are dropped.

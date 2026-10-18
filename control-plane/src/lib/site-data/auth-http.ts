@@ -89,15 +89,20 @@ export async function ownerAuthRequest(request: Request, action: string) {
     const { user, session } = await validateRequest();
     if (!user || !session) throw new DataError(401, "Sign in required.");
     // Any account may be a member; the site's own plan is checked instead.
-    if (action === "member-authorize" && request.method === "POST")
+    if (action === "member-authorize" && request.method === "POST") {
+      const body = await jsonBody(request);
       return Response.json(
         await approveMemberSignIn(
           user.id,
           session.id,
-          memberSignInInput(await jsonBody(request)),
+          memberSignInInput(body),
+          typeof body.notifications === "boolean"
+            ? body.notifications
+            : undefined,
         ),
         { headers },
       );
+    }
     if (!(await userHasFeature(user.id, "database")))
       throw new DataError(403, "Database access is not enabled for this site.");
     if (action === "clients" && request.method === "GET") {

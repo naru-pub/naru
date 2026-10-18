@@ -132,8 +132,9 @@ async function siteFor(tx: Kysely<DB>, input: MemberSignInInput) {
 }
 
 /**
- * What the sign-in page shows: the site, and whether this account can join
- * it under the current setting.
+ * What the sign-in page shows: the site, whether this account can join it
+ * under the current setting, and whether its notifications reach the Naru
+ * app: ticked unless the account turned them off.
  */
 export async function previewMemberSignIn(
   userId: string,
@@ -153,19 +154,32 @@ export async function previewMemberSignIn(
       "이 사이트는 신규 회원 가입을 받지 않습니다.",
       "ACCESS_DENIED",
     );
+  const consent = await db
+    .selectFrom("app_site_consents")
+    .select("state")
+    .where("user_id", "=", userId)
+    .where("site_user_id", "=", site.id)
+    .executeTakeFirst();
   return {
     site: site.login_name,
+    notifications: consent?.state !== "muted",
     mayJoin: await mayJoin(db, userId, site.id),
     needsVerifiedEmail:
       site.site_member_verified_email && !(await emailVerified(db, userId)),
   };
 }
 
-/** The member's approval: a single-use code for the page that asked. */
+/**
+ * The member's approval: a single-use code for the page that asked. With
+ * `notifications`, what the sign-in page's box said: whether the site's
+ * notifications reach the account's Naru app (app_site_consents, as the
+ * app's own switch sets it), so its first one is pushed without asking.
+ */
 export async function approveMemberSignIn(
   userId: string,
   sessionId: string,
   input: MemberSignInInput,
+  notifications?: boolean,
 ) {
   return db.transaction().execute(async (tx) => {
     const site = await siteFor(tx, input);
@@ -216,6 +230,25 @@ export async function approveMemberSignIn(
       .where("site_user_id", "=", site.id)
       .where("user_id", "=", userId)
       .executeTakeFirstOrThrow();
+    if (notifications !== undefined) {
+      const state = notifications ? "allowed" : "muted";
+      await tx
+        .insertInto("app_site_consents")
+        .values({ user_id: userId, site_user_id: site.id, state })
+        .onConflict((conflict) =>
+          conflict
+            .columns(["user_id", "site_user_id"])
+            .doUpdateSet({ state, updated_at: new Date() }),
+        )
+        .execute();
+      // Muting forgets what the site sent, as in the app (app-api/inbox.ts).
+      if (!notifications)
+        await tx
+          .deleteFrom("app_notifications")
+          .where("user_id", "=", userId)
+          .where("site_user_id", "=", site.id)
+          .execute();
+    }
     await tx
       .deleteFrom("site_member_codes")
       .where("expires_at", "<=", new Date())

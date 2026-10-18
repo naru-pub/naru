@@ -2,15 +2,19 @@
 import { useState } from "react";
 import type { MemberSignInInput } from "@/lib/site-data/member-auth";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function MemberConsent({
   input,
   account,
+  notifications: notificationsBefore,
 }: {
   input: MemberSignInInput;
   account: string;
+  notifications: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [notifications, setNotifications] = useState(notificationsBefore);
   const [error, setError] = useState("");
   async function approve() {
     setBusy(true);
@@ -20,7 +24,7 @@ export default function MemberConsent({
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, notifications }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
@@ -52,6 +56,21 @@ export default function MemberConsent({
         함께 끝납니다. 운영자 승인이 필요한 사이트에서는 승인 후에 회원 기능을
         이용할 수 있습니다.
       </p>
+      <label className="flex cursor-pointer items-start gap-3 rounded border border-line p-3">
+        <Checkbox
+          className="mt-1"
+          checked={notifications}
+          disabled={busy}
+          onCheckedChange={(checked) => setNotifications(checked === true)}
+        />
+        <span>
+          <strong>{input.site}</strong> 사이트의 알림을 나루 앱으로 받기
+          <span className="block text-sm text-muted-foreground">
+            나루 앱에 로그인한 기기로 알림이 옵니다. 앱의 사이트 탭에서 언제든
+            끌 수 있습니다.
+          </span>
+        </span>
+      </label>
       {error && (
         <p role="alert" className="text-destructive">
           {error}

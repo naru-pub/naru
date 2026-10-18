@@ -1,4 +1,6 @@
 import { absurdSchema } from "@/migrations/vendor/absurd-0.5.0";
+import { up as naruAppUp } from "@/migrations/1792318382896_naru_app";
+import { up as siteModerationUp } from "@/migrations/1792328450234_site_moderation";
 import { up as usageUp } from "@/migrations/1791377967407_site_data_usage_counters";
 import { up as backendUp } from "@/migrations/1791514826830_site_data_backend";
 import { up as removePostgresUp } from "@/migrations/1791519830591_remove_postgres_site_data";
@@ -94,6 +96,10 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await membersFreeUp(db);
   await managedMediaUp(db);
   await mediaDeletionUp(db);
+  // Member sign-in sets the Naru app's consent for the site; a suspended site
+  // has no data (site-moderation.ts).
+  await naruAppUp(db);
+  await siteModerationUp(db);
   await sql.raw(absurdSchema).execute(db);
   await sql`select absurd.create_queue('maintenance')`.execute(db);
   // This isolated fixture keeps legacy integer user ids; production's migrated

@@ -155,6 +155,7 @@ integration("site members", () => {
   test("sign-in is for a page of a site that has the database", async () => {
     expect(await previewMemberSignIn(users.bob, input())).toEqual({
       site: "alice",
+      notifications: true,
       mayJoin: true,
       needsVerifiedEmail: false,
     });
@@ -228,6 +229,29 @@ integration("site members", () => {
       db,
     );
     await expect(exchange(late)).rejects.toMatchObject({ status: 401 });
+  });
+
+  test("the sign-in box sets whether the site's notifications reach the app", async () => {
+    const consent = async () =>
+      (
+        await db
+          .selectFrom("app_site_consents")
+          .select("state")
+          .where("user_id", "=", users.dave)
+          .where("site_user_id", "=", owner)
+          .executeTakeFirst()
+      )?.state;
+    // Ticked unless the account turned them off; an old page sends nothing.
+    expect((await previewMemberSignIn(users.dave, input())).notifications).toBe(true);
+    await approveMemberSignIn(users.dave, "dave-session", input());
+    expect(await consent()).toBeUndefined();
+    await approveMemberSignIn(users.dave, "dave-session", input(), true);
+    expect(await consent()).toBe("allowed");
+    await approveMemberSignIn(users.dave, "dave-session", input(), false);
+    expect(await consent()).toBe("muted");
+    expect((await previewMemberSignIn(users.dave, input())).notifications).toBe(false);
+    await approveMemberSignIn(users.dave, "dave-session", input(), true);
+    expect(await consent()).toBe("allowed");
   });
 
   test("a token works only from its page's origin, until it is revoked or its Naru session ends", async () => {

@@ -87,7 +87,13 @@ export default async function MemberSignInPage({
         </Link>
       </div>
     );
-  return <MemberConsent input={input} account={user.loginName} />;
+  return (
+    <MemberConsent
+      input={input}
+      account={user.loginName}
+      notifications={preview.notifications}
+    />
+  );
 }
 
 function Problem({ message }: { message: string }) {

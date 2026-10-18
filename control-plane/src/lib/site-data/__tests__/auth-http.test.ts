@@ -180,7 +180,7 @@ test("website calls answer only under v1, and the consent approval only outside 
 });
 
 test("a member's approval needs the member's own Naru sign-in, not the database", async () => {
-  const approve = (cookie: string) =>
+  const approve = (cookie: string, extra = {}) =>
     ownerAuthRequest(
       new Request("https://naru.pub/api/data-auth/member-authorize", {
         method: "POST",
@@ -189,7 +189,7 @@ test("a member's approval needs the member's own Naru sign-in, not the database"
           "Content-Type": "application/json",
           Cookie: cookie,
         },
-        body: JSON.stringify({ site: "alice" }),
+        body: JSON.stringify({ site: "alice", ...extra }),
       }),
       "member-authorize",
     );
@@ -206,10 +206,19 @@ test("a member's approval needs the member's own Naru sign-in, not the database"
   const response = await approve("auth_session=bob");
   expect(response.status).toBe(200);
   // The body as the (mocked) input parser returned it.
+  // A page from before the notifications box sends no answer.
   expect(member.approveMemberSignIn).toHaveBeenCalledWith(
     "bob",
     "bob-session",
     expect.objectContaining({ site: "alice" }),
+    undefined,
+  );
+  await approve("auth_session=bob", { notifications: false });
+  expect(member.approveMemberSignIn).toHaveBeenLastCalledWith(
+    "bob",
+    "bob-session",
+    expect.objectContaining({ site: "alice" }),
+    false,
   );
 });
 
