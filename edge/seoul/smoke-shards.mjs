@@ -133,6 +133,22 @@ const sitesOn = (shard, count) => {
 const [alpha, gamma] = sitesOn(0, 2);
 const [beta, delta] = sitesOn(1, 2);
 
+// A request with a body, named when it fails: undici's error says what went
+// wrong, not which request. (Those without one fail here on purpose: polling a
+// shard before it starts, the stuck shard.)
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  try {
+    return await realFetch(url, init);
+  } catch (error) {
+    if (init?.body != null)
+      console.error(
+        `${init?.method ?? "GET"} ${url} failed: ${error.cause?.code ?? error}`,
+      );
+    throw error;
+  }
+};
+
 async function operate(site, operation, input, base = router) {
   const response = await fetch(`${base}/v1/sites/${site}/${operation}`, {
     method: "POST",
@@ -321,6 +337,9 @@ try {
     headers: { Authorization: `Bearer ${secret}` },
     body: "{}",
   });
+  // Printed for a failure on CI that never reproduced locally (Node 24's
+  // fetch once said a request body's length did not match its header).
+  console.log(`dump answered with ${JSON.stringify([...dump.headers])}`);
   assert.equal(dump.status, 200);
   assert.equal(dump.headers.get("content-type"), "application/x-ndjson");
   const restored = await fetch(`${router}/v1/sites/${delta}/restore`, {
@@ -329,7 +348,9 @@ try {
       Authorization: `Bearer ${secret}`,
       "Content-Type": "application/x-ndjson",
     },
-    body: dump.body,
+    // A fresh stream, so the request takes no length from the dump's answer
+    // (one that came compressed, say, would declare the wrong one).
+    body: dump.body.pipeThrough(new TransformStream()),
     duplex: "half",
   });
   const outcome = await restored.json();
