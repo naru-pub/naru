@@ -463,7 +463,12 @@ try {
   // alike, as Caddy waits for the router.
   await stop("shard-1");
   const restartedAt = Date.now();
-  setTimeout(() => startShard(1), 1000);
+  // Kept, and awaited below: the router can get the requests through before
+  // startShard sees /healthz answer, and a startShard still polling when the
+  // test stops every process would fail after it.
+  const restarting = new Promise((done) => setTimeout(done, 1000)).then(() =>
+    startShard(1),
+  );
   const [readAfter, writeAfter] = await Promise.all([
     titleOf(beta),
     operate(beta, "execute", {
@@ -474,6 +479,7 @@ try {
       body: { data: { title: "after" } },
     }),
   ]);
+  await restarting;
   assert.equal(readAfter, "beta's");
   assert.equal(writeAfter.status, 200, JSON.stringify(writeAfter));
   console.log(
