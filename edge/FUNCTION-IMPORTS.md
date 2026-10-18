@@ -82,50 +82,27 @@ with its digest), writes a dump of the database to
 `_naru-runtime/<site>/restore-points/<generation>.ndjson.gz` when any are pending,
 then applies them in name order and switches the pointer in one transaction.
 A migration's statements may create, alter and drop tables, indexes and views
-and write rows; each passes the checks of `ctx.sql` (`edge/src/sql.ts`), and a
-write the plan check as well (`checkPlan`, `edge/src/plan.ts`). The plan check
-holds a statement to one rule: its cost grows at most linearly with table
-sizes. Each `EXPLAIN QUERY PLAN` step gets a degree: 0 for a `SEARCH` by `=`
-on every column it uses (row ID, primary key or any index), `SCAN CONSTANT
-ROW` and `VALUES`, `json_each`/`json_tree` (`VIRTUAL TABLE INDEX 1:` or `3:`)
-and an fts5 table by rowid (an index string with `=`); 1 for a `SCAN`, a
-`SEARCH` by a range or with no constraint, an fts5 table read whole or by
-`MATCH`/`LIKE`/`GLOB`, and an `IN (SELECT ...)` list that drives the `=`
-search before it (a `LIST SUBQUERY` without `CREATE BLOOM FILTER`, or `USING
-... FOR IN-OPERATOR`). Sibling loops add their degrees; a `CORRELATED`
-subquery adds its degree to all its group's loops; `MATERIALIZE`, plain
-`SCALAR`/`LIST SUBQUERY`, an `AUTOMATIC ... INDEX` and a `BLOOM FILTER ON`
-cost theirs once, and reading a materialized result costs what made it; a
-`CO-ROUTINE` is costed where it is read, inside the loops before it;
-`MULTI-INDEX OR`, compound parts and `RIGHT-JOIN` cost the most of theirs;
-`USE TEMP B-TREE` costs nothing more. Everything inside a correlated subquery
-counts once per outer row. A path over 1 is refused, naming the loop that
-multiplies; a step of any other shape is refused naming the step. Known gap:
-`=` on a non-unique index counts as 0, so a self-join on a shared value can be
-near quadratic on skewed data; two backstops remain. `MAX_ROWS_READ`,
-counted from the cursor's `rowsRead` after each statement finishes, fails the
-call after the statement. And on the mini, Naru's workerd (`seoul/workerd/`)
-stops any one `sqlite3_step` past `WORKERD_SQLITE_STATEMENT_TIMEOUT_MS`
-(3000): a read throws `SQLITE_INTERRUPT` where it ran, which `sqlFailure`
-makes 400 `INVALID_REQUEST` ("This statement ran longer than 3 seconds and was
-stopped; give it an index or read less."); a write rolls back and resets the
-object, so its caller's stub throws, and `interruptedCall` (`src/sql.ts`)
-words it there: the same 400 for `call` and a visitor's call
-(`src/website.ts`), 422 `migration_failed` for `activateFunctions` and
-`putFunctions` (without the migration's name, which the reset object cannot
-tell), 503 `UNAVAILABLE` for any other operation (Naru's own statements, kept
-paged or linear in the site's 100 MiB). Schema statements in migrations
-(`CREATE TABLE ... AS SELECT`, `CREATE INDEX`) are held only to the budget.
-The plan rule stays the early refusal, with the reason; the budget is what
-keeps one statement from holding up every site on its workerd shard's
-thread, and the breaker (`src/breaker.ts`) what keeps a statement stopped 3
-times within a minute from doing so again: it is refused before it runs, 503
+and write rows; each passes the checks of `ctx.sql` (`edge/src/sql.ts`). No
+statement is checked against its query plan: on the mini, Naru's workerd
+(`seoul/workerd/`) stops any one `sqlite3_step` past
+`WORKERD_SQLITE_STATEMENT_TIMEOUT_MS` (3000). A read throws `SQLITE_INTERRUPT`
+where it ran, which `sqlFailure` makes 400 `INVALID_REQUEST` ("This statement
+ran longer than 3 seconds and was stopped; give it an index or read less."); a
+write rolls back and resets the object, so its caller's stub throws, and
+`interruptedCall` (`src/sql.ts`) words it there: the same 400 for `call` and a
+visitor's call (`src/website.ts`), 422 `migration_failed` for
+`activateFunctions` and `putFunctions` (without the migration's name, which
+the reset object cannot tell), 503 `UNAVAILABLE` for any other operation
+(Naru's own statements, kept paged or linear in the site's 100 MiB).
+`MAX_ROWS_READ`, counted from the cursor's `rowsRead` after each statement
+finishes, fails a call that read too much. The budget keeps one statement
+from holding up every site on its workerd shard's thread for more than 3
+seconds, and the breaker (`src/breaker.ts`) keeps a statement stopped 3 times
+within a minute from doing so again: it is refused before it runs, 503
 `UNAVAILABLE` `statement_paused`, for 5 minutes (30 when again within the
-hour), until the owner lets it run again or a release replaces the code. Estimating fan-out from `sqlite_stat1` (`ANALYZE`) would close the
-gap; it is not done.
-`src/plan.test.ts` measures `src/plan.corpus.ts` in workerd at N and 4N rows
-(how to add a statement is at the top of the corpus); the user-facing limits
-and patterns are in `docs/sdk-v1-api.md`, **SQL limits**. A refusal is a 422 with `details.reason`
+hour), until the owner lets it run again or a release replaces the code. The
+user-facing limits and performance advice are in `docs/sdk-v1-api.md`,
+**SQL limits**. A refusal is a 422 with `details.reason`
 `migration_failed`; the release task then deletes the refused revision and
 its row instead of retrying, and leaves the active release.
 

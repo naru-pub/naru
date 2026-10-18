@@ -42,7 +42,7 @@ const call = (kind: "query" | "mutation", fn: string, at = site) =>
     args: null,
   }).then((answer) => answer.result);
 
-// As statement-budget.test.ts: 2.5 billion pairs the plan rule lets through.
+// As statement-budget.test.ts: 2.5 billion pairs.
 const PAIRS =
   "SELECT count(*) AS n FROM posts p1 JOIN posts p2 ON p2.board = p1.board";
 const ROWS = `CREATE TABLE posts (id INTEGER PRIMARY KEY, board TEXT NOT NULL);

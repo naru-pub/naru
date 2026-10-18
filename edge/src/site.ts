@@ -44,7 +44,6 @@ import {
 } from "./breaker";
 import {
   bindings,
-  checkPlan,
   classify,
   interrupted,
   MAX_ROW_BYTES,
@@ -55,7 +54,6 @@ import {
   statementBudget,
   statements,
   tooLong,
-  type PlanStep,
   type Tables,
 } from "./sql";
 
@@ -1382,7 +1380,7 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * One statement of site SQL (ctx.sql, 1.1.0) against the site's own tables:
-   * checked (sql.ts), held to its plan, and run in the call's transaction.
+   * checked (sql.ts) and run in the call's transaction.
    * Returns its rows, at most MAX_ROWS of them and MAX_ROW_BYTES as JSON,
    * and how many rows it changed.
    */
@@ -1426,12 +1424,6 @@ export class SiteData extends DurableObject<Env> {
     let bytes = 0;
     let cursor: SqlStorageCursor<Record<string, SqlStorageValue>>;
     try {
-      checkPlan(
-        this.rows(
-          `EXPLAIN QUERY PLAN ${text}`,
-          ...bound,
-        ) as unknown as PlanStep[],
-      );
       cursor = this.sql.exec(text, ...bound);
       for (const raw of cursor) {
         // A BLOB crosses into the sandbox as { $blob: base64 }, which ctx.sql
@@ -1467,7 +1459,7 @@ export class SiteData extends DurableObject<Env> {
         });
       throw sqlFailure(error, statementBudget(this.env));
     }
-    // Each statement is held to one pass by its plan; a call, to a few.
+    // A call reads a bounded number of rows, all its statements together.
     budget.rowsRead += cursor.rowsRead;
     if (budget.rowsRead > MAX_ROWS_READ)
       throw new DataError(
@@ -1638,13 +1630,7 @@ export class SiteData extends DurableObject<Env> {
       );
     try {
       for (const statement of statements(migration.sql)) {
-        const kind = classify(statement.tokens, ["write", "schema"]);
-        if (kind === "write")
-          checkPlan(
-            this.rows(
-              `EXPLAIN QUERY PLAN ${statement.text}`,
-            ) as unknown as PlanStep[],
-          );
+        classify(statement.tokens, ["write", "schema"]);
         this.sql.exec(statement.text);
       }
     } catch (error) {

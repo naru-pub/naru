@@ -76,8 +76,8 @@ integration("site SQL", () => {
       { id: 1, title: "첫 글" },
       { id: 2, title: "둘째" },
     ]);
-    // A query cannot write, Naru's tables cannot be named, and a
-    // statement that would read a table once per row is refused.
+    // A query cannot write and Naru's tables cannot be named; a join's
+    // shape is not checked (the runtime stops what runs too long).
     await expect(call("sneak")).rejects.toMatchObject({
       status: 400,
       message: expect.stringMatching(/read-only query cannot write/),
@@ -85,9 +85,7 @@ integration("site SQL", () => {
     await expect(call("naru")).rejects.toMatchObject({
       message: expect.stringMatching(/documents is Naru's/),
     });
-    await expect(call("cross")).rejects.toMatchObject({
-      message: expect.stringMatching(/would search b by a range/),
-    });
+    expect(await call("cross")).toEqual([{ n: 3 }]);
   });
 
   test("an applied migration cannot change, and a failing one changes nothing", async () => {
@@ -135,14 +133,10 @@ integration("site SQL", () => {
     expect(await call("list", { board: "notice" })).toEqual([
       { id: 3, title: "공지" },
     ]);
-    // Migration SQL is held to the same names and plans as ctx.sql.
+    // Migration SQL is held to the same names as ctx.sql.
     for (const [sql, message] of [
       ["DELETE FROM documents;", /documents is Naru's/],
       ["PRAGMA writable_schema = 1;", /pragmas are Naru's/],
-      [
-        "UPDATE posts SET author = (SELECT b.title FROM posts b WHERE b.title > posts.title LIMIT 1);",
-        /subquery would read all of/,
-      ],
     ] as const) {
       await expect(put("migrations", "0002_bad", sql)).rejects.toMatchObject({
         status: 422,
@@ -963,7 +957,7 @@ integration("BLOB values", () => {
 });
 
 integration("statement plans", () => {
-  test("ordered aggregates, JSON lists and keyset paging run; unbounded reads are refused", async () => {
+  test("ordered aggregates, JSON lists and keyset paging run; more than 1,000 rows are refused", async () => {
     await put(
       "migrations",
       "0008_plans",
@@ -1006,6 +1000,9 @@ integration("statement plans", () => {
        export async function some(ctx, { ids }) {
          return (await ctx.sql("SELECT count(*) AS n FROM items WHERE id IN (SELECT value FROM json_each(?))", [JSON.stringify(ids)])).rows[0].n;
        }
+       export async function all(ctx) {
+         return (await ctx.sql\`SELECT id FROM items\`).rows.length;
+       }
        export async function page(ctx, { after }) {
          return (await ctx.sql\`SELECT id FROM items WHERE id > \${after} ORDER BY id LIMIT 1000\`).rows.map((row) => row.id);
        }`,
@@ -1026,17 +1023,13 @@ integration("statement plans", () => {
       { id: "a", titles: '["first","second"]' },
       { id: "b", titles: '["only"]' },
     ]);
-    await expect(call("query", "unindexed")).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringMatching(/subquery would read all of titles/),
-    });
-    await expect(call("query", "cross")).rejects.toMatchObject({
-      status: 400,
-      message: expect.stringMatching(
-        /read all of titles for every row of items/,
-      ),
-    });
-    // Patterns allowed before stay allowed.
+    // Statements the plan rule once refused run: without an index, a
+    // subquery reads all of titles per row, and a cross join pairs every row.
+    expect(await call("query", "unindexed")).toEqual([
+      { id: "a", titles: "[]" },
+      { id: "b", titles: "[]" },
+    ]);
+    expect(await call("query", "cross")).toEqual([{ n: 3000 }]);
     expect(await call("query", "hours")).toEqual([
       { hour: "10", n: 1 },
       { hour: "9", n: 5 },
@@ -1049,5 +1042,10 @@ integration("statement plans", () => {
       after: first.at(-1),
     })) as number[];
     expect([next[0], next.at(-1), next.length]).toEqual([1001, 1500, 500]);
+    // Without a LIMIT, 1,500 rows are more than a statement returns.
+    await expect(call("query", "all")).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/returns at most 1000 rows/),
+    });
   });
 });

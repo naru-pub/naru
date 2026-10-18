@@ -4,11 +4,10 @@ The mini (kr-seongsu-m4) serves the Data SDK and every site's database with
 workerd (`../README.md`). npm's workerd has no limit on how long a SQLite
 statement runs: Cloudflare enforces one in production, standalone workerd
 does not. It also runs every site's object on one thread, so a single slow
-statement holds up every site until it ends. The plan rule (`src/plan.ts`)
-refuses most slow statements before they run, with the reason, but it has a
-known gap (an `=` on an index that matches most of a table), and schema
-statements in migrations (`CREATE TABLE ... AS SELECT`, `CREATE INDEX`) are
-not held to it at all.
+statement holds up every site until it ends. Naru does not check a
+statement's query plan before it runs, so this budget is what bounds a slow
+one, migrations' schema statements (`CREATE TABLE ... AS SELECT`,
+`CREATE INDEX`) included.
 
 So the mini runs workerd built from the same release npm ships (the
 `workerd` version in `edge/package.json`) with one patch,

@@ -8,12 +8,9 @@ import type { SqlValue } from "./query";
 // attaching, triggers, transactions), is refused before it runs.
 //
 // SQLite's time is outside the fuel meter (engine.ts), and the mini's runtime
-// has no CPU limit, so a statement is also held to its plan (`checkPlan`,
-// plan.ts): its work may grow at most linearly with the tables it reads.
-// That is the early refusal, with its reason. Behind it, Naru's workerd on
-// the mini stops any one step of a statement after 3 seconds (seoul/workerd/,
-// `interrupted` below): what the plan rule lets through and still runs long,
-// such as an index equality that matches most of a table.
+// has no CPU limit, so Naru's workerd on the mini stops any one step of a
+// statement after 3 seconds (seoul/workerd/, `interrupted` below), and a
+// statement stopped again and again is paused (breaker.ts).
 
 /**
  * Naru's own tables, indexes and triggers in the site's database; a test keeps
@@ -315,8 +312,6 @@ export function classify(
     );
   return kind;
 }
-
-export { checkPlan, type PlanStep } from "./plan";
 
 /** A statement's bound values: strings, finite numbers, booleans or null. */
 export function bindings(values: unknown): SqlValue[] {

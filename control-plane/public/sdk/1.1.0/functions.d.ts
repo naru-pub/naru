@@ -91,14 +91,16 @@ export interface QueryCtx {
    * binds every interpolated value as a parameter; given text and values,
    * it runs a query builder's compiled statement. SELECT, INSERT, UPDATE and
    * DELETE run; a query only reads. Naru's own tables, pragmas, triggers,
-   * transactions and recursion are refused. A statement's plan may make one
-   * full pass over a table; every other table is reached by key (join on an
-   * indexed column), and a correlated subquery may not scan. It binds at
-   * most 100 values, returns at most 1,000 rows and 1 MiB, BLOB columns as
+   * transactions and recursion are refused. A statement is stopped once
+   * SQLite works on one step of it for 3 seconds; one stopped 3 times within
+   * a minute is paused for 5 minutes. It binds at most 100 values, returns at most 1,000 rows and 1 MiB, BLOB columns as
    * Uint8Arrays, and counts as one database operation; a call's statements
    * read at most 500,000 rows. A value a UNIQUE column already holds fails
    * the call with CONFLICT, `details.unique` naming the column; any other
    * mistake SQLite refuses, with its message.
+   *
+   * To stay fast, read a table whole at most once and reach every other
+   * table by key (join on an indexed column):
    *
    * - A list as one value: `WHERE id IN (SELECT value FROM json_each(?))`,
    *   bound as `JSON.stringify(ids)`.

@@ -3,9 +3,9 @@ import { describe, expect, test } from "@jest/globals";
 import { callSiteObject } from "@/lib/edge/client";
 
 // The step budget of Naru's own workerd (edge/seoul/workerd/), which the
-// mini runs: a site's statement that the plan rule lets through and that
-// still runs past 3 seconds is stopped. Only with that workerd: run with
-// NARU_WORKERD_BIN set to it (scripts/with-edge-worker.sh), as
+// mini runs: a site's statement that runs past 3 seconds is stopped. Only
+// with that workerd: run with NARU_WORKERD_BIN set to it
+// (scripts/with-edge-worker.sh), as
 //
 //   NARU_WORKERD_BIN=<workerd-...-naru.N-darwin-arm64> \
 //     bash scripts/test-data-sdk.sh src/lib/site-data/__tests__/statement-budget.test.ts
@@ -35,8 +35,7 @@ const call = (kind: "query" | "mutation", name: string) =>
   }).then((answer) => answer.result);
 
 // 50,000 posts on one board: each one's board matches every post by the
-// index, which the plan rule counts as bounded (plan.ts, "the known gap").
-// The pairs are 2.5 billion.
+// index. The pairs are 2.5 billion.
 const PAIRS =
   "SELECT count(*) AS n FROM posts p1 JOIN posts p2 ON p2.board = p1.board";
 const ROWS = `CREATE TABLE posts (id INTEGER PRIMARY KEY, board TEXT NOT NULL);
