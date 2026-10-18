@@ -10,8 +10,9 @@ import { unreadCount } from "./inbox";
 import { pageUrl, siteOrigins } from "./sites";
 import { pushSender, type PushSender } from "./push";
 
-// The app-notifications job (every minute): what sites queued with
-// ctx.notify reaches the accounts behind the members they named.
+// What sites queued with ctx.notify reaches the accounts behind the members
+// they named: the worker's watchAppNotifications every two seconds, with the
+// app-notifications job (every minute) as its backstop.
 //
 // For each site the Worker reports pending (edge/src/notify.ts), its outbox
 // is read oldest first. Each member id is resolved to its account through
@@ -44,9 +45,8 @@ interface OutboxRow {
   at: number;
 }
 
-export async function deliverAppNotifications(
-  sender: PushSender = pushSender(),
-) {
+/** One pass over the sites with queued notifications; the sender stays open. */
+export async function deliverPending(sender: PushSender) {
   const { sites } = await answerOf<{ sites: string[] }>(
     await requestWorker(
       siteDataWorker(),
@@ -57,20 +57,89 @@ export async function deliverAppNotifications(
     "queued notifications",
   );
   const totals = { sites: sites.length, stored: 0, pushed: 0 };
-  try {
-    for (const site of sites) {
-      try {
-        const { stored, pushed } = await deliverSite(site, sender);
-        totals.stored += stored;
-        totals.pushed += pushed;
-      } catch (error) {
-        console.error(`[app-notifications] ${site}:`, error);
-      }
+  for (const site of sites) {
+    try {
+      const { stored, pushed } = await deliverSite(site, sender);
+      totals.stored += stored;
+      totals.pushed += pushed;
+    } catch (error) {
+      console.error(`[app-notifications] ${site}:`, error);
     }
+  }
+  return totals;
+}
+
+/** The every-minute job's single pass (src/cli/deliver-app-notifications.ts). */
+export async function deliverAppNotifications(
+  sender: PushSender = pushSender(),
+) {
+  try {
+    return await deliverPending(sender);
   } finally {
     sender.close();
   }
-  return totals;
+}
+
+/**
+ * The worker's own loop: asks the Worker for queued notifications every
+ * `everyMs` and delivers them at once, so a push follows a site's mutation
+ * within seconds instead of at the next minute's job. The sender is kept, so
+ * the HTTP/2 session with APNs and its token stay warm. The job stays as the
+ * backstop; a row both deliver is stored, and pushed, once (outbox_id).
+ */
+export async function watchAppNotifications(
+  signal: AbortSignal,
+  {
+    everyMs = 2000,
+    deliver = deliverPending,
+    makeSender = pushSender,
+  }: {
+    everyMs?: number;
+    deliver?: (sender: PushSender) => Promise<{ stored: number; pushed: number; sites: number }>;
+    makeSender?: () => PushSender;
+  } = {},
+) {
+  let sender: PushSender | null = null;
+  let failingSince: number | null = null;
+  // Never throws: the worker stops when one of its listeners does, and a bad
+  // push key or an absent Worker must not take payments down with it.
+  const failed = (error: unknown) => {
+    if (failingSince === null || Date.now() - failingSince >= 60_000) {
+      console.error("[app-notifications] watch failed:", error);
+      failingSince = Date.now();
+    }
+  };
+  try {
+    while (!signal.aborted) {
+      try {
+        sender ??= makeSender();
+        const { sites, stored, pushed } = await deliver(sender);
+        if (failingSince !== null) {
+          console.log("[app-notifications] watching again");
+          failingSince = null;
+        }
+        if (stored)
+          console.log(
+            `[app-notifications] ${stored} notification(s) from ${sites} site(s), ${pushed} push(es)`,
+          );
+      } catch (error) {
+        failed(error);
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, everyMs);
+        signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    }
+  } finally {
+    sender?.close();
+  }
 }
 
 async function deliverSite(name: string, sender: PushSender) {

@@ -1,6 +1,7 @@
 import { runMaintenanceWorker } from "@/lib/maintenance/worker";
 import { SCHEDULED_JOBS } from "@/lib/maintenance/jobs";
 import { runPaymentWorker } from "@/lib/payments/payment-jobs";
+import { watchAppNotifications } from "@/lib/app-api/delivery";
 import { db } from "@/lib/database";
 import { closeAccountLockPool } from "@/lib/payments/account-lock";
 import { closeFederationDatabase, federation } from "@/lib/federation";
@@ -68,6 +69,8 @@ async function main() {
         .finally(() => abort.abort()),
       runPaymentWorker(abort.signal).finally(() => abort.abort()),
       runMaintenanceWorker(abort.signal).finally(() => abort.abort()),
+      // Pushes within seconds of ctx.notify (lib/app-api/delivery.ts).
+      watchAppNotifications(abort.signal),
     ]);
     for (const result of listeners)
       if (result.status === "rejected") throw result.reason;

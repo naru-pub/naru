@@ -46,8 +46,8 @@ await ctx.notify([post.author], {
   so the site learns nothing about who has the app.
 - At most 1,000 members a call; a site stores at most 1,000 notifications an
   hour, all recipients counted, and the rest are dropped.
-- Delivered within about a minute: the `app-notifications` job runs every
-  minute.
+- Delivered within a few seconds: the worker checks for queued notifications
+  every two seconds, with the every-minute `app-notifications` job as backstop.
 
 ## Consent
 
@@ -223,7 +223,8 @@ Tapping opens `url` and marks the notification read.
   row so a retried delivery stores once).
 - `ctx.notify` queues in the site's `_naru_notify_outbox` (`edge/src/notify.ts`,
   see docs/database.md). The `app-notifications` maintenance job
-  (`lib/app-api/delivery.ts`, every minute) takes the Worker's pending sites,
+  (`lib/app-api/delivery.ts`; the worker's watch every two seconds, the job every
+  minute as backstop) takes the Worker's pending sites,
   resolves members to accounts through `site_members`, applies consent,
   stores, acknowledges, then pushes.
 - Pushes (`lib/app-api/push.ts`): APNs over Node `http2` with a token-based

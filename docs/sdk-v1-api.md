@@ -250,8 +250,8 @@ export async function reply(ctx, { post, text }) {
 `ctx.notify(memberIds, { title, body, path })` takes member IDs (at most
 1,000 a call), a `title` of 1–100 characters, an optional `body` of up to 500
 and a `path` on the site (default `/`), opened when the notification is
-tapped. Notifications go out only if the mutation returns, within about a
-minute. Each account decides in the app which sites may notify it: a site's
+tapped. Notifications go out only if the mutation returns, within a few
+seconds. Each account decides in the app which sites may notify it: a site's
 first notification asks, and the account allows or mutes it. Allowed
 sites' notifications are pushed to the account's devices; before that they
 wait in the app, and a muted site's are dropped. Members who are unknown,
