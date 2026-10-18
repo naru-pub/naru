@@ -1072,6 +1072,23 @@
       ],
       "throws": [],
       "signature": "type WriteCondition = { revision: Revision } | { absent: true }"
+    },
+    {
+      "name": "MEDIA_TYPES",
+      "kind": "variable",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The types Naru Media stores (the server refuses others), for a page that checks a file before uploading it. Site code reads them as ctx.media.types."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "const MEDIA_TYPES: readonly string[]"
     }
   ]
 }

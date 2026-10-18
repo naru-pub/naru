@@ -1051,4 +1051,124 @@ integration("statement plans", () => {
     // a dump from dropping its tables.
     expect((await readSiteDump(site)).text).toContain('"type":"end"');
   });
+
+  test("ctx's counters, members by role, uploads, browser sessions and owner name", async () => {
+    const run = (
+      kind: "query" | "mutation",
+      name: string,
+      args: unknown = null,
+      extra: Record<string, unknown> = {},
+    ) =>
+      callSiteObject<{ result: unknown }>(site, "call", {
+        ownerId,
+        site,
+        member: "member-1",
+        kind,
+        file: "extras",
+        name,
+        args,
+        ...extra,
+      }).then((answer) => answer.result);
+    await put(
+      "queries",
+      "extras",
+      `export async function view(ctx, { post }) {
+         // Counted once a browser session, from a query.
+         if (ctx.session && !(await ctx.session.get("viewed:" + post))) {
+           await ctx.session.set("viewed:" + post, true, { ttl: 60 });
+           await ctx.counters.increment("views", post);
+         }
+         return (await ctx.counters.get("views", [post]))[post];
+       }
+       export async function who(ctx, { role, after }) {
+         return { owner: ctx.ownerName, ...(await ctx.membersWithRole(role, { after, limit: 1 })) };
+       }
+       export async function upload(ctx, { url }) { return ctx.media.get(url); }`,
+      false,
+    );
+    await put(
+      "mutations",
+      "extras",
+      `export async function reset(ctx, { post }) { return ctx.counters.delete("views", post); }`,
+    );
+    const browser = { session: "browser-session-0001" };
+    expect(await run("query", "view", { post: 7 }, browser)).toBe(1);
+    expect(await run("query", "view", { post: 7 }, browser)).toBe(1);
+    expect(
+      await run(
+        "query",
+        "view",
+        { post: 7 },
+        { session: "browser-session-0002" },
+      ),
+    ).toBe(2);
+    // Without a session (or with one malformed) nothing counts.
+    expect(await run("query", "view", { post: 7 })).toBe(2);
+    expect(await run("query", "view", { post: 7 }, { session: "x" })).toBe(2);
+    // A live query's re-run counts nothing.
+    expect(
+      await run("query", "view", { post: 7 }, { ...browser, live: "refresh" }),
+    ).toBe(2);
+    // Counts go with dumps.
+    const dump = await readSiteDump(site);
+    expect(dump.site.counters).toEqual([{ name: "views", key: "7", value: 2 }]);
+    await run("mutation", "reset", { post: 7 });
+    expect(await run("query", "view", { post: 7 })).toBe(0);
+    // Members by role, a page at a time, and the owner's name.
+    await callSiteObject(site, "setMemberRoles", {
+      member: "member-5",
+      roles: ["moderator"],
+    });
+    await callSiteObject(site, "setMemberRoles", {
+      member: "member-6",
+      roles: ["moderator", "staff"],
+    });
+    expect(await run("query", "who", { role: "moderator" })).toEqual({
+      owner: site,
+      members: ["member-5"],
+      next: "member-5",
+    });
+    expect(
+      await run("query", "who", { role: "moderator", after: "member-5" }),
+    ).toEqual({ owner: site, members: ["member-6"], next: null });
+    // Uploads as Naru Media recorded them, and forgot them.
+    await callSiteObject(site, "recordMedia", {
+      files: [
+        {
+          id: "0190f5a0-0000-7000-8000-00000000f001",
+          url: "https://media.naru.pub/u/a.pdf",
+          member: "member-1",
+          name: "a.pdf",
+          type: "application/pdf",
+          size: 2048,
+          createdAt: 1,
+        },
+      ],
+    });
+    expect(
+      await run("query", "upload", { url: "https://media.naru.pub/u/a.pdf" }),
+    ).toEqual({
+      id: "0190f5a0-0000-7000-8000-00000000f001",
+      url: "https://media.naru.pub/u/a.pdf",
+      member: "member-1",
+      name: "a.pdf",
+      type: "application/pdf",
+      size: 2048,
+      createdAt: 1,
+    });
+    // The library's full list keeps only what it names.
+    await callSiteObject(site, "recordMedia", {
+      files: [],
+      keep: ["0190f5a0-0000-7000-8000-00000000f001"],
+    });
+    expect(
+      await run("query", "upload", { url: "https://media.naru.pub/u/a.pdf" }),
+    ).not.toBe(null);
+    await callSiteObject(site, "forgetMedia", {
+      ids: ["0190f5a0-0000-7000-8000-00000000f001"],
+    });
+    expect(
+      await run("query", "upload", { url: "https://media.naru.pub/u/a.pdf" }),
+    ).toBe(null);
+  });
 });

@@ -39,6 +39,29 @@ export const SCHEMA = `
     roles TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS _naru_counters (
+    name TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value INTEGER NOT NULL,
+    PRIMARY KEY (name, key)
+  );
+  CREATE TABLE IF NOT EXISTS _naru_sessions (
+    session TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    PRIMARY KEY (session, key)
+  );
+  CREATE INDEX IF NOT EXISTS _naru_sessions_expiry ON _naru_sessions (expires_at);
+  CREATE TABLE IF NOT EXISTS _naru_media (
+    id TEXT PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    member TEXT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS _naru_breaker_trips (
     id TEXT PRIMARY KEY,
     at INTEGER NOT NULL,

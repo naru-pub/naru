@@ -352,6 +352,12 @@ export interface NaruClient extends SiteCode, LiveQueries {
   };
 }
 
+/**
+ * The types Naru Media stores (the server refuses others), for a page that
+ * checks a file before uploading it. Site code reads them as ctx.media.types.
+ */
+export declare const MEDIA_TYPES: readonly string[];
+
 /** Creates a client bound to one site. */
 export declare function createNaru(options?: { site?: string }): NaruClient;
 

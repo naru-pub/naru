@@ -1,4 +1,5 @@
 import { deleteMedia } from "./media-deletion";
+import { MEDIA_TYPES } from "./media-types";
 import { uuidv7 } from "@/lib/uuid";
 import {
   DeleteObjectsCommand,
@@ -31,20 +32,7 @@ const mediaOrigin = () =>
     /\/$/,
     "",
   );
-const allowedTypes = new Set([
-  "image/avif",
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "audio/mpeg",
-  "audio/ogg",
-  "audio/opus",
-  "audio/wav",
-  "application/pdf",
-  "application/zip",
-  "text/plain",
-]);
+const allowedTypes = new Set<string>(MEDIA_TYPES);
 
 /** The external object-store boundary, kept narrow so API contracts can run locally. */
 export const mediaStorage = {
@@ -145,6 +133,49 @@ function uploadInput(body: Record<string, unknown>) {
   return { filename, contentType, size: Number(size) };
 }
 
+/**
+ * Tells the site's object of finished uploads, for ctx.media.get: one as it
+ * is ready, or (`all`) every one, as the owner opens the library. Its
+ * record helps site code check an upload, so a failure here does not fail
+ * the upload; the next library visit records it again.
+ */
+async function recordUploads(
+  site: string,
+  files: {
+    id: string;
+    object_key: string;
+    member_id: string | null;
+    original_name: string;
+    content_type: string;
+    size_bytes: number;
+    created_at: Date | string;
+  }[],
+  all = false,
+) {
+  try {
+    for (let at = 0; at < files.length; at += 1000)
+      await callSiteObject(site, "recordMedia", {
+        files: files.slice(at, at + 1000).map((file) => ({
+          id: file.id,
+          url: publicUrl(file.object_key),
+          member: file.member_id,
+          name: file.original_name,
+          type: file.content_type,
+          size: file.size_bytes,
+          createdAt: new Date(file.created_at).getTime(),
+        })),
+      });
+    // Last, so a record of an upload Naru deleted does not stay.
+    if (all)
+      await callSiteObject(site, "recordMedia", {
+        files: [],
+        keep: files.map((file) => file.id),
+      });
+  } catch (error) {
+    console.warn("Recording uploads in the site's object failed", error);
+  }
+}
+
 export async function executeMedia(command: MediaCommand) {
   if (command.path.length > 1) throw new DataError(404, "Not found.");
   const { owner, allowedIds, memberId } = await resolveSiteAccess({
@@ -198,15 +229,25 @@ export async function executeMedia(command: MediaCommand) {
     // upload rather than for each page (`tableMediaReferences`,
     // edge/src/site.ts). `partial` when the search stopped short.
     if (command.tableReferences && command.adminUserId !== undefined) {
-      const ids = (
-        await files()
-          .where("status", "=", "ready")
-          .where("deleted_at", "is", null)
-          .select("id")
-          .orderBy("created_at", "desc")
-          .limit(MAX_MEDIA_FILES)
-          .execute()
-      ).map((file) => file.id);
+      const ready = await files()
+        .where("status", "=", "ready")
+        .where("deleted_at", "is", null)
+        .select([
+          "id",
+          "object_key",
+          "member_id",
+          "original_name",
+          "content_type",
+          "size_bytes",
+          "created_at",
+        ])
+        .orderBy("created_at", "desc")
+        .limit(MAX_MEDIA_FILES)
+        .execute();
+      // Every upload, as ctx.media.get reads them: missed or stale records
+      // are put right as the owner looks.
+      await recordUploads(command.site, ready, true);
+      const ids = ready.map((file) => file.id);
       if (!ids.length) return { tableReferences: {}, partial: false };
       const found = await callSiteObject<TableReferences>(
         command.site,
@@ -438,10 +479,17 @@ export async function executeMedia(command: MediaCommand) {
       .returningAll()
       .executeTakeFirst();
     if (!ready) throw new DataError(404, "File not found.");
+    await recordUploads(command.site, [ready]);
     return { file: output(ready) };
   }
   if (command.method === "DELETE" && id) {
     await deleteMedia(owner.id, id, memberId);
+    try {
+      await callSiteObject(command.site, "forgetMedia", { ids: [id] });
+    } catch (error) {
+      // The next library visit drops it from the object's record.
+      console.warn("Forgetting an upload in the site's object failed", error);
+    }
     return { success: true };
   }
   throw new DataError(405, "Method not allowed.");

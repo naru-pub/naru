@@ -1681,6 +1681,270 @@ export class SiteData extends DurableObject<Env> {
     );
   }
 
+  /**
+   * The members holding `role` (`ctx.membersWithRole`), by member ID, up to
+   * 100 after `after`, and where to go on: null at the end.
+   */
+  private membersWithRole(role: unknown, options: unknown) {
+    const wanted = name(role);
+    const { after = "", limit = 100 } = (options ?? {}) as {
+      after?: unknown;
+      limit?: unknown;
+    };
+    if (
+      typeof after !== "string" ||
+      after.length > 256 ||
+      !Number.isInteger(limit) ||
+      (limit as number) < 1 ||
+      (limit as number) > 100
+    )
+      throw new DataError(
+        400,
+        "ctx.membersWithRole takes a role and { after, limit } of at most 100.",
+      );
+    const found = this.rows(
+      `SELECT member FROM _naru_roles, json_each(_naru_roles.roles)
+       WHERE json_each.value = ? AND member > ? ORDER BY member LIMIT ?`,
+      wanted,
+      after,
+      (limit as number) + 1,
+    ).map((row) => String(row.member));
+    const members = found.slice(0, limit as number);
+    return {
+      members,
+      next: found.length > (limit as number) ? members.at(-1) : null,
+    };
+  }
+
+  /**
+   * Counts kept by Naru beside the site's tables (`ctx.counters`): by name
+   * and key, read up to 100 keys at once and moved by whole steps. A query may
+   * count, and no count re-runs a live query; a live query's re-run counts
+   * nothing.
+   */
+  private counterName(value: unknown) {
+    if (typeof value !== "string" || !/^[\w.:-]{1,64}$/.test(value))
+      throw new DataError(
+        400,
+        "A counter's name is 1–64 letters, digits, _, ., : or -.",
+      );
+    return value;
+  }
+  private counterKey(value: unknown) {
+    const key = typeof value === "number" ? String(value) : value;
+    if (typeof key !== "string" || !key || key.length > 256)
+      throw new DataError(400, "A counter's key is 1–256 characters.");
+    return key;
+  }
+  private countersGet(counter: unknown, keys: unknown) {
+    const named = this.counterName(counter);
+    if (!Array.isArray(keys) || keys.length > 100)
+      throw new DataError(400, "ctx.counters.get takes at most 100 keys.");
+    const wanted = [...new Set(keys.map((key) => this.counterKey(key)))];
+    const found = new Map(
+      wanted.length
+        ? this.rows(
+            `SELECT key, value FROM _naru_counters WHERE name = ? AND key IN (SELECT value FROM json_each(?))`,
+            named,
+            JSON.stringify(wanted),
+          ).map((row) => [String(row.key), Number(row.value)])
+        : [],
+    );
+    return Object.fromEntries(wanted.map((key) => [key, found.get(key) ?? 0]));
+  }
+  private countersIncrement(
+    counter: unknown,
+    key: unknown,
+    by: unknown,
+    counting: boolean,
+  ) {
+    const named = this.counterName(counter);
+    const id = this.counterKey(key);
+    const step = by === undefined || by === null ? 1 : by;
+    if (!Number.isSafeInteger(step) || Math.abs(step as number) > 1e9)
+      throw new DataError(400, "A counter moves by a whole number.");
+    if (!counting) return this.countersGet(named, [id])[id];
+    return Number(
+      this.rows(
+        `INSERT INTO _naru_counters (name, key, value) VALUES (?, ?, ?)
+         ON CONFLICT (name, key) DO UPDATE SET value = value + excluded.value
+         RETURNING value`,
+        named,
+        id,
+        step as number,
+      )[0].value,
+    );
+  }
+  private countersDelete(counter: unknown, key: unknown) {
+    const named = this.counterName(counter);
+    if (key === undefined || key === null)
+      this.sql.exec("DELETE FROM _naru_counters WHERE name = ?", named);
+    else
+      this.sql.exec(
+        "DELETE FROM _naru_counters WHERE name = ? AND key = ?",
+        named,
+        this.counterKey(key),
+      );
+    return null;
+  }
+
+  /**
+   * One of the site's uploads (`ctx.media.get`), by its address or ID, as
+   * Naru Media recorded it as it was finished: its uploader (null, the
+   * owner), name, type and size; null for an address that is none of them.
+   */
+  private mediaGet(reference: unknown) {
+    if (typeof reference !== "string" || reference.length > 2000)
+      throw new DataError(
+        400,
+        "ctx.media.get takes an upload's address or ID.",
+      );
+    const row = this.rows(
+      "SELECT * FROM _naru_media WHERE id = ? OR url = ?",
+      reference,
+      reference,
+    )[0];
+    return row
+      ? {
+          id: String(row.id),
+          url: String(row.url),
+          member: row.member === null ? null : String(row.member),
+          name: String(row.name),
+          type: String(row.type),
+          size: Number(row.size),
+          createdAt: Number(row.created_at),
+        }
+      : null;
+  }
+
+  /**
+   * What one browser's calls share (`ctx.session`), kept under the random ID
+   * its SDK sends: values of at most 4 KiB of JSON, 100 a browser, each for
+   * a time (a day unless said, 30 days at most). The ID is the browser's to
+   * choose, so a session says nothing of who calls.
+   */
+  private sessionKey(value: unknown) {
+    if (typeof value !== "string" || !value || value.length > 128)
+      throw new DataError(400, "A session key is 1–128 characters.");
+    return value;
+  }
+  private sessionGet(session: string, key: unknown) {
+    const row = this.rows(
+      "SELECT value, expires_at FROM _naru_sessions WHERE session = ? AND key = ?",
+      session,
+      this.sessionKey(key),
+    )[0];
+    return row && Number(row.expires_at) > Date.now()
+      ? JSON.parse(String(row.value))
+      : null;
+  }
+  private sessionSet(
+    session: string,
+    key: unknown,
+    value: unknown,
+    options: unknown,
+  ) {
+    const id = this.sessionKey(key);
+    const json = JSON.stringify(value ?? null);
+    if (new TextEncoder().encode(json).byteLength > 4096)
+      throw new DataError(400, "A session value is at most 4 KiB of JSON.");
+    const { ttl = 86_400 } = (options ?? {}) as { ttl?: unknown };
+    if (
+      !Number.isInteger(ttl) ||
+      (ttl as number) < 1 ||
+      (ttl as number) > 30 * 86_400
+    )
+      throw new DataError(400, "A session value lasts 1 second to 30 days.");
+    const now = Date.now();
+    // Expired values go a few at a time, as values are set.
+    this.sql.exec(
+      "DELETE FROM _naru_sessions WHERE rowid IN (SELECT rowid FROM _naru_sessions WHERE expires_at <= ? LIMIT 50)",
+      now,
+    );
+    const held = Number(
+      this.rows(
+        "SELECT count(*) AS n FROM _naru_sessions WHERE session = ? AND key != ?",
+        session,
+        id,
+      )[0].n,
+    );
+    if (held >= 100)
+      throw new DataError(400, "A session holds at most 100 values.");
+    this.sql.exec(
+      `INSERT INTO _naru_sessions (session, key, value, expires_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (session, key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`,
+      session,
+      id,
+      json,
+      now + (ttl as number) * 1000,
+    );
+    return null;
+  }
+  private sessionDelete(session: string, key: unknown) {
+    this.sql.exec(
+      "DELETE FROM _naru_sessions WHERE session = ? AND key = ?",
+      session,
+      this.sessionKey(key),
+    );
+    return null;
+  }
+
+  /**
+   * Records finished uploads for ctx.media.get (media.ts): each as it is
+   * ready, and all of them, a thousand a call, as the owner opens the media
+   * library, with `keep` (every upload's ID) last so none stays that Naru
+   * deleted. What is already recorded as it is writes nothing, so a look
+   * at an unchanged library leaves the object as it was (its table scan's
+   * answer stands).
+   */
+  async recordMedia(input: { files: unknown; keep?: unknown }) {
+    return this.run(() => {
+      if (!Array.isArray(input.files) || input.files.length > 1000)
+        throw new DataError(400, "recordMedia takes at most 1000 files.");
+      if (input.keep !== undefined) {
+        if (!Array.isArray(input.keep) || input.keep.length > 10_000)
+          throw new DataError(400, "recordMedia keeps at most 10000 files.");
+        this.sql.exec(
+          "DELETE FROM _naru_media WHERE id NOT IN (SELECT value FROM json_each(?))",
+          JSON.stringify(input.keep.map(String)),
+        );
+      }
+      for (const file of input.files as Record<string, unknown>[])
+        this.sql.exec(
+          `INSERT INTO _naru_media (id, url, member, name, type, size, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET url = excluded.url, member = excluded.member,
+             name = excluded.name, type = excluded.type, size = excluded.size
+           WHERE url IS NOT excluded.url OR member IS NOT excluded.member
+             OR name IS NOT excluded.name OR type IS NOT excluded.type
+             OR size IS NOT excluded.size`,
+          String(file.id),
+          String(file.url),
+          file.member === null || file.member === undefined
+            ? null
+            : String(file.member),
+          String(file.name),
+          String(file.type),
+          Number(file.size),
+          Number(file.createdAt ?? Date.now()),
+        );
+      return { recorded: input.files.length };
+    });
+  }
+
+  /** Forgets deleted uploads (media-deletion.ts). */
+  async forgetMedia(input: { ids: unknown }) {
+    return this.run(() => {
+      if (!Array.isArray(input.ids) || input.ids.length > 1000)
+        throw new DataError(400, "forgetMedia takes at most 1000 IDs.");
+      this.sql.exec(
+        "DELETE FROM _naru_media WHERE id IN (SELECT value FROM json_each(?))",
+        JSON.stringify(input.ids.map(String)),
+      );
+      return { forgotten: input.ids.length };
+    });
+  }
+
   /** Replaces a member's roles: at most 16 distinct names, none to clear. */
   private setRoles(member: unknown, roles: unknown) {
     const id = name(member);
@@ -1800,7 +2064,13 @@ export class SiteData extends DurableObject<Env> {
    */
   private siteHost(
     tables: SqlTables = { read: new Set(), written: new Set() },
-    call?: CallIdentity & { site: string },
+    call?: CallIdentity & {
+      site: string;
+      /** The calling browser's session ID, when its SDK sent one. */
+      session?: string;
+      /** A live query's re-run counts nothing. */
+      counting?: boolean;
+    },
   ): Host {
     const sqlBudget = { rowsRead: 0, tables };
     return (operation, args) => {
@@ -1809,6 +2079,34 @@ export class SiteData extends DurableObject<Env> {
           return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
         case "rolesOf":
           return this.memberRoles(args[0]);
+        case "membersWithRole":
+          return this.membersWithRole(args[0], args[1]);
+        case "countersGet":
+          return this.countersGet(args[0], args[1]);
+        case "countersIncrement":
+          return this.countersIncrement(
+            args[0],
+            args[1],
+            args[2],
+            call?.counting !== false,
+          );
+        case "countersDelete":
+          return this.countersDelete(args[0], args[1]);
+        case "mediaGet":
+          return this.mediaGet(args[0]);
+        case "sessionGet":
+        case "sessionSet":
+        case "sessionDelete": {
+          const session = call?.session;
+          if (!session) throw new DataError(400, "This call has no session.");
+          if (operation === "sessionGet")
+            return this.sessionGet(session, args[0]);
+          // A live query's re-run changes nothing.
+          if (call?.counting === false) return null;
+          return operation === "sessionSet"
+            ? this.sessionSet(session, args[0], args[1], args[2])
+            : this.sessionDelete(session, args[0]);
+        }
         case "setRoles":
           this.setRoles(args[0], args[1]);
           return null;
@@ -1884,8 +2182,17 @@ export class SiteData extends DurableObject<Env> {
     live?: "subscribe" | "refresh";
     /** The site's paused statements (breaker.ts), from the Worker. */
     paused?: unknown;
+    /** The calling browser's session ID (its SDK's Naru-Session header). */
+    session?: unknown;
   }): Promise<Outcome<{ result: unknown; tables?: string[] }>> {
     if (input.paused !== undefined) this.paused = pausedList(input.paused);
+    // Random IDs the SDK makes; anything else is no session.
+    const session =
+      typeof input.session === "string" &&
+      /^[A-Za-z0-9_-]{16,64}$/.test(input.session) &&
+      !input.live
+        ? input.session
+        : undefined;
     const visitor = input.member === null && input.visitor === true;
     const kind = input.kind;
     const readonly = kind === "query" || kind === "route";
@@ -1963,12 +2270,16 @@ export class SiteData extends DurableObject<Env> {
                 input.member === null
                   ? []
                   : (this.memberRoles([input.member])[input.member] ?? []),
+              ownerName: input.site,
+              session: session !== undefined,
             },
             this.siteHost(tables, {
               site: input.site,
               kind,
               file: input.file,
               name: input.name,
+              session,
+              counting: input.live !== "refresh",
             }),
           ),
         ),
@@ -2005,6 +2316,7 @@ export class SiteData extends DurableObject<Env> {
     clientIp?: string;
     kind: "query" | "mutation";
     paused?: unknown;
+    session?: unknown;
   }): Promise<Outcome<{ pass: true } | { pass?: undefined; result: unknown }>> {
     const ownerId = this.meta("owner_id");
     const until = this.meta("entitled_until");
@@ -3082,6 +3394,8 @@ export class SiteData extends DurableObject<Env> {
           })),
         { table: "_naru_migrations", from: "_naru_migrations", virtual: false },
         { table: "_naru_roles", from: "_naru_roles", virtual: false },
+        // ctx.counters: the site's counts, kept and restored with its rows.
+        { table: "_naru_counters", from: "_naru_counters", virtual: false },
       ];
       const tables = sources.map((source, n) => {
         const snap = `${SNAP}${n}`;
@@ -3269,7 +3583,8 @@ export class SiteData extends DurableObject<Env> {
         site === null
           ? !(DUMP_TABLES as readonly string[]).includes(table) &&
             table !== "_naru_migrations" &&
-            table !== "_naru_roles"
+            table !== "_naru_roles" &&
+            table !== "_naru_counters"
           : !site || reserved(site)
       )
         throw new DataError(
@@ -3343,6 +3658,7 @@ export class SiteData extends DurableObject<Env> {
           );
         this.sql.exec("DELETE FROM _naru_migrations");
         this.sql.exec("DELETE FROM _naru_roles");
+        this.sql.exec("DELETE FROM _naru_counters");
         for (const sql of staged.schema) {
           for (const statement of statements(sql))
             classify(statement.tokens, ["schema"]);
@@ -3389,6 +3705,7 @@ export class SiteData extends DurableObject<Env> {
         }
         copy("_naru_migrations", "_naru_migrations", false);
         copy("_naru_roles", "_naru_roles", false);
+        copy("_naru_counters", "_naru_counters", false);
         for (const table of DUMP_TABLES) {
           if (options.keepPresent && table === "rate_limits") continue;
           this.sql.exec(`DELETE FROM ${table}`);

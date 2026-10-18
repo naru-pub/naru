@@ -140,6 +140,8 @@ async function visit(
         args: body?.args ?? null,
         clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
         paused,
+        // The browser's session (ctx.session), as its SDK sends it.
+        session: request.headers.get("naru-session") ?? undefined,
       })) as typeof outcome;
     } catch (error) {
       settle(env.SITES, ctx, site, call, error);

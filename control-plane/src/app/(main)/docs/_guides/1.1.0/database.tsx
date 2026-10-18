@@ -978,6 +978,10 @@ try {
                     "누가 불렀는지 (위 표)",
                   ],
                   [
+                    <code key="c">ownerName</code>,
+                    "사이트 주인의 나루 아이디 (누가 부르든)",
+                  ],
+                  [
                     <code key="c">now</code>,
                     "호출 시각(밀리초). 한 호출 안에서 바뀌지 않습니다.",
                   ],
@@ -992,6 +996,24 @@ try {
                   [
                     <code key="c">rolesOf(회원ID 목록)</code>,
                     "회원들의 역할 (한 번에 100명까지)",
+                  ],
+                  [
+                    <code key="c">
+                      membersWithRole(역할, {"{ after, limit }"})
+                    </code>,
+                    "그 역할을 가진 회원 ID (한 번에 100명까지, next로 이어서)",
+                  ],
+                  [
+                    <code key="c">counters.get · increment · delete</code>,
+                    "나루가 사이트 테이블 옆에 세는 수 (조회수 등). 쿼리에서도 셀 수 있고 실시간 쿼리를 다시 돌리지 않습니다. delete는 뮤테이션에서만",
+                  ],
+                  [
+                    <code key="c">media.get(주소 또는 ID) · media.types</code>,
+                    "나루 미디어가 기록한 업로드 (올린 회원, 이름, 종류, 크기), 저장하는 파일 종류",
+                  ],
+                  [
+                    <code key="c">session.get · set · delete</code>,
+                    "한 브라우저의 호출이 잠시 나눠 갖는 값 (SDK가 보내는 임의 ID 기준, 실시간 쿼리에서는 null). 누구인지를 가리는 데는 쓰지 마세요",
                   ],
                   [
                     <code key="c">passwords.verify(비밀번호, 해시, 키)</code>,

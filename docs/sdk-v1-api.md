@@ -334,8 +334,11 @@ do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 **ctx.** Its types are in `https://sdk.naru.pub/sdk/1.1.0/functions.d.ts`, written
 by hand beside the generated `naru.d.ts` (`Query`, `Mutation`, `QueryCtx`,
 `MutationCtx`, `CallingMember`, `SqlValue`, `SqlResult`, `ErrorCode`, `Json`).
-`ctx` has `member`, `owner`, `visitor`, `now` (milliseconds, fixed for the
-whole call), `fail()`, and these methods, which return promises:
+`ctx` has `member`, `owner`, `ownerName` (the site's owner's Naru login,
+whoever calls), `visitor`, `now` (milliseconds, fixed for the whole call),
+`fail()`, `media.types` (the types Naru Media stores; pages have them as the
+SDK's `MEDIA_TYPES`), `session` (below, or null), and these methods, which
+return promises:
 
 - `sql`, one statement against the site's own tables: as a tag,
   ``ctx.sql`... ${value}` `` binds every interpolated value as a parameter;
@@ -353,6 +356,30 @@ whole call), `fail()`, and these methods, which return promises:
   with its message;
 - `rolesOf(ids)`, members' roles by ID, at most 100 IDs; a member without
   any has `[]`;
+- `membersWithRole(role, { after, limit })`, the members holding a role by
+  member ID, up to `limit` (at most 100) after `after`, as
+  `{ members, next }` (`next` null at the end);
+- `counters.get(name, keys)` and `counters.increment(name, key, by = 1)`,
+  counts Naru keeps beside the site's tables, by a name (1–64 of letters,
+  digits, `_ . : -`) and a key, at most 100 keys a read. A query may count,
+  so a page reading a post can count its view in the same call; no count
+  re-runs a live query, a live query's re-run counts nothing, and counts go
+  into restore points with the site's tables. In mutations only,
+  `counters.delete(name, key?)` forgets a key's count, or every count of a
+  name;
+- `media.get(urlOrId)`, one of the site's uploads as Naru Media recorded it
+  when it was finished: `{ id, url, member, name, type, size, createdAt }`
+  (`member` null for the owner's), or null for any other address. Naru
+  records each upload as it is finished and every one again whenever the
+  owner opens the media library;
+- `session.get(key)`, `session.set(key, value, { ttl })` and
+  `session.delete(key)`: what one browser's calls share for a while. The
+  browser SDK sends a random ID of its own (kept in `localStorage`) with each
+  query and mutation as `Naru-Session`; calls without one (live queries,
+  older pages) have `session` null. Values are at most 4 KiB of JSON, 100 a
+  browser, each kept `ttl` seconds (a day unless given, 30 days at most). The
+  browser chooses its ID, so use a session for things such as counting a view
+  once, never to decide who may do what;
 - `passwords.verify(password, hash, key)`, whether a guest's password
   matches a hash the site kept. Each `key` (such as `"post:42"`) accepts ten
   wrong passwords an hour, whoever tries; then every check of it fails with

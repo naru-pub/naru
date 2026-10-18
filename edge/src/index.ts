@@ -90,6 +90,9 @@ const OPERATIONS = [
   "siteTables",
   "rolesOfMembers",
   "setMemberRoles",
+  // Uploads as Naru Media finishes and deletes them, for ctx.media.get.
+  "recordMedia",
+  "forgetMedia",
   "render",
   "erase",
   "configure",
@@ -156,6 +159,10 @@ function dispatch(
       return stub.render(input);
     case "setMemberRoles":
       return stub.setMemberRoles(input);
+    case "recordMedia":
+      return stub.recordMedia(input);
+    case "forgetMedia":
+      return stub.forgetMedia(input);
     case "export":
       return stub.export();
     case "import":

@@ -1113,6 +1113,32 @@ integration("site members", () => {
     test("a member uploads into the site's media, and finishes only their own", async () => {
       const bob = await signIn("bob");
       const carol = await signIn("carol");
+      // Site code reads the upload as it was finished (ctx.media.get), and
+      // the browser's session the control plane passes on (ctx.session).
+      await callSiteObject("alice", "putFunctions", {
+        site: "alice",
+        folder: "queries",
+        file: "uploads",
+        source: `export async function get(ctx, { id }) { return ctx.media.get(id); }
+          export async function seen(ctx) {
+            const before = await ctx.session.get("seen");
+            await ctx.session.set("seen", true);
+            return before;
+          }`,
+      });
+      const uploadCall = (name: string, args: unknown, extra = {}) =>
+        executeCall({
+          site: "alice",
+          path: [`uploads:${name}`],
+          method: "POST",
+          kind: "query",
+          body: { args },
+          bearer: { token: bob.accessToken, origin },
+          ...extra,
+        }).then((answer) => (answer as { result: unknown }).result);
+      const session = { session: "control-plane-session-1" };
+      expect(await uploadCall("seen", null, session)).toBe(null);
+      expect(await uploadCall("seen", null, session)).toBe(true);
       const authorized = await media(bob.accessToken, "POST", [], file);
       expect(authorized).toMatchObject({ id: expect.any(String) });
       const row = await db
@@ -1127,6 +1153,13 @@ integration("site members", () => {
       expect(
         await media(bob.accessToken, "PUT", [authorized.id]),
       ).toMatchObject({ file: { name: "log.png", size: 3 } });
+      expect(await uploadCall("get", { id: authorized.id })).toMatchObject({
+        id: authorized.id,
+        member: bob.memberId,
+        name: "log.png",
+        type: "image/png",
+        size: 3,
+      });
       // Members cannot list files or delete another member's upload.
       await expect(media(bob.accessToken, "GET", [])).rejects.toMatchObject({
         status: 403,
@@ -1135,6 +1168,7 @@ integration("site members", () => {
         media(carol.accessToken, "DELETE", [authorized.id]),
       ).rejects.toMatchObject({ status: 403 });
       await media(bob.accessToken, "DELETE", [authorized.id]);
+      expect(await uploadCall("get", { id: authorized.id })).toBe(null);
       await media(bob.accessToken, "DELETE", [authorized.id]);
       await expect(
         media(bob.accessToken, "PUT", [authorized.id]),

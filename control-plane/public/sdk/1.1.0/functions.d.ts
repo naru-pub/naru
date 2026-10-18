@@ -74,6 +74,8 @@ export interface QueryCtx {
   readonly member: CallingMember | null;
   /** The site's owner called. */
   readonly owner: boolean;
+  /** The site's owner's Naru login, whoever calls: the site's own name. */
+  readonly ownerName: string;
   /** No one is signed in. */
   readonly visitor: boolean;
   /** The call's time in milliseconds, fixed for the whole call. */
@@ -122,6 +124,61 @@ export interface QueryCtx {
   /** Members' roles, by ID: at most 100 IDs a call; a member without any has []. */
   rolesOf(members: string[]): Promise<Record<string, string[]>>;
   /**
+   * The members holding `role`, by member ID: up to `limit` (at most 100)
+   * after `after`, and `next` to go on from (null at the end).
+   */
+  membersWithRole(
+    role: string,
+    options?: { after?: string; limit?: number },
+  ): Promise<{ members: string[]; next: string | null }>;
+  /**
+   * Counts Naru keeps beside the site's tables, by name (1–64 of letters,
+   * digits, `_ . : -`) and key (a string or number): view counts and the like.
+   * A query may count, so a page reading a post can count its view in the
+   * same call; no count re-runs a live query, and a live query's re-run counts
+   * nothing. Counts are kept in restore points with the site's tables.
+   */
+  counters: {
+    /** Each key's count (0 if never counted): at most 100 keys. */
+    get(
+      name: string,
+      keys: (string | number)[],
+    ): Promise<Record<string, number>>;
+    /** Adds `by` (1 unless given, a whole number) and answers the count. */
+    increment(name: string, key: string | number, by?: number): Promise<number>;
+  };
+  /**
+   * The site's uploads, as Naru Media recorded them when each was finished:
+   * `get` takes an upload's address or ID and answers who uploaded it
+   * (`member`, null for the owner), its name, type and size in bytes, or null
+   * for anything else. `types` is what Naru Media stores.
+   */
+  media: {
+    get(urlOrId: string): Promise<{
+      id: string;
+      url: string;
+      member: string | null;
+      name: string;
+      type: string;
+      size: number;
+      createdAt: number;
+    } | null>;
+    readonly types: readonly string[];
+  };
+  /**
+   * What one browser's calls share, for a while: the browser SDK sends a
+   * random ID of its own with each query and mutation, so this is null for
+   * calls without one (live queries, older SDKs). Values are at most 4 KiB of
+   * JSON, 100 a browser, each kept `ttl` seconds (a day unless given, 30 days
+   * at most). The browser chooses its ID: use a session for things such as
+   * counting a view once, never to decide who may do what.
+   */
+  readonly session: {
+    get(key: string): Promise<Json | null>;
+    set(key: string, value: Json, options?: { ttl?: number }): Promise<null>;
+    delete(key: string): Promise<null>;
+  } | null;
+  /**
    * Guests' passwords, kept by the site as hashes. `verify` allows ten wrong
    * passwords an hour for each `key` (such as "post:42"), whoever tries,
    * then fails with RATE_LIMITED. A call makes at most 3 password checks.
@@ -142,6 +199,10 @@ export interface MutationCtx extends QueryCtx {
    * them. Kept only if the mutation returns.
    */
   setRoles(member: string, roles: string[]): Promise<null>;
+  counters: QueryCtx["counters"] & {
+    /** Forgets a key's count, or with no key every count of `name`. */
+    delete(name: string, key?: string | number): Promise<null>;
+  };
 }
 
 /** `export async function name(ctx, args)` in `_naru/queries/` or `_naru/mutations/`. */

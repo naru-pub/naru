@@ -26,6 +26,8 @@ export type DataCommand = {
   // report the expiry the renewed token now has.
   bearer?: { token: string; origin: string | null; expiresAt?: number };
   clientIp?: string;
+  /** The browser's session ID (Naru-Session), for ctx.session. */
+  session?: string;
   /** Cancels the call to the Worker; a write the object began still settles. */
   signal?: AbortSignal;
   body?: Record<string, unknown>;
@@ -238,6 +240,7 @@ export async function executeCall(
         site: command.site,
         member: memberId ?? null,
         ...(visitor ? { visitor: true, clientIp: command.clientIp } : {}),
+        ...(command.session ? { session: command.session } : {}),
         file,
         name: fn,
         args: command.body?.args ?? null,

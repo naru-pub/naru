@@ -537,6 +537,9 @@ export async function start(
     for (const [index, path] of everything.entries())
       await publish(path, index === everything.length - 1);
     await installDeclaration();
+    // Every upload kept here, as ctx.media.get reads them (Naru records
+    // them as the owner opens the media library).
+    await recordUploads([...uploads.values()], true);
   }
 
   /* ------------------------------------------------ sign-in, tokens --- */
@@ -686,6 +689,25 @@ export async function start(
     writeFile(uploadsFile, JSON.stringify([...uploads.values()], null, 2));
   const mediaUrl = (upload: Upload) =>
     `${MEDIA_ORIGIN}/${OWNER}/${upload.file}`;
+  /** Tells the site's object of uploads, for ctx.media.get (media.ts). */
+  async function recordUploads(list: Upload[], all = false) {
+    for (let at = 0; at < list.length; at += 1000)
+      await object("recordMedia", {
+        files: list.slice(at, at + 1000).map((upload) => ({
+          id: upload.id,
+          url: mediaUrl(upload),
+          member: upload.member,
+          name: upload.name,
+          type: upload.contentType,
+          size: upload.size,
+        })),
+      });
+    if (all)
+      await object("recordMedia", {
+        files: [],
+        keep: list.map((upload) => upload.id),
+      });
+  }
   const serviceWorker = `self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (event) => {
@@ -730,6 +752,7 @@ self.addEventListener("fetch", (event) => {
       throw new DataError(404, "File not found.");
     if (method === "PUT") {
       await saveUploads();
+      await recordUploads([upload]);
       return {
         file: {
           id: upload.id,
@@ -744,6 +767,7 @@ self.addEventListener("fetch", (event) => {
       await rm(join(mediaDir, upload.file), { force: true });
       uploads.delete(upload.id);
       await saveUploads();
+      await object("forgetMedia", { ids: [upload.id] });
       return { success: true };
     }
     throw new DataError(405, "Method not allowed.");
@@ -817,6 +841,10 @@ self.addEventListener("fetch", (event) => {
         name: fn,
         args: body?.args ?? null,
         kind: CALLS[path[0] as keyof typeof CALLS],
+        // The browser's session ID (ctx.session), as its SDK sends it.
+        ...(typeof req.headers["naru-session"] === "string"
+          ? { session: req.headers["naru-session"] }
+          : {}),
       });
       return json(res, 200, { result });
     }
