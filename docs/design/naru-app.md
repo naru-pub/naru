@@ -190,6 +190,11 @@ sites' notifications are listed.
 
 `POST /notifications/read` `{ ids: [...] }` or `{ all: true }` → `{ unread }`.
 
+`DELETE /notifications/<id>` → `{ unread }`: deletes one of the account's
+notifications, which the apps offer as a swipe and as 알림 삭제 in a
+notification's menu. A notification already gone, or another account's, gets
+the same answer.
+
 ### Sites
 
 `GET /sites` → `{ sites: [{ site: {…}, state: "pending" | "allowed" | "muted", updatedAt }] }`,
