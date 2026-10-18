@@ -1,0 +1,62 @@
+{
+  "name": "@naru-pub/dev",
+  "version": "1.1.0",
+  "description": "Run and test a Naru site locally: its pages, the Data SDK and _naru/ on the real edge Worker, with one-click sign-in.",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/naru-pub/naru/tree/main/naru-dev#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naru-pub/naru.git",
+    "directory": "naru-dev"
+  },
+  "bugs": "https://github.com/naru-pub/naru/issues",
+  "keywords": [
+    "naru",
+    "naru.pub",
+    "local development",
+    "testing",
+    "workerd"
+  ],
+  "type": "module",
+  "bin": {
+    "naru-dev": "dist/cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.mjs"
+    },
+    "./sdk/*": "./dist/sdk/*",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node test/smoke.mjs",
+    "prepack": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "workerd": "1.20261006.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

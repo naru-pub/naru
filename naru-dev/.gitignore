@@ -1,0 +1,7 @@
+node_modules/
+dist/
+# Copied from the repository's by the build, for the package.
+LICENSE
+# The Worker `pnpm naru-dev` in control-plane/ builds for itself.
+.worker/
+*.tgz

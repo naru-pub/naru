@@ -1,0 +1,10 @@
+# The package is its own one-package workspace, apart from control-plane/
+# and edge/.
+packages:
+  - "."
+allowBuilds:
+  esbuild: true
+  workerd: true
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

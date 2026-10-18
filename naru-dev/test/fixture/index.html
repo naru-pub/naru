@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>naru-dev fixture</title>
+  </head>
+  <body>
+    <p id="status">…</p>
+    <script type="module">
+      import { createNaru } from "https://sdk.naru.pub/sdk/1.1.0/naru.js";
+      const naru = createNaru();
+      const notes = await naru.query("notes:list");
+      document.querySelector("#status").textContent = `${notes.length} notes`;
+    </script>
+  </body>
+</html>
