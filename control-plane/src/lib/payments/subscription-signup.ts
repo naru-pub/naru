@@ -1,5 +1,9 @@
 import { randomUUID } from "crypto";
 import {
+  renewingStoreSubscription,
+  STORE_RENEWING_MESSAGE,
+} from "@/lib/payments/store/ledger";
+import {
   LIVE_SUBSCRIPTION_STATUSES,
   type SubscriptionStatus,
 } from "@/lib/payments/payment-states";
@@ -69,8 +73,7 @@ type IssuedKey = Extract<IssueOutcome, { kind: "issued" }>;
 // the old card's key — retired, or waiting to be deleted at Toss — and use it.
 
 export type SignupResult<T extends object> =
-  | ({ ok: true } & T)
-  | { ok: false; status: number; message: string };
+  ({ ok: true } & T) | { ok: false; status: number; message: string };
 
 function fail(status: number, message: string) {
   return { ok: false as const, status, message };
@@ -207,6 +210,9 @@ async function prepareSubscriptionLocked(opts: {
   ) {
     return fail(409, "이미 활성화되었거나 예약된 정기 결제가 있습니다.");
   }
+  // One recurring plan at a time: a store subscription renews on its own.
+  const storePlan = await renewingStoreSubscription(db, userId);
+  if (storePlan) return fail(409, STORE_RENEWING_MESSAGE(storePlan.store));
 
   const customerKey = await customerKeyFor(
     userId,

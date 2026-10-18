@@ -55,6 +55,18 @@ export const MAINTENANCE_JOBS = [
     payment: true,
   },
   {
+    // App Store and Play subscriptions (lib/payments/store): Play
+    // acknowledgements, renewals the notifications missed, voided orders.
+    // Play refunds a purchase unacknowledged for three days: report only
+    // failures that last six hours.
+    name: "store-subscription-reconciliation",
+    script: "reconcile-store-subscriptions.ts",
+    minutes: 15,
+    timeout: 300,
+    payment: true,
+    alertAfterMinutes: 360,
+  },
+  {
     name: "billing-key-deletion",
     script: "delete-retired-billing-keys.ts",
     minutes: 5,

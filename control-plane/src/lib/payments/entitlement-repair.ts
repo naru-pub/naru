@@ -3,7 +3,11 @@ import { db } from "@/lib/database";
 import { withAccountLock } from "@/lib/payments/account-lock";
 import { enqueueJob } from "@/lib/payments/payment-jobs";
 import { recordPaymentEvent } from "@/lib/payments/payment-events";
-import { planPaidTimeRepair, repairPaidTime } from "@/lib/payments/paid-time";
+import {
+  planPaidTimeRepair,
+  repairPaidTime,
+  storePaidUntilByUser,
+} from "@/lib/payments/paid-time";
 
 export class EntitlementRepairError extends Error {
   constructor(
@@ -183,6 +187,7 @@ export async function entitlementRepairCandidates(now = new Date()) {
     .orderBy("u.id")
     .orderBy("p.id")
     .execute();
+  const store = await storePaidUntilByUser(db);
   const groups = new Map<string, typeof records>();
   for (const row of records) {
     const rows = groups.get(row.user_id) ?? [];
@@ -208,10 +213,17 @@ export async function entitlementRepairCandidates(now = new Date()) {
           : [],
       );
       const plan = planPaidTimeRepair(payments);
+      // Periods bought in the apps are the stores' and are never compacted;
+      // they only raise where paid time should end.
+      const storeUntil = store.get(userId) ?? null;
+      const expectedUntil =
+        storeUntil && (!plan.expectedUntil || storeUntil > plan.expectedUntil)
+          ? storeUntil
+          : plan.expectedUntil;
       const beforeUntil = rows[0].supporter_until;
       const delta =
         Math.max(now.getTime(), beforeUntil?.getTime() ?? 0) -
-        Math.max(now.getTime(), plan.expectedUntil?.getTime() ?? 0);
+        Math.max(now.getTime(), expectedUntil?.getTime() ?? 0);
       if (Math.abs(delta) <= 60_000 && !plan.changedPaymentIds.length)
         return [];
       return [
@@ -219,7 +231,7 @@ export async function entitlementRepairCandidates(now = new Date()) {
           userId,
           loginName: rows[0].login_name,
           beforeUntil,
-          expectedUntil: plan.expectedUntil,
+          expectedUntil,
           payments: payments.map((payment, index) => ({
             ...payment,
             afterStart: plan.rows[index].period_start,

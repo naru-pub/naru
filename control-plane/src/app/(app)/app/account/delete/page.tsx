@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { validateRequest } from "@/lib/auth";
+import StoreDeletionNotice from "../../../../(main)/account/StoreDeletionNotice";
 import DeleteAccountButton from "../../../../(main)/account/DeleteAccountButton";
 import AppSignIn from "../../authorize/AppSignIn";
 import SwitchAccount from "../../SwitchAccount";
@@ -20,6 +21,7 @@ export default async function AppDeleteAccountPage() {
         데이터베이스가 모두 지워지며 되돌릴 수 없습니다. 이메일을 인증한 계정은
         확인 메일의 링크를 눌러야 삭제가 끝납니다.
       </p>
+      <StoreDeletionNotice userId={user.id} />
       <DeleteAccountButton app />
       <SwitchAccount account={user.loginName} />
     </div>

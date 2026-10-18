@@ -23,6 +23,10 @@ import {
   UNCONFIRMED_EXPIRY_MS,
 } from "@/lib/payments/payment-reconciliation";
 import { AccountBusyError, withAccountLock } from "@/lib/payments/account-lock";
+import {
+  renewingStoreSubscription,
+  STORE_RENEWING_MESSAGE,
+} from "@/lib/payments/store/ledger";
 
 // Unconfirmed one-time orders an account may have open at once.
 const MAX_PENDING_ONE_TIME_ORDERS = 10;
@@ -146,6 +150,16 @@ export async function POST(request: NextRequest) {
               message: planRunning
                 ? "정기 결제 중에는 한 번만 결제를 할 수 없습니다. 정기 결제를 해지한 뒤 결제해 주세요."
                 : "일회성 결제 기간 중에는 정기 결제로만 전환할 수 있습니다.",
+            },
+            { status: 409 },
+          );
+        }
+        const storePlan = await renewingStoreSubscription(db, user.id);
+        if (storePlan) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: STORE_RENEWING_MESSAGE(storePlan.store),
             },
             { status: 409 },
           );

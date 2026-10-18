@@ -1,6 +1,10 @@
-import { createPrivateKey, sign, type KeyObject } from "node:crypto";
+import { createPrivateKey, type KeyObject } from "node:crypto";
 import { readFileSync } from "node:fs";
 import http2 from "node:http2";
+import {
+  GoogleServiceAccount,
+  signedJwt as jwt,
+} from "@/lib/google-service-account";
 
 // Pushes to the Naru app's devices: APNs for iOS and macOS, FCM for Android.
 // Naru's own credentials, from the environment; without them that platform's
@@ -37,24 +41,6 @@ export type PushResult = "delivered" | "gone" | "failed" | "unconfigured";
 export interface PushSender {
   send(device: Device, message: PushMessage): Promise<PushResult>;
   close(): void;
-}
-
-const base64url = (value: Buffer | string) =>
-  Buffer.from(value).toString("base64url");
-
-function jwt(
-  header: Record<string, string>,
-  claims: Record<string, unknown>,
-  key: KeyObject,
-  algorithm: "ES256" | "RS256",
-) {
-  const input = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`;
-  const signature = sign(
-    "sha256",
-    Buffer.from(input),
-    algorithm === "ES256" ? { key, dsaEncoding: "ieee-p1363" } : key,
-  );
-  return `${input}.${base64url(signature)}`;
 }
 
 const pem = (value: string) => value.replace(/\\n/g, "\n");
@@ -135,7 +121,9 @@ class Apns {
       }
       let status = 0;
       let body = "";
-      request.setTimeout(10_000, () => request.close(http2.constants.NGHTTP2_CANCEL));
+      request.setTimeout(10_000, () =>
+        request.close(http2.constants.NGHTTP2_CANCEL),
+      );
       request.on("response", (headers) => {
         status = Number(headers[":status"]);
       });
@@ -172,55 +160,23 @@ class Apns {
 }
 
 class Fcm {
-  private access: { value: string; until: number } | null = null;
-  private key: KeyObject;
-  private account: { client_email: string; project_id: string; token_uri: string };
+  private account: GoogleServiceAccount;
 
   constructor(serviceAccount: string) {
-    const parsed = JSON.parse(serviceAccount);
-    this.account = {
-      client_email: parsed.client_email,
-      project_id: parsed.project_id,
-      token_uri: parsed.token_uri ?? "https://oauth2.googleapis.com/token",
-    };
-    this.key = createPrivateKey(pem(parsed.private_key));
+    this.account = new GoogleServiceAccount(
+      serviceAccount,
+      "https://www.googleapis.com/auth/firebase.messaging",
+    );
   }
 
-  private async bearer() {
-    const now = Math.floor(Date.now() / 1000);
-    if (this.access && this.access.until > now + 60) return this.access.value;
-    const assertion = jwt(
-      { alg: "RS256", typ: "JWT" },
-      {
-        iss: this.account.client_email,
-        scope: "https://www.googleapis.com/auth/firebase.messaging",
-        aud: this.account.token_uri,
-        iat: now,
-        exp: now + 3600,
-      },
-      this.key,
-      "RS256",
-    );
-    const response = await fetch(this.account.token_uri, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok)
-      throw new Error(`FCM sign-in failed: ${response.status}`);
-    const { access_token, expires_in } = await response.json();
-    this.access = { value: access_token, until: now + Number(expires_in) };
-    return this.access.value;
+  private bearer() {
+    return this.account.accessToken();
   }
 
   async send(device: Device, message: PushMessage): Promise<PushResult> {
     try {
       const response = await fetch(
-        `https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`,
+        `https://fcm.googleapis.com/v1/projects/${this.account.projectId}/messages:send`,
         {
           method: "POST",
           headers: {
@@ -247,7 +203,8 @@ class Fcm {
       );
       if (response.ok) return "delivered";
       const text = await response.text();
-      if (response.status === 404 || text.includes("UNREGISTERED")) return "gone";
+      if (response.status === 404 || text.includes("UNREGISTERED"))
+        return "gone";
       console.warn(`[app-push] FCM ${response.status} ${text.slice(0, 200)}`);
       return "failed";
     } catch (error) {

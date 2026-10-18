@@ -138,6 +138,24 @@
 
 나머지 이벤트는 등록하지 않습니다. `DEPOSIT_CALLBACK`은 가상계좌, `CANCEL_STATUS_CHANGED`는 비동기 해외 간편결제 전용이라 카드만 받는 나루에는 오지 않고, 브랜드페이·링크페이·지급대행 이벤트도 쓰지 않습니다. 받더라도 무시합니다. 웹훅은 10초 안에 2xx를 받지 못하면 최대 7회(약 3일 19시간) 재전송되며, 처리 중 일시적인 오류에는 503을 돌려 재전송을 받습니다. 10초를 넘기지 않도록 웹훅의 주문 조회는 5초에 끊고(끊기면 503), 이어지는 결제 작업(대사, 메일)은 요청을 받은 뒤 8초까지만 기다렸다가 응답합니다 — 그때까지 끝나지 않은 작업은 뒤에서 계속되고, 실패하면 Absurd 작업자가 다시 합니다. 그래서 웹훅이 환불을 반영하며 폐기한 빌링키는 그 자리에서 Toss에 삭제를 요청하지 않고(최대 90초를 기다릴 수 있으므로) 삭제 대기열에 남겨 `delete-retired-billing-keys.ts`(5분마다)가 지웁니다.
 
+## 앱 스토어 구독 (App Store, Google Play)
+
+나루 앱(iOS·macOS, Android)은 서포터 플랜을 각 스토어의 자동 갱신 구독으로 팝니다(`lib/payments/store`). 결제·갱신·재시도·환불은 스토어가 하고, 나루는 스토어가 알려 준 것을 기록해 그 결제가 산 기간을 `supporter_until`에 더합니다. Toss의 `subscriptions`·`payments`와는 다른 표(`store_subscriptions`, `store_transactions`)에 둡니다 — 빌링키도, 갱신 작업도, 7일 환불 창구도 없기 때문입니다.
+
+- 상품: App Store `pub.naru.supporter.monthly`·`pub.naru.supporter.yearly`(구독 그룹 하나), Google Play 구독 `supporter`의 기본 요금제 `monthly`·`yearly`. 가격은 App Store Connect와 Play Console에서 정하고 서버는 상품 id만 확인합니다.
+- 계정 연결: 앱은 구매에 계정 id를 붙입니다(`appAccountToken`, `obfuscatedAccountId`). 구독은 처음 연결된 계정의 것이고 다른 계정으로 옮겨지지 않습니다 — 같은 Apple 계정으로 다른 나루 계정에서 복원하면 409입니다.
+- 들어오는 길: 앱이 구매·복원 직후 보내는 거래(`POST /api/app/v1/supporter/apple`·`/google`), 스토어 알림(`/api/webhooks/apple`, `/api/webhooks/google-play`), 15분마다의 대조(`reconcile-store-subscriptions.ts`). 세 길 모두 서명을 확인하거나(Apple JWS, Apple Root CA G3) Play Developer API에 다시 물은 뒤 `applyStoreState` 하나로 반영합니다. 받은 알림은 모두 `store_notifications`에 남습니다.
+- 이용 기한: 새 결제 기간은 `extendPaidTime`으로 늘립니다. 스토어가 환불·회수한 기간(`revoked_at`)은 빠지고 `recomputePaidTime`이 줄입니다. 원장 계산(`recomputePaidTime`, `repairPaidTime`, 데이터 확인, 이용 기한 복구)은 Toss 결제와 회수되지 않은 스토어 기간을 함께 봅니다. 스토어 기간은 스토어가 정한 날짜라 압축하지 않습니다.
+- Play 확인(acknowledge): 사흘 안에 확인하지 않은 구매는 Play가 환불합니다. 계정에 반영한 뒤 확인하고, 실패하면 대조가 다시 합니다(실패가 6시간 이어지면 알림).
+- 한 번에 정기 결제 하나: 갱신될 스토어 구독이 있으면 웹은 Toss 정기 결제와 한 번만 결제를 시작하지 않고(`renewingStoreSubscription`) `/supporter`에 스토어 관리 안내를 보여 줍니다. 앱은 Toss 정기 결제 중이거나, 다른 스토어에서 갱신 중이거나, 웹에서 산 이용 기간이 남아 있으면 팔지 않습니다(`supporterStatus`) — 스토어 구독은 나중에 시작할 수 없어 겹치는 기간을 두 번 사게 되기 때문입니다. 스토어 구독을 해지하면 남은 기간이 끝난 뒤로 Toss 정기 결제가 예약됩니다(`scheduledRecurringStart`).
+- 계정 삭제: Play 구독은 대조가 자동 갱신을 끕니다(`cancel_requested_at`). App Store 구독은 구독자만 해지할 수 있어 삭제 화면이 먼저 해지하라고 안내합니다.
+- 샌드박스: TestFlight와 App Review의 구매, Play 테스트 구매도 받아들이고 `environment = sandbox`로 표시합니다(`/admin/supporters`).
+
+### 설정
+
+- App Store Connect: 유료 앱 계약, 구독 그룹과 두 상품, App Store Server Notifications V2 주소 `https://naru.pub/api/webhooks/apple`(운영·샌드박스 모두). 소규모 사업자 프로그램(수수료 15%).
+- Play Console: 구독 `supporter`와 두 기본 요금제, 실시간 개발자 알림 주제(Cloud Pub/Sub). 푸시 구독은 `https://naru.pub/api/webhooks/google-play`로 인증(OIDC)을 켜고 보냅니다. API 접근에 서비스 계정을 추가해 재무 데이터 보기와 주문·구독 관리 권한을 줍니다.
+
 ## 데이터 모델
 
 결제 표(`subscriptions`, `payments`, `payment_events`, `toss_webhook_deliveries`, `billing_keys`, `card_registrations`)의 기본키는 UUIDv7입니다(`uuid_v7()`, 마이그레이션에서 정의). 이후 `1790824144110`에서 `users`를 비롯해 다른 모든 일련번호 기본키도 UUIDv7로 바뀌었습니다. 주소나 화면에 드러나도 결제가 몇 건인지 알려 주거나 차례로 넘겨 볼 수 없고, 만든 순서대로 정렬됩니다 — 같은 밀리초 안에서도(밀리초 아래 12비트에 시각을 넣는 RFC 9562 방식 3). 청구 코드는 이 순서에 기댑니다(가장 최근 시도, 가장 오래된 이벤트). 정기 결제의 시도 키(`subscription:<구독 id>:…`, `subscription_initial:<구독 id>:…`)에도 구독 id가 들어갑니다. `user_id`도 이제 UUIDv7입니다.
@@ -154,6 +172,9 @@
 - `payment_mails`: 보내거나 실패한 결제 메일, 받는 사람과 메일 서비스의 메시지 id(1년).
 - `payment_cron_runs`: 결제 유지보수 작업의 실행 기록과 출력 끝부분(1년, 매분 도는 작업 대기열은 한 일이 있거나 실패한 실행만).
 - `payment_transactions`: 실제로 오간 돈의 기록. 결제마다 승인 한 줄, Toss가 한 취소마다 한 줄(Toss의 `transactionKey`로 한 번만). 추가만 되고 고쳐지지 않습니다(트리거가 `UPDATE`를 거절). `payments.refunded_amount`는 그 결제의 취소 합계이고, 매일의 데이터 확인이 둘을 맞춰 봅니다(`lib/payments/payment-ledger.ts`).
+- `store_subscriptions`: 앱에서 산 스토어 구독 하나에 한 행(App Store `originalTransactionId`, Play 구매 토큰). 계정, 상품, 환경, 상태(`active`/`billing_retry`/`expired`/`revoked`), 만료 시각, 자동 갱신 여부, Play 확인 시각.
+- `store_transactions`: 스토어가 청구한 기간 하나에 한 행(App Store 거래, Play 주문). 끝나는 때, 회수된 때, 가격.
+- `store_notifications`: 받은 스토어 알림과 처리 결과.
 - `payments`: Toss 청구 시도/성공 원장. `refunded_amount`, `refunded_at`은 Toss에서 확인한 누적 환불 정보이고, `last_reconciled_at`, `reconciliation_error`는 최근 대사 진단입니다.
 
 ## 환경 변수
@@ -167,6 +188,14 @@
 - `CRON_HEARTBEAT_URL`(선택): worker가 1분마다 GET으로 부르는 외부 감시 주소(healthchecks.io 같은 서비스). 서버 전체가 멈춘 것은 서버 안의 어떤 프로세스도 알릴 수 없으므로, 그 서비스가 신호가 끊기면 알려 줍니다.
 - `RESEND_API_KEY` / `FROM_EMAIL` / `BASE_URL`: 결제 갱신/실패 안내 메일 발송에 사용합니다.
 - `OPERATOR_DISCORD_WEBHOOK_URL`: 운영자 알림(결제 이벤트, 작업 실패, 예약 작업 멈춤)을 올리는 Discord 웹훅. 누구든 이 주소로 채널에 글을 올릴 수 있으니 서버 환경에만 둡니다. 없으면 알리지 않습니다.
+
+앱 스토어 구독(`lib/payments/store`):
+
+- `APPLE_APP_ID`: 앱의 숫자 Apple ID. 없으면 운영 환경의 App Store 거래를 받지 않습니다(샌드박스는 받음).
+- `APPLE_IAP_KEY_FILE`(또는 `APPLE_IAP_KEY`) / `APPLE_IAP_KEY_ID` / `APPLE_IAP_ISSUER_ID`(선택): App Store Server API의 인앱 결제 키. 있으면 대조가 알림을 놓친 구독을 Apple에 다시 묻습니다.
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE`(또는 `GOOGLE_PLAY_SERVICE_ACCOUNT`): Play Developer API 서비스 계정 JSON 키. 없으면 Play 구매를 받지 못합니다.
+- `GOOGLE_PLAY_PUSH_AUDIENCE` / `GOOGLE_PLAY_PUSH_SERVICE_ACCOUNT`: Pub/Sub 푸시 인증의 audience와 서비스 계정 이메일. 없으면 Play 알림을 모두 거절합니다(401).
+- `APPLE_BUNDLE_ID` / `GOOGLE_PLAY_PACKAGE`(선택): 기본값 `pub.naru`.
 
 개발/테스트에는 Toss 테스트 키를 사용하세요.
 

@@ -43,6 +43,7 @@
     "naru-dev": "tsx scripts/naru-dev.mts"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^3.1.0",
     "@aws-sdk/client-s3": "^3.892.0",
     "@aws-sdk/s3-request-presigner": "^3.1023.0",
     "@fedify/fedify": "^2.4.0",

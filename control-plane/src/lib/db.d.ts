@@ -753,6 +753,48 @@ export interface SiteStars {
   user_id: string;
 }
 
+export interface StoreNotifications {
+  id: Generated<string>;
+  notification_type: string | null;
+  outcome: string | null;
+  payload: unknown | null;
+  received_at: Generated<Timestamp>;
+  store: "apple" | "google";
+  store_key: string | null;
+}
+
+export interface StoreSubscriptions {
+  acknowledged_at: Timestamp | null;
+  auto_renews: boolean;
+  cancel_requested_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  environment: "sandbox" | "production";
+  expires_at: Timestamp;
+  id: Generated<string>;
+  product_id: string;
+  status: "active" | "billing_retry" | "expired" | "revoked";
+  store: "apple" | "google";
+  store_key: string;
+  synced_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface StoreTransactions {
+  created_at: Generated<Timestamp>;
+  currency: string | null;
+  id: Generated<string>;
+  period_end: Timestamp;
+  price_micros: Int8 | null;
+  purchased_at: Timestamp;
+  revoked_at: Timestamp | null;
+  store: "apple" | "google";
+  store_subscription_id: string;
+  store_transaction_id: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface Subscriptions {
   amount: number;
   billing_anchor_day: number | null;
@@ -919,6 +961,9 @@ export interface DB {
   site_request_months: SiteRequestMonths;
   site_request_overrides: SiteRequestOverrides;
   site_stars: SiteStars;
+  store_notifications: StoreNotifications;
+  store_subscriptions: StoreSubscriptions;
+  store_transactions: StoreTransactions;
   subscriptions: Subscriptions;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;

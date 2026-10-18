@@ -137,6 +137,16 @@ export function SupportPolicy() {
             답변드립니다.
           </p>
         </section>
+
+        <section className="space-y-2">
+          <h3 className="font-bold text-foreground">앱에서 구독한 경우</h3>
+          <p className="text-muted-foreground">
+            나루 앱에서 App Store나 Google Play로 구독하셨다면 결제, 해지, 환불은
+            각 스토어의 정책과 절차를 따릅니다. 해지는 스토어의 구독 관리에서,
+            환불은 Apple(reportaproblem.apple.com)이나 Google Play에 신청해
+            주세요. 스토어가 환불한 결제의 이용 기간은 나루에서도 취소됩니다.
+          </p>
+        </section>
       </CardContent>
     </Card>
   );

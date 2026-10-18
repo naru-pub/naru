@@ -33,6 +33,8 @@ export const PAYMENT_EVENT_LABELS = {
   entitlement_repaired: "이용 기한 복구 완료",
   entitlement_repair_skipped: "이용 기한 복구 건너뜀",
   toss_mismatch: "Toss 거래 불일치",
+  store_charged: "앱 스토어 결제",
+  store_revoked: "앱 스토어 환불·회수",
 } as const;
 
 export type PaymentEventKind = keyof typeof PAYMENT_EVENT_LABELS;

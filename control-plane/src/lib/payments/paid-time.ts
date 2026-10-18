@@ -7,6 +7,11 @@ import type { Executor } from "@/lib/entitlements";
 // never shortens it; a refund recomputes it from the ledger of what the
 // unrefunded payments paid for, and never lengthens it. Lifetime comps live on
 // supporter_comp and are not touched.
+//
+// Periods bought in the apps (lib/payments/store) count beside the Toss
+// payments: the App Store and Google Play charged for them and set their
+// dates, so they are never compacted, and one the store revoked or refunded
+// is left out (storePaidPeriods).
 
 // Locks the account's paid time for a grant and reads it. FOR NO KEY UPDATE
 // serializes grants without blocking the key-share lock a payment_events
@@ -57,12 +62,13 @@ export async function recomputePaidTime(
     .where("user_id", "=", userId)
     .where("period_end", "is not", null)
     .execute();
-  const recomputed = supporterUntilFromLedger(
-    ledger.map((row) => ({
+  const recomputed = supporterUntilFromLedger([
+    ...ledger.map((row) => ({
       periodEnd: row.period_end,
       refundedAmount: row.refunded_amount,
     })),
-  );
+    ...(await storePaidPeriods(trx, userId)),
+  ]);
   if (current && (recomputed === null || recomputed < current)) {
     await trx
       .updateTable("users")
@@ -197,12 +203,13 @@ export async function repairPaidTime(trx: Executor, userId: string) {
     .select(["period_end", "refunded_amount"])
     .where("user_id", "=", userId)
     .execute();
-  const after = supporterUntilFromLedger(
-    rows.map((row) => ({
+  const after = supporterUntilFromLedger([
+    ...rows.map((row) => ({
       periodEnd: row.period_end,
       refundedAmount: row.refunded_amount,
     })),
-  );
+    ...(await storePaidPeriods(trx, userId)),
+  ]);
   await trx
     .updateTable("users")
     .set({ supporter_until: after })
@@ -240,6 +247,35 @@ export async function movePaidTimeForLab(
     .where("id", "=", userId)
     .where("deleted_at", "is", null)
     .execute();
+}
+
+// The periods an account bought in the apps, as ledger rows. A revoked one
+// paid for nothing and is left out.
+export async function storePaidPeriods(
+  executor: Executor,
+  userId: string,
+): Promise<EntitlementLedgerRow[]> {
+  const rows = await executor
+    .selectFrom("store_transactions")
+    .select("period_end")
+    .where("user_id", "=", userId)
+    .where("revoked_at", "is", null)
+    .execute();
+  return rows.map((row) => ({ periodEnd: row.period_end, refundedAmount: 0 }));
+}
+
+// The same for every account at once, by account: where the latest period
+// each bought in the apps ends.
+export async function storePaidUntilByUser(
+  executor: Executor,
+): Promise<Map<string, Date>> {
+  const rows = await executor
+    .selectFrom("store_transactions")
+    .select(["user_id", (eb) => eb.fn.max("period_end").as("until")])
+    .where("revoked_at", "is", null)
+    .groupBy("user_id")
+    .execute();
+  return new Map(rows.map((row) => [row.user_id, new Date(row.until)]));
 }
 
 export type EntitlementLedgerRow = {

@@ -52,6 +52,17 @@ export async function settleChargesBeforeDeletion(
           : null;
       });
       await deleteRetiredBillingKey(ended?.retiredKey ?? null);
+      // Play renewals are switched off by reconciliation
+      // (cli/reconcile-store-subscriptions). The App Store lets only the
+      // subscriber cancel; the deletion page tells them so.
+      await db
+        .updateTable("store_subscriptions")
+        .set({ cancel_requested_at: new Date() })
+        .where("user_id", "=", userId)
+        .where("store", "=", "google")
+        .where("auto_renews", "=", true)
+        .where("cancel_requested_at", "is", null)
+        .execute();
       return true;
     },
   );

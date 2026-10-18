@@ -18,6 +18,7 @@ import {
   supporterCondition,
 } from "../_components/metrics";
 import { requireOperator } from "../_components/requireOperator";
+import { STORE_LABELS } from "@/lib/payments/store/products";
 
 export const metadata: Metadata = { title: "유료 이용자 · 운영 · 나루" };
 
@@ -42,6 +43,30 @@ export default async function SupportersPage() {
     .orderBy("users.supporter_comp", "desc")
     .orderBy("users.supporter_until", "asc")
     .execute();
+  // Plans bought in the apps, renewing or with time left.
+  const storePlans = new Map(
+    (supporters.length
+      ? await db
+          .selectFrom("store_subscriptions")
+          .select([
+            "user_id",
+            "store",
+            "product_id",
+            "environment",
+            "auto_renews",
+            "expires_at",
+          ])
+          .where(
+            "user_id",
+            "in",
+            supporters.map((user) => user.id),
+          )
+          .where("status", "in", ["active", "billing_retry"])
+          .orderBy("expires_at", "asc")
+          .execute()
+      : []
+    ).map((row) => [row.user_id, row]),
+  );
 
   return (
     <div className="space-y-6">
@@ -62,6 +87,7 @@ export default async function SupportersPage() {
               <TableHead>이용</TableHead>
               <TableHead>이용 기한</TableHead>
               <TableHead>정기 결제</TableHead>
+              <TableHead>앱 구독</TableHead>
               <TableHead>다음 결제</TableHead>
             </TableRow>
           </TableHeader>
@@ -105,6 +131,13 @@ export default async function SupportersPage() {
                         user.subscription_status)
                       : "-"}
                   </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {(() => {
+                      const plan = storePlans.get(user.id);
+                      if (!plan) return "-";
+                      return `${STORE_LABELS[plan.store]} ${plan.product_id.includes("yearly") ? "연간" : "월간"}${plan.auto_renews ? "" : " (해지됨)"}${plan.environment === "sandbox" ? " · 샌드박스" : ""}`;
+                    })()}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
                     {formatDate(user.next_billing_at)}
                   </TableCell>
@@ -114,7 +147,7 @@ export default async function SupportersPage() {
             {supporters.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
                   유료 이용자가 없습니다.

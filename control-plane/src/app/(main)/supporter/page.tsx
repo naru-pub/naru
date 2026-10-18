@@ -15,6 +15,8 @@ import { getUserEntitlement } from "@/lib/entitlements";
 import { hasVerifiedEmail } from "@/lib/payments/support";
 import { ONE_TIME_YEAR_AMOUNT, PLAN_AMOUNTS } from "@/lib/payments/toss";
 import SupportCard from "../account/SupportCard";
+import { renewingStoreSubscription } from "@/lib/payments/store/ledger";
+import { StoreSubscriptionCard } from "./StoreSubscriptionCard";
 
 const krw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 
@@ -127,6 +129,8 @@ export default async function SupportPage({
       }
     : null;
 
+  const storePlan = await renewingStoreSubscription(db, user.id);
+
   return (
     <div className="bg-background min-h-screen">
       {processingPayment && (
@@ -136,21 +140,29 @@ export default async function SupportPage({
         />
       )}
       <div className="max-w-4xl mx-auto p-6 space-y-4">
-        <SupportCard
-          billingClientKey={process.env.TOSS_BILLING_CLIENT_KEY ?? ""}
-          paymentClientKey={process.env.TOSS_PAYMENT_CLIENT_KEY ?? ""}
-          comp={entitlement.comp}
-          supportActive={entitlement.paid}
-          supporterUntil={
-            entitlement.supporterUntil
-              ? entitlement.supporterUntil.toISOString()
-              : null
-          }
-          subscription={subscription}
-          loginName={user.loginName}
-          email={user.email}
-          emailVerified={hasVerifiedEmail(user)}
-        />
+        {storePlan ? (
+          <StoreSubscriptionCard
+            store={storePlan.store}
+            productId={storePlan.product_id}
+            expiresAt={storePlan.expires_at}
+          />
+        ) : (
+          <SupportCard
+            billingClientKey={process.env.TOSS_BILLING_CLIENT_KEY ?? ""}
+            paymentClientKey={process.env.TOSS_PAYMENT_CLIENT_KEY ?? ""}
+            comp={entitlement.comp}
+            supportActive={entitlement.paid}
+            supporterUntil={
+              entitlement.supporterUntil
+                ? entitlement.supporterUntil.toISOString()
+                : null
+            }
+            subscription={subscription}
+            loginName={user.loginName}
+            email={user.email}
+            emailVerified={hasVerifiedEmail(user)}
+          />
+        )}
         <SupportPerks />
         <SupportPolicy />
         <div className="flex justify-end">

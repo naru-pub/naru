@@ -37,7 +37,12 @@
       "app_devices.environment": "\"sandbox\" | \"production\"",
       "app_site_consents.state": "\"pending\" | \"allowed\" | \"muted\"",
       "app_auth_codes.client": "\"ios\" | \"macos\" | \"android\"",
-      "app_reports.reason": "\"spam\" | \"abuse\" | \"sexual\" | \"illegal\" | \"other\""
+      "app_reports.reason": "\"spam\" | \"abuse\" | \"sexual\" | \"illegal\" | \"other\"",
+      "store_subscriptions.store": "\"apple\" | \"google\"",
+      "store_subscriptions.environment": "\"sandbox\" | \"production\"",
+      "store_subscriptions.status": "\"active\" | \"billing_retry\" | \"expired\" | \"revoked\"",
+      "store_transactions.store": "\"apple\" | \"google\"",
+      "store_notifications.store": "\"apple\" | \"google\""
     }
   }
 }

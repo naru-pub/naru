@@ -166,6 +166,41 @@ password.
 
 `GET /me` → `{ account: { loginName } }`.
 
+### Supporter plan (App Store, Google Play)
+
+The apps sell the supporter plan as an auto-renewable subscription in their
+store (docs/billing.md, 앱 스토어 구독), and never link to the web's Toss
+payment pages. `<store>` is `apple` (iOS and macOS) or `google`.
+
+`GET /supporter?store=<store>` →
+
+```json
+{
+  "supporter": true, "comp": false, "until": "2026-11-19T00:00:00.000Z",
+  "source": "apple",
+  "subscription": { "store": "apple", "productId": "pub.naru.supporter.monthly",
+    "expiresAt": "2026-11-19T00:00:00.000Z", "autoRenews": true, "status": "active" },
+  "purchase": { "allowed": false, "message": "App Store에서 구독 중입니다." },
+  "accountToken": "0190f5a2-…",
+  "products": ["pub.naru.supporter.monthly", "pub.naru.supporter.yearly"]
+}
+```
+
+`source` is where the paid time comes from (`comp`, `toss`, `apple`,
+`google`, or null). `purchase.allowed` is false beside a Toss plan, a renewing
+subscription in either store, or prepaid web time; the app shows `message`
+and, for its own store's subscription, the store's subscription management.
+Purchases carry `accountToken` (StoreKit `appAccountToken`, Play
+`setObfuscatedAccountId`). Play `products` are `supporter:<basePlanId>`.
+
+`POST /supporter/apple` `{ transactions: [{ transaction, renewalInfo? }] }`
+(StoreKit 2 `jwsRepresentation`s: a purchase, `Transaction.updates`, or every
+`Transaction.currentEntitlements` on restore) and `POST /supporter/google`
+`{ purchaseToken }` grant the purchase and answer as `GET /supporter`. 409
+when the purchase belongs to another account, 400 when it does not verify.
+The app finishes a StoreKit transaction only after this succeeds; Play
+purchases are acknowledged by the server.
+
 ### Devices
 
 `PUT /devices` `{ platform: "apns" | "fcm", token, environment: "sandbox" | "production", bundleId }`

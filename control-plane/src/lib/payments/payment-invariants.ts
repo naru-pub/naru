@@ -3,7 +3,10 @@ import { AccountBusyError, withAccountLock } from "@/lib/payments/account-lock";
 import { deleteRetiredBillingKey } from "@/lib/payments/billing-keys";
 import { db } from "@/lib/database";
 import { notePaymentEvent } from "@/lib/payments/payment-events";
-import { supporterUntilFromLedger } from "@/lib/payments/paid-time";
+import {
+  storePaidUntilByUser,
+  supporterUntilFromLedger,
+} from "@/lib/payments/paid-time";
 import { retireUnusedSignupKey } from "@/lib/payments/subscriptions";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -196,20 +199,42 @@ async function entitlementDrift(now: Date) {
     ledger.push(row);
     byUser.set(row.user_id, ledger);
   }
+  // Periods bought in the apps count too, for accounts with no Toss payment
+  // as well.
+  const store = await storePaidUntilByUser(db);
+  for (const userId of store.keys())
+    if (!byUser.has(userId)) byUser.set(userId, []);
+  const accounts = store.size
+    ? await db
+        .selectFrom("users")
+        .select(["id", "supporter_until"])
+        .where("id", "in", [...store.keys()])
+        .where("deleted_at", "is", null)
+        .where("supporter_comp", "=", false)
+        .execute()
+    : [];
+  const untilOf = new Map<string, Date | null>(
+    rows.map((row) => [row.user_id, row.supporter_until]),
+  );
+  for (const account of accounts)
+    untilOf.set(account.id, account.supporter_until);
   const shortened: string[] = [];
   const extended: string[] = [];
   for (const [userId, ledger] of byUser) {
-    const expected = supporterUntilFromLedger(
-      ledger.map((row) => ({
+    if (!untilOf.has(userId)) continue; // deleted, or a lifetime comp
+    const storeUntil = store.get(userId);
+    const expected = supporterUntilFromLedger([
+      ...ledger.map((row) => ({
         periodEnd: row.period_end,
         refundedAmount: row.refunded_amount ?? 0,
       })),
-    );
+      ...(storeUntil ? [{ periodEnd: storeUntil, refundedAmount: 0 }] : []),
+    ]);
     const baseline = now.getTime();
     const expectedEnd = Math.max(baseline, expected?.getTime() ?? baseline);
     const actualEnd = Math.max(
       baseline,
-      ledger[0].supporter_until?.getTime() ?? baseline,
+      untilOf.get(userId)?.getTime() ?? baseline,
     );
     if (actualEnd < expectedEnd - 60_000) shortened.push(userId);
     if (actualEnd > expectedEnd + 60_000) extended.push(userId);
