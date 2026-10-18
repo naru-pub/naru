@@ -40,6 +40,27 @@ export default function AppConsent({
       setBusy(false);
     }
   }
+  // Another account: sign naru.pub out, and this page asks to sign in again.
+  async function switchAccount() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/account/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message);
+      window.location.reload();
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "로그아웃하지 못했습니다.",
+      );
+      setBusy(false);
+    }
+  }
   function deny() {
     const url = new URL(input.redirectUri);
     url.searchParams.set("error", "access_denied");
@@ -47,7 +68,7 @@ export default function AppConsent({
     window.location.assign(url.href);
   }
   return (
-    <div className="max-w-xl mx-auto p-6 space-y-5">
+    <div className="bg-card border-2 border-line rounded-lg p-6 space-y-5">
       <h1 className="text-2xl font-bold">나루 앱 연결</h1>
       <p>
         <strong>{account}</strong> 계정으로 {device}의 나루 앱에
@@ -68,6 +89,17 @@ export default function AppConsent({
         </Button>
         <Button disabled={busy} variant="outline" onClick={deny}>
           취소
+        </Button>
+      </div>
+      <div className="border-t border-border pt-4 text-sm text-muted-foreground">
+        <p>다른 계정으로 로그인하려면 먼저 로그아웃하세요.</p>
+        <Button
+          variant="link"
+          disabled={busy}
+          onClick={switchAccount}
+          className="h-auto p-0"
+        >
+          {account} 계정에서 로그아웃
         </Button>
       </div>
     </div>

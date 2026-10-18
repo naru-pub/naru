@@ -5,7 +5,6 @@ const RETURN_PATHS = new Set([
   "/supporter",
   "/database/authorize",
   "/members/sign-in",
-  "/app/authorize",
   "/account/delete",
 ]);
 

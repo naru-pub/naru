@@ -123,8 +123,11 @@ once it signs in.
 ### Sign-in (authorization code + PKCE)
 
 1. The app opens `https://naru.pub/app/authorize?client=<ios|macos|android>&redirect_uri=<callback>&state=<random>&code_challenge=<S256>&code_challenge_method=S256`
-   in ASWebAuthenticationSession / Custom Tabs. Naru signs the person in with
-   its normal session, asks to connect the app, and redirects to
+   in ASWebAuthenticationSession / Custom Tabs. The page has its own bare
+   layout (no site navigation or footer, so nothing leads to the supporter
+   payment pages, which App Store review forbids reaching from the app) and
+   its own sign-in form; a person already signed in to naru.pub can sign out
+   there to use another account. It asks to connect the app and redirects to
    `<callback>?code=…&state=…` (or `?error=access_denied&state=…`).
 2. `POST /token` `{ code, verifier, redirectUri }` →
    `{ token, account: { loginName } }`. The code lives 10 minutes, is spent
@@ -269,8 +272,8 @@ Tapping opens `url` and marks the notification read.
 
 ## Control plane
 
-- Routes: `control-plane/src/app/(main)/api/app/v1/`, the consent page
-  `/app/authorize`; logic in `control-plane/src/lib/app-api/`.
+- Routes: `control-plane/src/app/(main)/api/app/v1/`, the sign-in and consent
+  page `/app/authorize` (route group `(app)`, its own root layout); logic in `control-plane/src/lib/app-api/`.
 - Tables (migration `1792318382896_naru_app`): `app_auth_codes`, `app_tokens`
   (hashed), `app_devices` (owned by the token that registered them),
   `app_site_consents`, `app_notifications` (per account, keyed by the outbox
