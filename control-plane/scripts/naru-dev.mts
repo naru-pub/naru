@@ -34,12 +34,14 @@ try {
 } catch {
   /* not a git checkout */
 }
-process.exitCode = await main(
-  process.argv.slice(2),
-  {
-    workerDir,
-    sdkDir: join(repo, "control-plane/public/sdk"),
-    workerd: workerd.default,
-  },
-  { version, commit },
+process.exit(
+  await main(
+    process.argv.slice(2),
+    {
+      workerDir,
+      sdkDir: join(repo, "control-plane/public/sdk"),
+      workerd: workerd.default,
+    },
+    { version, commit },
+  ),
 );

@@ -1090,7 +1090,11 @@ self.addEventListener("fetch", (event) => {
     handle(req, res).catch((error) => failure(res, error));
   });
   // Live connections: the WebSocket goes through to the Worker untouched.
+  // Upgraded sockets are the server's no more: stop() ends them itself.
+  const live = new Set<{ destroy(): void }>();
   server.on("upgrade", (req, socket, head) => {
+    live.add(socket);
+    socket.once("close", () => live.delete(socket));
     const upstream = connect(workerPort, "127.0.0.1", () => {
       upstream.write(
         `${req.method} ${req.url} HTTP/1.1\r\n` +
@@ -1136,13 +1140,15 @@ self.addEventListener("fetch", (event) => {
     if (stopping) return;
     stopping = true;
     watcher?.close();
+    const closed = new Promise((done) => server.close(done));
     server.closeAllConnections();
-    await new Promise((done) => server.close(done));
+    for (const socket of live) socket.destroy();
     if (worker && worker.exitCode === null && worker.signalCode === null) {
       const exited = new Promise((done) => worker!.once("exit", done));
       worker.kill();
       await exited;
     }
+    await closed;
     if (madeState) await rm(state, { recursive: true, force: true });
   };
 
