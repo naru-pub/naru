@@ -203,7 +203,7 @@ export default function SignUpPage() {
             </Button>
             <p className="text-xs text-muted-foreground text-center">
               가입하시면{" "}
-              <Link href="/guidelines" className="text-primary underline">
+              <Link href="/policy" className="text-primary underline">
                 커뮤니티 가이드라인
               </Link>
               을 지키는 데 동의하신 것으로 봅니다. 개인정보는{" "}

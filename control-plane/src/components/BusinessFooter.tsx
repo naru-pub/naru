@@ -7,7 +7,7 @@ const LINKS = [
   { href: "/supporter", label: "결제" },
   { href: "/open", label: "지표" },
   { href: "/design", label: "디자인" },
-  { href: "/guidelines", label: "커뮤니티 가이드라인" },
+  { href: "/policy", label: "커뮤니티 가이드라인" },
   { href: "/privacy", label: "개인정보 처리방침", strong: true },
   { href: "https://x.com/naru_pub", label: "X" },
 ];
