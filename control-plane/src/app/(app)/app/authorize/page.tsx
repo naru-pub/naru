@@ -2,6 +2,7 @@ import { validateRequest } from "@/lib/auth";
 import { authorizeInput } from "@/lib/app-api/tokens";
 import AppConsent from "./AppConsent";
 import AppSignIn from "./AppSignIn";
+import { APP_PANEL } from "../panel";
 
 const CLIENT_NAMES = { ios: "iPhone·iPad", macos: "Mac", android: "Android" };
 
@@ -29,7 +30,7 @@ export default async function AppAuthorizePage({
     input = authorizeInput(Object.fromEntries(query));
   } catch {
     return (
-      <div className="space-y-3">
+      <div className={APP_PANEL}>
         <h1 className="text-xl font-bold">앱을 연결할 수 없습니다</h1>
         <p role="alert">
           로그인 요청이 올바르지 않습니다. 앱에서 다시 로그인해 주세요.

@@ -5,8 +5,8 @@ import DeleteAccountButton from "../DeleteAccountButton";
 
 export const metadata: Metadata = { title: "계정 삭제 · 나루" };
 
-// Where the Naru app's 계정 삭제 opens (App Store guideline 5.1.1(v)): the
-// account page's own deletion, on a page of its own, after sign-in.
+// The account page's own deletion, on a page of its own, after sign-in.
+// Releases of the Naru app before /app/account/delete open it from 계정 삭제.
 export default async function DeleteAccountPage() {
   const { user } = await validateRequest();
   if (!user) redirect(`/login?next=${encodeURIComponent("/account/delete")}`);

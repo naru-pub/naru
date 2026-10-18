@@ -6,8 +6,11 @@ import { useState } from "react";
 import { Trash2, Loader } from "lucide-react";
 import { toast } from "sonner";
 
-export default function DeleteAccountButton() {
+// app: on /app/account/delete, which stays put once the account is gone
+// instead of going to the site's front page.
+export default function DeleteAccountButton({ app = false }: { app?: boolean }) {
   const [isLoading, setIsLoading] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [password, setPassword] = useState("");
 
@@ -45,7 +48,8 @@ export default function DeleteAccountButton() {
         const deleteResult = await deleteResponse.json();
         if (deleteResult.success) {
           toast.success(deleteResult.message);
-          window.location.href = "/";
+          if (app) setDeleted(true);
+          else window.location.href = "/";
         } else {
           toast.error(deleteResult.message);
         }
@@ -63,6 +67,13 @@ export default function DeleteAccountButton() {
       setIsLoading(false);
     }
   };
+
+  if (deleted)
+    return (
+      <p role="status" className="font-medium">
+        계정을 삭제했습니다. 나루 앱으로 돌아가 주세요.
+      </p>
+    );
 
   if (showPasswordConfirm) {
     return (

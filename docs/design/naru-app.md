@@ -18,7 +18,8 @@ macOS) and [naru-pub/android](https://github.com/naru-pub/android)
 - **사이트** — the per-site allow/mute list and the sites the account hid
   (signed in).
 - **계정** — account and notification settings, and 계정 삭제, which opens
-  naru.pub's `/account/delete` (App Store guideline 5.1.1(v)) (signed in).
+  naru.pub's `/app/account/delete` (App Store guideline 5.1.1(v)) (signed in).
+  The signed-out screen's 나루 계정 만들기 opens `/app/signup`.
 
 Every showcase card and notification has a 숨기기 / 신고하기 menu (guideline
 1.2, see **Moderation**).
@@ -277,7 +278,9 @@ Tapping opens `url` and marks the notification read.
 ## Control plane
 
 - Routes: `control-plane/src/app/(main)/api/app/v1/`, the sign-in and consent
-  page `/app/authorize` (route group `(app)`, its own root layout); logic in `control-plane/src/lib/app-api/`.
+  page `/app/authorize`, and `/app/signup` (with `/app/policy` and
+  `/app/privacy`) and `/app/account/delete` for the app's links (route group
+  `(app)`, its own root layout); logic in `control-plane/src/lib/app-api/`.
 - Tables (migration `1792318382896_naru_app`): `app_auth_codes`, `app_tokens`
   (hashed), `app_devices` (owned by the token that registered them),
   `app_site_consents`, `app_notifications` (per account, keyed by the outbox

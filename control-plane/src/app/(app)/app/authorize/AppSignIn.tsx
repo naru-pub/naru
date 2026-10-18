@@ -3,10 +3,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { APP_PANEL } from "../panel";
 
-// The app's own sign-in form, so it never sends the person to /login, whose
-// site layout links everywhere. Signing in reloads this page, which then asks
-// to connect the app.
+// The app pages' own sign-in form, so they never send the person to /login,
+// whose site layout links everywhere. Signing in reloads the page it is on:
+// /app/authorize then asks to connect the app, /app/account/delete to delete.
 export default function AppSignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -38,12 +39,10 @@ export default function AppSignIn() {
     }
   }
   return (
-    <div className="bg-card border-2 border-line rounded-lg p-6 space-y-5">
+    <div className={APP_PANEL}>
       <div className="text-center space-y-1">
         <h1 className="text-2xl font-bold">나루 앱 로그인</h1>
-        <p className="text-muted-foreground">
-          나루 계정으로 로그인하면 앱으로 돌아갑니다.
-        </p>
+        <p className="text-muted-foreground">나루 계정으로 로그인하세요.</p>
       </div>
       <form onSubmit={signIn} className="space-y-4">
         <div className="space-y-2">
