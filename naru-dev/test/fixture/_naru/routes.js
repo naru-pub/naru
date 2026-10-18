@@ -1,6 +1,6 @@
-export default async function (ctx, { params }) {
-  const { rows } =
-    await ctx.sql`SELECT text FROM notes WHERE id = ${Number(params.id)}`;
+export default async function (ctx, { path }) {
+  const id = Number(path.split("/")[2]);
+  const { rows } = await ctx.sql`SELECT text FROM notes WHERE id = ${id}`;
   if (!rows.length) return { status: 404, html: "<p>no such note</p>" };
   return {
     file: "index.html",
