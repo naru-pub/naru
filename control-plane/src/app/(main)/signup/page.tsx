@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { safeNextPath } from "@/lib/next-path";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
@@ -199,6 +201,17 @@ export default function SignUpPage() {
             >
               회원 가입
             </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              가입하시면{" "}
+              <Link href="/guidelines" className="text-primary underline">
+                커뮤니티 가이드라인
+              </Link>
+              을 지키는 데 동의하신 것으로 봅니다. 개인정보는{" "}
+              <Link href="/privacy" className="text-primary underline">
+                개인정보 처리방침
+              </Link>
+              에 따라 처리합니다.
+            </p>
           </form>
         </Form>
       </div>
