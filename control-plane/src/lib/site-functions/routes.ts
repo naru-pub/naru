@@ -1,56 +1,105 @@
 import { DataError } from "../site-data/validation";
 
-// Routes (1.1.0): a site's opt-in server-rendered pages. Each file in
-// _naru/routes/ answers the path it is named for, through its default
-// export, run as a visitor's query in the site's object:
+// Routes (1.1.0): a site's opt-in server-rendered pages. `_naru/routes.json`
+// says which paths run the site's code, in Cloudflare Pages' `_routes.json`
+// form, and `_naru/routes.js`'s default export answers each of them, run as
+// a visitor's query in the site's object:
 //
-//   routes/index.js        /
-//   routes/about.js        /about
-//   routes/posts/index.js  /posts and /posts/
-//   routes/posts/_id.js    /posts/<id>, as params.id
-//   routes/docs/_...path.js  /docs, /docs/a, /docs/a/b, as params.path
-//                            ([], ["a"], ["a", "b"])
+//   { "version": 1, "include": ["/", "/posts/*"], "exclude": ["/posts/feed"] }
 //
-// A segment that starts with _ takes any one path segment; one that starts
-// with _... takes the rest of the path, none or more segments, and is only
-// the last segment, never the first (so the site's files stay reachable).
-// A fixed segment wins over _name, and _name over _...name. Paths that match
-// no route are the site's static files, as before. The edge Worker matches
-// paths (pages.ts), naru-dev too, and both shape what a route answered.
+// `*` takes anything, slashes too; an excluded path is never routed, whatever
+// includes it. Every other path is the site's static files, as before. The
+// edge Worker decides (pages.ts), naru-dev too, from the rules alone, without
+// running the site's code, and both shape what the route answered.
 
-/** The route a release file names: routes/posts/_id.js is "posts/_id". */
-export function routeOf(filename: string) {
-  return filename.replace(/^routes\//, "").replace(/\.m?js$/, "");
-}
+/** Which paths run `_naru/routes.js`: `_routes.json`'s include and exclude. */
+export type RouteRules = { include: string[]; exclude: string[] };
 
-/** Whether a route's segment takes the rest of the path (`_...name`). */
-const isRest = (part: string) => /^_\.\.\.[A-Za-z0-9_]+$/.test(part);
+/** A site without `_naru/routes.json`: every path is a file. */
+export const NO_ROUTES: RouteRules = Object.freeze({
+  include: [],
+  exclude: [],
+}) as RouteRules;
+
+/** Cloudflare's limits: 100 rules in all, each of 100 characters at most. */
+const MAX_RULES = 100;
+const MAX_RULE_LENGTH = 100;
+
+const refused = (message: string) =>
+  new DataError(400, `_naru/routes.json: ${message}`);
 
 /**
- * Whether `route` names a route: segments of letters, digits, _, - and
- * dots (feed.xml.js answers /feed.xml), never "." or "..", with a rest
- * segment (`_...name`) only last and never first.
+ * `_naru/routes.json`, checked: version 1, at least one include rule,
+ * at most 100 rules of at most 100 characters, each a path from "/".
  */
-export const validRoute = (route: string) => {
-  const parts = route.split("/");
-  return parts.every(
-    (part, index) =>
-      /^[A-Za-z0-9_.-]{1,64}$/.test(part) &&
-      part !== "." &&
-      part !== ".." &&
-      (!part.startsWith("_...") ||
-        (isRest(part) && index > 0 && index === parts.length - 1)),
+export function routeRules(text: string): RouteRules {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw refused("not JSON.");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw refused('an object of "version", "include" and "exclude".');
+  const {
+    version,
+    include,
+    exclude = [],
+    ...rest
+  } = value as Record<string, unknown>;
+  if (Object.keys(rest).length)
+    throw refused(
+      `unknown ${Object.keys(rest)
+        .map((key) => `"${key}"`)
+        .join(", ")}.`,
+    );
+  if (version !== 1) throw refused('"version" is 1.');
+  const rules = (list: unknown, name: string) => {
+    if (!Array.isArray(list)) throw refused(`"${name}" is a list of paths.`);
+    for (const rule of list)
+      if (
+        typeof rule !== "string" ||
+        !rule.startsWith("/") ||
+        rule.length > MAX_RULE_LENGTH
+      )
+        throw refused(
+          `${JSON.stringify(rule)} in "${name}" is not a path from / of at most ${MAX_RULE_LENGTH} characters.`,
+        );
+    return list as string[];
+  };
+  const routes = {
+    include: rules(include, "include"),
+    exclude: rules(exclude, "exclude"),
+  };
+  if (!routes.include.length) throw refused('"include" needs a path.');
+  if (routes.include.length + routes.exclude.length > MAX_RULES)
+    throw refused(`at most ${MAX_RULES} rules.`);
+  return routes;
+}
+
+/** Whether `rule` takes `pathname`: `*` is anything, slashes too. */
+function takes(rule: string, pathname: string) {
+  const parts = rule.split("*");
+  if (parts.length === 1) return rule === pathname;
+  if (!pathname.startsWith(parts[0]) || !pathname.endsWith(parts.at(-1)!))
+    return false;
+  let at = parts[0].length;
+  const end = pathname.length - parts.at(-1)!.length;
+  if (end < at) return false;
+  for (const part of parts.slice(1, -1)) {
+    const found = pathname.indexOf(part, at);
+    if (found < 0 || found + part.length > end) return false;
+    at = found + part.length;
+  }
+  return true;
+}
+
+/** Whether the site's code answers `pathname`: included, and not excluded. */
+export function routed(rules: RouteRules, pathname: string) {
+  return (
+    !rules.exclude.some((rule) => takes(rule, pathname)) &&
+    rules.include.some((rule) => takes(rule, pathname))
   );
-};
-
-/** A route's parameters: one segment each, or a rest segment's list. */
-export type RouteParams = Record<string, string | string[]>;
-
-/** `route`, checked, as the site's object is asked to render it. */
-export function routeModule(value: unknown): string {
-  if (typeof value !== "string" || !validRoute(value))
-    throw new DataError(400, "Invalid route.");
-  return value;
 }
 
 /**
@@ -67,67 +116,6 @@ const BODY_TYPES = [
   "application/atom+xml",
   "application/json",
 ];
-
-/**
- * The route matching `pathname`: at each segment, from the first, a fixed
- * segment wins over a parameter, and a parameter over a rest segment.
- */
-export function matchRoute(routes: readonly string[], pathname: string) {
-  let segments: string[];
-  try {
-    segments = pathname
-      .split("/")
-      .filter(Boolean)
-      .map((segment) => decodeURIComponent(segment));
-  } catch {
-    return null;
-  }
-  // "/posts" may be routes/posts.js or routes/posts/index.js; "/posts/"
-  // only the index. A rest segment takes the path's own segments alone.
-  const candidates = pathname.endsWith("/")
-    ? [[...segments, "index"]]
-    : [segments, [...segments, "index"]];
-  let best: { route: string; params: RouteParams; score: string } | null = null;
-  for (const route of routes) {
-    const rest = isRest(route.split("/").at(-1) ?? "");
-    for (const wanted of rest ? [segments] : candidates) {
-      const found = matchOne(route, wanted);
-      if (found && (!best || found.score > best.score))
-        best = { route, ...found };
-    }
-  }
-  return best && { route: best.route, params: best.params };
-}
-
-/**
- * How `route` matches the segments `wanted`: its parameters, and a score
- * (2 a fixed segment, 1 a parameter, 0 the rest) that orders matches.
- */
-function matchOne(route: string, wanted: string[]) {
-  const pattern = route.split("/");
-  const rest = isRest(pattern.at(-1) ?? "");
-  const fixed = rest ? pattern.slice(0, -1) : pattern;
-  if (rest ? wanted.length < fixed.length : fixed.length !== wanted.length)
-    return null;
-  const params: RouteParams = {};
-  let score = "";
-  for (const [index, part] of fixed.entries()) {
-    if (part === wanted[index]) score += "2";
-    else if (
-      part.startsWith("_") &&
-      part.length > 1 &&
-      wanted[index] !== "index"
-    ) {
-      params[part.slice(1)] = wanted[index];
-      score += "1";
-    } else return null;
-  }
-  if (rest) {
-    params[pattern.at(-1)!.slice(4)] = wanted.slice(fixed.length);
-    score += "0";
-  }
-  return { params, score };
-}
 
 /** What a route answered, as the page is served. */
 export type RouteAnswer = {

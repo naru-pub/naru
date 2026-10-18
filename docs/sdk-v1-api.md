@@ -235,13 +235,13 @@ Rules a browser must not decide, such as who may edit a post, prices,
 balances, stock or dice, run on Naru as the site's own code over its own
 tables. They live in the site's files under `_naru/`:
 
-| Folder                   | Holds                                               |
-| ------------------------ | --------------------------------------------------- |
-| `_naru/migrations/*.sql` | SQL that creates and changes the site's tables.     |
-| `_naru/queries/`         | Exports that read, called with `query()`.           |
-| `_naru/mutations/`       | Exports that write, called with `mutate()`.         |
-| `_naru/routes/`          | Opt-in server-rendered pages (see Routes).          |
-| `_naru/modules/`         | Shared code the others import; it cannot be called. |
+| Folder                     | Holds                                               |
+| -------------------------- | --------------------------------------------------- |
+| `_naru/migrations/*.sql`   | SQL that creates and changes the site's tables.     |
+| `_naru/queries/`           | Exports that read, called with `query()`.           |
+| `_naru/mutations/`         | Exports that write, called with `mutate()`.         |
+| `_naru/routes.json`, `.js` | Opt-in server-rendered pages (see Routes).          |
+| `_naru/modules/`           | Shared code the others import; it cannot be called. |
 
 ```sql
 -- _naru/migrations/0001_board.sql
@@ -565,7 +565,7 @@ collections. naru-dev (`npx @naru-pub/dev`) writes `_naru/types/database.d.ts`, 
 as the migrations left them, for `ctx.sql` and query builders.
 
 **Releases.** Every change to `_naru/migrations/`, `queries/`, `mutations/`,
-`routes/` or `modules/` (a save in the editor, a template applied, a GitHub
+`modules/`, `routes.json` or `routes.js` (a save in the editor, a template applied, a GitHub
 deploy) publishes a new release of these folders, applies its migrations and
 switches calls to it at once. A release that fails leaves the previous one
 active and the edited files in place for correction. Upload imported files
@@ -574,32 +574,38 @@ before the files that import them when uploading one at a time.
 ## Routes (1.1.0)
 
 A site may answer some paths with pages rendered on Naru, for link previews,
-feeds or pages that should work without JavaScript. Each file in
-`_naru/routes/` answers the path it is named for, with its default export:
+feeds or pages that should work without JavaScript. `_naru/routes.json`
+lists them, in the form of Cloudflare Pages' `_routes.json`, and the default
+export of `_naru/routes.js` answers each:
 
-| File                      | Answers                                                     |
-| ------------------------- | ----------------------------------------------------------- |
-| `routes/index.js`         | `/`                                                         |
-| `routes/about.js`         | `/about`                                                    |
-| `routes/posts/index.js`   | `/posts` and `/posts/`                                      |
-| `routes/posts/_id.js`     | `/posts/<id>`, as `params.id`                               |
-| `routes/docs/_...path.js` | `/docs`, `/docs/a/b`, as `params.path` (`[]`, `["a", "b"]`) |
-| `routes/feed.xml.js`      | `/feed.xml`                                                 |
+```json
+{
+  "version": 1,
+  "include": ["/", "/posts/*", "/feed.xml"],
+  "exclude": ["/posts/drafts/*"]
+}
+```
 
-A segment starting with `_` takes any one path segment. One starting with
-`_...` takes the rest of the path, none or more segments, as a list; it is
-only a route's last segment, never its first, so the site's files stay
-reachable. From the first segment on, a fixed segment wins over `_name`, and
-`_name` over `_...name`. Paths no route answers are the site's files, as before. A route's
-default export receives `{ path, origin, params, query }`; `origin` is the
-subdomain or custom domain the page was asked on, such as
-`https://alice.naru.pub`, for absolute URLs like `og:url`.
+`include` is the paths that run `routes.js`, at least one; `exclude` is the
+paths that never do, whatever includes them. A rule is a path from `/`, and
+`*` in it takes anything, slashes too: `/posts/*` takes `/posts/` and
+`/posts/a/b`, but not `/posts`. There are at most 100 rules of at most 100
+characters each. Every other path is the site's files, as before. A
+release with `routes.json` needs `routes.js` and the other way round, and
+one whose `routes.json` is not of this form is refused.
+
+`routes.js`'s default export receives `{ path, origin, query }`: `path` as
+asked (still percent-encoded), and `origin` the subdomain or custom domain
+the page was asked on, such as `https://alice.naru.pub`, for absolute URLs
+like `og:url`. It reads the path itself:
 
 ```js
-// _naru/routes/posts/_id.js
-export default async function (ctx, { path, params, query }) {
-  const { rows } =
-    await ctx.sql`SELECT title FROM posts WHERE id = ${params.id}`;
+// _naru/routes.js
+export default async function (ctx, { path }) {
+  const [, kind, id] = path.split("/");
+  if (kind !== "posts" || !/^\d+$/.test(id ?? ""))
+    return { status: 404, html: "<p>없는 페이지입니다.</p>" };
+  const { rows } = await ctx.sql`SELECT title FROM posts WHERE id = ${id}`;
   if (!rows.length) return { status: 404, html: "<p>없는 글입니다.</p>" };
   const title = rows[0].title.replace(
     /[&<>"]/g,

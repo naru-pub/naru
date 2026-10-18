@@ -13,9 +13,11 @@ const invalid = (message: string) =>
  * routes answer pages; shared code in modules/ is only imported.
  */
 export function modulePath(value: string): string {
+  // _naru/routes.js (1.1.0) answers the paths _naru/routes.json lists.
+  if (value === "routes.js" || value === "routes.mjs") return value;
   const parts = value.split("/");
   if (
-    !["modules", "queries", "mutations", "routes"].includes(parts[0]) ||
+    !["modules", "queries", "mutations"].includes(parts[0]) ||
     parts.length < 2 ||
     parts.some(
       (part) =>

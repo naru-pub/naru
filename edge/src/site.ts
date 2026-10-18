@@ -1,9 +1,5 @@
 import { callerKey } from "./addresses";
 import { FunctionRevisions, migrationPath } from "./function-revisions";
-import {
-  routeModule,
-  type RouteParams,
-} from "../../control-plane/src/lib/site-functions/routes";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -1957,18 +1953,20 @@ export class SiteData extends DurableObject<Env> {
     try {
       if (!["query", "mutation", "route"].includes(kind))
         throw new DataError(400, "Invalid call.");
-      if (kind === "route") routeModule(input.file);
-      else functionModule(input.file);
+      // A route is _naru/routes.js's default export, whatever path it answers.
+      if (kind === "route") {
+        if (input.file !== "routes") throw new DataError(400, "Invalid route.");
+      } else functionModule(input.file);
       name(input.name);
       const revision = this.meta("functions_revision");
       if (!revision) throw unpublished();
       const revisions = this.revisions(input.site);
-      const folder = {
-        query: "queries",
-        mutation: "mutations",
-        route: "routes",
-      }[kind];
-      filename = await revisions.entry(revision, `${folder}/${input.file}`);
+      filename = await revisions.entry(
+        revision,
+        kind === "route"
+          ? "routes"
+          : `${kind === "query" ? "queries" : "mutations"}/${input.file}`,
+      );
       sources = await revisions.graph(revision, filename);
     } catch (error) {
       if (error instanceof DataError)
@@ -2094,17 +2092,15 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * A route's page (1.1.0), for the edge Worker serving the site (pages.ts):
-   * its module's default export, run as a visitor's query with the path, its
-   * parameters and the query string. Refused while the edge may not answer
+   * _naru/routes.js's default export, run as a visitor's query with the path
+   * _naru/routes.json routed, its origin and the query string. Refused while the edge may not answer
    * the site's visitors, as `visit` passes them on: a 404 with
    * `details.reason` ROUTES_OFF, which tells it from the mini being away.
    */
   async render(input: {
     site: string;
-    route: string;
     path: string;
     origin?: string;
-    params: RouteParams;
     query: Record<string, string>;
     clientIp?: string;
     paused?: unknown;
@@ -2134,7 +2130,7 @@ export class SiteData extends DurableObject<Env> {
       visitor: true,
       clientIp: input.clientIp,
       paused: input.paused,
-      file: input.route,
+      file: "routes",
       name: "default",
       args: {
         path: String(input.path),
@@ -2143,7 +2139,6 @@ export class SiteData extends DurableObject<Env> {
         /^https?:\/\/[^/]+$/.test(input.origin)
           ? { origin: input.origin }
           : {}),
-        params: input.params ?? {},
         query: input.query ?? {},
       },
       kind: "route",
@@ -2562,28 +2557,34 @@ export class SiteData extends DurableObject<Env> {
     return { ok: true as const, value: null };
   }
 
-  /** Tests only: replaces a module or migration, or removes it (null). */
+  /**
+   * Tests only: replaces a module or migration, or removes it (null);
+   * folder "root" with file "routes.js" or "routes.json" is a route's.
+   */
   async putFunctions(input: {
     site: string;
     file: string;
     source: string | null;
-    folder: "modules" | "migrations" | "queries" | "mutations" | "routes";
+    folder: "modules" | "migrations" | "queries" | "mutations" | "root";
     /** False stores the file only, for a batch published by its last file. */
     publish?: boolean;
   }) {
     const folder = input.folder;
     if (
-      !["modules", "migrations", "queries", "mutations", "routes"].includes(
+      !["modules", "migrations", "queries", "mutations", "root"].includes(
         folder,
-      )
+      ) ||
+      (folder === "root" && !["routes.js", "routes.json"].includes(input.file))
     )
       return this.run(() => {
         throw new DataError(400, "Invalid folder.");
       });
     const key =
-      folder === "migrations"
-        ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
-        : `${input.site}/_naru/${folder}/${folder === "routes" ? routeModule(input.file) : functionModule(input.file)}.js`;
+      folder === "root"
+        ? `${input.site}/_naru/${input.file}`
+        : folder === "migrations"
+          ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
+          : `${input.site}/_naru/${folder}/${functionModule(input.file)}.js`;
     if (input.source === null) await this.env.SITE_FILES.delete(key);
     else await this.env.SITE_FILES.put(key, input.source);
     if (input.publish === false) return { ok: true, value: null };

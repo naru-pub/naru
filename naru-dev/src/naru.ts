@@ -46,10 +46,10 @@ import {
   functionReference,
 } from "../../control-plane/src/lib/site-data/validation";
 import {
-  matchRoute,
+  NO_ROUTES,
   routeAnswer,
-  routeOf,
-  validRoute,
+  routed,
+  routeRules,
   withHead,
 } from "../../control-plane/src/lib/site-functions/routes";
 import type * as Api from "./api";
@@ -66,13 +66,9 @@ export interface Resources {
 
 const OWNER = "1";
 const SITE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const FOLDERS = [
-  "modules",
-  "migrations",
-  "queries",
-  "mutations",
-  "routes",
-] as const;
+const FOLDERS = ["modules", "migrations", "queries", "mutations"] as const;
+/** The routes' rules and code (1.1.0), directly in _naru/. */
+const ROUTE_FILES = ["routes.json", "routes.js"];
 // Uploads get the address they would have on Naru, so an app checks them as
 // it would there; a service worker on the site's pages serves them from here.
 const MEDIA_ORIGIN = "https://media.naru.pub";
@@ -359,21 +355,25 @@ export async function start(
   /* -------------------------------------------- _naru/ publication --- */
 
   /**
-   * Publishes one `_naru/<folder>/<path>.js` (or a migration's `.sql`), or
-   * removes it when gone.
+   * Publishes one `_naru/<folder>/<path>.js` (or a migration's `.sql`, or
+   * `_naru/routes.json` and `routes.js`), or removes it when gone.
    */
   async function publish(path: string, publishing = true) {
     const inside = relative(join(folder, "_naru"), path).split(sep);
-    const kind = inside[0] as (typeof FOLDERS)[number];
+    const root = inside.length === 1 && ROUTE_FILES.includes(inside[0]);
+    const kind = root ? "root" : (inside[0] as (typeof FOLDERS)[number]);
     if (
-      !FOLDERS.includes(kind) ||
-      !(kind === "migrations" ? /\.sql$/ : /\.m?js$/).test(path)
+      !root &&
+      (!FOLDERS.includes(kind as (typeof FOLDERS)[number]) ||
+        !(kind === "migrations" ? /\.sql$/ : /\.m?js$/).test(path))
     )
       return;
-    const file = inside
-      .slice(1)
-      .join("/")
-      .replace(/\.(m?js|sql)$/, "");
+    const file = root
+      ? inside[0]
+      : inside
+          .slice(1)
+          .join("/")
+          .replace(/\.(m?js|sql)$/, "");
     const source = existsSync(path) ? await readFile(path, "utf8") : null;
     try {
       await object("putFunctions", {
@@ -384,11 +384,13 @@ export async function start(
         publish: publishing,
       });
       if (publishing) {
-        log(`published _naru/ (${kind}/${file} changed)`);
+        log(`published _naru/ (${root ? file : `${kind}/${file}`} changed)`);
         await writeTypes();
       }
     } catch (error) {
-      warn(`_naru/${kind}/${file}: ${(error as Error).message}`);
+      warn(
+        `_naru/${root ? file : `${kind}/${file}`}: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -529,11 +531,16 @@ export async function start(
       monthlyRequests: null,
     });
     // Every file first, then one publication: modules import each other.
-    const everything = (
-      await Promise.all(
-        FOLDERS.map((kind) => files(join(folder, "_naru", kind))),
-      )
-    ).flat();
+    const everything = [
+      ...(
+        await Promise.all(
+          FOLDERS.map((kind) => files(join(folder, "_naru", kind))),
+        )
+      ).flat(),
+      ...ROUTE_FILES.map((name) => join(folder, "_naru", name)).filter((path) =>
+        existsSync(path),
+      ),
+    ];
     for (const [index, path] of everything.entries())
       await publish(path, index === everything.length - 1);
     await installDeclaration();
@@ -919,17 +926,19 @@ self.addEventListener("fetch", (event) => {
   }
 
   /**
-   * A path one of `_naru/routes/` answers (1.1.0), rendered by the site's
-   * object as Naru's edge renders it; false when no route matches.
+   * A path `_naru/routes.json` routes (1.1.0), rendered by the site's object
+   * as Naru's edge renders it; false when it routes none.
    */
   async function route(res: ServerResponse, url: URL) {
-    const routes = (await files(join(folder, "_naru", "routes")))
-      .map((path) =>
-        routeOf(relative(join(folder, "_naru"), path).split(sep).join("/")),
-      )
-      .filter(validRoute);
-    const match = matchRoute(routes, url.pathname);
-    if (!match) return false;
+    let rules = NO_ROUTES;
+    try {
+      rules = routeRules(
+        await readFile(join(folder, "_naru", "routes.json"), "utf8"),
+      );
+    } catch {
+      // None, or one the release refuses (published with a warning).
+    }
+    if (!routed(rules, url.pathname)) return false;
     const html = (status: number, body: string, headers = {}) =>
       res
         .writeHead(status, {
@@ -941,10 +950,8 @@ self.addEventListener("fetch", (event) => {
     try {
       const { result } = await object<{ result: unknown }>("render", {
         site,
-        route: match.route,
         path: url.pathname,
         origin: url.origin,
-        params: match.params,
         query: Object.fromEntries(url.searchParams),
       });
       const answer = routeAnswer(result);

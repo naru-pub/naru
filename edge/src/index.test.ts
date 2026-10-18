@@ -88,7 +88,7 @@ describe("a route's page rendered on the mini, through the Standby object", () =
       async get(key: string) {
         const body =
           key === "_naru-runtime/bob/routes.json"
-            ? JSON.stringify({ routes: ["posts/_id"] })
+            ? JSON.stringify({ include: ["/posts/*"] })
             : key === "bob/index.html"
               ? "<p>bob's app</p>"
               : null;

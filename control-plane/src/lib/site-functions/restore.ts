@@ -69,9 +69,9 @@ export async function restoreRestorePoint(ownerId: string, name: unknown) {
       routesKey(site),
       JSON.stringify({
         revision: restored.revision,
-        routes: await new FunctionRevisions(revisionStorage, site).routes(
+        ...(await new FunctionRevisions(revisionStorage, site).routes(
           restored.revision,
-        ),
+        )),
       }),
     );
   return { saved: restorePointOf(restored.saved), revision: restored.revision };

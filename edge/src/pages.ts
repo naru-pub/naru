@@ -6,11 +6,12 @@ import {
 } from "../../control-plane/src/lib/edge/file-cache";
 import type { PageviewEvent } from "./pageview-log";
 import {
-  matchRoute,
+  NO_ROUTES,
   routeAnswer,
+  routed,
   withHead,
   type RouteAnswer,
-  type RouteParams,
+  type RouteRules,
 } from "../../control-plane/src/lib/site-functions/routes";
 import { routesKey } from "../../control-plane/src/lib/site-functions/revisions";
 import { DataError } from "../../control-plane/src/lib/site-data/validation";
@@ -249,11 +250,9 @@ function fileOf(body: ReadableStream, object: R2Object): SiteFile {
  */
 export type RenderRoute = (input: {
   site: string;
-  route: string;
   path: string;
   /** The page's own origin, such as https://alice.naru.pub, for absolute links. */
   origin?: string;
-  params: RouteParams;
   query: Record<string, string>;
   clientIp?: string;
 }) => Promise<
@@ -280,22 +279,24 @@ const routesOff = (error: { status: number; details?: unknown }) =>
   (error.details as { reason?: unknown } | null | undefined)?.reason ===
     ROUTES_OFF;
 
-/** Each site's routes, as its active release lists them, kept a little while. */
+/** Each site's route rules, as its active release has them, kept a little while. */
 const ROUTES_SECONDS = 30;
-const knownRoutes = new Map<string, { until: number; routes: string[] }>();
+const knownRoutes = new Map<string, { until: number; routes: RouteRules }>();
 async function siteRoutes(env: PagesEnv, login: string) {
   const known = knownRoutes.get(login);
   if (known && known.until > Date.now()) return known.routes;
-  let routes: string[] = [];
+  let routes = NO_ROUTES;
   try {
     const object = await env.SITE_FILES.get(routesKey(login));
-    const listed = object
-      ? ((await object.json()) as { routes?: unknown }).routes
-      : [];
-    if (Array.isArray(listed))
-      routes = listed.filter(
-        (route): route is string => typeof route === "string",
-      );
+    const stored = object ? ((await object.json()) as Partial<RouteRules>) : {};
+    const strings = (list: unknown) =>
+      Array.isArray(list)
+        ? list.filter((rule): rule is string => typeof rule === "string")
+        : [];
+    routes = {
+      include: strings(stored.include),
+      exclude: strings(stored.exclude),
+    };
   } catch (error) {
     // A site whose routes cannot be read is served as files.
     console.error(`Reading ${login}'s routes failed`, error);
@@ -335,10 +336,7 @@ async function serveRoute(
   render: RenderRoute,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const routes = await siteRoutes(env, login);
-  if (!routes.length) return null;
-  const match = matchRoute(routes, url.pathname);
-  if (!match) return null;
+  if (!routed(await siteRoutes(env, login), url.pathname)) return null;
   const cache = (globalThis as { caches?: { default: Cache } }).caches?.default;
   const key = new Request(url.toString());
   const hit = await cache?.match(key);
@@ -351,16 +349,14 @@ async function serveRoute(
   try {
     outcome = await render({
       site: login,
-      route: match.route,
       path: url.pathname,
       // The address the visitor asked: a subdomain or a custom domain.
       origin: url.origin,
-      params: match.params,
       query: Object.fromEntries(url.searchParams),
       clientIp: request.headers.get("cf-connecting-ip") ?? undefined,
     });
   } catch (error) {
-    console.error(`Rendering ${login}'s ${match.route} failed`, error);
+    console.error(`Rendering ${login}'s ${url.pathname} failed`, error);
     return away(request, env, ctx, login);
   }
   if (!outcome.ok) {

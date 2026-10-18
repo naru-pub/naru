@@ -391,7 +391,7 @@ export default function DatabaseDocs() {
                     </>,
                   ],
                   [
-                    <code key="n">_naru/routes/</code>,
+                    <code key="n">_naru/routes.json, routes.js</code>,
                     <>
                       <code>board.php?id=3</code>처럼 서버가 그리는 페이지
                     </>,
@@ -1226,66 +1226,42 @@ live.close();`}</Code>
                 대부분의 페이지는 정적 HTML과 스크립트로 충분합니다. 다만 글
                 하나하나의 주소를 링크로 공유할 때 미리보기에 글 제목이 나오게
                 하거나, 검색 엔진과 RSS 리더에 내용을 보여 주려면 서버가
-                페이지를 그려야 합니다. 그럴 때 <code>_naru/routes/</code>에
-                파일을 두면, 그 주소의 요청에 나루가 파일의 기본 내보내기를 돌려
-                답합니다.
+                페이지를 그려야 합니다. 그럴 때 <code>_naru/routes.json</code>에
+                그 주소들을 적으면, 나루가 그 주소의 요청에{" "}
+                <code>_naru/routes.js</code>의 기본 내보내기를 돌려 답합니다.{" "}
+                <code>routes.json</code>은 Cloudflare Pages의{" "}
+                <code>_routes.json</code>과 같은 형식입니다.
               </p>
-              <Table
-                head={["파일", "답하는 주소"]}
-                rows={[
-                  [
-                    <code key="f">routes/index.js</code>,
-                    <code key="p">/</code>,
-                  ],
-                  [
-                    <code key="f">routes/about.js</code>,
-                    <code key="p">/about</code>,
-                  ],
-                  [
-                    <code key="f">routes/posts/index.js</code>,
-                    <code key="p">/posts, /posts/</code>,
-                  ],
-                  [
-                    <code key="f">routes/posts/_id.js</code>,
-                    <>
-                      <code>/posts/42</code> (<code>params.id</code>는{" "}
-                      <code>&quot;42&quot;</code>)
-                    </>,
-                  ],
-                  [
-                    <code key="f">routes/docs/_...path.js</code>,
-                    <>
-                      <code>/docs</code>, <code>/docs/a/b</code> (
-                      <code>params.path</code>는 <code>[]</code>,{" "}
-                      <code>[&quot;a&quot;, &quot;b&quot;]</code>)
-                    </>,
-                  ],
-                  [
-                    <code key="f">routes/feed.xml.js</code>,
-                    <code key="p">/feed.xml</code>,
-                  ],
-                ]}
-              />
+              <Code>{`{
+  "version": 1,
+  "include": ["/", "/posts/*", "/feed.xml"],
+  "exclude": ["/posts/drafts/*"]
+}`}</Code>
               <p>
-                <code>_</code>로 시작하는 이름은 경로 한 칸의 무엇이든 받고,{" "}
-                <code>_...</code>로 시작하는 이름은 남은 경로 전부(없어도 됨)를
-                칸의 목록으로 받습니다. <code>_...</code>는 맨 끝 칸에만, 맨 앞
-                칸이 아닌 곳에 둘 수 있습니다. 같은 주소에 맞는 파일이 여럿이면
-                앞 칸부터 이름이 정해진 쪽, <code>_</code>, <code>_...</code>{" "}
-                순으로 먼저입니다. 라우트와 맞는 주소는 같은 이름의 사이트
-                파일보다 라우트가 답하고, 어떤 라우트와도 맞지 않는 주소는
-                전처럼 사이트 파일이 답합니다.
+                <code>include</code>에 적은 주소가 <code>routes.js</code>를
+                돌리고(하나 이상), <code>exclude</code>에 적은 주소는 무엇이
+                포함하든 돌리지 않습니다. 주소는 <code>/</code>로 시작하고,{" "}
+                <code>*</code>는 슬래시를 포함해 무엇이든 받습니다:{" "}
+                <code>/posts/*</code>는 <code>/posts/</code>와{" "}
+                <code>/posts/a/b</code>를 받지만 <code>/posts</code>는 받지
+                않습니다. 규칙은 모두 합쳐 100개, 하나에 100자까지입니다.
+                라우트로 가는 주소는 같은 이름의 사이트 파일보다 라우트가
+                답하고, 나머지 주소는 전처럼 사이트 파일이 답합니다.{" "}
+                <code>routes.json</code>과 <code>routes.js</code>는 함께 있어야
+                하며, 형식이 틀린 <code>routes.json</code>은 반영되지 않습니다.
               </p>
               <Code>{`// _naru/modules/html.js
 export const escape = (value) =>
   String(value).replace(/[&<>"']/g, (c) => \`&#\${c.charCodeAt(0)};\`);
 
-// _naru/routes/posts/_id.js
-import { escape } from "../../modules/html.js";
+// _naru/routes.js
+import { escape } from "./modules/html.js";
 
-export default async function (ctx, { path, params, query }) {
-  const id = Number(params.id) || 0;
-  const [post] = (await ctx.sql\`SELECT title, body FROM posts WHERE id = \${id}\`).rows;
+export default async function (ctx, { path, query }) {
+  const [, kind, id] = path.split("/");
+  if (kind !== "posts" || !/^\\d+$/.test(id ?? ""))
+    ctx.fail("NOT_FOUND", "없는 페이지입니다.");
+  const [post] = (await ctx.sql\`SELECT title, body FROM posts WHERE id = \${Number(id)}\`).rows;
   if (!post) ctx.fail("NOT_FOUND", "글이 없거나 지워졌습니다.");
   return {
     html: \`<!doctype html>
@@ -1297,8 +1273,10 @@ export default async function (ctx, { path, params, query }) {
   };
 }`}</Code>
               <p>
-                함수는 <code>{"{ path, origin, params, query }"}</code>를
-                받습니다. <code>origin</code>은 방문자가 연 주소의 앞부분(
+                함수는 <code>{"{ path, origin, query }"}</code>를 받습니다.{" "}
+                <code>path</code>는 요청된 그대로(퍼센트 인코딩된 채)이고, 어떤
+                페이지인지는 함수가 직접 읽습니다. <code>origin</code>은
+                방문자가 연 주소의 앞부분(
                 <code>https://alice.naru.pub</code>이나 연결한 도메인)이라
                 <code>og:url</code> 같은 절대 주소를 만들 때 씁니다.{" "}
                 <code>query</code>는 주소의 <code>?</code> 뒤 값입니다. 라우트는

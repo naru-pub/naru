@@ -110,13 +110,13 @@ export async function activateRelease(release: FunctionRelease) {
       migrations: await revisions.migrations(release.revision),
     },
   );
-  // The routes the active release serves, for the edge Worker (routes.ts),
+  // The paths the active release routes, for the edge Worker (routes.ts),
   // whichever release that is.
   await revisionStorage.put(
     routesKey(release.site),
     JSON.stringify({
       revision: active.revision,
-      routes: await revisions.routes(active.revision),
+      ...(await revisions.routes(active.revision)),
     }),
   );
   return active;

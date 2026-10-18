@@ -487,12 +487,23 @@ integration("live queries", () => {
 });
 
 integration("routes", () => {
-  test("a route renders as a visitor's query, with its path and parameters", async () => {
+  test("routes.js renders what routes.json routes, as a visitor's query, with its path", async () => {
     await put(
-      "routes",
-      "posts/_id",
-      `export default async function (ctx, { path, origin, params, query }) {
-         const [post] = (await ctx.sql\`SELECT title FROM posts WHERE id = \${Number(params.id)}\`).rows;
+      "root",
+      "routes.json",
+      JSON.stringify({ version: 1, include: ["/posts/*", "/feed.xml"] }),
+      false,
+    );
+    await put(
+      "root",
+      "routes.js",
+      `export default async function (ctx, { path, origin, query }) {
+         if (path === "/feed.xml") {
+           const { rows } = await ctx.sql\`SELECT title FROM posts ORDER BY id LIMIT 2\`;
+           return { body: \`<rss>\${rows.map((row) => row.title).join(",")}</rss>\`, type: "application/rss+xml" };
+         }
+         const id = Number(path.split("/")[2]);
+         const [post] = (await ctx.sql\`SELECT title FROM posts WHERE id = \${id}\`).rows;
          if (!post) ctx.fail("NOT_FOUND", "그런 글은 없어요.");
          return { html: \`<h1>\${post.title}</h1><p>\${origin ?? ""}\${path} \${query.tab ?? ""} \${ctx.visitor}</p>\`, cache: 30 };
        }`,
@@ -500,10 +511,8 @@ integration("routes", () => {
     const render = (id: string) =>
       callSiteObject<{ result: unknown }>(site, "render", {
         site,
-        route: "posts/_id",
         path: `/posts/${id}`,
         origin: "https://sqlsite.naru.pub",
-        params: { id },
         query: { tab: "c" },
       });
     expect(await render("1")).toEqual({
@@ -516,26 +525,36 @@ integration("routes", () => {
       status: 404,
       message: "그런 글은 없어요.",
     });
-    // A route with a dot in its name, answering text of its own type.
-    await put(
-      "routes",
-      "feed.xml",
-      `export default async function (ctx) {
-         const { rows } = await ctx.sql\`SELECT title FROM posts ORDER BY id LIMIT 2\`;
-         return { body: \`<rss>\${rows.map((row) => row.title).join(",")}</rss>\`, type: "application/rss+xml" };
-       }`,
-    );
     expect(
       await callSiteObject(site, "render", {
         site,
-        route: "feed.xml",
         path: "/feed.xml",
-        params: {},
         query: {},
       }),
     ).toEqual({
       result: { body: "<rss>첫 글,둘째</rss>", type: "application/rss+xml" },
     });
+    // The release refuses rules that are not _routes.json's, and code
+    // without rules.
+    for (const [folder, file, source, message] of [
+      [
+        "root",
+        "routes.json",
+        '{ "version": 1, "include": [] }',
+        /needs a path/,
+      ],
+      ["root", "routes.json", null, /needs _naru\/routes\.json/],
+    ] as const) {
+      await expect(put(folder, file, source)).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringMatching(message),
+      });
+    }
+    await put(
+      "root",
+      "routes.json",
+      JSON.stringify({ version: 1, include: ["/posts/*", "/feed.xml"] }),
+    );
 
     // A site whose paid status has lapsed, or is not confirmed, renders
     // nothing: a 404 with its reason, which the edge answers as a missing

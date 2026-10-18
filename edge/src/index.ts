@@ -206,7 +206,6 @@ function callOf(operation: string, input: unknown): CallIdentity | null {
     kind?: unknown;
     file?: unknown;
     name?: unknown;
-    route?: unknown;
   } | null;
   if (
     operation === "call" &&
@@ -217,8 +216,8 @@ function callOf(operation: string, input: unknown): CallIdentity | null {
       given.kind === "route")
   )
     return { kind: given.kind, file: given.file, name: given.name };
-  if (operation === "render" && typeof given?.route === "string")
-    return { kind: "route", file: given.route, name: "default" };
+  if (operation === "render")
+    return { kind: "route", file: "routes", name: "default" };
   return null;
 }
 

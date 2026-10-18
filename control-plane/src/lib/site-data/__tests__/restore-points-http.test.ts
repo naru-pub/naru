@@ -169,18 +169,24 @@ test("a restore asks the site's object, then writes the active release's routes"
 
 test("the routes written are those of the release the object still runs", async () => {
   const { createHash } = require("node:crypto") as typeof import("node:crypto");
-  const digest = "a".repeat(64);
+  const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+  const rules = JSON.stringify({ version: 1, include: ["/", "/posts/*"] });
   const body = JSON.stringify({
     version: 2,
     publication: "p",
-    files: { "routes/index.js": digest, "queries/posts.js": digest },
+    files: {
+      "routes.json": sha(rules),
+      "routes.js": "a".repeat(64),
+      "queries/posts.js": "a".repeat(64),
+    },
   });
-  const revision = createHash("sha256").update(body).digest("hex");
-  storage.get.mockResolvedValueOnce({
-    etag: "m",
-    size: body.length,
-    text: async () => body,
-  });
+  const revision = sha(body);
+  for (const text of [body, rules])
+    storage.get.mockResolvedValueOnce({
+      etag: "m",
+      size: text.length,
+      text: async () => text,
+    });
   call.mockResolvedValueOnce({ revision, saved: "before-restore-1.ndjson.gz" });
   const response = await restorePointsOwnerRequest(
     request("POST", { name: `${first}.ndjson.gz` }),
@@ -188,7 +194,7 @@ test("the routes written are those of the release the object still runs", async 
   expect(response.status).toBe(200);
   expect(storage.put).toHaveBeenCalledWith(
     "_naru-runtime/alice/routes.json",
-    JSON.stringify({ revision, routes: ["index"] }),
+    JSON.stringify({ revision, include: ["/", "/posts/*"], exclude: [] }),
   );
 });
 

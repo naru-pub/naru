@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { routeOf, validRoute } from "./routes";
+import { NO_ROUTES, routeRules, type RouteRules } from "./routes";
 import { DataError } from "../site-data/validation";
 import {
   loadModuleGraph,
@@ -35,8 +35,8 @@ type Manifest = {
 };
 
 /**
- * The routes a release serves (routes.ts), as the edge Worker reads them:
- * written beside the site's releases when one activates.
+ * The route rules a release serves (routes.ts), as the edge Worker reads
+ * them: written beside the site's releases when one activates.
  */
 export const routesKey = (site: string) => `_naru-runtime/${site}/routes.json`;
 /**
@@ -51,8 +51,14 @@ export function migrationPath(value: string) {
     throw new DataError(400, `Invalid migration path _naru/${value}.`);
   return value;
 }
+/** The release's route rules (routes.ts), `_naru/routes.json`. */
+const ROUTES_JSON = "routes.json";
 const filePath = (value: string) =>
-  value.startsWith("migrations/") ? migrationPath(value) : modulePath(value);
+  value === ROUTES_JSON
+    ? value
+    : value.startsWith("migrations/")
+      ? migrationPath(value)
+      : modulePath(value);
 const hash = (source: string) =>
   createHash("sha256").update(source).digest("hex");
 const conflict = () =>
@@ -95,7 +101,27 @@ export class FunctionRevisions {
   }
   private async files() {
     const files: Array<{ path: string; key: string; etag: string }> = [];
-    for (const folder of ["modules", "queries", "mutations", "routes"]) {
+    // The routes' rules and their code (1.1.0), beside the folders. The
+    // folder of route files they replaced is refused, not left unserved.
+    const old = await this.bucket.list({
+      prefix: `${this.site}/_naru/routes/`,
+    });
+    if (old.objects.length)
+      throw new DataError(
+        400,
+        "_naru/routes/ is no longer read: list the paths in _naru/routes.json, and answer them in _naru/routes.js.",
+      );
+    const root = await this.bucket.list({
+      prefix: `${this.site}/_naru/routes.`,
+    });
+    for (const object of root.objects) {
+      const name = object.key.slice(`${this.site}/_naru/`.length);
+      if (![ROUTES_JSON, "routes.js", "routes.mjs"].includes(name)) continue;
+      if (object.size > MAX_MODULE_BYTES)
+        throw new DataError(400, `_naru/${name} exceeds 256 KiB.`);
+      files.push({ path: name, key: object.key, etag: object.etag });
+    }
+    for (const folder of ["modules", "queries", "mutations"]) {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
       do {
@@ -177,8 +203,25 @@ export class FunctionRevisions {
           400,
           `Both _naru/${filename.slice(0, -4)}.js and .mjs exist; keep one.`,
         );
+    // Route rules and the code answering them go together.
+    const handler = ["routes.js", "routes.mjs"].some((name) =>
+      Object.hasOwn(sources, name),
+    );
+    if (Object.hasOwn(sources, ROUTES_JSON)) {
+      routeRules(sources[ROUTES_JSON]);
+      if (!handler)
+        throw new DataError(
+          400,
+          "_naru/routes.json needs _naru/routes.js, whose default export answers its paths.",
+        );
+    } else if (handler)
+      throw new DataError(
+        400,
+        "_naru/routes.js needs _naru/routes.json, which lists the paths it answers.",
+      );
     for (const [filename, source] of Object.entries(sources))
-      for (const dependency of filename.startsWith("migrations/")
+      for (const dependency of filename.startsWith("migrations/") ||
+      filename === ROUTES_JSON
         ? []
         : moduleImports(source, filename)) {
         if (!Object.hasOwn(sources, dependency))
@@ -287,14 +330,11 @@ export class FunctionRevisions {
     return source;
   }
 
-  /** The routes `revision` serves: "posts/_id" for routes/posts/_id.js. */
-  async routes(revision: string): Promise<string[]> {
+  /** The paths `revision` routes (`_naru/routes.json`); none without one. */
+  async routes(revision: string): Promise<RouteRules> {
     const manifest = await this.manifest(revision);
-    return Object.keys(manifest.files)
-      .filter((filename) => filename.startsWith("routes/"))
-      .map(routeOf)
-      .filter(validRoute)
-      .sort();
+    const source = await this.source(revision, manifest, ROUTES_JSON);
+    return source === null ? NO_ROUTES : routeRules(source);
   }
 
   /** The release's SQL migrations, in the order they apply. */

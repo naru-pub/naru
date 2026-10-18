@@ -1,8 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
-  matchRoute,
+  NO_ROUTES,
   routeAnswer,
-  validRoute,
+  routed,
+  routeRules,
   withHead,
 } from "../../control-plane/src/lib/site-functions/routes";
 import { notFound, servePage, type PagesEnv, type RenderRoute } from "./pages";
@@ -12,111 +13,63 @@ import { ROUTES_OFF } from "./types";
 // page Worker serving it, against a bucket held in memory and a stand-in for
 // the site's object.
 
-describe("matching", () => {
-  const routes = [
-    "index",
-    "about",
-    "posts/index",
-    "posts/_id",
-    "posts/new",
-    "boards/_board/_post",
-    "feed.xml",
-  ];
-  test("a path finds its route, fixed segments before parameters", () => {
-    expect(matchRoute(routes, "/")).toEqual({ route: "index", params: {} });
-    expect(matchRoute(routes, "/about")).toEqual({
-      route: "about",
-      params: {},
-    });
-    expect(matchRoute(routes, "/posts")).toEqual({
-      route: "posts/index",
-      params: {},
-    });
-    expect(matchRoute(routes, "/posts/")).toEqual({
-      route: "posts/index",
-      params: {},
-    });
-    expect(matchRoute(routes, "/posts/42")).toEqual({
-      route: "posts/_id",
-      params: { id: "42" },
-    });
-    expect(matchRoute(routes, "/posts/new")).toEqual({
-      route: "posts/new",
-      params: {},
-    });
-    expect(matchRoute(routes, "/posts/%EA%B8%80")).toEqual({
-      route: "posts/_id",
-      params: { id: "글" },
-    });
-    expect(matchRoute(routes, "/feed.xml")).toEqual({
-      route: "feed.xml",
-      params: {},
-    });
-    expect(matchRoute(routes, "/boards/free/7")).toEqual({
-      route: "boards/_board/_post",
-      params: { board: "free", post: "7" },
-    });
-  });
-  test("other paths are the site's files", () => {
-    for (const path of ["/about/", "/posts/42/x", "/style.css", "/%E0%A4%A"])
-      expect(matchRoute(routes, path)).toBeNull();
-    expect(matchRoute([], "/")).toBeNull();
-  });
-});
-
-describe("rest segments", () => {
-  const routes = [
-    "index",
-    "docs/index",
-    "docs/_...path",
-    "docs/api/_name",
-    "boards/_board/_...rest",
-    "boards/_board/page/_page",
-  ];
-  test("_...name takes the rest of the path, after fixed segments and parameters", () => {
-    expect(matchRoute(routes, "/docs")).toEqual({
-      route: "docs/index",
-      params: {},
-    });
-    expect(matchRoute(routes, "/docs/a/%EA%B8%80")).toEqual({
-      route: "docs/_...path",
-      params: { path: ["a", "글"] },
-    });
-    expect(matchRoute(routes, "/docs/api/fetch")).toEqual({
-      route: "docs/api/_name",
-      params: { name: "fetch" },
-    });
-    expect(matchRoute(routes, "/docs/api/fetch/more")).toEqual({
-      route: "docs/_...path",
-      params: { path: ["api", "fetch", "more"] },
-    });
-    expect(matchRoute(routes, "/boards/free")).toEqual({
-      route: "boards/_board/_...rest",
-      params: { board: "free", rest: [] },
-    });
-    expect(matchRoute(routes, "/boards/free/")).toEqual({
-      route: "boards/_board/_...rest",
-      params: { board: "free", rest: [] },
-    });
-    expect(matchRoute(routes, "/boards/free/page/2")).toEqual({
-      route: "boards/_board/page/_page",
-      params: { board: "free", page: "2" },
-    });
-    expect(matchRoute(routes, "/boards/free/tag/x/y")).toEqual({
-      route: "boards/_board/_...rest",
-      params: { board: "free", rest: ["tag", "x", "y"] },
-    });
-    expect(matchRoute(routes, "/style.css")).toBeNull();
-  });
-  test("a rest segment is a route's last and never its first", () => {
-    expect(validRoute("docs/_...path")).toBe(true);
-    for (const route of [
-      "_...path",
-      "docs/_...path/x",
-      "docs/_...",
-      "docs/_...a-b",
+describe("rules", () => {
+  const rules = routeRules(
+    JSON.stringify({
+      version: 1,
+      include: ["/", "/posts/*", "/feed.xml", "/a*b*c"],
+      exclude: ["/posts/drafts/*", "/posts/feed"],
+    }),
+  );
+  test("an included path runs the site's code, unless excluded", () => {
+    for (const path of [
+      "/",
+      "/posts/",
+      "/posts/42",
+      "/posts/%EA%B8%80/comments/7",
+      "/feed.xml",
+      "/abc",
+      "/a/b/c",
+      "/axxbyyc",
     ])
-      expect(validRoute(route), route).toBe(false);
+      expect(routed(rules, path), path).toBe(true);
+    for (const path of [
+      "/about",
+      "/posts",
+      "/posts/drafts/1",
+      "/posts/feed",
+      "/feed.xml/x",
+      "/style.css",
+      "/acb",
+      "/ab",
+    ])
+      expect(routed(rules, path), path).toBe(false);
+    expect(routed(NO_ROUTES, "/")).toBe(false);
+  });
+  test("routes.json is Cloudflare Pages' _routes.json", () => {
+    expect(routeRules('{ "version": 1, "include": ["/*"] }')).toEqual({
+      include: ["/*"],
+      exclude: [],
+    });
+    for (const [text, message] of [
+      ["[", /not JSON/],
+      ["[]", /an object/],
+      ['{ "include": ["/"] }', /"version" is 1/],
+      ['{ "version": 2, "include": ["/"] }', /"version" is 1/],
+      ['{ "version": 1, "include": [] }', /needs a path/],
+      ['{ "version": 1 }', /a list of paths/],
+      ['{ "version": 1, "include": ["posts"] }', /not a path from \//],
+      [
+        `{ "version": 1, "include": ["/${"x".repeat(100)}"] }`,
+        /100 characters/,
+      ],
+      [
+        JSON.stringify({ version: 1, include: Array(101).fill("/") }),
+        /at most 100 rules/,
+      ],
+      ['{ "version": 1, "include": ["/"], "routes": [] }', /unknown "routes"/],
+    ] as const)
+      expect(() => routeRules(text), text).toThrow(message);
   });
 });
 
@@ -164,10 +117,6 @@ describe("answers", () => {
       expect(() => routeAnswer({ body: "x", type })).toThrow(
         /whose type is not one of/,
       );
-    expect(validRoute("feed.xml")).toBe(true);
-    expect(validRoute("posts/_id")).toBe(true);
-    for (const route of ["..", "a/./b", "a b", "a/", ""])
-      expect(validRoute(route), route).toBe(false);
   });
 
   test("anything else is the route's mistake", () => {
@@ -198,7 +147,8 @@ describe("answers", () => {
 describe("serving", () => {
   const files: Record<string, string> = {
     "_naru-runtime/carol/routes.json": JSON.stringify({
-      routes: ["posts/_id", "go"],
+      include: ["/posts/*", "/go"],
+      exclude: [],
     }),
     "carol/index.html":
       "<html><head><title>앱</title></head><body>app</body></html>",
@@ -236,7 +186,7 @@ describe("serving", () => {
       render,
     );
 
-  test("a route's page, its parameters and query, never cached unless asked", async () => {
+  test("a route's page, its path and query, never cached unless asked", async () => {
     answer = { ok: true, value: { result: "<h1>글 42</h1>" } };
     const page = await get("/posts/42?tab=comments");
     expect(page.status).toBe(200);
@@ -244,10 +194,8 @@ describe("serving", () => {
     expect(page.headers.get("Cache-Control")).toBe("no-store");
     expect(asked.at(-1)).toMatchObject({
       site: "carol",
-      route: "posts/_id",
       path: "/posts/42",
       origin: "https://carol.naru.pub",
-      params: { id: "42" },
       query: { tab: "comments" },
     });
   });
@@ -355,7 +303,7 @@ describe("serving", () => {
 
   test("a site without index.html is answered as without routes while the mini is away", async () => {
     files["_naru-runtime/dave/routes.json"] = JSON.stringify({
-      routes: ["posts/_id"],
+      include: ["/posts/*"],
     });
     answer = { ok: false, error: { status: 503, message: "away" } };
     expect((await navigate("/posts/12", "dave")).status).toBe(404);

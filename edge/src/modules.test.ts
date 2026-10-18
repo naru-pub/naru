@@ -27,12 +27,19 @@ describe("static site imports", () => {
   ])("rejects %s", (value) =>
     expect(() => resolveModule("mutations/shop.js", value)).toThrow(),
   );
-  test("site code lives in modules, queries, mutations and routes alone", () => {
+  test("site code lives in modules, queries, mutations and routes.js alone", () => {
     expect(resolveModule("queries/shop.js", "../modules/x.mjs")).toBe(
       "modules/x.mjs",
     );
-    for (const folder of ["functions", "rules"])
-      expect(() => modulePath(`${folder}/shop.js`)).toThrow(/invalid path/);
+    expect(resolveModule("routes.js", "./modules/x.js")).toBe("modules/x.js");
+    expect(modulePath("routes.js")).toBe("routes.js");
+    for (const path of [
+      "functions/shop.js",
+      "rules/shop.js",
+      "routes/x.js",
+      "other.js",
+    ])
+      expect(() => modulePath(path)).toThrow(/invalid path/);
   });
   test("discovers imports and reexports without treating strings/comments as imports", () => {
     expect(

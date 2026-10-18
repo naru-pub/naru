@@ -203,29 +203,33 @@ integration(
 );
 
 integration(
-  "activating a release lists its routes for the edge, dotted names too",
+  "activating a release writes its routes.json rules for the edge, and refuses the old routes folder",
   async () => {
+    const rules = { version: 1, include: ["/posts/*"], exclude: ["/posts/x"] };
+    mockObjects.set(`${site}/_naru/routes.json`, JSON.stringify(rules));
     mockObjects.set(
-      `${site}/_naru/routes/posts/_id.js`,
-      "export default function () { return 'x'; }",
-    );
-    mockObjects.set(
-      `${site}/_naru/routes/feed.xml.js`,
+      `${site}/_naru/routes.js`,
       "export default function () { return 'x'; }",
     );
     const { revision } = await publishSiteFunctions(site);
     expect(
       JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!),
-    ).toEqual({
-      revision,
-      routes: ["feed.xml", "posts/_id"],
+    ).toEqual({ revision, include: ["/posts/*"], exclude: ["/posts/x"] });
+    mockObjects.set(
+      `${site}/_naru/routes/posts/_id.js`,
+      "export default function () { return 'x'; }",
+    );
+    await expect(publishSiteFunctions(site)).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringMatching(/_naru\/routes\/ is no longer read/),
     });
     mockObjects.delete(`${site}/_naru/routes/posts/_id.js`);
-    mockObjects.delete(`${site}/_naru/routes/feed.xml.js`);
+    mockObjects.delete(`${site}/_naru/routes.json`);
+    mockObjects.delete(`${site}/_naru/routes.js`);
     await publishSiteFunctions(site);
     expect(
-      JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!).routes,
-    ).toEqual([]);
+      JSON.parse(mockObjects.get(`_naru-runtime/${site}/routes.json`)!),
+    ).toMatchObject({ include: [], exclude: [] });
   },
 );
 
