@@ -1113,20 +1113,17 @@ integration("site members", () => {
     test("a member uploads into the site's media, and finishes only their own", async () => {
       const bob = await signIn("bob");
       const carol = await signIn("carol");
-      // Site code reads the upload as it was finished (ctx.media.get), and
-      // the browser's session the control plane passes on (ctx.session).
+      // Site code reads the upload as it was finished (_naru_uploads).
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
         folder: "queries",
         file: "uploads",
-        source: `export async function get(ctx, { id }) { return ctx.media.get(id); }
-          export async function seen(ctx) {
-            const before = await ctx.session.get("seen");
-            await ctx.session.set("seen", true);
-            return before;
+        source: `export async function get(ctx, { id }) {
+            const { rows } = await ctx.sql\`SELECT * FROM _naru_uploads WHERE id = \${id}\`;
+            return rows[0] ?? null;
           }`,
       });
-      const uploadCall = (name: string, args: unknown, extra = {}) =>
+      const uploadCall = (name: string, args: unknown) =>
         executeCall({
           site: "alice",
           path: [`uploads:${name}`],
@@ -1134,11 +1131,7 @@ integration("site members", () => {
           kind: "query",
           body: { args },
           bearer: { token: bob.accessToken, origin },
-          ...extra,
         }).then((answer) => (answer as { result: unknown }).result);
-      const session = { session: "control-plane-session-1" };
-      expect(await uploadCall("seen", null, session)).toBe(null);
-      expect(await uploadCall("seen", null, session)).toBe(true);
       const authorized = await media(bob.accessToken, "POST", [], file);
       expect(authorized).toMatchObject({ id: expect.any(String) });
       const row = await db

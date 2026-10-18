@@ -120,8 +120,6 @@ export type Invocation = {
   roles?: string[];
   /** The site's owner's Naru login (`ctx.ownerName`). */
   ownerName?: string;
-  /** The call came with a browser's session (`ctx.session`). */
-  session?: boolean;
 };
 
 const failed = (message: string) =>
@@ -308,31 +306,12 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, ownerName, session, mediaTypes) => {
+globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, ownerName, mediaTypes) => {
   const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
   const rolesOf = __operation("rolesOf");
   const setRoles = __operation("setRoles");
-  const membersWithRole = __operation("membersWithRole");
-  // Counts kept by Naru beside the site's tables: a query may count too,
-  // and no count re-runs a live query.
-  const counters = Object.freeze({
-    get: __operation("countersGet"),
-    increment: __operation("countersIncrement"),
-    ...(kind === "mutation" ? { delete: __operation("countersDelete") } : {}),
-  });
-  // The site's uploads, as Naru Media recorded them.
-  const media = Object.freeze({
-    get: __operation("mediaGet"),
-    types: Object.freeze(mediaTypes),
-  });
-  // What one browser's calls share, for a while (not who they are).
-  const browser = session
-    ? Object.freeze({
-        get: __operation("sessionGet"),
-        set: __operation("sessionSet"),
-        delete: __operation("sessionDelete"),
-      })
-    : null;
+  // The types Naru Media takes; the uploads are site SQL's _naru_uploads.
+  const media = Object.freeze({ types: Object.freeze(mediaTypes) });
   // A guest's password, kept by the site as a hash.
   const passwords = Object.freeze({
     hash: __operation("passwordHash"),
@@ -403,10 +382,7 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, 
     fail: (...args) => __call("fail", ...args),
     sql,
     rolesOf,
-    membersWithRole,
-    counters,
     media,
-    session: browser,
     passwords: kind === "mutation" ? passwords : Object.freeze({ verify: passwords.verify }),
     ...(kind === "mutation" ? { setRoles } : {}),
   });
@@ -562,24 +538,10 @@ export function runFunction(
         // Site code reaches the site's tables through sql alone.
         const kind = invocation.kind;
         if (
-          ![
-            "sql",
-            "random",
-            "rolesOf",
-            "membersWithRole",
-            "passwordVerify",
-            "countersGet",
-            "countersIncrement",
-            "mediaGet",
-            "sessionGet",
-            "sessionSet",
-            "sessionDelete",
-          ].includes(name) &&
+          !["sql", "random", "rolesOf", "passwordVerify"].includes(name) &&
           !(
             kind === "mutation" &&
-            (name === "setRoles" ||
-              name === "passwordHash" ||
-              name === "countersDelete")
+            (name === "setRoles" || name === "passwordHash")
           )
         )
           throw failed(`a ${kind} has no ctx.${name}.`);
@@ -655,7 +617,6 @@ export function runFunction(
         invocation.kind,
         invocation.roles ?? [],
         invocation.ownerName ?? "",
-        invocation.session === true,
         MEDIA_TYPES,
       ]
         .map((value) => JSON.stringify(value))

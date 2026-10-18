@@ -448,8 +448,6 @@ interface Transport {
   signal?: AbortSignal;
   touches: readonly string[];
   renew?: (expiresAt: number) => void;
-  /** Sends this browser's session ID (ctx.session): queries and mutations. */
-  session?: boolean;
 }
 type Send = <Result>(
   url: string,
@@ -639,45 +637,9 @@ export const MEDIA_TYPES: readonly string[] = Object.freeze([
   "text/plain",
 ]);
 
-let sessionId: string | undefined;
-/**
- * This browser's session (ctx.session in the site's code): a random ID kept
- * in its storage and sent with queries and mutations. It names a browser,
- * never a person, and goes where storage is cleared.
- */
-function browserSession(): string {
-  if (sessionId) return sessionId;
-  try {
-    sessionId = localStorage.getItem("naru-session") ?? undefined;
-  } catch {
-    // No storage: this page's own ID.
-  }
-  if (!sessionId || !/^[A-Za-z0-9_-]{16,64}$/.test(sessionId)) {
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    sessionId = btoa(String.fromCharCode(...bytes))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
-    try {
-      localStorage.setItem("naru-session", sessionId);
-    } catch {
-      // Kept for this page only.
-    }
-  }
-  return sessionId;
-}
-
 async function request<Result>(
   url: string,
-  {
-    method = "GET",
-    body,
-    token,
-    signal,
-    touches,
-    renew,
-    session = false,
-  }: Transport,
+  { method = "GET", body, token, signal, touches, renew }: Transport,
 ): Promise<Result> {
   const fresh =
     token || method !== "GET" || touches.some((path) => written.has(path));
@@ -701,7 +663,6 @@ async function request<Result>(
       headers: {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(session ? { "Naru-Session": browserSession() } : {}),
       },
       body: encoded,
     });
@@ -1410,7 +1371,7 @@ function siteCode(root: string, send: Send, path: "_query" | "_mutate") {
     jsonValue(args, undefined, "args");
     const answer = await send<{ result: R }>(
       `${root}/${path}/${parts[0]}:${parts[1]}`,
-      { method: "POST", body: { args }, signal, touches: [], session: true },
+      { method: "POST", body: { args }, signal, touches: [] },
     );
     return answer.result;
   };

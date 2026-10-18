@@ -131,6 +131,46 @@ describe("site SQL", () => {
       ).toThrow(message);
   });
 
+  test("Naru's views of roles and uploads are read and joined, never written or built on", () => {
+    for (const sql of [
+      "SELECT member FROM _naru_member_roles WHERE role = 'staff'",
+      "SELECT p.id, u.size FROM posts p JOIN _naru_uploads u ON u.url = p.image",
+      "SELECT * FROM posts WHERE author IN (SELECT member FROM _naru_member_roles)",
+      "INSERT INTO staff SELECT member FROM _naru_member_roles WHERE role = 'staff'",
+    ])
+      expect(one(sql), sql).not.toBe("schema");
+    for (const sql of [
+      "DROP VIEW _naru_uploads",
+      "CREATE VIEW v AS SELECT * FROM _naru_uploads",
+      "CREATE INDEX i ON _naru_member_roles (role)",
+      "CREATE VIRTUAL TABLE t USING fts5(name, content='_naru_uploads')",
+    ])
+      expect(() => one(sql), sql).toThrow(/is Naru's/);
+    // SQLite itself writes no view.
+    const db = naru();
+    db.exec(`INSERT INTO _naru_roles VALUES ('m1', '["staff","mod"]', 0)`);
+    db.exec(
+      "INSERT INTO _naru_media VALUES ('u1', 'https://x/a.png', 'm1', 'a.png', 'image/png', 10, 0)",
+    );
+    expect(
+      db
+        .prepare("SELECT member, role FROM _naru_member_roles ORDER BY role")
+        .all(),
+    ).toEqual([
+      { member: "m1", role: "mod" },
+      { member: "m1", role: "staff" },
+    ]);
+    expect(db.prepare("SELECT member, size FROM _naru_uploads").all()).toEqual([
+      { member: "m1", size: 10 },
+    ]);
+    for (const sql of [
+      "DELETE FROM _naru_uploads",
+      "UPDATE _naru_member_roles SET role = 'owner'",
+      "INSERT INTO _naru_uploads (id) VALUES ('x')",
+    ])
+      expect(() => db.exec(sql), sql).toThrow(/view/);
+  });
+
   test("Naru's tables cannot be named, wherever a table goes", () => {
     for (const sql of [
       "SELECT * FROM documents",

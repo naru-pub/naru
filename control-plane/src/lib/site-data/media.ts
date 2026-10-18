@@ -134,7 +134,7 @@ function uploadInput(body: Record<string, unknown>) {
 }
 
 /**
- * Tells the site's object of finished uploads, for ctx.media.get: one as it
+ * Tells the site's object of finished uploads, for site SQL's _naru_uploads: one as it
  * is ready, or (`all`) every one, as the owner opens the library. Its
  * record helps site code check an upload, so a failure here does not fail
  * the upload; the next library visit records it again.
@@ -244,7 +244,7 @@ export async function executeMedia(command: MediaCommand) {
         .orderBy("created_at", "desc")
         .limit(MAX_MEDIA_FILES)
         .execute();
-      // Every upload, as ctx.media.get reads them: missed or stale records
+      // Every upload, as site SQL's _naru_uploads reads them: missed or stale records
       // are put right as the owner looks.
       await recordUploads(command.site, ready, true);
       const ids = ready.map((file) => file.id);

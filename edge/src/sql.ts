@@ -31,6 +31,11 @@ export const INTERNAL = new Set([
   "usage_delete",
   "usage_update",
 ]);
+/**
+ * Naru's views that site SQL may read, never write or build on (query.ts):
+ * members' roles and the site's uploads, to join with the site's tables.
+ */
+export const READABLE = new Set(["_naru_member_roles", "_naru_uploads"]);
 /** A collection field's index (query.ts, site.ts). */
 const INTERNAL_PREFIXES = ["documents_index_", "documents_unique_"];
 
@@ -200,8 +205,11 @@ export function classify(
   allowed: Kind[],
   seen?: Tables,
 ): Kind {
+  /** One of Naru's views the statement names: read, never built on. */
+  let readable: string | undefined;
   const refuse = (name: string | undefined) => {
-    if (name !== undefined && reserved(name))
+    if (name !== undefined && READABLE.has(name.toLowerCase())) readable = name;
+    else if (name !== undefined && reserved(name))
       throw invalid(`${name} is Naru's.`);
   };
   /** Checks the table named at `index` (name or schema.name); returns past it. */
@@ -302,6 +310,10 @@ export function classify(
   else if (verb === "DROP" && is(tokens[1], "TABLE", "INDEX", "VIEW"))
     kind = "schema";
   if (!kind) throw invalid(`${first.text} is not a statement site SQL runs.`);
+  if (readable !== undefined && kind === "schema")
+    throw invalid(
+      `${readable} is Naru's: site SQL reads it, and builds nothing on it.`,
+    );
   // A write after WITH may write any table it names.
   if (seen && first.upper === "WITH") seen.target = undefined;
   if (!allowed.includes(kind))

@@ -177,7 +177,6 @@ export async function readSiteDump(site: string) {
       tables,
       migrations: dump.tables._naru_migrations ?? [],
       roles: dump.tables._naru_roles ?? [],
-      counters: dump.tables._naru_counters ?? [],
     },
   };
 }

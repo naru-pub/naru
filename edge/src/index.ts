@@ -90,7 +90,7 @@ const OPERATIONS = [
   "siteTables",
   "rolesOfMembers",
   "setMemberRoles",
-  // Uploads as Naru Media finishes and deletes them, for ctx.media.get.
+  // Uploads as Naru Media finishes and deletes them, for site SQL's _naru_uploads.
   "recordMedia",
   "forgetMedia",
   "render",

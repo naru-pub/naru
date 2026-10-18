@@ -1052,14 +1052,14 @@ integration("statement plans", () => {
     expect((await readSiteDump(site)).text).toContain('"type":"end"');
   });
 
-  test("ctx's counters, members by role, uploads, browser sessions and owner name", async () => {
+  test("site SQL reads Naru's views of roles and uploads; ctx has the owner's name", async () => {
     const run = (
-      kind: "query" | "mutation",
       name: string,
       args: unknown = null,
-      extra: Record<string, unknown> = {},
+      kind = "query",
+      live?: string,
     ) =>
-      callSiteObject<{ result: unknown }>(site, "call", {
+      callSiteObject<{ result: unknown; tables?: string[] }>(site, "call", {
         ownerId,
         site,
         member: "member-1",
@@ -1067,54 +1067,30 @@ integration("statement plans", () => {
         file: "extras",
         name,
         args,
-        ...extra,
-      }).then((answer) => answer.result);
+        ...(live ? { live } : {}),
+      });
+    const result = (name: string, args: unknown = null) =>
+      run(name, args).then((answer) => answer.result);
     await put(
       "queries",
       "extras",
-      `export async function view(ctx, { post }) {
-         // Counted once a browser session, from a query.
-         if (ctx.session && !(await ctx.session.get("viewed:" + post))) {
-           await ctx.session.set("viewed:" + post, true, { ttl: 60 });
-           await ctx.counters.increment("views", post);
-         }
-         return (await ctx.counters.get("views", [post]))[post];
+      `export async function who(ctx, { role }) {
+         const { rows } = await ctx.sql\`SELECT member FROM _naru_member_roles
+           WHERE role = \${role} ORDER BY member\`;
+         return { owner: ctx.ownerName, members: rows.map((row) => row.member) };
        }
-       export async function who(ctx, { role, after }) {
-         return { owner: ctx.ownerName, ...(await ctx.membersWithRole(role, { after, limit: 1 })) };
-       }
-       export async function upload(ctx, { url }) { return ctx.media.get(url); }`,
+       export async function upload(ctx, { url }) {
+         const { rows } = await ctx.sql\`SELECT member, name, type, size FROM _naru_uploads
+           WHERE url = \${url}\`;
+         return rows[0] ?? null;
+       }`,
       false,
     );
     await put(
       "mutations",
       "extras",
-      `export async function reset(ctx, { post }) { return ctx.counters.delete("views", post); }`,
+      `export async function drop(ctx) { return ctx.sql\`DELETE FROM _naru_uploads\`; }`,
     );
-    const browser = { session: "browser-session-0001" };
-    expect(await run("query", "view", { post: 7 }, browser)).toBe(1);
-    expect(await run("query", "view", { post: 7 }, browser)).toBe(1);
-    expect(
-      await run(
-        "query",
-        "view",
-        { post: 7 },
-        { session: "browser-session-0002" },
-      ),
-    ).toBe(2);
-    // Without a session (or with one malformed) nothing counts.
-    expect(await run("query", "view", { post: 7 })).toBe(2);
-    expect(await run("query", "view", { post: 7 }, { session: "x" })).toBe(2);
-    // A live query's re-run counts nothing.
-    expect(
-      await run("query", "view", { post: 7 }, { ...browser, live: "refresh" }),
-    ).toBe(2);
-    // Counts go with dumps.
-    const dump = await readSiteDump(site);
-    expect(dump.site.counters).toEqual([{ name: "views", key: "7", value: 2 }]);
-    await run("mutation", "reset", { post: 7 });
-    expect(await run("query", "view", { post: 7 })).toBe(0);
-    // Members by role, a page at a time, and the owner's name.
     await callSiteObject(site, "setMemberRoles", {
       member: "member-5",
       roles: ["moderator"],
@@ -1123,20 +1099,22 @@ integration("statement plans", () => {
       member: "member-6",
       roles: ["moderator", "staff"],
     });
-    expect(await run("query", "who", { role: "moderator" })).toEqual({
+    expect(await result("who", { role: "moderator" })).toEqual({
       owner: site,
-      members: ["member-5"],
-      next: "member-5",
+      members: ["member-5", "member-6"],
     });
+    // A live query reading the view is re-run as roles change.
     expect(
-      await run("query", "who", { role: "moderator", after: "member-5" }),
-    ).toEqual({ owner: site, members: ["member-6"], next: null });
+      (await run("who", { role: "staff" }, "query", "subscribe")).tables,
+    ).toContain("_naru_member_roles");
     // Uploads as Naru Media recorded them, and forgot them.
+    const id = "0190f5a0-0000-7000-8000-00000000f001";
+    const url = "https://media.naru.pub/u/a.pdf";
     await callSiteObject(site, "recordMedia", {
       files: [
         {
-          id: "0190f5a0-0000-7000-8000-00000000f001",
-          url: "https://media.naru.pub/u/a.pdf",
+          id,
+          url,
           member: "member-1",
           name: "a.pdf",
           type: "application/pdf",
@@ -1145,30 +1123,20 @@ integration("statement plans", () => {
         },
       ],
     });
-    expect(
-      await run("query", "upload", { url: "https://media.naru.pub/u/a.pdf" }),
-    ).toEqual({
-      id: "0190f5a0-0000-7000-8000-00000000f001",
-      url: "https://media.naru.pub/u/a.pdf",
+    expect(await result("upload", { url })).toEqual({
       member: "member-1",
       name: "a.pdf",
       type: "application/pdf",
       size: 2048,
-      createdAt: 1,
+    });
+    // Site SQL writes no view of Naru's.
+    await expect(run("drop", null, "mutation")).rejects.toMatchObject({
+      status: 400,
     });
     // The library's full list keeps only what it names.
-    await callSiteObject(site, "recordMedia", {
-      files: [],
-      keep: ["0190f5a0-0000-7000-8000-00000000f001"],
-    });
-    expect(
-      await run("query", "upload", { url: "https://media.naru.pub/u/a.pdf" }),
-    ).not.toBe(null);
-    await callSiteObject(site, "forgetMedia", {
-      ids: ["0190f5a0-0000-7000-8000-00000000f001"],
-    });
-    expect(
-      await run("query", "upload", { url: "https://media.naru.pub/u/a.pdf" }),
-    ).toBe(null);
+    await callSiteObject(site, "recordMedia", { files: [], keep: [id] });
+    expect(await result("upload", { url })).not.toBe(null);
+    await callSiteObject(site, "forgetMedia", { ids: [id] });
+    expect(await result("upload", { url })).toBe(null);
   });
 });

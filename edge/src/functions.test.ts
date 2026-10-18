@@ -33,30 +33,6 @@ const host: Host = (operation, args) => {
       return 0.5;
     case "rolesOf":
       return { m1: ["staff"] };
-    case "membersWithRole":
-      return { members: ["m1"], next: null };
-    case "countersGet":
-      return { [String((args[1] as unknown[])[0])]: 3 };
-    case "countersIncrement":
-      return 4;
-    case "countersDelete":
-    case "sessionSet":
-    case "sessionDelete":
-      return null;
-    case "mediaGet":
-      return args[0] === "https://media.naru.pub/1/a.png"
-        ? {
-            id: "a",
-            url: args[0],
-            member: "m-1",
-            name: "a.png",
-            type: "image/png",
-            size: 10,
-            createdAt: 1,
-          }
-        : null;
-    case "sessionGet":
-      return args[0] === "seen" ? true : null;
     case "passwordHash":
       return `hash:${args[0]}`;
     case "passwordVerify":
@@ -225,7 +201,7 @@ describe("calling", () => {
     // ctx.media reads them only.
     expect(
       visit("export function f(ctx) { return Object.keys(ctx.media); }"),
-    ).toEqual(["get", "types"]);
+    ).toEqual(["types"]);
   });
 
   test("ctx.fail carries the code's details to the caller", () => {
@@ -454,10 +430,7 @@ describe("calling", () => {
         "fail",
         "sql",
         "rolesOf",
-        "membersWithRole",
-        "counters",
         "media",
-        "session",
         "passwords",
       ]);
     // A mutation may grant roles too.
@@ -472,10 +445,7 @@ describe("calling", () => {
       "fail",
       "sql",
       "rolesOf",
-      "membersWithRole",
-      "counters",
       "media",
-      "session",
       "passwords",
       "setRoles",
     ]);
@@ -942,7 +912,7 @@ test("native cycles and re-exports retain live bindings, fresh for each call", (
   expect(invoke()).toBe(2);
 });
 
-describe("ctx's counters, roles, media, session and owner name", () => {
+describe("ctx's owner name and media types", () => {
   const call = (
     source: string,
     kind: Invocation["kind"],
@@ -963,69 +933,16 @@ describe("ctx's counters, roles, media, session and owner name", () => {
       host,
     );
 
-  test("a query counts, reads members by role, uploads and its browser's session", () => {
+  test("site code has the owner's name and the types Naru Media stores", () => {
     expect(
       call(
-        `export async function f(ctx) {
-          const viewed = await ctx.session.get("seen");
-          return {
-            owner: ctx.ownerName,
-            count: await ctx.counters.increment("views", 42),
-            counts: await ctx.counters.get("views", [42]),
-            staff: await ctx.membersWithRole("staff", { limit: 10 }),
-            upload: await ctx.media.get("https://media.naru.pub/1/a.png"),
-            none: await ctx.media.get("https://example.com/x.png"),
-            viewed,
-            types: ctx.media.types.includes("application/pdf"),
-          };
+        `export function f(ctx) {
+          return { owner: ctx.ownerName, pdf: ctx.media.types.includes("application/pdf") };
         }`,
         "query",
-        { ownerName: "avocado", session: true },
+        { ownerName: "avocado" },
       ),
-    ).toEqual({
-      owner: "avocado",
-      count: 4,
-      counts: { 42: 3 },
-      staff: { members: ["m1"], next: null },
-      upload: {
-        id: "a",
-        url: "https://media.naru.pub/1/a.png",
-        member: "m-1",
-        name: "a.png",
-        type: "image/png",
-        size: 10,
-        createdAt: 1,
-      },
-      none: null,
-      viewed: true,
-      types: true,
-    });
-    expect(operations.map(([name]) => name)).toEqual([
-      "sessionGet",
-      "countersIncrement",
-      "countersGet",
-      "membersWithRole",
-      "mediaGet",
-      "mediaGet",
-    ]);
-  });
-
-  test("without a browser's session ctx.session is null, and only a mutation forgets counts", () => {
-    expect(
-      call("export function f(ctx) { return ctx.session; }", "query"),
-    ).toBe(null);
-    expect(
-      call(
-        "export function f(ctx) { return typeof ctx.counters.delete; }",
-        "query",
-      ),
-    ).toBe("undefined");
-    expect(
-      call(
-        "export async function f(ctx) { return ctx.counters.delete('views', 1); }",
-        "mutation",
-      ),
-    ).toBe(null);
+    ).toEqual({ owner: "avocado", pdf: true });
     // The media types cannot be changed by site code.
     expect(
       call(

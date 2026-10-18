@@ -95,8 +95,6 @@ export async function dataRequest(
       adminUserId,
       bearer,
       clientIp: forwardedIp && isIP(forwardedIp) ? forwardedIp : undefined,
-      // The browser's session ID for ctx.session; the object checks its form.
-      session: request.headers.get("naru-session") ?? undefined,
       body,
       filter: parseFilterQuery(url.searchParams.get("filter")),
       includeTotal: url.searchParams.get("includeTotal") === "1",

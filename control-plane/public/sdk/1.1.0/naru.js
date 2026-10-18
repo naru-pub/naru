@@ -198,37 +198,9 @@ export const MEDIA_TYPES = Object.freeze([
   "text/plain",
 ]);
 
-let sessionId;
-/**
- * This browser's session (ctx.session in the site's code): a random ID kept
- * in its storage and sent with queries and mutations. It names a browser,
- * never a person, and goes where storage is cleared.
- */
-function browserSession() {
-  if (sessionId) return sessionId;
-  try {
-    sessionId = localStorage.getItem("naru-session") ?? undefined;
-  } catch {
-    // No storage: this page's own ID.
-  }
-  if (!sessionId || !/^[A-Za-z0-9_-]{16,64}$/.test(sessionId)) {
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    sessionId = btoa(String.fromCharCode(...bytes))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
-    try {
-      localStorage.setItem("naru-session", sessionId);
-    } catch {
-      // Kept for this page only.
-    }
-  }
-  return sessionId;
-}
-
 async function request(
   url,
-  { method = "GET", body, token, signal, touches, renew, session = false },
+  { method = "GET", body, token, signal, touches, renew },
 ) {
   const fresh =
     token || method !== "GET" || touches.some((path) => written.has(path));
@@ -252,7 +224,6 @@ async function request(
       headers: {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(session ? { "Naru-Session": browserSession() } : {}),
       },
       body: encoded,
     });
@@ -847,7 +818,6 @@ function siteCode(root, send, path) {
       body: { args },
       signal,
       touches: [],
-      session: true,
     });
     return answer.result;
   };

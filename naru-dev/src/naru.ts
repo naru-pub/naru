@@ -537,7 +537,7 @@ export async function start(
     for (const [index, path] of everything.entries())
       await publish(path, index === everything.length - 1);
     await installDeclaration();
-    // Every upload kept here, as ctx.media.get reads them (Naru records
+    // Every upload kept here, as site SQL's _naru_uploads reads them (Naru records
     // them as the owner opens the media library).
     await recordUploads([...uploads.values()], true);
   }
@@ -689,7 +689,7 @@ export async function start(
     writeFile(uploadsFile, JSON.stringify([...uploads.values()], null, 2));
   const mediaUrl = (upload: Upload) =>
     `${MEDIA_ORIGIN}/${OWNER}/${upload.file}`;
-  /** Tells the site's object of uploads, for ctx.media.get (media.ts). */
+  /** Tells the site's object of uploads, for site SQL's _naru_uploads (media.ts). */
   async function recordUploads(list: Upload[], all = false) {
     for (let at = 0; at < list.length; at += 1000)
       await object("recordMedia", {
@@ -841,10 +841,6 @@ self.addEventListener("fetch", (event) => {
         name: fn,
         args: body?.args ?? null,
         kind: CALLS[path[0] as keyof typeof CALLS],
-        // The browser's session ID (ctx.session), as its SDK sends it.
-        ...(typeof req.headers["naru-session"] === "string"
-          ? { session: req.headers["naru-session"] }
-          : {}),
       });
       return json(res, 200, { result });
     }

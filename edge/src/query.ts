@@ -39,20 +39,9 @@ export const SCHEMA = `
     roles TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS _naru_counters (
-    name TEXT NOT NULL,
-    key TEXT NOT NULL,
-    value INTEGER NOT NULL,
-    PRIMARY KEY (name, key)
-  );
-  CREATE TABLE IF NOT EXISTS _naru_sessions (
-    session TEXT NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    expires_at INTEGER NOT NULL,
-    PRIMARY KEY (session, key)
-  );
-  CREATE INDEX IF NOT EXISTS _naru_sessions_expiry ON _naru_sessions (expires_at);
+  -- ctx.counters' and ctx.session's, released on 2026-10-18 and withdrawn.
+  DROP TABLE IF EXISTS _naru_counters;
+  DROP TABLE IF EXISTS _naru_sessions;
   CREATE TABLE IF NOT EXISTS _naru_media (
     id TEXT PRIMARY KEY,
     url TEXT NOT NULL UNIQUE,
@@ -62,6 +51,13 @@ export const SCHEMA = `
     size INTEGER NOT NULL,
     created_at INTEGER NOT NULL
   );
+  -- What site SQL may read of Naru's (sql.ts READABLE): members' roles, a
+  -- row a role, and the uploads Naru Media finished (member null: the owner).
+  CREATE VIEW IF NOT EXISTS _naru_member_roles AS
+    SELECT _naru_roles.member AS member, json_each.value AS role
+    FROM _naru_roles, json_each(_naru_roles.roles);
+  CREATE VIEW IF NOT EXISTS _naru_uploads AS
+    SELECT id, url, member, name, type, size, created_at FROM _naru_media;
   CREATE TABLE IF NOT EXISTS _naru_breaker_trips (
     id TEXT PRIMARY KEY,
     at INTEGER NOT NULL,
