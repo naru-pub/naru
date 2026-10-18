@@ -23,6 +23,14 @@ jest.mock("@/lib/edge/client", () => ({
   },
 }));
 
+// Fedify's own database and queue are not set up here.
+const announced: string[] = [];
+jest.mock("@/lib/federation", () => ({
+  announceSiteUpdate: async (_: string, identifier: string) => {
+    announced.push(identifier);
+  },
+}));
+
 // Required after the mocks: this transform does not hoist jest.mock above imports.
 const { sql } = require("kysely") as typeof import("kysely");
 const { db } = require("@/lib/database") as typeof import("@/lib/database");
@@ -35,7 +43,10 @@ const { appResponse, appUser } = require("../http") as typeof import("../http");
 const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/site-urls");
 const moderation = require("../moderation") as typeof import("../moderation");
 const stars = require("../stars") as typeof import("../stars");
-const { siteLine } = require("../sites") as typeof import("../sites");
+const { pushStarredSiteUpdate } =
+  require("../starred-updates") as typeof import("../starred-updates");
+const siteUpdates = require("@/lib/site-updates") as typeof import("@/lib/site-updates");
+const { siteLine, siteOrigins } = require("../sites") as typeof import("../sites");
 const siteStars = require("@/lib/site-stars") as typeof import("@/lib/site-stars");
 const siteModeration =
   require("@/lib/site-moderation") as typeof import("@/lib/site-moderation");
@@ -224,6 +235,13 @@ integration("the Naru app's API", () => {
       "app-reader",
       "app-site",
     ]);
+    // With its screenshot once rendered, listed or not.
+    await db.updateTable("users").set({ site_rendered_at: new Date() }).where("id", "=", reader).execute();
+    expect((await stars.listStarredSites(user)).sites[0]).toMatchObject({
+      name: "app-reader",
+      screenshotUrl: expect.not.stringMatching(/\/app\/no-preview\.png$/),
+    });
+    await db.updateTable("users").set({ site_rendered_at: null }).where("id", "=", reader).execute();
     await siteStars.unstarSite(user.id, "app-reader");
     await expect(siteStars.starSite(user.id, "no-such-site")).rejects.toMatchObject({
       status: 404,
@@ -470,5 +488,97 @@ integration("the Naru app's API", () => {
     await siteModeration.setSiteModeration(site, null, "확인 결과 문제 없음", operator);
     expect(await quarantines()).toHaveLength(2);
     expect((await showcasePage(1)).sites.map((s) => s.name)).toContain("app-site");
+  });
+
+  test("pushes a site's update to the accounts that starred it", async () => {
+    const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
+    const user = (await tokens.appTokenUser(token))!;
+    await inbox.registerDevice(user, {
+      platform: "fcm",
+      token: "starred-device-token",
+      environment: "production",
+      bundleId: "pub.naru",
+    });
+    // Messages by id: the reader may have devices from earlier tests.
+    const messages = new Map<string, { site: string; siteTitle: string; body: string; url: string }>();
+    const sender = {
+      send: async (
+        _: unknown,
+        message: { id: string; site: string; siteTitle: string; body: string; url: string },
+      ) => {
+        messages.set(message.id, message);
+        return "delivered" as const;
+      },
+      close() {},
+    };
+    const run = async (site: string) => {
+      messages.clear();
+      const pushed = await pushStarredSiteUpdate(site, sender);
+      return { pushed, messages: [...messages.values()] };
+    };
+
+    expect(await run(siteId)).toEqual({ pushed: 0, messages: [] });
+    await siteStars.starSite(user.id, "app-site");
+    await siteStars.starSite(user.id, "app-reader");
+    // An earlier test gave app-site a custom domain, which the push opens.
+    const origin = (await siteOrigins(["app-site"])).get("app-site")!;
+    const first = await run(siteId);
+    expect(first.pushed).toBeGreaterThan(0);
+    expect(first.messages).toEqual([
+      expect.objectContaining({
+        site: "app-site",
+        siteTitle: siteLine("앱 게시판", origin),
+        body: `${new URL(origin).host}에 새 소식이 있습니다.`,
+        url: origin,
+      }),
+    ]);
+    // Not to the site's own account, nor from a site operators silenced.
+    expect((await run(reader)).messages).toEqual([]);
+    await db.updateTable("users").set({ app_notifications_disabled: true }).where("id", "=", siteId).execute();
+    expect((await run(siteId)).messages).toEqual([]);
+    await db.updateTable("users").set({ app_notifications_disabled: false }).where("id", "=", siteId).execute();
+    await db.updateTable("users").set({ site_moderation: "suspended" }).where("id", "=", siteId).execute();
+    expect((await run(siteId)).messages).toEqual([]);
+    await db.updateTable("users").set({ site_moderation: null }).where("id", "=", siteId).execute();
+  });
+
+  test("tells a site's update once it is quiet, at most once a day", async () => {
+    const pushes: string[] = [];
+    const sender = {
+      send: async (_: unknown, message: { site: string }) => {
+        pushes.push(message.site);
+        return "delivered" as const;
+      },
+      close() {},
+    };
+    const edited = (minutesAgo: number) =>
+      db
+        .updateTable("users")
+        .set({ site_updated_at: new Date(Date.now() - minutesAgo * 60_000) })
+        .where("id", "=", siteId)
+        .execute();
+    const due = async () =>
+      (await siteUpdateCandidates()).some((site) => site.id === siteId);
+    const { siteUpdateCandidates, dispatchSiteUpdate } = siteUpdates;
+    announced.length = 0;
+
+    // Still being edited.
+    await edited(5);
+    expect(await due()).toBe(false);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(false);
+    // Quiet: told to followers and stargazers (the reader starred it above).
+    await edited(11);
+    expect(await due()).toBe(true);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(true);
+    expect(announced).toEqual(["app-site"]);
+    expect(pushes).toContain("app-site");
+    // Edited again the same day: waits out the cooldown.
+    await sql`update users set last_activity_sent_at = now() - interval '1 hour' where id = ${siteId}`.execute(db);
+    await edited(11);
+    expect(await due()).toBe(false);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(false);
+    await sql`update users set last_activity_sent_at = now() - interval '25 hours' where id = ${siteId}`.execute(db);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(true);
+    expect(announced).toEqual(["app-site", "app-site"]);
   });
 });

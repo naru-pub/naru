@@ -1,7 +1,8 @@
 import { parseArgs } from "node:util";
 import { sql } from "kysely";
+import { pushSender, type PushSender } from "@/lib/app-api/push";
 import { db } from "@/lib/database";
-import { dispatchSiteUpdate } from "@/lib/federation";
+import { dispatchSiteUpdate, siteUpdateCandidates } from "@/lib/site-updates";
 
 // Usage:
 //   pnpm exec tsx src/cli/dispatch-site-updates.ts
@@ -11,40 +12,17 @@ import { dispatchSiteUpdate } from "@/lib/federation";
 //   pnpm exec tsx src/cli/dispatch-site-updates.ts --user <login_name> --force
 //     → reset the gate for that user so dispatchSiteUpdate is guaranteed to
 //       fire. Use only for ops/testing.
+//
+// See lib/site-updates.ts.
 
-async function dispatchForAll() {
-  const candidates = await db
-    .selectFrom("users")
-    .select(["id", "login_name"])
-    .where("site_updated_at", "is not", null)
-    .where((eb) =>
-      eb(
-        "site_updated_at",
-        ">",
-        eb.fn.coalesce(
-          "last_activity_sent_at",
-          sql<Date>`'epoch'::timestamptz`
-        )
-      )
-    )
-    .where("site_updated_at", "<", sql<Date>`now() - interval '10 minutes'`)
-    .where((eb) =>
-      eb.or([
-        eb("last_activity_sent_at", "is", null),
-        eb(
-          "last_activity_sent_at",
-          "<",
-          sql<Date>`now() - interval '24 hours'`
-        ),
-      ])
-    )
-    .execute();
+async function dispatchForAll(sender: PushSender) {
+  const candidates = await siteUpdateCandidates();
 
   console.log(`[dispatch-site-updates] ${candidates.length} candidate(s)`);
 
   for (const user of candidates) {
     try {
-      await dispatchSiteUpdate(user.id);
+      await dispatchSiteUpdate(user.id, sender);
     } catch (err) {
       console.error(
         `[dispatch-site-updates] ${user.login_name} (id=${user.id}) failed:`,
@@ -54,7 +32,11 @@ async function dispatchForAll() {
   }
 }
 
-async function dispatchForUser(loginName: string, force: boolean) {
+async function dispatchForUser(
+  loginName: string,
+  force: boolean,
+  sender: PushSender
+) {
   const user = await db
     .selectFrom("users")
     .select(["id", "login_name", "site_updated_at", "last_activity_sent_at"])
@@ -82,10 +64,10 @@ async function dispatchForUser(loginName: string, force: boolean) {
   }
 
   const countBefore = await activityCount(user.id);
-  await dispatchSiteUpdate(user.id);
+  const dispatched = await dispatchSiteUpdate(user.id, sender);
   const countAfter = await activityCount(user.id);
 
-  if (countAfter > countBefore) {
+  if (dispatched) {
     console.log(
       `[dispatch-site-updates] ${loginName}: dispatched (${countBefore} → ${countAfter})`
     );
@@ -119,10 +101,15 @@ async function main() {
     return;
   }
 
-  if (values.user) {
-    await dispatchForUser(values.user, values.force ?? false);
-  } else {
-    await dispatchForAll();
+  const sender = pushSender();
+  try {
+    if (values.user) {
+      await dispatchForUser(values.user, values.force ?? false, sender);
+    } else {
+      await dispatchForAll(sender);
+    }
+  } finally {
+    sender.close();
   }
 
   await db.destroy();

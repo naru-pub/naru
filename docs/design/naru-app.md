@@ -122,6 +122,14 @@ is discoverable. Hiding a site unstars it. Signed out, the apps keep stars on
 the device (the cards themselves) and star them on the account (`PUT` each)
 once it signs in.
 
+A site's update is pushed to the accounts that starred it along with its
+fediverse announcement (`control-plane/src/lib/site-updates.ts`, from the
+`site-update-dispatcher` job; the push is `lib/app-api/starred-updates.ts`):
+ten quiet minutes after the last edit, at most once a day a site
+(`users.last_activity_sent_at`). Left out: the site's own account, and sites
+suspended or with notifications turned off. The push is Naru's, so it needs no
+consent and is not stored in the inbox: its `id` is fresh.
+
 ### Sign-in (authorization code + PKCE)
 
 1. The app opens `https://naru.pub/app/authorize?client=<ios|macos|android>&redirect_uri=<callback>&state=<random>&code_challenge=<S256>&code_challenge_method=S256`
