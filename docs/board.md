@@ -23,7 +23,9 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 ## Behaviour
 
 - **Four kinds of post**: `site` (사이트 자랑), `template`, `question`, `chat`
-  (잡담). A `site` post shows the author's current site screenshot. A
+  (잡담). A `site` post shows the author's current site screenshot; the
+  screenshot run renders a site with a live `site` post even when it isn't
+  discoverable. A
   `template` post carries files.
 - **Plain text.** Posts and replies are never parsed as HTML or Markdown. A
   blank line starts a new paragraph, and web addresses become links

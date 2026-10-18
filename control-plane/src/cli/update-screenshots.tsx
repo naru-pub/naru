@@ -16,12 +16,13 @@ import { Browser, chromium } from "playwright";
 
 // Usage:
 //   pnpm exec tsx src/cli/update-screenshots.tsx
-//     → render all discoverable users whose site was updated after the last
-//       render (the cron path)
+//     → render all discoverable users, and anyone with a live 사이트 자랑
+//       board post, whose site was updated after the last render (the cron
+//       path)
 //   pnpm exec tsx src/cli/update-screenshots.tsx --user <login_name>
 //     → render a single user, still gated by the same predicate
 //   pnpm exec tsx src/cli/update-screenshots.tsx --force
-//     → render every discoverable user, ignoring the predicate
+//     → render every such user, ignoring the predicate
 //   pnpm exec tsx src/cli/update-screenshots.tsx --user <login_name> --force
 //     → render that user, ignoring the predicate
 //   pnpm exec tsx src/cli/update-screenshots.tsx --templates
@@ -77,7 +78,21 @@ async function selectTargets(
   let query = db
     .selectFrom("users")
     .select(["id", "login_name"])
-    .where("discoverable", "=", true)
+    // A 사이트 자랑 post shows the site's screenshot, so its author gets one
+    // even when their site isn't listed.
+    .where((eb) =>
+      eb.or([
+        eb("discoverable", "=", true),
+        eb.exists(
+          eb
+            .selectFrom("board_posts as p")
+            .select(sql.lit(1).as("one"))
+            .whereRef("p.user_id", "=", "users.id")
+            .where("p.kind", "=", "site")
+            .where("p.deleted_at", "is", null),
+        ),
+      ]),
+    )
     .where("site_moderation", "is", null)
     .orderBy("site_updated_at", "desc");
 
@@ -301,7 +316,7 @@ async function main() {
 
   if (values.user && targets.length === 0) {
     console.error(
-      `[update-screenshots] no such discoverable user: ${values.user}`,
+      `[update-screenshots] no such user to render: ${values.user}`,
     );
     process.exitCode = 1;
     return;
