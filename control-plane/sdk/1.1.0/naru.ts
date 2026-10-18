@@ -385,11 +385,12 @@ export interface LiveQueries {
    * write changes a table it read and the answer with it, until closed.
    * After the connection drops it is asked again, so the latest answer
    * arrives once it is back. A failure, now or later, goes to `onError`.
-   * A connection holds at most 20.
+   * A connection holds at most 20. `args` left `undefined` is `null`, as
+   * `query()`'s are.
    */
   subscribe<R = Json>(
     name: string,
-    args: Json,
+    args: Json | undefined,
     onResult: (result: R) => void,
     options?: { onError?(error: NaruError): void },
   ): Live;
@@ -1267,7 +1268,7 @@ function subscriptions(root: string, ticket?: () => Promise<string>) {
   };
   return function subscribe<R = Json>(
     name: string,
-    args: Json,
+    given: Json | undefined,
     onResult: (result: R) => void,
     options: { onError?(error: NaruError): void } = {},
   ): Live {
@@ -1276,6 +1277,8 @@ function subscriptions(root: string, ticket?: () => Promise<string>) {
       throw new TypeError('Live queries name "<module/path>:<query>".');
     parts[0].split("/").forEach(segment);
     segment(parts[1]);
+    // As query()'s default: no args is null, not a refusal.
+    const args = given === undefined ? null : given;
     jsonValue(args, undefined, "args");
     if (typeof onResult !== "function")
       throw new TypeError("subscribe() needs an onResult function.");

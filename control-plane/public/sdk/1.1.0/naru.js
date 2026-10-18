@@ -730,12 +730,14 @@ function subscriptions(root, ticket) {
     const { query, args } = active.get(id);
     send?.({ type: "subscribe", id, query, args });
   };
-  return function subscribe(name, args, onResult, options = {}) {
+  return function subscribe(name, given, onResult, options = {}) {
     const parts = typeof name === "string" ? name.split(":") : [];
     if (parts.length !== 2)
       throw new TypeError('Live queries name "<module/path>:<query>".');
     parts[0].split("/").forEach(segment);
     segment(parts[1]);
+    // As query()'s default: no args is null, not a refusal.
+    const args = given === undefined ? null : given;
     jsonValue(args, undefined, "args");
     if (typeof onResult !== "function")
       throw new TypeError("subscribe() needs an onResult function.");

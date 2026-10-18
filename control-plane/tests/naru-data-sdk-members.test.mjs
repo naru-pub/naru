@@ -674,7 +674,8 @@ test("live queries share one connection, are asked again on reconnect, and close
         (result) => results.push(result),
         { onError: (error) => errors.push(error) },
       );
-      const mine = naru.subscribe("board:mine", null, () => {});
+      // No args at all is null, as a query's are.
+      const mine = naru.subscribe("board:mine", undefined, () => {});
       await new Promise((done) => setTimeout(done, 0));
       assert.equal(sockets.length, 1);
       assert.equal(

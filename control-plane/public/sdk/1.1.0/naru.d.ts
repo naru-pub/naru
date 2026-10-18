@@ -300,11 +300,12 @@ export interface LiveQueries {
    * write changes a table it read and the answer with it, until closed.
    * After the connection drops it is asked again, so the latest answer
    * arrives once it is back. A failure, now or later, goes to `onError`.
-   * A connection holds at most 20.
+   * A connection holds at most 20. `args` left `undefined` is `null`, as
+   * `query()`'s are.
    */
   subscribe<R = Json>(
     name: string,
-    args: Json,
+    args: Json | undefined,
     onResult: (result: R) => void,
     options?: { onError?(error: NaruError): void },
   ): Live;

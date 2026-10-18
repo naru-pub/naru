@@ -358,7 +358,7 @@
         {
           "name": "subscribe",
           "optional": false,
-          "signature": "subscribe<R = Json>(\n  name: string,\n  args: Json,\n  onResult: (result: R) => void,\n  options?: { onError(error: NaruError): void },\n): Live",
+          "signature": "subscribe<R = Json>(\n  name: string,\n  args: Json | undefined,\n  onResult: (result: R) => void,\n  options?: { onError(error: NaruError): void },\n): Live",
           "summary": [
             {
               "type": "paragraph",
@@ -405,7 +405,39 @@
                 },
                 {
                   "type": "text",
-                  "value": ". A connection holds at most 20."
+                  "value": ". A connection holds at most 20. "
+                },
+                {
+                  "type": "code",
+                  "value": "args"
+                },
+                {
+                  "type": "text",
+                  "value": " left "
+                },
+                {
+                  "type": "code",
+                  "value": "undefined"
+                },
+                {
+                  "type": "text",
+                  "value": " is "
+                },
+                {
+                  "type": "code",
+                  "value": "null"
+                },
+                {
+                  "type": "text",
+                  "value": ", as "
+                },
+                {
+                  "type": "code",
+                  "value": "query()"
+                },
+                {
+                  "type": "text",
+                  "value": "'s are."
                 }
               ]
             }
