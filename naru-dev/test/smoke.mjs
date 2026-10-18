@@ -124,6 +124,34 @@ try {
     );
   });
 
+  await timed("_naru/ rewritten many times at once", async () => {
+    // As a rebuild of the site does while it runs: the same files written
+    // over and over, so the watcher publishes them, and writes the same
+    // bucket keys, again and again.
+    const migration = join(site, "_naru/migrations/0002_tags.sql");
+    const tags = await readFile(migration, "utf8");
+    const query = join(site, "_naru/queries/count.js");
+    for (let i = 0; i <= 40; i++) {
+      await Promise.all([
+        writeFile(migration, tags),
+        writeFile(query, `export async function n(ctx) { return ${i}; }\n`),
+      ]);
+      await new Promise((done) => setTimeout(done, 5));
+    }
+    await until("the last version", async () => {
+      const response = await fetch(
+        `${origin}/api/data/v1/smoke/_query/count:n`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      );
+      return response.ok && (await response.json()).result === 40;
+    });
+    assert.doesNotMatch(naru.log(), /local bucket answered|cannot be changed/);
+  });
+
   await timed("data kept across a restart", async () => {
     naru.child.kill("SIGTERM");
     assert.equal(await naru.exited, 0);

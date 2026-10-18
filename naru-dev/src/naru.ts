@@ -243,9 +243,17 @@ export async function start(
       if (req.headers["if-none-match"] === "*" && existsSync(path))
         return res.writeHead(412).end();
       await mkdir(dirname(path), { recursive: true });
-      // Whole or not at all, as R2 writes.
-      await writeFile(`${path}.naru-dev-partial`, body);
-      await rename(`${path}.naru-dev-partial`, path);
+      // Whole or not at all, as R2 writes: each write to a temporary file
+      // of its own, renamed into place, so two writes of one key at once
+      // both succeed and the later rename wins.
+      const partial = `${path}.${randomBytes(6).toString("hex")}.naru-dev-partial`;
+      try {
+        await writeFile(partial, body);
+        await rename(partial, path);
+      } catch (error) {
+        await rm(partial, { force: true });
+        throw error;
+      }
       return res.writeHead(200).end();
     }
     if (req.method === "DELETE") {
@@ -392,6 +400,27 @@ export async function start(
         `_naru/${root ? file : `${kind}/${file}`}: ${(error as Error).message}`,
       );
     }
+  }
+
+  // A file saved twice in quick succession (an editor, a rebuild) is
+  // published once at a time: a change while one is under way publishes
+  // again once it's done, with whatever the file holds then.
+  const publishing = new Map<string, { again: boolean }>();
+  function republish(path: string) {
+    const running = publishing.get(path);
+    if (running) {
+      running.again = true;
+      return;
+    }
+    const pending = { again: false };
+    publishing.set(path, pending);
+    void (async () => {
+      do {
+        pending.again = false;
+        await publish(path);
+      } while (pending.again && !stopping);
+      publishing.delete(path);
+    })();
   }
 
   /**
@@ -1198,7 +1227,7 @@ self.addEventListener("fetch", (event) => {
         if (!name) return;
         const file = name.toString();
         if (file === "collections.json") void installDeclaration();
-        else void publish(join(folder, "_naru", file));
+        else republish(join(folder, "_naru", file));
       },
     );
   ready();
