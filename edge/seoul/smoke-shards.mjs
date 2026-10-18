@@ -423,9 +423,12 @@ try {
     `router: a read ${median(direct).toFixed(2)} ms straight, ${median(routed).toFixed(2)} ms routed (+${overhead.read.toFixed(2)}); ` +
       `a write ${median(writes.direct).toFixed(2)} ms straight, ${median(writes.routed).toFixed(2)} ms routed (+${overhead.write.toFixed(2)})`,
   );
-  assert.ok(overhead.read < 1, `the router adds ${overhead.read} ms to a read`);
+  // About 0.1 ms on the mini; a shared CI runner measures up to about 1 ms.
+  // The bound only has to catch the router buffering or reconnecting, which
+  // costs tens of milliseconds.
+  assert.ok(overhead.read < 5, `the router adds ${overhead.read} ms to a read`);
   assert.ok(
-    overhead.write < 1,
+    overhead.write < 5,
     `the router adds ${overhead.write} ms to a write`,
   );
 
