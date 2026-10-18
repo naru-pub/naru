@@ -5,10 +5,7 @@ const nextConfig = {
   output: "standalone",
   // The GitHub deploys page was /deploys; old links and bookmarks follow it.
   async redirects() {
-    return [
-      { source: "/deploys", destination: "/github", permanent: true },
-      { source: "/guidelines", destination: "/policy", permanent: true },
-    ];
+    return [{ source: "/deploys", destination: "/github", permanent: true }];
   },
   async headers() {
     return [
