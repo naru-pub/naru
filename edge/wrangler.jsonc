@@ -3,9 +3,10 @@
 // rendered on the mini, where site databases live (docs/database.md). It also
 // keeps the control plane's pageview log and custom domain table.
 //
-// Local runs (`wrangler dev --env local`: pnpm dev, the control plane's
-// with-edge-worker.sh and naru-dev) also hold site databases themselves, as
-// the mini does: see "env.local" at the end.
+// Local runs (`wrangler dev --env local`: pnpm dev and the control plane's
+// with-edge-worker.sh) also hold site databases themselves, as the mini
+// does: see "env.local" at the end. naru-dev runs the mini's Worker instead
+// (../naru-dev/scripts/build-worker.mjs).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "naru-edge",
@@ -86,7 +87,7 @@
   // DISCORD_WEBHOOK. Routes also need SDK_ORIGIN_SECRET.
   "triggers": { "crons": ["* * * * *"] },
   // Local runs: this Worker with every site's database in it, as SiteData
-  // objects in wrangler dev's local storage, for tests and naru-dev.
+  // objects in wrangler dev's local storage, for tests.
   // Bindings and vars are not inherited, so they are repeated here; keep
   // them in step with the above. Never deployed.
   "env": {

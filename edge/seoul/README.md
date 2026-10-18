@@ -19,6 +19,10 @@ step budget (`workerd/`, whose README says how it is built, published and
 checked). CI downloads the build `workerd/binary.json` names, checks it and
 packs it into the release in place of npm's.
 
+`seoul/workerd-config.mjs` writes this Worker's config, for the mini here
+and for naru-dev (`../naru-dev/`), which runs the same Worker as one local
+process.
+
 Serve `seoul/dist` from its own directory:
 
 ```bash
@@ -34,6 +38,7 @@ with these in the environment (and, sharded, those under "Shards"):
 | `EDGE_WORKER_SECRET` | What the control plane sends for site operations (its `SITE_DATA_SECRET`) and signs live tickets with |
 | `PASSTHROUGH_ORIGIN` | The control plane on this host, for requests with a token, such as `http://127.0.0.1:40000` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | The site bucket, where sites' code and its releases are: a key that can read and write it |
+| `SITE_BUCKET_URL` | Never on the mini: naru-dev's local site bucket (`src/http-bucket.ts`), read instead of R2 when set; naru-dev's own config (`../naru-dev/scripts/build-worker.mjs`) binds it |
 | `WORKERD_SQLITE_STATEMENT_TIMEOUT_MS` | `3000`: Naru's workerd stops any one step of a site's statement after this long (`workerd/`), and the object says so with it; unset or 0, never |
 
 ## Shards

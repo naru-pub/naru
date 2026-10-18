@@ -32,7 +32,7 @@ is historical; the gaps it lists are now addressed this way:
   the owner opens the media library; it marks the uploads neither names, and
   shows the tables and columns that name the rest. Site code does not delete
   uploads.
-- A local emulator: `pnpm naru-dev`.
+- A local emulator: `npx @naru-pub/dev` (naru-dev/).
 
 Still open: background and scheduled jobs (#4, #9, deliberately not planned),
 export/import (#10) and storage quotas (#2). Revisit quotas with actual usage

@@ -96,7 +96,16 @@ pnpm dev
 ## 사이트 하나를 로컬에서 실행하기 (naru-dev)
 
 Naru 데이터 SDK를 쓰는 사이트를 실제 edge Worker로 로컬에서 실행합니다.
-`edge/`와 `control-plane/`에서 `pnpm install`을 마친 뒤:
+사이트 개발자는 Naru 체크아웃 없이 npm 패키지로 씁니다
+([naru-dev/README.md](../naru-dev/README.md)):
+
+```bash
+npx @naru-pub/dev ~/Git/neo-avocado --site neo-avocado
+```
+
+이 체크아웃의 코드로 돌리려면 `edge/`와 `control-plane/`에서 `pnpm install`을
+마친 뒤 같은 코드를 소스에서 실행합니다(edge Worker를 `naru-dev/.worker/`로
+먼저 묶습니다):
 
 ```bash
 cd control-plane && pnpm naru-dev ~/Git/neo-avocado --site neo-avocado
@@ -106,6 +115,12 @@ http://localhost:4000 에서 사이트 파일, SDK, 데이터 API를 함께 제�
 운영자·회원 로그인은 한 번의 클릭으로 끝납니다. `_naru/`를 고치면 바로 다시
 게시합니다. 데이터는 사이트 폴더의 `.naru-dev/`에 남습니다. 자세한 내용은
 [sdk-v1-api.md](sdk-v1-api.md#local-development-naru-dev)를 참고하세요.
+
+패키지(`naru-dev/`)는 `pnpm install`(그 폴더와 `edge/`) 뒤 `pnpm build`로
+`dist/`에 빌드하고, `scripts/check-package.sh <폴더>`로 npm에 올릴 tarball을
+만들어 저장소 밖에 설치해 smoke test(`test/smoke.mjs`)를 돌립니다. CI가 push마다
+같은 검사를 하고, `dev-v<버전>` 태그를 push하면 npm에 게시합니다
+(`.github/workflows/publish-naru-dev.yml`).
 
 ## 프로젝트 구조
 

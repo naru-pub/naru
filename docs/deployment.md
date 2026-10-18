@@ -72,7 +72,7 @@ the control plane at `SITE_DATA_URL` with `SITE_DATA_SECRET`. `sdk.naru.pub`
 is DNS-only, straight to the mini, and never reaches this Worker, which
 binds no `SiteData` (its class is declared deleted in `wrangler.jsonc`, which
 deleted the standby's copies); `wrangler dev --env local` adds it back for
-tests and naru-dev. The Worker
+tests (naru-dev runs the mini's Worker, `src/seoul.ts`, instead). The Worker
 renders sites' routes there, at `origin.sdk.naru.pub` (secret
 `SDK_ORIGIN_SECRET`, the mini's `EDGE_WORKER_SECRET`), and its cron probes
 the mini each minute, workerd and the control plane

@@ -137,7 +137,7 @@ settings, and applies a change to existing collections' indexes alone at
 once, since an index opens nothing to anyone. Other changes to existing
 collections wait for the owner, who sees them on /database and applies them
 with one click. The file works with any SDK version, and sites without it are
-unaffected. `pnpm naru-dev` installs it too, changes included.
+unaffected. naru-dev (`npx @naru-pub/dev`) installs it too, changes included.
 
 The browser leaves the page during `signIn`, and a page that holds unsaved
 input should put it somewhere that survives, such as `sessionStorage`, before
@@ -552,7 +552,7 @@ without it, or with another count, was cut short. Uploads are not in it:
 their files stay in Naru Media, and rows hold their URLs. Naru does not take
 a downloaded file back yet; restoring is from the restore points it keeps.
 The site's tables count toward the site's database quota with its
-collections. `pnpm naru-dev` writes `_naru/types/database.d.ts`, the tables
+collections. naru-dev (`npx @naru-pub/dev`) writes `_naru/types/database.d.ts`, the tables
 as the migrations left them, for `ctx.sql` and query builders.
 
 **Releases.** Every change to `_naru/migrations/`, `queries/`, `mutations/`,
@@ -760,17 +760,24 @@ retry writes or batches.
 
 ## Local development (naru-dev)
 
-From a checkout of Naru, `pnpm naru-dev <site folder> --site <name>` (in
-`control-plane/`, after `pnpm install` there and in `edge/`) runs one site
-locally on http://localhost:4000: the real edge Worker under `wrangler dev`
-for collections, the site's tables, queries, mutations, routes, live queries
-and limits, and a stand-in for naru.pub that serves the site's files and the
-SDK, signs owners and members in on one click (members are named test
-accounts with a status), keeps uploads in a folder, and republishes `_naru/`
-on every change, writing `_naru/types/database.d.ts` after each. Pages keep
-importing `https://sdk.naru.pub/sdk/1.1.0/naru.js`; an import map sends them to
-the local SDK, and uploads keep their `https://media.naru.pub` addresses,
-served locally by a service worker. Data persists in `<site>/.naru-dev/`.
+`npx @naru-pub/dev <site folder> --site <name>` runs one site locally on
+http://localhost:4000, with nothing else to install
+([naru-dev/README.md](../naru-dev/README.md)): Naru's real edge Worker under
+workerd for collections, the site's tables, queries, mutations, routes,
+live queries and limits, and a stand-in for naru.pub that serves the site's
+files and the SDK, signs owners and members in on one click (members are
+named test accounts with a status), keeps uploads in a folder, and
+republishes `_naru/` on every change, writing `_naru/types/database.d.ts`
+after each. Pages keep importing `https://sdk.naru.pub/sdk/1.1.0/naru.js`;
+an import map sends them to the local SDK, and uploads keep their
+`https://media.naru.pub` addresses, served locally by a service worker. Data
+persists in `<site>/.naru-dev/`.
+
+Tests start the same server with `startNaru()` from
+`@naru-pub/dev/testing`, on a free port with a temporary state, and sign the
+owner or a member into a Playwright page with `signIn(page, who)`. From a
+checkout of Naru, `pnpm naru-dev` in `control-plane/` runs the same code
+from source.
 
 ## Media and sign-out
 

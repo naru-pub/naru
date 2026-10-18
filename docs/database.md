@@ -529,7 +529,7 @@ Three guards keep one caller, or one site, from spending what others need
 
 - Reads a minute: 600 per address for visitors' reads and queries, and per
   member for their queries (`limitReader`, kept in memory; `SITE_READS_PER_MINUTE`
-  changes it, as `pnpm naru-dev` does, where every local browser is one address). Every per-address limit,
+  changes it, as naru-dev does, where every local browser is one address). Every per-address limit,
   this one and the visitors' write and call buckets, keys an IPv6 address by
   its /64 (`addresses.ts`), so stepping through one subscriber's addresses
   earns no fresh limit.
