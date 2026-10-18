@@ -14,8 +14,13 @@ macOS) and [naru-pub/android](https://github.com/naru-pub/android)
   of discoverable sites, newest update first. It needs no account, so the app
   is useful (and reviewable) before anyone signs in.
 - **알림** — the inbox, or the sign-in prompt when signed out.
-- **사이트** — the per-site allow/mute list (signed in).
-- **계정** — account and notification settings (signed in).
+- **사이트** — the per-site allow/mute list and the sites the account hid
+  (signed in).
+- **계정** — account and notification settings, and 계정 삭제, which opens
+  naru.pub's `/account/delete` (App Store guideline 5.1.1(v)) (signed in).
+
+Every showcase card and notification has a 숨기기 / 신고하기 menu (guideline
+1.2, see **Moderation**).
 
 Sites, from the showcase or a tapped notification, open in the default
 browser, where the visitor is already signed in to them as a member. Only
@@ -78,6 +83,7 @@ treat `AUTH_REQUIRED` (401) as signed out.
 The same rows as `/sites`: discoverable users with a rendered screenshot,
 `site_updated_at` descending, 48 a page; `screenshotUrl` is
 `getRenderedSiteUrl`. `next` is null on the last page. Cacheable for a minute.
+With an app token it leaves out the sites the account hid, and is not cached.
 
 ### Sign-in (authorization code + PKCE)
 
@@ -154,6 +160,31 @@ sites' notifications are listed.
 pending first.
 
 `PUT /sites/<name>` `{ state: "allowed" | "muted" }` → the updated entry.
+Hidden sites are not listed here.
+
+### Moderation
+
+Against objectionable content (guideline 1.2), the apps offer 숨기기 and
+신고하기 on every showcase card and notification. Logic:
+`control-plane/src/lib/app-api/moderation.ts`.
+
+`PUT /hidden-sites/<name>` → 204: the account no longer sees the site in its
+showcase, sites or inbox, and what the site sends it is dropped.
+`DELETE /hidden-sites/<name>` → 204 shows it again.
+`GET /hidden-sites` → `{ sites: [{ site: {…}, hiddenAt }] }`, newest first.
+Signed out, the apps hide sites on the device alone, and hand them to the
+account (`PUT` each) once it signs in.
+
+`POST /reports` `{ site, notificationId?, reason }` → `{ hidden }`, with or
+without an app token. `reason` is `spam` (스팸·광고), `abuse` (괴롭힘·혐오),
+`sexual` (선정적인 내용), `illegal` (불법적인 내용) or `other` (기타).
+The report is kept in `app_reports` and posted to the operators' Discord,
+with the notification's text when the reporter received it. Signed in, it also
+hides the site for the reporter (`hidden: true`); signed out the app hides it
+on the device. 20 reports an hour per account, or per address signed out
+(the gateway's `X-Real-IP`); past that, 429. Operators act with
+`users.discoverable` (out of the showcase) and
+`users.app_notifications_disabled` (no notifications).
 
 ## Push payloads
 

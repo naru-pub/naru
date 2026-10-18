@@ -34,7 +34,8 @@
       "app_devices.platform": "\"apns\" | \"fcm\"",
       "app_devices.environment": "\"sandbox\" | \"production\"",
       "app_site_consents.state": "\"pending\" | \"allowed\" | \"muted\"",
-      "app_auth_codes.client": "\"ios\" | \"macos\" | \"android\""
+      "app_auth_codes.client": "\"ios\" | \"macos\" | \"android\"",
+      "app_reports.reason": "\"spam\" | \"abuse\" | \"sexual\" | \"illegal\" | \"other\""
     }
   }
 }

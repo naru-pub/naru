@@ -47,6 +47,14 @@ export async function appUser(request: Request): Promise<AppUser> {
   return user;
 }
 
+/** The account, when the request carries a valid app token; null otherwise. */
+export async function optionalAppUser(request: Request): Promise<AppUser | null> {
+  const match = /^Bearer (a\.[A-Za-z0-9_-]{43})$/.exec(
+    request.headers.get("authorization") ?? "",
+  );
+  return match ? appTokenUser(match[1]) : null;
+}
+
 export async function appBody(request: Request) {
   try {
     return await jsonBody(request);

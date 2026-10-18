@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { DataError } from "@/lib/site-data/validation";
 import { appSite, pageUrl, siteOrigins } from "./sites";
+import { hiddenSiteIds } from "./moderation";
 import type { AppUser } from "./tokens";
 
 // What the app shows a signed-in account: its notifications, the sites that
@@ -31,6 +32,7 @@ export async function listNotifications(user: AppUser, before: string | null) {
       "s.site_title",
     ])
     .where("n.user_id", "=", user.id)
+    .where("n.site_user_id", "not in", hiddenSiteIds(user.id))
     .where("c.state", "=", "allowed")
     .where("s.deleted_at", "is", null)
     .orderBy("n.id", "desc")
@@ -90,6 +92,7 @@ export async function unreadCount(userId: string) {
     )
     .select(sql<number>`count(*)::int`.as("count"))
     .where("n.user_id", "=", userId)
+    .where("n.site_user_id", "not in", hiddenSiteIds(userId))
     .where("n.read_at", "is", null)
     .where("c.state", "=", "allowed")
     .executeTakeFirstOrThrow();
@@ -126,6 +129,7 @@ export async function listSites(user: AppUser) {
     .innerJoin("users as s", "s.id", "c.site_user_id")
     .select(consentFields)
     .where("c.user_id", "=", user.id)
+    .where("c.site_user_id", "not in", hiddenSiteIds(user.id))
     .where("s.deleted_at", "is", null)
     .orderBy(
       sql`case c.state when 'pending' then 0 when 'allowed' then 1 else 2 end`,

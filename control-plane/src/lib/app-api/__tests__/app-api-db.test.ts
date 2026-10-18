@@ -33,6 +33,7 @@ const { deliverAppNotifications } =
 const { showcasePage } = require("../showcase") as typeof import("../showcase");
 const { appResponse, appUser } = require("../http") as typeof import("../http");
 const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/site-urls");
+const moderation = require("../moderation") as typeof import("../moderation");
 
 // Runs against the disposable database of scripts/test-payments-db.sh.
 const integration =
@@ -243,5 +244,75 @@ integration("the Naru app's API", () => {
     expect(
       await db.selectFrom("app_devices").selectAll().where("token", "=", "ab".repeat(32)).execute(),
     ).toEqual([]);
+  });
+
+  test("hides a site from an account, and takes reports of it", async () => {
+    const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
+    const user = (await tokens.appTokenUser(token))!;
+    await inbox.setSiteState(user, "app-site", { state: "allowed" });
+    const names = async (id?: string) =>
+      (await showcasePage(1, id)).sites.map((site) => site.name);
+    expect(await names(user.id)).toContain("app-site");
+
+    // Hidden: gone from its showcase, its sites and its inbox, and what the
+    // site sends it is dropped; everyone else still sees the site.
+    await moderation.hideSite(user, "app-site");
+    expect(await names(user.id)).not.toContain("app-site");
+    expect(await names()).toContain("app-site");
+    expect((await inbox.listSites(user)).sites).toEqual([]);
+    expect((await moderation.listHiddenSites(user)).sites).toMatchObject([
+      { site: { name: "app-site" } },
+    ]);
+    outboxes.set("app-site", [
+      {
+        id: "0199f2a4-0000-7000-8000-000000000009",
+        members: [memberId],
+        title: "숨긴 사이트의 알림",
+        body: "",
+        path: "/",
+        at: Date.now(),
+      },
+    ]);
+    const sender = { send: async () => "delivered" as const, close() {} };
+    expect(await deliverAppNotifications(sender)).toMatchObject({ stored: 0, pushed: 0 });
+
+    // Shown again.
+    await moderation.showSite(user, "app-site");
+    expect(await names(user.id)).toContain("app-site");
+    expect((await moderation.listHiddenSites(user)).sites).toEqual([]);
+
+    // A signed-in report hides the site for the reporter; a signed-out one is
+    // kept by address. Reports are limited an hour.
+    expect(
+      await moderation.report({ user, ip: null }, { site: "app-site", reason: "spam" }),
+    ).toEqual({ hidden: true });
+    expect(await names(user.id)).not.toContain("app-site");
+    expect(
+      await moderation.report(
+        { user: null, ip: "203.0.113.7" },
+        { site: "app-site", reason: "sexual" },
+      ),
+    ).toEqual({ hidden: false });
+    const kept = await db
+      .selectFrom("app_reports")
+      .select(["reporter_user_id", "reporter_ip", "reason"])
+      .where("site_user_id", "=", siteId)
+      .orderBy("id")
+      .execute();
+    expect(kept).toEqual([
+      { reporter_user_id: user.id, reporter_ip: null, reason: "spam" },
+      { reporter_user_id: null, reporter_ip: "203.0.113.7", reason: "sexual" },
+    ]);
+    await expect(
+      moderation.report({ user: null, ip: null }, { site: "app-site", reason: "spam" }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      moderation.report({ user, ip: null }, { site: "app-site", reason: "rude" }),
+    ).rejects.toMatchObject({ status: 400 });
+    for (let i = 1; i < moderation.REPORTS_PER_HOUR; i++)
+      await moderation.report({ user, ip: null }, { site: "app-site", reason: "other" });
+    await expect(
+      moderation.report({ user, ip: null }, { site: "app-site", reason: "other" }),
+    ).rejects.toMatchObject({ status: 429 });
   });
 });

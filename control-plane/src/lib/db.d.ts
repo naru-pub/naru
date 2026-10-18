@@ -191,6 +191,13 @@ export interface AppDevices {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AppHiddenSites {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  site_user_id: string;
+  user_id: string;
+}
+
 export interface AppNotifications {
   body: string;
   created_at: Generated<Timestamp>;
@@ -201,6 +208,16 @@ export interface AppNotifications {
   site_user_id: string;
   title: string;
   user_id: string;
+}
+
+export interface AppReports {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  notification_id: string | null;
+  reason: "spam" | "abuse" | "sexual" | "illegal" | "other";
+  reporter_ip: string | null;
+  reporter_user_id: string | null;
+  site_user_id: string;
 }
 
 export interface AppSiteConsents {
@@ -833,7 +850,9 @@ export interface DB {
   activities: Activities;
   app_auth_codes: AppAuthCodes;
   app_devices: AppDevices;
+  app_hidden_sites: AppHiddenSites;
   app_notifications: AppNotifications;
+  app_reports: AppReports;
   app_site_consents: AppSiteConsents;
   app_tokens: AppTokens;
   billing_keys: BillingKeys;

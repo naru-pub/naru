@@ -22,7 +22,7 @@ import { pushSender, type PushSender } from "./push";
 //   once the account allows the site, and not pushed;
 // - pending: stored, not pushed;
 // - allowed: stored and pushed to the account's devices;
-// - muted: dropped.
+// - muted, or hidden by the account (moderation.ts): dropped.
 //
 // Rows are stored with their outbox id, so a run that stores and then fails
 // to acknowledge stores nothing twice on the next. A site past
@@ -141,6 +141,17 @@ async function storeNotification(siteUserId: string, row: OutboxRow) {
       .select(["m.user_id", "c.state"])
       .where("m.site_user_id", "=", siteUserId)
       .where("m.status", "=", "approved")
+      // An account that hid the site gets nothing from it (moderation.ts).
+      .where(({ not, exists, selectFrom }) =>
+        not(
+          exists(
+            selectFrom("app_hidden_sites as h")
+              .select("h.id")
+              .whereRef("h.user_id", "=", "m.user_id")
+              .where("h.site_user_id", "=", siteUserId),
+          ),
+        ),
+      )
       .where("m.id", "in", row.members)
       .where("u.deleted_at", "is", null)
       .orderBy("m.id")

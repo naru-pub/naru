@@ -1,15 +1,16 @@
 import { db } from "@/lib/database";
 import { getRenderedSiteUrl } from "@/lib/site-urls";
+import { hiddenSiteIds } from "./moderation";
 import { siteOrigins } from "./sites";
 
 export const SHOWCASE_PAGE_SIZE = 48;
 
 /**
  * The apps' 둘러보기: the rows of /sites, discoverable sites with a screenshot,
- * newest update first.
+ * newest update first; for a signed-in account, without the sites it hid.
  */
-export async function showcasePage(page: number) {
-  const rows = await db
+export async function showcasePage(page: number, userId?: string) {
+  let query = db
     .selectFrom("users")
     .select(["login_name", "site_rendered_at", "site_updated_at"])
     .where("discoverable", "=", true)
@@ -18,8 +19,9 @@ export async function showcasePage(page: number) {
     .orderBy("site_updated_at", "desc")
     .orderBy("id", "desc")
     .limit(SHOWCASE_PAGE_SIZE + 1)
-    .offset((page - 1) * SHOWCASE_PAGE_SIZE)
-    .execute();
+    .offset((page - 1) * SHOWCASE_PAGE_SIZE);
+  if (userId) query = query.where("id", "not in", hiddenSiteIds(userId));
+  const rows = await query.execute();
   const shown = rows.slice(0, SHOWCASE_PAGE_SIZE);
   const origins = await siteOrigins(shown.map((row) => row.login_name));
   return {
