@@ -23,6 +23,14 @@ jest.mock("@/lib/edge/client", () => ({
   },
 }));
 
+// Fedify's own database and queue are not set up here.
+const announced: string[] = [];
+jest.mock("@/lib/federation", () => ({
+  announceSiteUpdate: async (_: string, identifier: string) => {
+    announced.push(identifier);
+  },
+}));
+
 // Required after the mocks: this transform does not hoist jest.mock above imports.
 const { sql } = require("kysely") as typeof import("kysely");
 const { db } = require("@/lib/database") as typeof import("@/lib/database");
@@ -37,6 +45,7 @@ const moderation = require("../moderation") as typeof import("../moderation");
 const stars = require("../stars") as typeof import("../stars");
 const { pushStarredSiteUpdate } =
   require("../starred-updates") as typeof import("../starred-updates");
+const siteUpdates = require("@/lib/site-updates") as typeof import("@/lib/site-updates");
 const { siteLine, siteOrigins } = require("../sites") as typeof import("../sites");
 const siteStars = require("@/lib/site-stars") as typeof import("@/lib/site-stars");
 const siteModeration =
@@ -524,5 +533,45 @@ integration("the Naru app's API", () => {
     await db.updateTable("users").set({ site_moderation: "suspended" }).where("id", "=", siteId).execute();
     expect((await run(siteId)).messages).toEqual([]);
     await db.updateTable("users").set({ site_moderation: null }).where("id", "=", siteId).execute();
+  });
+
+  test("tells a site's update once it is quiet, at most once a day", async () => {
+    const pushes: string[] = [];
+    const sender = {
+      send: async (_: unknown, message: { site: string }) => {
+        pushes.push(message.site);
+        return "delivered" as const;
+      },
+      close() {},
+    };
+    const edited = (minutesAgo: number) =>
+      db
+        .updateTable("users")
+        .set({ site_updated_at: new Date(Date.now() - minutesAgo * 60_000) })
+        .where("id", "=", siteId)
+        .execute();
+    const due = async () =>
+      (await siteUpdateCandidates()).some((site) => site.id === siteId);
+    const { siteUpdateCandidates, dispatchSiteUpdate } = siteUpdates;
+    announced.length = 0;
+
+    // Still being edited.
+    await edited(5);
+    expect(await due()).toBe(false);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(false);
+    // Quiet: told to followers and stargazers (the reader starred it above).
+    await edited(11);
+    expect(await due()).toBe(true);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(true);
+    expect(announced).toEqual(["app-site"]);
+    expect(pushes).toContain("app-site");
+    // Edited again the same day: waits out the cooldown.
+    await sql`update users set last_activity_sent_at = now() - interval '1 hour' where id = ${siteId}`.execute(db);
+    await edited(11);
+    expect(await due()).toBe(false);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(false);
+    await sql`update users set last_activity_sent_at = now() - interval '25 hours' where id = ${siteId}`.execute(db);
+    expect(await dispatchSiteUpdate(siteId, sender)).toBe(true);
+    expect(announced).toEqual(["app-site", "app-site"]);
   });
 });

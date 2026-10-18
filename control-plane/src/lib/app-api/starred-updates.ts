@@ -5,10 +5,9 @@ import type { PushSender } from "./push";
 import { siteLine, siteOrigins } from "./sites";
 
 // A site's update, pushed to the Naru app of each account that starred it.
-// Sent when federation announces the update (dispatchSiteUpdate in
-// lib/federation.ts, from the site-update-dispatcher job), so behind the
-// same gate: ten quiet minutes after the last edit, and at most once a day a
-// site.
+// Sent with the site's fediverse announcement (dispatchSiteUpdate in
+// lib/site-updates.ts), so behind the same gate: ten quiet minutes after the
+// last edit, and at most once a day a site.
 //
 // Left out: the site's own account, deleted accounts, and sites deleted,
 // suspended or with notifications turned off by the operators

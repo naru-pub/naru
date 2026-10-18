@@ -1,9 +1,8 @@
 import { parseArgs } from "node:util";
 import { sql } from "kysely";
-import { db } from "@/lib/database";
-import { pushStarredSiteUpdate } from "@/lib/app-api/starred-updates";
 import { pushSender, type PushSender } from "@/lib/app-api/push";
-import { dispatchSiteUpdate } from "@/lib/federation";
+import { db } from "@/lib/database";
+import { dispatchSiteUpdate, siteUpdateCandidates } from "@/lib/site-updates";
 
 // Usage:
 //   pnpm exec tsx src/cli/dispatch-site-updates.ts
@@ -14,53 +13,16 @@ import { dispatchSiteUpdate } from "@/lib/federation";
 //     → reset the gate for that user so dispatchSiteUpdate is guaranteed to
 //       fire. Use only for ops/testing.
 //
-// An update dispatched is also pushed to the Naru app of the accounts that
-// starred the site (lib/app-api/starred-updates.ts).
-
-/** Federation's announcement, then the stargazers' push. */
-async function dispatch(userId: string, sender: PushSender) {
-  if (!(await dispatchSiteUpdate(userId))) return false;
-  try {
-    await pushStarredSiteUpdate(userId, sender);
-  } catch (err) {
-    console.error(`[dispatch-site-updates] push for id=${userId} failed:`, err);
-  }
-  return true;
-}
+// See lib/site-updates.ts.
 
 async function dispatchForAll(sender: PushSender) {
-  const candidates = await db
-    .selectFrom("users")
-    .select(["id", "login_name"])
-    .where("site_updated_at", "is not", null)
-    .where((eb) =>
-      eb(
-        "site_updated_at",
-        ">",
-        eb.fn.coalesce(
-          "last_activity_sent_at",
-          sql<Date>`'epoch'::timestamptz`
-        )
-      )
-    )
-    .where("site_updated_at", "<", sql<Date>`now() - interval '10 minutes'`)
-    .where((eb) =>
-      eb.or([
-        eb("last_activity_sent_at", "is", null),
-        eb(
-          "last_activity_sent_at",
-          "<",
-          sql<Date>`now() - interval '24 hours'`
-        ),
-      ])
-    )
-    .execute();
+  const candidates = await siteUpdateCandidates();
 
   console.log(`[dispatch-site-updates] ${candidates.length} candidate(s)`);
 
   for (const user of candidates) {
     try {
-      await dispatch(user.id, sender);
+      await dispatchSiteUpdate(user.id, sender);
     } catch (err) {
       console.error(
         `[dispatch-site-updates] ${user.login_name} (id=${user.id}) failed:`,
@@ -102,7 +64,7 @@ async function dispatchForUser(
   }
 
   const countBefore = await activityCount(user.id);
-  const dispatched = await dispatch(user.id, sender);
+  const dispatched = await dispatchSiteUpdate(user.id, sender);
   const countAfter = await activityCount(user.id);
 
   if (dispatched) {
