@@ -3560,18 +3560,20 @@ export class SiteData extends DurableObject<Env> {
   /**
    * ctx.notify, in the call's transaction: the outbox row, and the site's
    * name for resumeNotifications. The pending mark is made now; a call that
-   * rolls back leaves an empty outbox, which ackNotifyOutbox clears.
+   * rolls back leaves an empty outbox, which ackNotifyOutbox clears. A full
+   * outbox (the job has stalled) drops the notification, not the call.
    */
   private queueNotification(site: string, queued: Notification) {
     const waiting = Number(
       this.rows("SELECT count(*) AS n FROM _naru_notify_outbox")[0].n,
     );
-    if (waiting >= MAX_OUTBOX_ROWS)
-      throw new DataError(
-        429,
-        "ctx.notify: too many notifications are waiting to be sent.",
-        "QUOTA_EXCEEDED",
+    if (waiting >= MAX_OUTBOX_ROWS) {
+      console.warn(
+        `ctx.notify: ${site}'s outbox holds ${waiting} notifications; dropped one`,
       );
+      markNotifyPending(site);
+      return;
+    }
     this.sql.exec(
       `INSERT INTO _naru_notify_outbox (id, members, title, body, path, at)
        VALUES (?, ?, ?, ?, ?, ?)`,

@@ -29,14 +29,29 @@ describe("ctx.notify's arguments", () => {
       );
   });
 
+  test("cuts a long title and body, never within a character", () => {
+    const long = notification([member], {
+      title: "가".repeat(101),
+      body: "x".repeat(501),
+    });
+    expect(long.title).toBe("가".repeat(100));
+    expect(long.body).toBe("x".repeat(500));
+    // 100 emoji are 200 UTF-16 units, and all fit.
+    expect(notification([member], { title: "🥑".repeat(100) }).title).toBe(
+      "🥑".repeat(100),
+    );
+    expect(notification([member], { title: "🥑".repeat(101) }).title).toBe(
+      "🥑".repeat(100),
+    );
+  });
+
   test("refuses what the app cannot show", () => {
     expect(() => notification([member], { title: "" })).toThrow(/title/);
-    expect(() => notification([member], { title: "x".repeat(101) })).toThrow(
-      /title/,
+    expect(() => notification([member], { title: "  " })).toThrow(/title/);
+    expect(() => notification([member], { title: 1 })).toThrow(/title/);
+    expect(() => notification([member], { title: "t", body: 1 })).toThrow(
+      /body/,
     );
-    expect(() =>
-      notification([member], { title: "t", body: "x".repeat(501) }),
-    ).toThrow(/body/);
     expect(() =>
       notification([member], { title: "t", url: "https://x" }),
     ).toThrow(/unknown field url/);

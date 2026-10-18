@@ -41,8 +41,12 @@ await ctx.notify([post.author], {
 
 - Mutations only. Rows go to an outbox in the call's transaction, so a failed
   call sends nothing.
-- `title` ≤ 100 characters, `body` ≤ 500, `path` a path on the site (no
-  scheme or host). Naru adds the site's name and icon; a site cannot set them.
+- `title` ≤ 100 characters, `body` ≤ 500 (longer text is cut, since it is
+  often what members wrote), `path` a path on the site (no scheme or host).
+  Naru adds the site's name and icon; a site cannot set them.
+- Best effort: a site whose outbox already holds 10,000 notifications (the
+  job has stalled) drops new ones rather than failing the mutation, whose
+  write matters more than its notice.
 - Members only. Unknown, pending or banned member IDs are skipped silently,
   so the site learns nothing about who has the app.
 - At most 1,000 members a call; a site stores at most 1,000 notifications an

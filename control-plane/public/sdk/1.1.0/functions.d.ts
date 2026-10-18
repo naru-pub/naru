@@ -155,7 +155,11 @@ export interface MutationCtx extends QueryCtx {
    * mutation returns: on their devices if they allowed the site there, or in
    * the app's inbox until they do. Unknown, pending and banned members are
    * skipped, and the site is not told who has the app. `path` (default "/")
-   * is a page of this site, opened when the notification is tapped.
+   * is a page of this site, opened when the notification is tapped. A title
+   * longer than 100 characters or a body longer than 500 is cut to fit.
+   * Notifications are best effort: one Naru cannot queue is dropped, and the
+   * mutation goes on. Member ids that are not ids, a blank title or another
+   * site's address still throw.
    */
   notify(
     members: string[],
