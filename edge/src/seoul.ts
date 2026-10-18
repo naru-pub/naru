@@ -1,4 +1,5 @@
 import worker, { type Env } from "./index";
+import { httpBucket, type HttpBucketEnv } from "./http-bucket";
 import { s3Bucket, type S3Env } from "./r2-s3";
 import { serveSdk, type SdkEnv } from "./sdk";
 import { SiteData as EdgeSiteData } from "./site";
@@ -11,12 +12,14 @@ import { parseShards, SERVED, shardOf, siteOfPath } from "./shards";
 // operations on 127.0.0.1 (index.ts). Hosted pages, their pageviews
 // and custom domains stay on Cloudflare (index.ts), so this answers nothing
 // else. There is no R2 binding here: the site bucket, where site functions'
-// sources are, is reached through R2's S3 API (r2-s3.ts).
+// sources are, is reached through R2's S3 API (r2-s3.ts), or, given
+// SITE_BUCKET_URL, a local folder naru-dev serves (http-bucket.ts).
 
 type SeoulEnv = Env &
   S3Env &
   SdkEnv &
-  WebsiteEnv & {
+  WebsiteEnv &
+  Partial<HttpBucketEnv> & {
     /**
      * This process's shard, when the mini runs several behind the router
      * (router.ts, shards.ts), with the router's NARU_SDK_SHARD_ORIGINS and
@@ -31,7 +34,9 @@ type SeoulEnv = Env &
 
 const withBucket = (env: SeoulEnv): SeoulEnv => ({
   ...env,
-  SITE_FILES: s3Bucket(env) as unknown as R2Bucket,
+  SITE_FILES: (env.SITE_BUCKET_URL
+    ? httpBucket(env as HttpBucketEnv)
+    : s3Bucket(env)) as unknown as R2Bucket,
 });
 
 export class SiteData extends EdgeSiteData {
