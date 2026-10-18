@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,8 @@ import { APP_PANEL } from "../panel";
 // The app pages' own sign-in form, so they never send the person to /login,
 // whose site layout links everywhere. Signing in reloads the page it is on:
 // /app/authorize then asks to connect the app, /app/account/delete to delete.
-export default function AppSignIn() {
+// signUpHref: /app/signup carrying the sign-in request, on /app/authorize.
+export default function AppSignIn({ signUpHref }: { signUpHref?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function signIn(event: React.FormEvent<HTMLFormElement>) {
@@ -76,9 +78,16 @@ export default function AppSignIn() {
           로그인
         </Button>
       </form>
+      {signUpHref && (
+        <p className="text-sm text-muted-foreground">
+          계정이 없나요?{" "}
+          <Link href={signUpHref} className="text-link underline">
+            나루 계정 만들기
+          </Link>
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
-        계정 만들기와 비밀번호 찾기는 웹 브라우저에서 naru.pub에 접속해 할 수
-        있습니다.
+        비밀번호 찾기는 웹 브라우저에서 naru.pub에 접속해 할 수 있습니다.
       </p>
     </div>
   );

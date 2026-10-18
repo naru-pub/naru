@@ -57,8 +57,17 @@ const usernamePlaceholder = "example";
 
 // The sign-up form of /signup and of /app/signup, the page the Naru app opens.
 // In the app's version the agreements link to the app's copies of the
-// documents, and signing up ends on this page instead of leading into the site.
-export default function SignUpForm({ app = false }: { app?: boolean }) {
+// documents, and signing up goes on to signIn, the app's /app/authorize, which
+// then asks to connect the app; without one (the app's releases that opened
+// /app/signup in a browser) it ends on this page instead of leading into the
+// site.
+export default function SignUpForm({
+  app = false,
+  signIn,
+}: {
+  app?: boolean;
+  signIn?: string;
+}) {
   const [signedUp, setSignedUp] = useState("");
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -101,7 +110,9 @@ export default function SignUpForm({ app = false }: { app?: boolean }) {
       });
 
       const res = await response.json();
-      if (res.success && app) {
+      if (res.success && signIn) {
+        window.location.assign(signIn);
+      } else if (res.success && app) {
         setSignedUp(values.username);
       } else if (res.success) {
         window.location.href =
@@ -230,6 +241,14 @@ export default function SignUpForm({ app = false }: { app?: boolean }) {
               </Link>
               에 따라 처리합니다.
             </p>
+            {signIn && (
+              <p className="text-sm text-muted-foreground text-center">
+                이미 계정이 있나요?{" "}
+                <Link href={signIn} className="text-link underline">
+                  로그인
+                </Link>
+              </p>
+            )}
           </form>
         </Form>
       </div>

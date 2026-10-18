@@ -1,34 +1,22 @@
 import { validateRequest } from "@/lib/auth";
-import { authorizeInput } from "@/lib/app-api/tokens";
 import AppConsent from "./AppConsent";
 import AppSignIn from "./AppSignIn";
 import { APP_PANEL } from "../panel";
+import { appSignInRequest } from "./request";
 
 const CLIENT_NAMES = { ios: "iPhone·iPad", macos: "Mac", android: "Android" };
 
 // Where the Naru app sends its sign-in (lib/app-api/tokens.ts): the person
 // signs in to naru.pub right here, without the site's /login page and its
-// links, then connects the app.
+// links, or signs up on /app/signup, which comes back here; then connects the
+// app. The app's 나루 계정 만들기 opens /app/signup with the same request.
 export default async function AppAuthorizePage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
-  // Only the recognized scalar fields; never redirect anywhere else on error.
-  const query = new URLSearchParams();
-  for (const key of [
-    "client",
-    "redirect_uri",
-    "state",
-    "code_challenge",
-    "code_challenge_method",
-  ])
-    if (typeof params[key] === "string") query.set(key, params[key]);
-  let input;
-  try {
-    input = authorizeInput(Object.fromEntries(query));
-  } catch {
+  const { query, input } = await appSignInRequest(searchParams);
+  if (!input)
     return (
       <div className={APP_PANEL}>
         <h1 className="text-xl font-bold">앱을 연결할 수 없습니다</h1>
@@ -37,9 +25,8 @@ export default async function AppAuthorizePage({
         </p>
       </div>
     );
-  }
   const { user } = await validateRequest();
-  if (!user) return <AppSignIn />;
+  if (!user) return <AppSignIn signUpHref={`/app/signup?${query}`} />;
   return (
     <AppConsent
       input={input}

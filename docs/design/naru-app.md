@@ -19,7 +19,8 @@ macOS) and [naru-pub/android](https://github.com/naru-pub/android)
   (signed in).
 - **계정** — account and notification settings, and 계정 삭제, which opens
   naru.pub's `/app/account/delete` (App Store guideline 5.1.1(v)) (signed in).
-  The signed-out screen's 나루 계정 만들기 opens `/app/signup`.
+  The signed-out screen's 나루 계정 만들기 starts the same sign-in, opened
+  at `/app/signup` (see **Sign-in**).
 
 Every showcase card and notification has a 숨기기 / 신고하기 menu (guideline
 1.2, see **Moderation**).
@@ -128,7 +129,10 @@ once it signs in.
    layout (no site navigation or footer, so nothing leads to the supporter
    payment pages, which App Store review forbids reaching from the app) and
    its own sign-in form; a person already signed in to naru.pub can sign out
-   there to use another account. It asks to connect the app and redirects to
+   there to use another account. Its 나루 계정 만들기 goes to `/app/signup`
+   with the same request, as the app's own 나루 계정 만들기 opens the
+   sign-in, and signing up comes back to `/app/authorize` signed in. It asks
+   to connect the app and redirects to
    `<callback>?code=…&state=…` (or `?error=access_denied&state=…`).
 2. `POST /token` `{ code, verifier, redirectUri }` →
    `{ token, account: { loginName } }`. The code lives 10 minutes, is spent
