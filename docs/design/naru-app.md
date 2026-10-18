@@ -210,10 +210,22 @@ The report is kept in `app_reports` and posted to the operators' Discord,
 with the notification's text when the reporter received it. Signed in, it also
 hides the site for the reporter (`hidden: true`); signed out the app hides it
 on the device. 20 reports an hour per account, or per address signed out
-(the gateway's `X-Real-IP`); past that, 429. Operators act with
-`users.site_moderation` (`hidden`: out of every listing and search;
-`suspended`: not served either) and `users.app_notifications_disabled` (no
-notifications). The owner's own `users.discoverable` is theirs, not a
+(the gateway's `X-Real-IP`); past that, 429. The Discord alert links to the site's page in `/admin/moderation`, which
+lists reports and sets `users.site_moderation`
+(`control-plane/src/lib/site-moderation.ts`), each change recorded in
+`site_moderation_actions` with its reason:
+
+- `hidden`: out of the home page, `/sites` and the apps' showcase and search.
+  Still served; starred, it stays in 별표 without its screenshot.
+- `suspended`: hidden, and not served. A managed Cloudflare WAF rule blocks
+  its hosts (`<login>.naru.pub`, its custom domains) and its paths in the
+  site and media buckets; its cached pages are purged; its object is told it
+  has no database feature and the control plane refuses its data requests;
+  what it sends through `ctx.notify` is dropped, and the apps show neither it
+  nor its notifications.
+
+`users.app_notifications_disabled` still turns off only a site's
+notifications. The owner's own `users.discoverable` is theirs, not a
 moderation switch.
 
 ## Push payloads

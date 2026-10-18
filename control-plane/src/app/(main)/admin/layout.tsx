@@ -22,6 +22,7 @@ export default async function AdminLayout({
   const sections = [
     { href: "/admin", label: "개요" },
     { href: "/admin/users", label: "계정" },
+    { href: "/admin/moderation", label: "사이트 관리" },
     { href: "/admin/payments", label: "결제" },
     { href: "/admin/subscriptions", label: "정기 결제" },
     { href: "/admin/supporters", label: "유료 이용자" },

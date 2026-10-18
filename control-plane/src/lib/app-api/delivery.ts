@@ -155,12 +155,19 @@ async function deliverSite(name: string, sender: PushSender) {
     }
     const site = await db
       .selectFrom("users")
-      .select(["id", "login_name", "site_title", "app_notifications_disabled"])
+      .select([
+        "id",
+        "login_name",
+        "site_title",
+        "app_notifications_disabled",
+        "site_moderation",
+      ])
       .where("login_name", "=", name)
       .where("deleted_at", "is", null)
       .executeTakeFirst();
     const toPush: { userId: string; id: string; row: OutboxRow }[] = [];
-    if (site && !site.app_notifications_disabled)
+    // What a site operators turned off or suspended sends is dropped.
+    if (site && !site.app_notifications_disabled && site.site_moderation !== "suspended")
       for (const row of rows) {
         const stored = await storeNotification(site.id, row);
         totals.stored += stored.length;

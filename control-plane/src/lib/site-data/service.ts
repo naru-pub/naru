@@ -94,10 +94,13 @@ export async function resolveSiteAccess(command: DataCommand) {
     await requestDeadline(tx);
     const owner = await tx
       .selectFrom("users")
-      .select("id")
+      .select(["id", "site_moderation"])
       .where("login_name", "=", command.site)
       .executeTakeFirst();
     if (!owner) throw noSite(command.site);
+    // Operators stopped serving the site (site-moderation.ts).
+    if (owner.site_moderation === "suspended")
+      throw new DataError(403, "This site is suspended.");
     if (!(await userHasFeature(owner.id, "database", tx)))
       throw new DataError(403, "Database access is not enabled for this site.");
     const memberToken =
@@ -111,7 +114,7 @@ export async function resolveSiteAccess(command: DataCommand) {
     const memberId = memberToken
       ? await memberScope(tx, owner.id, command.bearer!)
       : undefined;
-    return { owner, allowedIds, memberId };
+    return { owner: { id: owner.id }, allowedIds, memberId };
   });
 }
 

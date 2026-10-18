@@ -19,8 +19,18 @@ import { pushEdgeDomains } from "./domains";
 /** Lapsed sites stay in the sync this long, so their usage keeps current. */
 const LAPSED_DAYS = 60;
 
-/** When the site's database feature ends, epoch ms; null when it does not. */
+/**
+ * When the site's database feature ends, epoch ms; null when it does not. A
+ * site operators suspended (site-moderation.ts) has none: its object hands
+ * every request to the control plane, which refuses it.
+ */
 export async function databaseEntitledUntil(userId: string) {
+  const site = await db
+    .selectFrom("users")
+    .select("site_moderation")
+    .where("id", "=", userId)
+    .executeTakeFirst();
+  if (site?.site_moderation === "suspended") return 0;
   const entitlement = await getUserEntitlement(userId);
   if (
     !(PLAN_FEATURES[entitlement.plan ?? "supporter"] ?? []).includes("database")

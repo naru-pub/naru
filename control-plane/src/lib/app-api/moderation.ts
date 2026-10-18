@@ -19,7 +19,7 @@ import type { AppUser } from "./tokens";
 
 export const REPORT_REASONS = ["spam", "abuse", "sexual", "illegal", "other"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
-const REASON_LABELS: Record<ReportReason, string> = {
+export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
   spam: "스팸·광고",
   abuse: "괴롭힘·혐오",
   sexual: "선정적인 내용",
@@ -82,12 +82,28 @@ export async function listHiddenSites(user: AppUser) {
   };
 }
 
-/** The site ids an account hid, for leaving them out of what it is shown. */
+/**
+ * The site ids an account does not see: the ones it hid, and the ones
+ * operators suspended (site-moderation.ts), for leaving them out of its
+ * showcase, inbox and sites.
+ */
 export function hiddenSiteIds(userId: string) {
   return db
     .selectFrom("app_hidden_sites")
     .select("site_user_id")
-    .where("user_id", "=", userId);
+    .where("user_id", "=", userId)
+    .union(
+      db
+        .selectFrom("users")
+        .select("id as site_user_id")
+        .where("site_moderation", "=", "suspended"),
+    );
+}
+
+/** The operators' page for acting on a site, for the Discord alert. */
+function adminModerationUrl(loginName: string) {
+  const origin = `https://${process.env.NEXT_PUBLIC_DOMAIN || "naru.pub"}`;
+  return new URL(`/admin/moderation/${encodeURIComponent(loginName)}`, origin).href;
 }
 
 export function requestIp(request: Request) {
@@ -155,7 +171,7 @@ export async function report(
     await sendOperatorAlert({
       title: `앱 신고: ${site.login_name}${site.site_title ? ` (${site.site_title})` : ""}`,
       lines: [
-        `사유: ${REASON_LABELS[reason as ReportReason]}`,
+        `사유: ${REPORT_REASON_LABELS[reason as ReportReason]}`,
         `신고자: ${reporter.user ? reporter.user.loginName : "로그인하지 않은 방문자"}`,
         ...(notification
           ? [
@@ -164,7 +180,7 @@ export async function report(
               `경로: ${notification.path}`,
             ]
           : []),
-        "숨기려면 사이트를 둘러보기에서 빼거나(discoverable) 알림을 끄세요(app_notifications_disabled).",
+        `조치: ${adminModerationUrl(site.login_name)}`,
       ],
     }).catch((error) => console.error("[app-report] Discord:", error));
   return { hidden: reporter.user !== null };

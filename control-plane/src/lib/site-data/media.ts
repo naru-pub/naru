@@ -27,7 +27,7 @@ export const MAX_MEDIA_FILES = 10000;
 // fill for everyone; the owner's own uploads are not limited.
 export const MEMBER_UPLOADS_PER_HOUR = 30;
 const mediaBucket = () => process.env.SITE_DATA_MEDIA_BUCKET || "naru-media";
-const mediaOrigin = () =>
+export const mediaOrigin = () =>
   (process.env.SITE_DATA_MEDIA_ORIGIN || "https://media.naru.pub").replace(
     /\/$/,
     "",

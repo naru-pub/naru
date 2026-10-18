@@ -36,6 +36,10 @@ const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/si
 const moderation = require("../moderation") as typeof import("../moderation");
 const stars = require("../stars") as typeof import("../stars");
 const siteStars = require("@/lib/site-stars") as typeof import("@/lib/site-stars");
+const siteModeration =
+  require("@/lib/site-moderation") as typeof import("@/lib/site-moderation");
+const { databaseEntitledUntil } =
+  require("@/lib/edge/sync") as typeof import("@/lib/edge/sync");
 
 // Runs against the disposable database of scripts/test-payments-db.sh.
 const integration =
@@ -396,5 +400,39 @@ integration("the Naru app's API", () => {
     await expect(
       moderation.report({ user, ip: null }, { site: "app-site", reason: "other" }),
     ).rejects.toMatchObject({ status: 429 });
+  });
+
+  test("suspends a site: kept, blocked at Cloudflare, without data or notifications", async () => {
+    const { token } = await tokens.exchangeCode({ ...(await signIn()), verifier });
+    const user = (await tokens.appTokenUser(token))!;
+    // Earlier tests left the site reported, so hidden for this account.
+    await moderation.showSite(user, "app-site");
+    expect((await inbox.listSites(user)).sites).toHaveLength(1);
+    const operator = { id: reader, loginName: "app-reader" };
+    const site = { id: siteId, login: "app-site" };
+
+    await siteModeration.setSiteModeration(site, "suspended", "불법 촬영물", operator);
+    expect(
+      await db.selectFrom("site_moderation_actions").select(["level", "reason", "operator_user_id"])
+        .where("site_user_id", "=", siteId).execute(),
+    ).toEqual([{ level: "suspended", reason: "불법 촬영물", operator_user_id: reader }]);
+    const expression = (await siteModeration.suspensionExpression())!;
+    expect(expression).toContain(`"app-site.${process.env.NEXT_PUBLIC_DOMAIN}"`);
+    expect(expression).toContain(`starts_with(http.request.uri.path, "/app-site/")`);
+    expect(expression).toContain(`starts_with(http.request.uri.path, "/_screenshots/app-site.png")`);
+    expect(expression).toContain(`starts_with(http.request.uri.path, "/${siteId}/")`);
+    // Its object answers nothing; the apps no longer show it.
+    expect(await databaseEntitledUntil(siteId)).toBe(0);
+    expect((await inbox.listSites(user)).sites).toEqual([]);
+    expect((await showcasePage(1, user.id)).sites.map((s) => s.name)).not.toContain("app-site");
+
+    // Hidden only: served, out of the listings, nothing blocked.
+    await siteModeration.setSiteModeration(site, "hidden", "스팸", operator);
+    expect(await siteModeration.suspensionExpression()).toBeNull();
+    expect(await databaseEntitledUntil(siteId)).toBeNull();
+    expect((await inbox.listSites(user)).sites).toHaveLength(1);
+
+    await siteModeration.setSiteModeration(site, null, "확인 결과 문제 없음", operator);
+    expect((await showcasePage(1)).sites.map((s) => s.name)).toContain("app-site");
   });
 });
