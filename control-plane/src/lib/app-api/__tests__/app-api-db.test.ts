@@ -35,6 +35,7 @@ const { appResponse, appUser } = require("../http") as typeof import("../http");
 const { getHomepageUrl } = require("@/lib/site-urls") as typeof import("@/lib/site-urls");
 const moderation = require("../moderation") as typeof import("../moderation");
 const stars = require("../stars") as typeof import("../stars");
+const { siteLine } = require("../sites") as typeof import("../sites");
 const siteStars = require("@/lib/site-stars") as typeof import("@/lib/site-stars");
 const siteModeration =
   require("@/lib/site-moderation") as typeof import("@/lib/site-moderation");
@@ -253,9 +254,14 @@ integration("the Naru app's API", () => {
       bundleId: "pub.naru",
     });
     const sent: { token: string; title: string; badge: number }[] = [];
+    const siteLines: string[] = [];
     const sender = {
-      send: async (device: { token: string }, message: { title: string; badge: number }) => {
+      send: async (
+        device: { token: string },
+        message: { title: string; badge: number; siteTitle: string },
+      ) => {
         sent.push({ token: device.token, title: message.title, badge: message.badge });
+        siteLines.push(message.siteTitle);
         return "delivered" as const;
       },
       close() {},
@@ -291,6 +297,19 @@ integration("the Naru app's API", () => {
     queue("0199f2a4-0000-7000-8000-000000000002", "둘째 알림");
     expect(await deliverAppNotifications(sender)).toMatchObject({ stored: 1, pushed: 1 });
     expect(sent).toEqual([{ token: "ab".repeat(32), title: "둘째 알림", badge: 2 }]);
+    // The site is named by its address first, then the title it gave itself.
+    expect(siteLines).toEqual([
+      `${new URL(getHomepageUrl("app-site")).host} · 앱 게시판`,
+    ]);
+    // A title that would pose as Naru, or crowd the address out, cannot.
+    expect(siteLine(null, "https://a.example")).toBe("a.example");
+    expect(siteLine(" a.example ", "https://a.example")).toBe("a.example");
+    expect(siteLine("Naru\n  보안팀", "https://a.example")).toBe(
+      "a.example · Naru 보안팀",
+    );
+    expect(siteLine("🥑".repeat(40), "https://a.example")).toBe(
+      `a.example · ${"🥑".repeat(29)}…`,
+    );
 
     // A row delivered twice (its acknowledgement lost) is stored once.
     queue("0199f2a4-0000-7000-8000-000000000002", "둘째 알림");

@@ -7,7 +7,7 @@ import {
   siteDataWorker,
 } from "@/lib/edge/client";
 import { unreadCount } from "./inbox";
-import { pageUrl, siteOrigins } from "./sites";
+import { pageUrl, siteLine, siteOrigins } from "./sites";
 import { pushSender, type PushSender } from "./push";
 
 // What sites queued with ctx.notify reaches the accounts behind the members
@@ -185,7 +185,7 @@ async function deliverSite(name: string, sender: PushSender) {
         totals.pushed += await push(sender, userId, {
           id,
           site: site.login_name,
-          siteTitle: site.site_title || site.login_name,
+          siteTitle: siteLine(site.site_title, origin),
           title: row.title,
           body: row.body,
           url: pageUrl(origin, row.path),

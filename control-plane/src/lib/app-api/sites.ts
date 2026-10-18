@@ -59,6 +59,26 @@ export function appSite(site: AppSiteRow, origins: Map<string, string>) {
   };
 }
 
+/** Characters of a site's own title a push's site line keeps. */
+const SITE_LINE_TITLE_CHARS = 30;
+
+/**
+ * The line a push names its site with (APNs' subtitle, Android's subtext):
+ * its address, then its title. The title is the site's own <title>, so a
+ * site could call itself "Naru" or a bank; the address it cannot choose
+ * comes first, where the system's truncation leaves it.
+ */
+export function siteLine(title: string | null, origin: string) {
+  const host = new URL(origin).host;
+  const own = [...(title ?? "").replace(/\s+/g, " ").trim()];
+  if (!own.length || own.join("") === host) return host;
+  const shown =
+    own.length > SITE_LINE_TITLE_CHARS
+      ? own.slice(0, SITE_LINE_TITLE_CHARS - 1).join("") + "…"
+      : own.join("");
+  return `${host} · ${shown}`;
+}
+
 /** A path a site gave ctx.notify, at the site's address. */
 export function pageUrl(origin: string, path: string) {
   return new URL(path, origin + "/").href;

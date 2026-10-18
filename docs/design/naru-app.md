@@ -43,7 +43,10 @@ await ctx.notify([post.author], {
   call sends nothing.
 - `title` ≤ 100 characters, `body` ≤ 500 (longer text is cut, since it is
   often what members wrote), `path` a path on the site (no scheme or host).
-  Naru adds the site's name and icon; a site cannot set them.
+  Naru adds the site's name and icon; a site cannot set them. A push names
+  the site by its address first (custom domain or `<login>.naru.pub`), then
+  its title cut to 30 characters: the title is the site's own `<title>`, so
+  a site could call itself "Naru" or a bank, but not change its address.
 - Best effort: a site whose outbox already holds 10,000 notifications (the
   job has stalled) drops new ones rather than failing the mutation, whose
   write matters more than its notice.
@@ -247,7 +250,7 @@ APNs:
 
 ```json
 {
-  "aps": { "alert": { "title": "새 댓글", "subtitle": "Alice's board", "body": "…" },
+  "aps": { "alert": { "title": "새 댓글", "subtitle": "alice.naru.pub · Alice's board", "body": "…" },
            "sound": "default", "badge": 3, "thread-id": "alice" },
   "naru": { "id": "0199…", "url": "https://alice.naru.pub/posts/12" }
 }
@@ -257,7 +260,7 @@ FCM (data message, so the app builds the notification and channel itself):
 
 ```json
 { "message": { "token": "…", "data": {
-  "id": "0199…", "site": "alice", "siteTitle": "Alice's board",
+  "id": "0199…", "site": "alice", "siteTitle": "alice.naru.pub · Alice's board",
   "title": "새 댓글", "body": "…", "url": "https://alice.naru.pub/posts/12"
 }, "android": { "priority": "high" } } }
 ```
