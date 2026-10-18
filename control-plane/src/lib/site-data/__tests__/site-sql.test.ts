@@ -1047,5 +1047,8 @@ integration("statement plans", () => {
       status: 400,
       message: expect.stringMatching(/returns at most 1000 rows/),
     });
+    // The refused statement was read to its end: nothing stays open to keep
+    // a dump from dropping its tables.
+    expect((await readSiteDump(site)).text).toContain('"type":"end"');
   });
 });

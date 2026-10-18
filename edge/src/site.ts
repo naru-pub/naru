@@ -1438,11 +1438,16 @@ export class SiteData extends DurableObject<Env> {
         );
         bytes += JSON.stringify(row).length;
         rows.push(row as Record<string, SqlValue>);
-        if (rows.length > MAX_ROWS || bytes > MAX_ROW_BYTES)
+        if (rows.length > MAX_ROWS || bytes > MAX_ROW_BYTES) {
+          // Read to its end first: a statement left open keeps SQLite from
+          // dropping any table (a dump's or restore's) until the object
+          // restarts. The step budget still bounds the reading.
+          while (!cursor.next().done);
           throw new DataError(
             400,
             `ctx.sql returns at most ${MAX_ROWS} rows and 1 MiB; add a LIMIT.`,
           );
+        }
       }
     } catch (error) {
       // Told to the Worker, which counts it against the statement
