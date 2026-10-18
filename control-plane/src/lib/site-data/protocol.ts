@@ -39,9 +39,7 @@ export const OWNER_EXPIRES_IN = "Naru-Owner-Expires-In";
 export const publicHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  // Naru-Session: SDK 1.1.0 sent it on 2026-10-18, and copies browsers
-  // cached then still may. It is ignored.
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, Naru-Session",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   // A token renews as it is used, so the SDK is told the expiry it now has;
   // a 429 says when its limit resets.
   "Access-Control-Expose-Headers": `${OWNER_EXPIRES}, ${OWNER_EXPIRES_IN}, Retry-After`,
