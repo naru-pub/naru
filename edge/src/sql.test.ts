@@ -189,6 +189,32 @@ describe("site SQL", () => {
       "CREATE TABLE t (id REFERENCES documents (id))",
       "DROP TABLE rate_limits",
       "CREATE VIEW v AS SELECT * FROM documents",
+      // A write's conflict clause before its table.
+      "UPDATE OR IGNORE meta SET value = 'x' WHERE key = 'entitled_until'",
+      "UPDATE OR REPLACE _naru_roles SET roles = '[]'",
+      "UPDATE OR ABORT main.meta SET value = 'x'",
+      "INSERT OR REPLACE INTO meta VALUES ('k', 'v')",
+      // Parenthesized tables, and tables after a function, a subquery, an
+      // index hint or a join's constraint in the same list.
+      "SELECT * FROM (meta)",
+      "SELECT * FROM posts, (meta)",
+      "SELECT * FROM (posts JOIN meta)",
+      "SELECT * FROM posts JOIN (meta) ON 1",
+      "SELECT * FROM json_each('[0]'), meta",
+      "SELECT * FROM (SELECT 1) AS x, _naru_roles",
+      "SELECT * FROM posts INDEXED BY p, meta",
+      "SELECT * FROM posts NOT INDEXED, meta",
+      "SELECT * FROM posts a JOIN posts b ON a.id = b.id, meta",
+      "SELECT * FROM posts a JOIN posts b USING (id), meta",
+      'SELECT * FROM "(", meta',
+      "UPDATE posts SET title = 1 FROM (meta)",
+      "DELETE FROM posts WHERE id IN (SELECT 1 FROM posts, (meta))",
+      // An index's table after a schema-qualified name, a full-text table's
+      // bare content table, and a rename's new name.
+      "CREATE INDEX main.i ON meta (value)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS main.i ON meta (value)",
+      "CREATE VIRTUAL TABLE f USING fts5(key, value, content=meta)",
+      "ALTER TABLE posts RENAME TO _naru_x",
     ])
       expect(() => one(sql), sql).toThrow(/is Naru's/);
     // Their names are fine as columns, aliases and values.
@@ -197,6 +223,35 @@ describe("site SQL", () => {
         "SELECT p.meta, p.usage AS documents FROM posts p WHERE kind = 'documents'",
       ),
     ).toBe("read");
+    for (const [sql, kind] of [
+      [
+        "SELECT * FROM posts AS meta, comments usage WHERE meta.id = usage.post",
+        "read",
+      ],
+      [
+        "SELECT * FROM posts WHERE a IS NOT DISTINCT FROM b ORDER BY a, meta",
+        "read",
+      ],
+      [
+        "SELECT j.value, p.id FROM json_each(?) j, posts p WHERE p.id = j.value",
+        "read",
+      ],
+      [
+        "SELECT * FROM (posts p JOIN comments c ON c.post = p.id), tags",
+        "read",
+      ],
+      ["UPDATE OR IGNORE posts SET title = ?", "write"],
+      ["ALTER TABLE posts RENAME COLUMN meta TO usage", "schema"],
+    ] as const)
+      expect(one(sql), sql).toBe(kind);
+  });
+
+  test("a statement's verb is found past quoted parentheses", () => {
+    // A ')' string once closed the CTE early, so the UNION's SELECT passed
+    // for the verb and a DELETE ran as a read-only query.
+    const sql = "WITH a AS (SELECT ')' UNION SELECT 1) DELETE FROM posts";
+    expect(one(sql)).toBe("write");
+    expect(() => one(sql, ["read"])).toThrow(/read-only query cannot write/);
   });
 });
 

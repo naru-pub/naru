@@ -133,6 +133,9 @@ const nameOf = (token: Token | undefined) =>
   token?.kind === "word" || token?.kind === "name" ? token.text : undefined;
 const is = (token: Token | undefined, ...words: string[]) =>
   token?.kind === "word" && words.includes(token.upper);
+/** Whether `token` is the punctuation `c`, not a quoted name or string of it. */
+const punct = (token: Token | undefined, c: string) =>
+  token?.kind === "other" && token.text === c;
 
 /** Words no site SQL may use, wherever they stand. */
 const REFUSED = new Map([
@@ -158,18 +161,9 @@ const BEFORE_TABLE = new Set([
   "INDEX",
 ]);
 
-/** Words that end a FROM list's table, where an alias would otherwise be. */
-const CLAUSES = [
+/** Words that end a FROM list: what follows names no table of the list. */
+const AFTER_FROM = [
   "WHERE",
-  "JOIN",
-  "INNER",
-  "LEFT",
-  "RIGHT",
-  "FULL",
-  "CROSS",
-  "NATURAL",
-  "ON",
-  "USING",
   "GROUP",
   "ORDER",
   "LIMIT",
@@ -179,12 +173,11 @@ const CLAUSES = [
   "EXCEPT",
   "INTERSECT",
   "SET",
+  "DO",
   "RETURNING",
-  "VALUES",
-  "SELECT",
-  "INDEXED",
-  "NOT",
 ];
+/** UPDATE OR IGNORE t, INSERT OR REPLACE INTO t: the conflict a write names. */
+const CONFLICTS = ["ROLLBACK", "ABORT", "REPLACE", "FAIL", "IGNORE"];
 
 export type Kind = "read" | "write" | "schema";
 
@@ -217,7 +210,7 @@ export function classify(
     refuse(nameOf(tokens[index]));
     let name = nameOf(tokens[index]);
     let next = index + 1;
-    if (tokens[index + 1]?.text === ".") {
+    if (punct(tokens[index + 1], ".")) {
       refuse(nameOf(tokens[index + 2]));
       name = nameOf(tokens[index + 2]);
       next = index + 3;
@@ -229,35 +222,70 @@ export function classify(
     }
     return next;
   };
+  /**
+   * Checks the FROM list (or what follows a JOIN) from `start` to its end:
+   * each table or table-valued function it names, after FROM, JOIN or a
+   * comma at the list's own level (a comma inside an expression is always in
+   * parentheses), and those of a parenthesized list, (a JOIN b). A
+   * parenthesized subquery has its own FROM, met as the walk goes on.
+   */
+  const fromList = (start: number) => {
+    let level = 0;
+    let item = true;
+    for (let index = start; index < tokens.length; index++) {
+      const token = tokens[index];
+      if (level === 0 && item) {
+        item = false;
+        if (!punct(token, "(")) table(index);
+        else if (!is(tokens[index + 1], "SELECT", "VALUES", "WITH"))
+          fromList(index + 1);
+      }
+      if (punct(token, "(")) level++;
+      else if (punct(token, ")")) {
+        if (--level < 0) return;
+      } else if (level === 0) {
+        if (punct(token, ",") || is(token, "JOIN")) item = true;
+        else if (is(token, ...AFTER_FROM)) return;
+      }
+    }
+  };
   const virtual = is(tokens[1], "VIRTUAL");
+  const createsIndex =
+    is(tokens[0], "CREATE") &&
+    (is(tokens[1], "INDEX") ||
+      (is(tokens[1], "UNIQUE") && is(tokens[2], "INDEX")));
+  let indexed = false;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     if (token.kind === "word" && REFUSED.has(token.upper))
       throw invalid(`${REFUSED.get(token.upper)}.`);
-    // A full-text table's options can name another table (content=...).
+    // A full-text table's options can name another table (content=...),
+    // quoted or bare.
     if (virtual && (token.kind === "string" || token.kind === "name"))
       refuse(token.text);
+    if (virtual && is(token, "CONTENT") && punct(tokens[index + 1], "="))
+      refuse(nameOf(tokens[index + 2]));
+    // a IS [NOT] DISTINCT FROM b compares; it names no table.
+    if (is(token, "FROM") && is(tokens[index - 1], "DISTINCT")) continue;
     if (token.kind === "word" && BEFORE_TABLE.has(token.upper)) {
       let next = index + 1;
-      while (is(tokens[next], "IF", "NOT", "EXISTS", "UNIQUE", "OR")) next++;
-      if (token.upper !== "FROM") {
-        table(next);
-        continue;
-      }
-      // FROM a [AS] x, b y, ...: every table in the list; a parenthesized
-      // subquery has its own FROM, met as the walk goes on.
       for (;;) {
-        if (tokens[next]?.text === "(") break;
-        next = table(next);
-        if (is(tokens[next], "AS")) next++;
-        if (nameOf(tokens[next]) && !is(tokens[next], ...CLAUSES)) next++;
-        if (tokens[next]?.text !== ",") break;
-        next++;
+        if (is(tokens[next], "IF", "NOT", "EXISTS", "UNIQUE")) next++;
+        else if (is(tokens[next], "OR") && is(tokens[next + 1], ...CONFLICTS))
+          next += 2;
+        else break;
       }
+      if (is(token, "FROM", "JOIN")) fromList(next);
+      else table(next);
+      continue;
     }
-    // CREATE INDEX name ON table
-    if (is(token, "ON") && is(tokens[index - 2], "INDEX", "EXISTS"))
+    // CREATE [UNIQUE] INDEX [IF NOT EXISTS] [schema.]name ON table
+    if (createsIndex && !indexed && is(token, "ON")) {
+      indexed = true;
       table(index + 1);
+    }
+    // ALTER TABLE t RENAME TO name
+    if (is(token, "TO") && is(tokens[index - 1], "RENAME")) table(index + 1);
   }
   const first = tokens[0];
   if (!first || first.kind !== "word") throw invalid("an empty statement.");
@@ -267,8 +295,8 @@ export function classify(
     let level = 0;
     verb = "";
     for (const token of tokens.slice(1)) {
-      if (token.text === "(") level++;
-      else if (token.text === ")") level--;
+      if (punct(token, "(")) level++;
+      else if (punct(token, ")")) level--;
       else if (
         level === 0 &&
         is(token, "SELECT", "INSERT", "REPLACE", "UPDATE", "DELETE", "VALUES")
