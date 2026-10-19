@@ -273,6 +273,7 @@ tables. They live in the site's files under `_naru/`:
 | `_naru/mutations/`         | Exports that write, called with `mutate()`.         |
 | `_naru/routes.json`, `.js` | Opt-in server-rendered pages (see Routes).          |
 | `_naru/modules/`           | Shared code the others import; it cannot be called. |
+| `_naru/shared/`            | Shared code the site's pages may import too.        |
 
 ```sql
 -- _naru/migrations/0001_board.sql
@@ -470,10 +471,10 @@ parses, read at most 500,000 rows in all, run for tens of milliseconds in
 reads are: 600 a minute per member, or per address for visitors. A member may
 make 30 mutations a minute; visitors 20 a minute per address and 300 a minute
 for the whole site. Members' and visitors' calls count against the site's
-monthly budget; the owner's do not. The files under `_naru/` are not served:
-the site's pages and its files' addresses answer 404 for them, and visitors
-reach them only by calling them. The owner sees them in the file manager and
-the site's export.
+monthly budget; the owner's do not. The files under `_naru/` are not served,
+except `_naru/shared/`: the site's pages and its files' addresses answer 404
+for them, and visitors reach them only by calling them. The owner sees them
+in the file manager and the site's export.
 
 **SQL limits.** Naru does not check a statement's plan before it runs; a
 slow statement is stopped instead. Each `ctx.sql` statement is held to these
@@ -542,11 +543,15 @@ const [next] = (
 a mutation leaves every collection's cache as it was, and a query's answer is
 never cached.
 
-**Shared code.** Files in `_naru/modules/` cannot be called; queries,
-mutations and routes import them with static relative imports, extension
-included (`import { price } from "../modules/prices.js"`). Package names, URL
-imports, dynamic imports and top-level await are rejected. Transpile
-TypeScript before uploading; bundling is unnecessary.
+**Shared code.** Files in `_naru/modules/` and `_naru/shared/` cannot be
+called; queries, mutations and routes import them with static relative
+imports, extension included (`import { price } from "../modules/prices.js"`).
+Package names, URL imports, dynamic imports and top-level await are
+rejected. Transpile TypeScript before uploading; bundling is unnecessary.
+`modules/` is private like the rest of `_naru/`. `shared/` is served like the
+site's other files, so its pages can import the same code
+(`import { price } from "/_naru/shared/prices.js"`): keep there only what
+any visitor may read.
 
 **Migrations.** `_naru/migrations/<name>.sql`, directly in the folder (names
 of letters, digits, `_`, `.` and `-`), create and change the site's tables.
@@ -619,7 +624,7 @@ collections. naru-dev (`npx @naru-pub/dev`) writes `_naru/types/database.d.ts`, 
 as the migrations left them, for `ctx.sql` and query builders.
 
 **Releases.** Every change to `_naru/migrations/`, `queries/`, `mutations/`,
-`modules/`, `routes.json` or `routes.js` (a save in the editor, a template applied, a GitHub
+`modules/`, `shared/`, `routes.json` or `routes.js` (a save in the editor, a template applied, a GitHub
 deploy) publishes a new release of these folders, applies its migrations and
 switches calls to it at once. A release that fails leaves the previous one
 active and the edited files in place for correction. Upload imported files

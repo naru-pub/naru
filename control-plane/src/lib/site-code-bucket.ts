@@ -1,27 +1,28 @@
 // A site's code, `<login>/_naru/` (queries, mutations, routes, migrations,
 // collections.json), is the site's own files in every way but one: it is
 // kept in the private bucket, which no public domain serves, rather than the
-// site bucket, which r2.<domain> serves whole. Everything that handles a
-// site's files (the file manager, uploads, GitHub deploys, exports, account
-// deletion, suspension) names the site bucket as before; the shared S3
-// client (s3.ts) sends what it asks of `<login>/_naru/` to the private bucket
-// instead:
+// site bucket, which r2.<domain> serves whole. `_naru/shared/`, code the
+// site's pages import as well as its functions, stays with the site's files
+// (docs/sdk-v1-api.md). Everything that handles a site's files (the
+// file manager, uploads, GitHub deploys, exports, account deletion,
+// suspension) names the site bucket as before; the shared S3 client (s3.ts)
+// sends what it asks of site code to the private bucket instead:
 //
 //   - a single object's command (get, put, head, delete, multipart upload,
 //     presigned URLs too) goes to whichever bucket holds its key;
 //   - a copy reads its source from where that key is kept, so a file can be
 //     moved into or out of `_naru/`;
 //   - a batch delete is split between the two;
-//   - a listing that could include `_naru/` (a home folder, its root, the
+//   - a listing that could include site code (a home folder, its root, the
 //     whole bucket) lists both, the site bucket's pages first. A page that
 //     ends one bucket's listing has the other's first page with it, so a
 //     small folder still comes back as one sorted page. Site code the site
 //     bucket still holds is a stale copy from before the move, left out.
 //
-// So `_naru/` can never land in the site bucket, whichever code writes it.
+// So site code can never land in the site bucket, whichever code writes it.
 // A suspended site's (`_suspended/<login>/_naru/`) stays private too.
 
-const SITE_CODE = /^(?:_suspended\/)?[^/]+\/_naru(?:\/|$)/;
+const SITE_CODE = /^(?:_suspended\/)?[^/]+\/_naru(?:$|\/(?!shared\/))/;
 
 /** Whether `key` of the site bucket is site code, kept in the private one. */
 export const isSiteCode = (key: string) => SITE_CODE.test(key);
@@ -37,8 +38,10 @@ export function listsSiteCode(prefix: string): boolean | "only" {
   const slash = rest.indexOf("/");
   if (slash < 0) return true;
   const inside = rest.slice(slash + 1);
-  if (inside.startsWith("_naru/")) return "only";
-  return "_naru/".startsWith(inside);
+  if (!inside.startsWith("_naru/")) return "_naru/".startsWith(inside);
+  const folder = inside.slice("_naru/".length);
+  if (folder.startsWith("shared/")) return false;
+  return "shared/".startsWith(folder) || "only";
 }
 
 function decodedKey(path: string) {
@@ -122,7 +125,7 @@ async function listBoth(
       code
         ? !Prefix.startsWith("_naru-runtime/") &&
           listsSiteCode(Prefix) !== false
-        : !isSiteCode(Prefix),
+        : listsSiteCode(Prefix) !== "only",
     );
     return {
       ...result,

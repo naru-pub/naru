@@ -182,3 +182,17 @@ test("revisions read sources from the site bucket and keep releases in the priva
     ),
   ).toBeTruthy();
 });
+
+test("releases import shared/ like modules/, which pages may import too", async () => {
+  const db = storage();
+  db.objects.set(
+    "alice/_naru/queries/shop.js",
+    'import { price } from "../shared/prices.js"; export function list() { return price; }',
+  );
+  db.objects.set("alice/_naru/shared/prices.js", "export const price = 3;");
+  const revisions = new FunctionRevisions(db.bucket, db.bucket, "alice");
+  const revision = await revisions.publish();
+  expect(
+    (await revisions.graph(revision, "queries/shop.js"))["shared/prices.js"],
+  ).toContain("3");
+});

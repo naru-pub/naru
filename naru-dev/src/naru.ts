@@ -66,7 +66,13 @@ export interface Resources {
 
 const OWNER = "1";
 const SITE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const FOLDERS = ["modules", "migrations", "queries", "mutations"] as const;
+const FOLDERS = [
+  "modules",
+  "shared",
+  "migrations",
+  "queries",
+  "mutations",
+] as const;
 /** The routes' rules and code (1.1.0), directly in _naru/. */
 const ROUTE_FILES = ["routes.json", "routes.js"];
 // Uploads get the address they would have on Naru, so an app checks them as
@@ -1034,6 +1040,9 @@ self.addEventListener("fetch", (event) => {
     if (
       !(file === folder || file.startsWith(folder + sep)) ||
       relative(folder, file).split(sep).includes(".naru-dev") ||
+      // As on Naru: of _naru/, only shared/ is served.
+      (relative(folder, file).split(sep)[0] === "_naru" &&
+        relative(folder, file).split(sep)[1] !== "shared") ||
       file.startsWith(state + sep)
     )
       return res.writeHead(404).end();

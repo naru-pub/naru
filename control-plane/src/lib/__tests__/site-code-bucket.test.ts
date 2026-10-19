@@ -179,6 +179,10 @@ describe("which keys are site code", () => {
     ["alice/_naru/queries/board.js", true],
     ["alice/_naru/collections.json", true],
     ["alice/_naru", true],
+    ["alice/_naru/shared/prices.js", false],
+    ["alice/_naru/shared", true],
+    ["alice/_naru/modules/prices.js", true],
+    ["_suspended/alice/_naru/shared/prices.js", false],
     ["_suspended/alice/_naru/routes.js", true],
     ["alice/_naru.html", false],
     ["alice/blog/_naru/queries/board.js", false],
@@ -194,12 +198,17 @@ describe("which keys are site code", () => {
     ["alice", true],
     ["alice/", true],
     ["alice/_na", true],
-    ["alice/_naru/", "only"],
+    ["alice/_naru/", true],
+    ["alice/_naru/sh", true],
+    ["alice/_naru/shared/", false],
+    ["alice/_naru/modules/", "only"],
+    ["alice/_naru/q", "only"],
     ["alice/_naru/queries/", "only"],
     ["alice/blog/", false],
     ["alice/index", false],
     ["_suspended/alice/", true],
-    ["_suspended/alice/_naru/", "only"],
+    ["_suspended/alice/_naru/", true],
+    ["_suspended/alice/_naru/queries/", "only"],
     ["_screenshots/", true],
     ["_screenshots/alice", false],
     ["__deploy_uploads/1/", false],
@@ -263,7 +272,7 @@ test("copies into, out of and within _naru/ across the buckets", async () => {
     new CopyObjectCommand({
       Bucket: SITE,
       CopySource: `${SITE}/alice/old.js`,
-      Key: "alice/_naru/modules/old.js",
+      Key: "alice/_naru/queries/old.js",
     }),
   );
   await client.send(
@@ -280,15 +289,24 @@ test("copies into, out of and within _naru/ across the buckets", async () => {
       Key: "_suspended/alice/_naru/queries/a.js",
     }),
   );
+  // Shared code stays with the site's files.
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: SITE,
+      CopySource: `${SITE}/alice/old.js`,
+      Key: "alice/_naru/shared/old.js",
+    }),
+  );
   expect(keys(SITE)).toEqual([
     "__deploy_uploads/u/d/abc",
+    "alice/_naru/shared/old.js",
     "alice/a.js",
     "alice/old.js",
   ]);
   expect(keys(PRIVATE)).toEqual([
     "_suspended/alice/_naru/queries/a.js",
-    "alice/_naru/modules/old.js",
     "alice/_naru/queries/a.js",
+    "alice/_naru/queries/old.js",
   ]);
 });
 
@@ -402,6 +420,17 @@ describe("listing a home folder", () => {
     expect(await listAll({ Prefix: "alice/_naru/", MaxKeys: 1 })).toEqual([
       { keys: ["alice/_naru/queries/a.js"], prefixes: [] },
       { keys: ["alice/_naru/routes.json"], prefixes: [] },
+    ]);
+  });
+
+  test("lists _naru/ from both: shared/ is the site's, the rest private", async () => {
+    buckets.get(SITE)!.set("alice/_naru/shared/prices.js", "x");
+    buckets.get(SITE)!.set("alice/_naru/queries/stale.js", "old");
+    expect(await listAll({ Prefix: "alice/_naru/", Delimiter: "/" })).toEqual([
+      {
+        keys: ["alice/_naru/routes.json"],
+        prefixes: ["alice/_naru/queries/", "alice/_naru/shared/"],
+      },
     ]);
   });
 

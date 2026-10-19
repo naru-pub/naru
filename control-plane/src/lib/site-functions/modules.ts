@@ -10,14 +10,16 @@ const invalid = (message: string) =>
 
 /**
  * Canonical paths below _naru. Queries and mutations are called by name,
- * routes answer pages; shared code in modules/ is only imported.
+ * routes answer pages; shared code in modules/ (private) and shared/ (served
+ * like the site's other files, so its pages can import it too) is only
+ * imported.
  */
 export function modulePath(value: string): string {
   // _naru/routes.js (1.1.0) answers the paths _naru/routes.json lists.
   if (value === "routes.js" || value === "routes.mjs") return value;
   const parts = value.split("/");
   if (
-    !["modules", "queries", "mutations"].includes(parts[0]) ||
+    !["modules", "shared", "queries", "mutations"].includes(parts[0]) ||
     parts.length < 2 ||
     parts.some(
       (part) =>

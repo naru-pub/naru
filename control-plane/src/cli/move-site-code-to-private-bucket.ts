@@ -9,7 +9,8 @@ import { isSiteCode } from "@/lib/site-code-bucket";
 // Each site's code, `<login>/_naru/` (and a suspended site's,
 // `_suspended/<login>/_naru/`), used to live in the site bucket, where
 // r2.naru.pub served it to anyone. It now lives in the private bucket, under
-// the same keys (site-code-bucket.ts). This copies it across: an object the
+// the same keys (site-code-bucket.ts), all but `_naru/shared/`, which is
+// served on purpose and stays. This copies it across: an object the
 // private bucket lacks, or has an older copy of, so a run after the release
 // that writes the private bucket keeps what that release wrote. Safe to run
 // again.
