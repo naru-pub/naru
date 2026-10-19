@@ -89,14 +89,22 @@ async function main() {
   for (const object of source.values()) {
     const copy = copies.get(object.key);
     if (copy && copy.modified >= object.modified) continue;
-    await s3Client.send(
-      new CopyObjectCommand({
-        Bucket: to,
-        // The copy source is a URL path, so each segment is encoded.
-        CopySource: `${from}/${object.key.split("/").map(encodeURIComponent).join("/")}`,
-        Key: object.key,
-      }),
-    );
+    try {
+      await s3Client.send(
+        new CopyObjectCommand({
+          Bucket: to,
+          // The copy source is a URL path, so each segment is encoded.
+          CopySource: `${from}/${object.key.split("/").map(encodeURIComponent).join("/")}`,
+          Key: object.key,
+        }),
+      );
+    } catch (error: any) {
+      // Deleted since it was listed: a pruned restore point, a cleaned
+      // release.
+      if (error?.name !== "NoSuchKey") throw error;
+      console.log(`[move-runtime-to-private-bucket] ${object.key} is gone`);
+      continue;
+    }
     copied += 1;
   }
   console.log(
