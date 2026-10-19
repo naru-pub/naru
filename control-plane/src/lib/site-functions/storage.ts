@@ -59,14 +59,12 @@ const objectStorage = (bucket: () => string): RevisionBucket => ({
 });
 export const siteStorage = objectStorage(siteBucket);
 export const runtimeStorage = objectStorage(privateBucket);
-export async function deleteRevision(
-  site: string,
-  revision: string,
+/** Deletes every key under `prefix` in the private bucket, a page at a time. */
+async function deletePrivatePrefix(
+  prefix: string,
   heartbeat: () => Promise<void>,
+  failure: string,
 ) {
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(site) || !/^[a-f0-9]{64}$/.test(revision))
-    throw new Error("Invalid revision cleanup target");
-  const prefix = `_naru-runtime/${site}/revisions/${revision}/`;
   let cursor: string | undefined;
   do {
     const page = await runtimeStorage.list({ prefix, cursor });
@@ -79,11 +77,39 @@ export async function deleteRevision(
         }),
       );
       if (response.Errors?.length)
-        throw new Error(`Revision deletion failed: ${response.Errors[0].Code}`);
+        throw new Error(`${failure}: ${response.Errors[0].Code}`);
       await heartbeat();
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
+}
+
+export async function deleteRevision(
+  site: string,
+  revision: string,
+  heartbeat: () => Promise<void>,
+) {
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(site) || !/^[a-f0-9]{64}$/.test(revision))
+    throw new Error("Invalid revision cleanup target");
+  await deletePrivatePrefix(
+    `_naru-runtime/${site}/revisions/${revision}/`,
+    heartbeat,
+    "Revision deletion failed",
+  );
+}
+
+/**
+ * Everything Naru keeps for a site, `_naru-runtime/<site>/` (its releases,
+ * routes.json and restore points), when its account is deleted.
+ */
+export async function deleteSiteRuntime(site: string) {
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(site))
+    throw new Error("Invalid site cleanup target");
+  await deletePrivatePrefix(
+    `_naru-runtime/${site}/`,
+    async () => {},
+    "Deleting the site's runtime files failed",
+  );
 }
 
 /**

@@ -20,6 +20,7 @@ import { verify } from "@node-rs/argon2";
 import { deleteUserMedia } from "@/lib/site-data/media";
 import { deleteQuarantined } from "@/lib/site-quarantine";
 import { eraseSiteData } from "@/lib/edge/client";
+import { deleteSiteRuntime } from "@/lib/site-functions/storage";
 import { deleteUserTemplateObjects } from "@/lib/board/templates";
 import { deleteUserExports } from "@/lib/export-storage";
 import {
@@ -155,6 +156,8 @@ export async function POST(request: NextRequest) {
     await deleteQuarantined(user.loginName, user.id);
     // The site's database is a Durable Object, outside this database.
     await eraseSiteData(user.loginName);
+    // Its releases, routes and restore points, in the private bucket.
+    await deleteSiteRuntime(user.loginName);
     // Template snapshots, export zips and the site screenshot live outside
     // the home directory.
     await deleteUserTemplateObjects(user.id);

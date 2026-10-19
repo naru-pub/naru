@@ -127,8 +127,8 @@ purpose (`_templates/`, screenshots) or hides behind a random key:
 home directory exports are `__exports/<128-bit token>/<login>-export.zip`,
 reached through the presigned link in their email, and GitHub deploys stage
 under `__deploy_uploads/<user id>/<deployment id>/`. Account deletion removes a
-user's exports with their site, and the export job deletes any zip no export
-row points at.
+user's exports with their site, and their `_naru-runtime/<login>/` from the
+private bucket; the export job deletes any zip no export row points at.
 
 Pages carry `Cache-Control: public, max-age=0, stale-if-error=86400`, a
 file's redirect to `r2.naru.pub` `public, max-age=604800, stale-if-error=86400`
