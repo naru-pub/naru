@@ -25,6 +25,7 @@ export default async function AdminLayout({
     { href: "/admin/moderation", label: "사이트 관리" },
     { href: "/admin/payments", label: "결제" },
     { href: "/admin/subscriptions", label: "정기 결제" },
+    { href: "/admin/store-subscriptions", label: "앱 구독" },
     { href: "/admin/supporters", label: "유료 이용자" },
     { href: "/admin/usage", label: "사용량" },
     { href: "/admin/firewall", label: "방화벽" },
