@@ -337,6 +337,85 @@ integration("website owner authorization", () => {
     }
   });
 
+  test("a visitor's live query never hears the owner's answer to the same query", async () => {
+    const access = (await exchange(await issue({ collections: [] })))
+      .accessToken;
+    await callSiteObject("alice", "configure", {
+      ownerId: String(owner),
+      entitledUntil: null,
+      confirmedUntil: Date.now() + 60_000,
+    });
+    // Reads a view, so any change of roles runs it again.
+    await callSiteObject("alice", "putFunctions", {
+      site: "alice",
+      folder: "queries",
+      file: "whoami",
+      source: `export async function staff(ctx) {
+        const { rows } = await ctx.sql\`SELECT count(*) AS n FROM _naru_member_roles\`;
+        return { owner: ctx.owner, n: rows[0].n };
+      }`,
+    });
+    const { ticket } = (await executeLiveTicket({
+      site: "alice",
+      method: "POST",
+      path: [],
+      bearer: { token: access, origin },
+    })) as { ticket: string };
+    const base = `${process.env.EDGE_WORKER_URL!.replace(/^http/, "ws")}/api/data/v1/alice/_live`;
+    const listen = (url: string) => {
+      const socket = new WebSocket(url);
+      const heard: { owner: boolean; n: number }[] = [];
+      const opened = new Promise((done, fail) => {
+        socket.onopen = done;
+        socket.onerror = () => fail(new Error("The live connection failed."));
+      });
+      socket.onmessage = (event) =>
+        heard.push(JSON.parse(String(event.data)).result);
+      const subscribe = async () => {
+        await opened;
+        socket.send(
+          JSON.stringify({
+            type: "subscribe",
+            id: "s",
+            query: "whoami:staff",
+            args: null,
+          }),
+        );
+      };
+      return { socket, heard, subscribe };
+    };
+    const until = async (check: () => boolean) => {
+      const deadline = Date.now() + 5000;
+      while (!check() && Date.now() < deadline)
+        await new Promise((done) => setTimeout(done, 50));
+      expect(check()).toBe(true);
+    };
+    // The owner subscribes first, so a shared refresh would run as the owner.
+    const ownerPage = listen(`${base}?ticket=${encodeURIComponent(ticket)}`);
+    const visitor = listen(base);
+    try {
+      await ownerPage.subscribe();
+      await until(() => ownerPage.heard.length === 1);
+      await visitor.subscribe();
+      await until(() => visitor.heard.length === 1);
+      const before = visitor.heard[0].n;
+      expect(ownerPage.heard[0]).toEqual({ owner: true, n: before });
+      expect(visitor.heard[0]).toEqual({ owner: false, n: before });
+      await callSiteObject("alice", "setMemberRoles", {
+        member: "member-live",
+        roles: ["staff"],
+      });
+      await until(
+        () => ownerPage.heard.length === 2 && visitor.heard.length === 2,
+      );
+      expect(ownerPage.heard[1]).toEqual({ owner: true, n: before + 1 });
+      expect(visitor.heard[1]).toEqual({ owner: false, n: before + 1 });
+    } finally {
+      ownerPage.socket.close();
+      visitor.socket.close();
+    }
+  });
+
   test("deleted and recreated collections do not inherit old grants", async () => {
     const code = new URL(
       (

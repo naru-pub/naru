@@ -602,8 +602,9 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * Re-runs the live queries that read a table written since the last
-   * refresh ("*": all of them), once for each query, arguments and member
-   * that share it, and sends each subscription a changed answer.
+   * refresh ("*": all of them), once for each query, arguments and caller
+   * (a member, the owner or a visitor) that share it, and sends each
+   * subscription a changed answer.
    */
   private async refresh() {
     const written = this.refreshing ?? new Set<string>();
@@ -617,14 +618,24 @@ export class SiteData extends DurableObject<Env> {
         !tables.some((table) => written.has(table))
       )
         continue;
-      if (!this.ctx.getWebSockets(`socket:${row.socket}`).length) {
+      const socket = this.ctx.getWebSockets(`socket:${row.socket}`)[0];
+      if (!socket) {
         this.sql.exec(
           "DELETE FROM _naru_subscriptions WHERE socket = ?",
           row.socket,
         );
         continue;
       }
-      const key = JSON.stringify([row.query, row.args, row.member]);
+      const me = socket.deserializeAttachment() as LiveSocket | null;
+      if (!me) continue;
+      // Who it runs as: the owner and visitors both have no member, and must
+      // never share an answer.
+      const key = JSON.stringify([
+        row.query,
+        row.args,
+        me.member,
+        me.owner === true,
+      ]);
       groups.set(key, [...(groups.get(key) ?? []), row]);
     }
     let runs = 0;
