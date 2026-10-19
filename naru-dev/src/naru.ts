@@ -1277,10 +1277,11 @@ self.addEventListener("fetch", (event) => {
         headers: { authorization: `Bearer ${accessToken}` },
       };
       if (target) {
-        // Where the SDK keeps each (1.0.0 and 1.1.0 alike): the owner's per
-        // tab and page, in sessionStorage; a member's per site, in
-        // localStorage. Each sign-in is put there once per tab and page, so a
-        // later one wins and a sign-out in the page sticks.
+        // Where the SDK keeps each: the owner's per page, in 1.0.0's
+        // sessionStorage (one tab) and 1.1.0's localStorage (every tab); a
+        // member's per site, in localStorage. Each sign-in is put there once
+        // per tab and page, so a later one wins and a sign-out in the page
+        // sticks.
         const script = `(() => {
   const s = ${JSON.stringify({
     origin,
@@ -1295,14 +1296,14 @@ self.addEventListener("fetch", (event) => {
   })};
   try {
     if (location.origin !== s.origin) return;
-    const store = s.owner ? sessionStorage : localStorage;
+    const stores = s.owner ? [sessionStorage, localStorage] : [localStorage];
     const key = s.owner
       ? "naru:owner:" + s.origin + ":" + s.site + ":" + location.origin + location.pathname
       : "naru:member:" + s.origin + ":" + s.site;
     const mark = "naru-dev:signed-in:" + s.id + ":" + (s.owner ? location.pathname : "");
     if (sessionStorage.getItem(mark)) return;
     sessionStorage.setItem(mark, "1");
-    store.setItem(key, JSON.stringify(s.session));
+    for (const store of stores) store.setItem(key, JSON.stringify(s.session));
   } catch {}
 })();`;
         await target.addInitScript(script);

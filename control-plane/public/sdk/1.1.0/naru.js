@@ -586,7 +586,7 @@ function media(root, send) {
 }
 
 const ownerPlace = ({ origin, site }) => ({
-  store: () => sessionStorage,
+  store: () => localStorage,
   key: `naru:owner:${origin}:${site}:${location.origin}${location.pathname}`,
 });
 const memberPlace = ({ origin, site }) => ({
@@ -1020,7 +1020,8 @@ async function returned(context, place, exchange) {
 
 /**
  * The signed-in admin client for this page, or null. Finishes a sign-in when
- * Naru has just redirected back, and otherwise restores this tab's session.
+ * Naru has just redirected back, and otherwise restores the page's session,
+ * which every tab of it shares.
  * Call it before rendering: it removes the one-time code from the address bar.
  *
  * A sign-in that came back without completing (denied, stale, or a failed
@@ -1032,13 +1033,17 @@ async function adminSession(context) {
   try {
     const token = await returned(context, place, "/api/data-auth/v1/token");
     if (token) {
-      place.store().setItem(
-        place.key,
-        JSON.stringify({
-          accessToken: token.accessToken,
-          expiresAt: token.expiresAt,
-        }),
-      );
+      try {
+        place.store().setItem(
+          place.key,
+          JSON.stringify({
+            accessToken: token.accessToken,
+            expiresAt: token.expiresAt,
+          }),
+        );
+      } catch {
+        /* storage blocked: signed in on this page only */
+      }
       return admin(context, token.accessToken, token.expiresAt);
     }
   } catch (error) {
@@ -1048,7 +1053,11 @@ async function adminSession(context) {
   const session = saved(place);
   if (session && session.expiresAt > Date.now())
     return admin(context, session.accessToken, session.expiresAt);
-  place.store().removeItem(place.key);
+  try {
+    place.store().removeItem(place.key);
+  } catch {
+    /* storage blocked: nothing was kept */
+  }
   return null;
 }
 

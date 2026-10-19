@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { browser } from "./sdk-browser.mjs";
+import { browser as page } from "./sdk-browser.mjs";
 
 // Every release this suite describes runs it: 1.0.0 here, and 1.1.0 through
 // naru-data-sdk-1.1.0.test.mjs, which sets the version and imports this file.
@@ -17,6 +17,16 @@ const signIn = ({ collections, ...options }) =>
 const SESSION =
   "naru:owner:https://naru.pub:alice:https://alice.naru.pub/admin.html";
 
+// Where an owner's session is kept: 1.0.0's in the tab's sessionStorage; from
+// 1.1.0 in the site's localStorage, for every tab of the page. A sign-in in
+// progress is the tab's either way (`storage`).
+const browser = (run, options) =>
+  page(
+    (tab) =>
+      run({ ...tab, sessions: VERSION === "1.0.0" ? tab.storage : tab.local }),
+    options,
+  );
+
 const written = (id = "one", version = 1) => ({
   id,
   revision: `r1.${version.toString(36)}`,
@@ -24,8 +34,8 @@ const written = (id = "one", version = 1) => ({
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
 const revision = (version = 1) => `r1.${version.toString(36)}`;
-const saveSession = (storage, expiresAt = Date.now() + 3600000) =>
-  storage.set(
+const saveSession = (sessions, expiresAt = Date.now() + 3600000) =>
+  sessions.set(
     SESSION,
     JSON.stringify({ accessToken: "t".repeat(43), expiresAt }),
   );
@@ -68,8 +78,8 @@ test("a page on <site>.naru.pub needs no site; anywhere else must name one", asy
 });
 
 test("documents are read and written with plain requests that carry no cookies", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, respond, sessions }) => {
+    saveSession(sessions);
     const document = { ...written(), data: { title: "hello" } };
     respond(({ method, body }) =>
       Response.json(
@@ -219,8 +229,8 @@ test("pages follows nextCursor with the same query until it runs out", async () 
 });
 
 test("revisions are passed through without client-side parsing", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, respond, sessions }) => {
+    saveSession(sessions);
     respond(() => Response.json({ ...written(), revision: "future.token" }));
     const posts = (await adminSession()).collection("posts");
     assert.equal((await posts.set("one", {})).revision, "future.token");
@@ -230,8 +240,8 @@ test("revisions are passed through without client-side parsing", async () => {
 });
 
 test("errors have semantic codes and transport details stay diagnostic", async () => {
-  await browser(async ({ respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ respond, sessions }) => {
+    saveSession(sessions);
     const posts = (await adminSession()).collection("posts");
     const failure = (status, code, message = "Failed.") =>
       respond(() => Response.json({ error: { code, message } }, { status }));
@@ -459,7 +469,7 @@ test("signIn leaves for approval with a PKCE challenge and no request", async ()
 });
 
 test("adminSession exchanges the returned code once and strips it from the address", async () => {
-  await browser(async ({ calls, respond, storage, location }) => {
+  await browser(async ({ calls, respond, storage, location, sessions }) => {
     storage.set(
       `${SESSION}:pending`,
       // A sign-in an older SDK started still carries its clientId; it finishes
@@ -492,7 +502,7 @@ test("adminSession exchanges the returned code once and strips it from the addre
       redirectUri: "https://alice.naru.pub/admin.html",
     });
     assert.equal(storage.has(`${SESSION}:pending`), false);
-    const stored = JSON.parse(storage.get(SESSION));
+    const stored = JSON.parse(sessions.get(SESSION));
     assert.equal(stored.accessToken, "t".repeat(43));
     assert.ok(
       stored.expiresAt >= before + 3600000 &&
@@ -553,11 +563,11 @@ test("a sign-in that did not complete is an ordinary signed-out visit", async ()
 });
 
 test("a page's own ?code= is left alone when no sign-in was started here", async () => {
-  await browser(async ({ calls, storage, location }) => {
+  await browser(async ({ calls, storage, location, sessions }) => {
     location.href =
       "https://alice.naru.pub/admin.html?code=SUMMER&error=none&state=x";
     assert.equal(await adminSession(), null);
-    saveSession(storage);
+    saveSession(sessions);
     assert.ok(await adminSession());
     assert.equal(
       location.href,
@@ -578,14 +588,39 @@ test("a page's own ?code= is left alone when no sign-in was started here", async
   });
 });
 
-test("the admin client sends its token and forgets it when the session ends", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    assert.equal(await adminSession(), null);
-    saveSession(storage, Date.now() - 1);
-    assert.equal(await adminSession(), null);
-    assert.equal(storage.has(SESSION), false);
+test("from 1.1.0 an owner's sign-in reaches the page's other tabs, not other pages", async () => {
+  const local = new Map();
+  // The tab that signed in.
+  await browser(
+    async ({ sessions }) => {
+      saveSession(sessions);
+      assert.ok(await adminSession());
+    },
+    { local },
+  );
+  // A link to the same page opened in a new tab.
+  await browser(
+    async ({ calls }) => {
+      assert.equal(Boolean(await adminSession()), VERSION !== "1.0.0");
+      assert.equal(calls.length, 0);
+    },
+    { local, href: "https://alice.naru.pub/admin.html#boards" },
+  );
+  // Another callback page is approved for its own collections.
+  await browser(async () => assert.equal(await adminSession(), null), {
+    local,
+    href: "https://alice.naru.pub/editor.html",
+  });
+});
 
-    saveSession(storage);
+test("the admin client sends its token and forgets it when the session ends", async () => {
+  await browser(async ({ calls, respond, sessions }) => {
+    assert.equal(await adminSession(), null);
+    saveSession(sessions, Date.now() - 1);
+    assert.equal(await adminSession(), null);
+    assert.equal(sessions.has(SESSION), false);
+
+    saveSession(sessions);
     const admin = await adminSession();
     respond(() => Response.json(written()));
     await admin.collection("posts").set("one", { title: "x" });
@@ -601,12 +636,12 @@ test("the admin client sends its token and forgets it when the session ends", as
     await assert.rejects(admin.collection("posts").get("one"), {
       code: "AUTH_REQUIRED",
     });
-    assert.equal(storage.has(SESSION), false);
+    assert.equal(sessions.has(SESSION), false);
     assert.equal(await adminSession(), null);
   });
-  await browser(async ({ calls, storage }) => {
+  await browser(async ({ calls, sessions }) => {
     const realNow = Date.now;
-    saveSession(storage, realNow() + 1000);
+    saveSession(sessions, realNow() + 1000);
     const admin = await adminSession();
     Date.now = () => realNow() + 2000;
     try {
@@ -617,13 +652,13 @@ test("the admin client sends its token and forgets it when the session ends", as
       Date.now = realNow;
     }
     assert.equal(calls.length, 0);
-    assert.equal(storage.has(SESSION), false);
+    assert.equal(sessions.has(SESSION), false);
   });
 });
 
 test("a renewed token keeps working past the expiry the session was stored with", async () => {
-  await browser(async ({ respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ respond, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     // The instant is for older SDK files; this one adds the duration to its
     // own clock, so a server clock that disagrees does not matter.
@@ -637,19 +672,19 @@ test("a renewed token keeps working past the expiry the session was stored with"
       }),
     );
     await admin.collection("posts").set("one", { title: "x" });
-    const renewed = JSON.parse(storage.get(SESSION)).expiresAt;
+    const renewed = JSON.parse(sessions.get(SESSION)).expiresAt;
     assert.ok(renewed >= before + 7200000 && renewed <= Date.now() + 7200000);
     // The renewal survives a reload, and the client itself now runs that long.
     const restored = await adminSession();
     assert.ok(restored);
     respond(() => Response.json(written()));
     await restored.collection("posts").set("two", { title: "y" });
-    assert.equal(JSON.parse(storage.get(SESSION)).expiresAt, renewed);
+    assert.equal(JSON.parse(sessions.get(SESSION)).expiresAt, renewed);
 
     // A session stored by a newer sign-in is left alone, and an expiry that
     // does not move the deadline forward is ignored.
-    saveSession(storage, renewed);
-    storage.set(
+    saveSession(sessions, renewed);
+    sessions.set(
       SESSION,
       JSON.stringify({ accessToken: "n".repeat(43), expiresAt: renewed }),
     );
@@ -659,7 +694,7 @@ test("a renewed token keeps working past the expiry the session was stored with"
       }),
     );
     await admin.collection("posts").set("three", { title: "z" });
-    assert.deepEqual(JSON.parse(storage.get(SESSION)), {
+    assert.deepEqual(JSON.parse(sessions.get(SESSION)), {
       accessToken: "n".repeat(43),
       expiresAt: renewed,
     });
@@ -667,11 +702,11 @@ test("a renewed token keeps working past the expiry the session was stored with"
 });
 
 test("signing out forgets the session before revoking, and never erases a newer one", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, respond, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     respond(() => {
-      assert.equal(storage.has(SESSION), false);
+      assert.equal(sessions.has(SESSION), false);
       throw new TypeError("offline");
     });
     await assert.rejects(admin.signOut(), { code: "UNAVAILABLE" });
@@ -691,9 +726,9 @@ test("signing out forgets the session before revoking, and never erases a newer 
     assert.equal(calls.length, 1);
     calls.length = 0;
 
-    saveSession(storage);
+    saveSession(sessions);
     const older = await adminSession();
-    storage.set(
+    sessions.set(
       SESSION,
       JSON.stringify({
         accessToken: "n".repeat(43),
@@ -702,13 +737,13 @@ test("signing out forgets the session before revoking, and never erases a newer 
     );
     respond(() => Response.json({}));
     await older.signOut();
-    assert.equal(JSON.parse(storage.get(SESSION)).accessToken, "n".repeat(43));
+    assert.equal(JSON.parse(sessions.get(SESSION)).accessToken, "n".repeat(43));
   });
 });
 
 test("batch sends semantic writes and resolves with each write's metadata", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, respond, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     respond(() =>
       Response.json({
@@ -746,8 +781,8 @@ test("batch sends semantic writes and resolves with each write's metadata", asyn
 });
 
 test("batch conditions are checked like single writes, before sending", async () => {
-  await browser(async ({ calls, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     const posts = admin.collection("posts");
     for (const condition of [
@@ -828,7 +863,7 @@ async function upload(file, images) {
   try {
     await browser(async (page) => {
       calls = page.calls;
-      saveSession(page.storage);
+      saveSession(page.sessions);
       const admin = await adminSession();
       page.respond(({ url, method }) => {
         if (url.host === "upload.example")
@@ -951,8 +986,8 @@ test("photos fall back to JPEG, and are left alone when shrinking would not help
 });
 
 test("a HEIC photo this browser cannot convert fails before anything is sent", async () => {
-  await browser(async ({ calls, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     // No HEIC decoder here, as in Chrome and Firefox.
     const old = globalThis.createImageBitmap;
@@ -1023,7 +1058,7 @@ async function uploadWithProgress(respond, options = {}) {
   try {
     await browser(async (page) => {
       calls = page.calls;
-      saveSession(page.storage);
+      saveSession(page.sessions);
       const admin = await adminSession();
       page.respond(({ method }) =>
         method === "POST"
@@ -1142,8 +1177,8 @@ test("a throwing progress handler does not fail the upload", async () => {
   } finally {
     globalThis.reportError = old;
   }
-  await browser(async ({ calls, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     await assert.rejects(
       admin.media.upload(new Blob(["x"]), { onProgress: "yes" }),
@@ -1154,8 +1189,8 @@ test("a throwing progress handler does not fail the upload", async () => {
 });
 
 test("a failed transfer is reported and not finalized", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    saveSession(storage);
+  await browser(async ({ calls, respond, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     respond(({ url }) =>
       url.host === "upload.example"
@@ -1176,8 +1211,8 @@ test("a failed transfer is reported and not finalized", async () => {
 });
 
 test("non-JSON writes fail locally without losing data or masquerading as network errors", async () => {
-  await browser(async ({ calls, storage, respond }) => {
-    saveSession(storage);
+  await browser(async ({ calls, respond, sessions }) => {
+    saveSession(sessions);
     const admin = await adminSession();
     const posts = admin.collection("json-input");
     const cycle = {};
@@ -1232,11 +1267,11 @@ test("non-JSON writes fail locally without losing data or masquerading as networ
 });
 
 test("visitor handles remain anonymous after signing in and expose no legacy namespace", async () => {
-  await browser(async ({ storage, calls, respond }) => {
+  await browser(async ({ calls, respond, sessions }) => {
     const naru = createNaru();
     assert.equal("public" in naru, false);
     const notes = naru.collection("anonymous");
-    saveSession(storage);
+    saveSession(sessions);
     const admin = await naru.auth.session();
     assert.equal("transaction" in admin, false);
     respond(() => emptyPage());

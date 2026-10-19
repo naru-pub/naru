@@ -321,8 +321,9 @@ export interface NaruClient extends SiteCode, LiveQueries {
   collection<T = Json>(name: string): PublicCollection<T>;
   auth: {
     /**
-     * The admin client for this page, or null. A sign-in that was denied,
-     * went stale or could not be exchanged also resolves null.
+     * The admin client for this page, or null. A sign-in stays on this page
+     * in every tab until it ends. A sign-in that was denied, went stale or
+     * could not be exchanged also resolves null.
      */
     session(): Promise<Admin | null>;
     /** Redirects to Naru for approval. */

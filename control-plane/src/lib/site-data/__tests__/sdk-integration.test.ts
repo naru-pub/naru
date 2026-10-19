@@ -795,7 +795,10 @@ integration("SDK and data API contract", () => {
         code: "INVALID_REQUEST",
       });
       // The same owner session, through 1.1.0: the owner's page keeps it, so
-      // the SDK is asked from that page.
+      // the SDK is asked from that page. 1.1.0 keeps it in localStorage, for
+      // every tab, where 1.0.0's sign-in (in this tab) is not, so it is put
+      // there as a 1.1.0 sign-in would have.
+      local.set(sessionKey, storage.get(sessionKey)!);
       const memberPage = location.href;
       location.href = `${origin}/admin`;
       const owner = (await createNaru110({ site: "alice" }).auth.session())!;

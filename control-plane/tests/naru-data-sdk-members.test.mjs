@@ -443,8 +443,8 @@ test("ctx.fail's failures keep their message and details without retrying", asyn
 });
 
 test("while Naru's server is away, an owner's read and write fail as UNAVAILABLE; the session stays", async () => {
-  await browser(async ({ calls, respond, storage }) => {
-    storage.set(
+  await browser(async ({ calls, respond, local }) => {
+    local.set(
       OWNER,
       JSON.stringify({
         accessToken: "o".repeat(43),
@@ -473,7 +473,7 @@ test("while Naru's server is away, an owner's read and write fail as UNAVAILABLE
       code: "UNAVAILABLE",
     });
     assert.equal(calls.length, 2);
-    assert.ok(storage.has(OWNER));
+    assert.ok(local.has(OWNER));
   });
 });
 

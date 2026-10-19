@@ -82,8 +82,9 @@ use visitor access, even while signed in.
 
 ## Sign in to edit
 
-An admin client
-is restored for the current browser tab or obtained by redirecting for approval:
+An admin client is restored for the page or obtained by redirecting for
+approval. From 1.1.0 a sign-in reaches every tab of that page, so a link
+opened in a new tab stays signed in; 1.0.0 keeps it in the tab that signed in:
 
 ```js
 let admin = await naru.auth.session();
