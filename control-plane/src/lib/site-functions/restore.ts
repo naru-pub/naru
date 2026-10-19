@@ -13,10 +13,10 @@ import {
   restorePointsPrefix,
   type RestorePoint,
 } from "./restore-points";
-import { openRestorePoint, revisionStorage } from "./storage";
+import { openRestorePoint, runtimeStorage, siteStorage } from "./storage";
 
-// The owner's restore points (restore-points.ts): listed from the bucket the
-// release code writes through, and restored by the site's object
+// The owner's restore points (restore-points.ts): listed from the private
+// bucket the release code writes through, and restored by the site's object
 // (`restoreFrom`, edge/src/site.ts).
 
 /** How long a restore may take: a whole site is read, kept and written. */
@@ -46,7 +46,7 @@ export async function listRestorePoints(
   const points: (RestorePoint & { size: number })[] = [];
   let cursor: string | undefined;
   do {
-    const page = await revisionStorage.list({ prefix, cursor });
+    const page = await runtimeStorage.list({ prefix, cursor });
     for (const object of page.objects) {
       const point = restorePointOf(object.key.slice(prefix.length));
       if (point) points.push({ ...point, size: object.size });
@@ -71,13 +71,15 @@ export async function restoreRestorePoint(ownerId: string, name: unknown) {
     saved: string;
   }>(site, "restoreFrom", { name }, undefined, RESTORE_TIMEOUT_MS);
   if (restored.revision)
-    await revisionStorage.put(
+    await runtimeStorage.put(
       routesKey(site),
       JSON.stringify({
         revision: restored.revision,
-        ...(await new FunctionRevisions(revisionStorage, site).routes(
-          restored.revision,
-        )),
+        ...(await new FunctionRevisions(
+          siteStorage,
+          runtimeStorage,
+          site,
+        ).routes(restored.revision)),
       }),
     );
   return { saved: restorePointOf(restored.saved), revision: restored.revision };
@@ -154,7 +156,7 @@ export async function resetSiteDatabase(
     // Code the release refuses: the site serves files, and routes nothing,
     // until _naru is put right.
     releaseError = error.message;
-    await revisionStorage.put(
+    await runtimeStorage.put(
       routesKey(site),
       JSON.stringify({ revision: null, ...NO_ROUTES }),
     );

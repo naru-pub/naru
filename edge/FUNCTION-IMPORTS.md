@@ -54,7 +54,9 @@ activation if the inline RPC fails. After activation the control plane writes
 the active release's routes to `_naru-runtime/<site>/routes.json`, which the
 edge Worker reads to serve them (`edge/src/pages.ts`).
 
-R2 holds a complete copy of each release under
+The private bucket (`naru-private`, which no public domain serves; every
+`_naru-runtime/` key is there, the sources in the site bucket) holds a
+complete copy of each release under
 `_naru-runtime/<site>/revisions/<revision>/`: the files of `queries/`,
 `mutations/`, `routes/`, `modules/` and `migrations/`, and `manifest.json`
 (version 2), which maps each file's path to the SHA-256 of its source and

@@ -41,8 +41,13 @@
     "PageviewLog": { "type": "durable-object", "storage": "sqlite" },
     "Standby": { "type": "durable-object", "storage": "sqlite" },
   },
-  // The site bucket: each site's files under <login>/.
-  "r2_buckets": [{ "binding": "SITE_FILES", "bucket_name": "naru-pub" }],
+  // The site bucket: each site's files under <login>/. The private one, which
+  // no public domain serves: Naru's own files beside the sites,
+  // _naru-runtime/<site>/, of which this reads routes.json.
+  "r2_buckets": [
+    { "binding": "SITE_FILES", "bucket_name": "naru-pub" },
+    { "binding": "PRIVATE_FILES", "bucket_name": "naru-private" },
+  ],
   // The custom domain table the control plane sends (src/domains.ts).
   "kv_namespaces": [
     { "binding": "DOMAINS", "id": "11c38b8a51984f708edd9ebf619e3ab3" },
@@ -111,7 +116,10 @@
         "PageviewLog": { "type": "durable-object", "storage": "sqlite" },
         "Standby": { "type": "durable-object", "storage": "sqlite" },
       },
-      "r2_buckets": [{ "binding": "SITE_FILES", "bucket_name": "naru-pub" }],
+      "r2_buckets": [
+        { "binding": "SITE_FILES", "bucket_name": "naru-pub" },
+        { "binding": "PRIVATE_FILES", "bucket_name": "naru-private" },
+      ],
       "kv_namespaces": [
         { "binding": "DOMAINS", "id": "11c38b8a51984f708edd9ebf619e3ab3" },
       ],

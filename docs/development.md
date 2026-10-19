@@ -33,6 +33,7 @@ DATABASE_URL=postgresql://username:password@localhost:5432/naru
 
 # S3/R2 설정
 S3_BUCKET_NAME=your-bucket-name
+S3_PRIVATE_BUCKET_NAME=your-private-bucket-name
 SITE_DATA_MEDIA_BUCKET=naru-media
 SITE_DATA_MEDIA_ORIGIN=https://media.naru.pub
 AWS_ACCESS_KEY_ID=your-access-key

@@ -7,8 +7,12 @@ import {
 import { s3Client } from "@/lib/s3";
 import type { RevisionBucket } from "./revisions";
 import type { RestorePointBucket } from "./restore-points";
-const bucket = () => process.env.S3_BUCKET_NAME!;
-export const revisionStorage: RevisionBucket = {
+// The site bucket, where `<site>/_naru/` is, and the private one, which no
+// public domain serves, where Naru keeps `_naru-runtime/<site>/`: releases,
+// routes.json and restore points.
+const siteBucket = () => process.env.S3_BUCKET_NAME!;
+const privateBucket = () => process.env.S3_PRIVATE_BUCKET_NAME!;
+const objectStorage = (bucket: () => string): RevisionBucket => ({
   async list({ prefix, cursor }) {
     const page = await s3Client.send(
       new ListObjectsV2Command({
@@ -52,7 +56,9 @@ export const revisionStorage: RevisionBucket = {
       }),
     );
   },
-};
+});
+export const siteStorage = objectStorage(siteBucket);
+export const runtimeStorage = objectStorage(privateBucket);
 export async function deleteRevision(
   site: string,
   revision: string,
@@ -63,12 +69,12 @@ export async function deleteRevision(
   const prefix = `_naru-runtime/${site}/revisions/${revision}/`;
   let cursor: string | undefined;
   do {
-    const page = await revisionStorage.list({ prefix, cursor });
+    const page = await runtimeStorage.list({ prefix, cursor });
     await heartbeat();
     if (page.objects.length) {
       const response = await s3Client.send(
         new DeleteObjectsCommand({
-          Bucket: bucket(),
+          Bucket: privateBucket(),
           Delete: { Objects: page.objects.map(({ key }) => ({ Key: key })) },
         }),
       );
@@ -81,14 +87,14 @@ export async function deleteRevision(
 }
 
 /**
- * The site bucket as restore-point pruning needs it (restore-points.ts):
+ * The private bucket as restore-point pruning needs it (restore-points.ts):
  * listed with upload times, deleted a batch at a time.
  */
 export const restorePointStorage: RestorePointBucket = {
   async list({ prefix, cursor }) {
     const page = await s3Client.send(
       new ListObjectsV2Command({
-        Bucket: bucket(),
+        Bucket: privateBucket(),
         Prefix: prefix,
         ContinuationToken: cursor,
       }),
@@ -106,7 +112,7 @@ export const restorePointStorage: RestorePointBucket = {
     if (!keys.length) return;
     const response = await s3Client.send(
       new DeleteObjectsCommand({
-        Bucket: bucket(),
+        Bucket: privateBucket(),
         Delete: { Objects: keys.map((key) => ({ Key: key })) },
       }),
     );
@@ -126,7 +132,7 @@ export async function openRestorePoint(
 ): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null> {
   try {
     const object = await s3Client.send(
-      new GetObjectCommand({ Bucket: bucket(), Key: key }),
+      new GetObjectCommand({ Bucket: privateBucket(), Key: key }),
     );
     return {
       body: object.Body!.transformToWebStream() as ReadableStream<Uint8Array>,
@@ -145,7 +151,7 @@ export async function runtimeSites(): Promise<string[]> {
   do {
     const page = await s3Client.send(
       new ListObjectsV2Command({
-        Bucket: bucket(),
+        Bucket: privateBucket(),
         Prefix: "_naru-runtime/",
         Delimiter: "/",
         ContinuationToken: cursor,

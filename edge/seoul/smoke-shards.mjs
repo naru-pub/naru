@@ -111,6 +111,7 @@ async function startShard(i) {
       R2_ACCESS_KEY_ID: "unused",
       R2_SECRET_ACCESS_KEY: "unused",
       R2_BUCKET: "unused",
+      R2_PRIVATE_BUCKET: "unused",
     },
   );
   await answering(shardOrigin(i));

@@ -52,6 +52,7 @@ const bindings = [
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY",
   "R2_BUCKET",
+  "R2_PRIVATE_BUCKET",
 ].map((name) => fromEnvironment(name));
 // The step budget Naru's workerd holds each SQLite statement to
 // (seoul/workerd/), so the object can say how long a stopped one ran.

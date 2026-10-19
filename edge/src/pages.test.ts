@@ -31,6 +31,7 @@ const env = (
       };
     },
   } as unknown as R2Bucket,
+  PRIVATE_FILES: { get: async () => null } as unknown as R2Bucket,
 });
 
 /** An object's metadata, its ETag made from its contents. */

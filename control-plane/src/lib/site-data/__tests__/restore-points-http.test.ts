@@ -21,7 +21,8 @@ jest.mock("@/lib/database", () => ({
 }));
 jest.mock("@/lib/edge/client", () => ({ callSiteObject: jest.fn() }));
 jest.mock("@/lib/site-functions/storage", () => ({
-  revisionStorage: { list: jest.fn(), get: jest.fn(), put: jest.fn() },
+  siteStorage: { list: jest.fn(), get: jest.fn(), put: jest.fn() },
+  runtimeStorage: { list: jest.fn(), get: jest.fn(), put: jest.fn() },
   openRestorePoint: jest.fn(),
 }));
 const { restorePointsOwnerRequest } =
@@ -35,7 +36,7 @@ const call = jest.mocked(
 );
 const storageModule =
   require("@/lib/site-functions/storage") as typeof import("@/lib/site-functions/storage");
-const storage = storageModule.revisionStorage as unknown as Record<
+const storage = storageModule.runtimeStorage as unknown as Record<
   "list" | "get" | "put",
   jest.Mock<(...args: unknown[]) => Promise<unknown>>
 >;

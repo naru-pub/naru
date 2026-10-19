@@ -1528,6 +1528,7 @@ export class SiteData extends DurableObject<Env> {
   private revisions(site: string) {
     return (this.functionRevisions ??= new FunctionRevisions(
       this.env.SITE_FILES,
+      this.env.PRIVATE_FILES,
       site,
     ));
   }
@@ -2615,7 +2616,7 @@ export class SiteData extends DurableObject<Env> {
       return this.run(() => {
         throw new DataError(400, "Invalid restore point.");
       });
-    await this.env.SITE_FILES.put(
+    await this.env.PRIVATE_FILES.put(
       `${restorePointsPrefix(input.site)}${input.name}`,
       typeof input.base64 === "string"
         ? new Uint8Array(Buffer.from(input.base64, "base64"))
@@ -2969,7 +2970,7 @@ export class SiteData extends DurableObject<Env> {
     const prefix = restorePointsPrefix(input.site);
     const outcome = await this.settle(() =>
       this.exclusive(async () => {
-        const object = await this.env.SITE_FILES.get(`${prefix}${name}`);
+        const object = await this.env.PRIVATE_FILES.get(`${prefix}${name}`);
         if (!object)
           throw new DataError(
             404,
@@ -3048,7 +3049,7 @@ export class SiteData extends DurableObject<Env> {
         let oldest = Infinity;
         let cursor: string | undefined;
         do {
-          const page = await this.env.SITE_FILES.list({
+          const page = await this.env.PRIVATE_FILES.list({
             prefix: `${prefix}manual-`,
             cursor,
           });
@@ -3298,7 +3299,7 @@ export class SiteData extends DurableObject<Env> {
    */
   private async writeRestorePoint(
     key: string,
-    bucket: DumpBucket = this.env.SITE_FILES,
+    bucket: DumpBucket = this.env.PRIVATE_FILES,
   ) {
     const dump = this.openDump();
     try {
@@ -3320,7 +3321,7 @@ export class SiteData extends DurableObject<Env> {
    * only waits for that job.
    */
   private async pruneRestorePoints(site: string) {
-    const bucket = this.env.SITE_FILES;
+    const bucket = this.env.PRIVATE_FILES;
     try {
       const removed = await pruneRestorePoints(
         {

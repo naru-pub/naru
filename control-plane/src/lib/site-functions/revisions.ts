@@ -92,8 +92,13 @@ export function forgetCachedRevisions() {
 
 /** Immutable module snapshots. Mutable working files are never fetched during execution. */
 export class FunctionRevisions {
+  /**
+   * `sources` is the site bucket, where `<site>/_naru/` is; `runtime` the
+   * private one its releases are kept in, which no public domain serves.
+   */
   constructor(
-    private bucket: RevisionBucket,
+    private sources: RevisionBucket,
+    private runtime: RevisionBucket,
     private site: string,
   ) {}
   private key(revision: string, path: string) {
@@ -103,7 +108,7 @@ export class FunctionRevisions {
     const files: Array<{ path: string; key: string; etag: string }> = [];
     // The routes' rules and their code (1.1.0), beside the folders. The
     // folder of route files they replaced is refused, not left unserved.
-    const old = await this.bucket.list({
+    const old = await this.sources.list({
       prefix: `${this.site}/_naru/routes/`,
     });
     if (old.objects.length)
@@ -111,7 +116,7 @@ export class FunctionRevisions {
         400,
         "_naru/routes/ is no longer read: list the paths in _naru/routes.json, and answer them in _naru/routes.js.",
       );
-    const root = await this.bucket.list({
+    const root = await this.sources.list({
       prefix: `${this.site}/_naru/routes.`,
     });
     for (const object of root.objects) {
@@ -125,7 +130,7 @@ export class FunctionRevisions {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
       do {
-        const page = await this.bucket.list({ prefix, cursor });
+        const page = await this.sources.list({ prefix, cursor });
         for (const object of page.objects)
           if (/\.m?js$/.test(object.key)) {
             if (object.size > MAX_MODULE_BYTES)
@@ -148,7 +153,7 @@ export class FunctionRevisions {
     const prefix = `${this.site}/_naru/migrations/`;
     let cursor: string | undefined;
     do {
-      const page = await this.bucket.list({ prefix, cursor });
+      const page = await this.sources.list({ prefix, cursor });
       for (const object of page.objects)
         if (object.key.endsWith(".sql")) {
           if (object.size > MAX_MODULE_BYTES)
@@ -178,7 +183,7 @@ export class FunctionRevisions {
     for (let offset = 0; offset < files.length; offset += 16) {
       const batch = await Promise.all(
         files.slice(offset, offset + 16).map(async (file) => {
-          const object = await this.bucket.get(file.key);
+          const object = await this.sources.get(file.key);
           if (!object || object.etag !== file.etag) throw conflict();
           return { file, source: await object.text() };
         }),
@@ -243,12 +248,12 @@ export class FunctionRevisions {
     for (let offset = 0; offset < entries.length; offset += 16)
       await Promise.all(
         entries.slice(offset, offset + 16).map(([filename, source]) =>
-          this.bucket.put(this.key(revision, filename), source, {
+          this.runtime.put(this.key(revision, filename), source, {
             onlyIf: { etagDoesNotMatch: "*" },
           }),
         ),
       );
-    await this.bucket.put(this.key(revision, "manifest.json"), body, {
+    await this.runtime.put(this.key(revision, "manifest.json"), body, {
       onlyIf: { etagDoesNotMatch: "*" },
     });
     shared.manifests.set(revision, manifest);
@@ -261,7 +266,7 @@ export class FunctionRevisions {
       throw new DataError(503, "Invalid function revision.");
     const cached = shared.manifests.get(revision);
     if (cached) return cached;
-    const object = await this.bucket.get(this.key(revision, "manifest.json"));
+    const object = await this.runtime.get(this.key(revision, "manifest.json"));
     if (!object) throw new DataError(503, "Function revision is unavailable.");
     if (object.size > 256 * 1024)
       throw new DataError(503, "Invalid function manifest.");
@@ -307,7 +312,7 @@ export class FunctionRevisions {
       shared.sources.set(digest, cached);
       return cached;
     }
-    const object = await this.bucket.get(this.key(revision, filename));
+    const object = await this.runtime.get(this.key(revision, filename));
     if (!object) throw new DataError(503, "Function module is unavailable.");
     if (object.size > MAX_MODULE_BYTES)
       throw new DataError(503, "Invalid function module.");

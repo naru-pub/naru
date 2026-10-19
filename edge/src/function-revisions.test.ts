@@ -36,7 +36,7 @@ test("revisions pin every dependency and warm immutable sources need no reads", 
     'import { price } from "../modules/prices.js"; export function buy() { return price; }',
   );
   db.objects.set("alice/_naru/modules/prices.js", "export const price = 1;");
-  const revisions = new FunctionRevisions(db.bucket, "alice");
+  const revisions = new FunctionRevisions(db.bucket, db.bucket, "alice");
   const first = await revisions.publish();
   expect(
     (await revisions.graph(first, "mutations/shop.js"))["modules/prices.js"],
@@ -52,7 +52,7 @@ test("revisions pin every dependency and warm immutable sources need no reads", 
   ).toContain("1");
   expect(
     (
-      await new FunctionRevisions(db.bucket, "alice").graph(
+      await new FunctionRevisions(db.bucket, db.bucket, "alice").graph(
         second,
         "mutations/shop.js",
       )
@@ -66,7 +66,7 @@ test("failed publication cannot replace an existing immutable snapshot", async (
     "alice/_naru/mutations/shop.js",
     "export function buy() { return 1; }",
   );
-  const revisions = new FunctionRevisions(db.bucket, "alice");
+  const revisions = new FunctionRevisions(db.bucket, db.bucket, "alice");
   const first = await revisions.publish();
   db.objects.set(
     "alice/_naru/mutations/shop.js",
@@ -84,7 +84,11 @@ test("cold loads verify source integrity", async () => {
     "alice/_naru/mutations/shop.js",
     "export function buy() { return 1; }",
   );
-  const first = await new FunctionRevisions(db.bucket, "alice").publish();
+  const first = await new FunctionRevisions(
+    db.bucket,
+    db.bucket,
+    "alice",
+  ).publish();
   const blob = [...db.objects.keys()].find(
     (key) =>
       key.endsWith("/mutations/shop.js") && key.startsWith("_naru-runtime/"),
@@ -92,7 +96,10 @@ test("cold loads verify source integrity", async () => {
   db.objects.set(blob, "export function buy() { return 2; }");
   forgetCachedRevisions();
   await expect(
-    new FunctionRevisions(db.bucket, "alice").graph(first, "mutations/shop.js"),
+    new FunctionRevisions(db.bucket, db.bucket, "alice").graph(
+      first,
+      "mutations/shop.js",
+    ),
   ).rejects.toThrow("integrity");
 });
 
@@ -102,7 +109,7 @@ test("each publication owns all sources, so deleting an old revision preserves r
     'import { price } from "../modules/prices.js"; export function buy() { return price; }';
   db.objects.set("alice/_naru/mutations/shop.js", entry);
   db.objects.set("alice/_naru/modules/prices.js", "export const price = 1;");
-  const revisions = new FunctionRevisions(db.bucket, "alice");
+  const revisions = new FunctionRevisions(db.bucket, db.bucket, "alice");
   const first = await revisions.publish();
   // An unchanged publish is still a separate, self-contained release.
   const second = await revisions.publish();
@@ -120,7 +127,7 @@ test("each publication owns all sources, so deleting an old revision preserves r
       db.objects.delete(key);
   // A fresh loader proves success is independent of any warm source cache.
   forgetCachedRevisions();
-  const cold = new FunctionRevisions(db.bucket, "alice");
+  const cold = new FunctionRevisions(db.bucket, db.bucket, "alice");
   expect(
     (await cold.graph(second, "mutations/shop.js"))["modules/prices.js"],
   ).toContain("1");
@@ -142,9 +149,36 @@ test("a failed source upload never writes a completed revision manifest", async 
     throw new Error("Storage unavailable");
   }) as R2Bucket["put"];
   await expect(
-    new FunctionRevisions(db.bucket, "alice").publish(),
+    new FunctionRevisions(db.bucket, db.bucket, "alice").publish(),
   ).rejects.toThrow("Storage unavailable");
   expect(
     [...db.objects.keys()].some((key) => key.endsWith("/manifest.json")),
   ).toBe(false);
+});
+
+test("revisions read sources from the site bucket and keep releases in the private one", async () => {
+  const site = storage(),
+    runtime = storage();
+  site.objects.set(
+    "alice/_naru/mutations/shop.js",
+    "export function buy() { return 1; }",
+  );
+  const revision = await new FunctionRevisions(
+    site.bucket,
+    runtime.bucket,
+    "alice",
+  ).publish();
+  expect(
+    [...site.objects.keys()].filter((key) => key.startsWith("_naru-runtime/")),
+  ).toEqual([]);
+  expect([...runtime.objects.keys()]).toContain(
+    `_naru-runtime/alice/revisions/${revision}/manifest.json`,
+  );
+  forgetCachedRevisions();
+  expect(
+    await new FunctionRevisions(site.bucket, runtime.bucket, "alice").graph(
+      revision,
+      "mutations/shop.js",
+    ),
+  ).toBeTruthy();
 });

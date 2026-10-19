@@ -9,19 +9,32 @@ import type { FunctionRelease } from "@/lib/site-functions/releases";
 import type { TaskContext } from "absurd-sdk";
 const mockObjects = new Map<string, string>();
 const mockDeletes: string[] = [];
-jest.mock("@/lib/site-functions/storage", () => ({
-  revisionStorage: {
-    list: async ({ prefix }: { prefix: string }) => ({
-      objects: [...mockObjects]
-        .filter(([key]) => key.startsWith(prefix))
-        .map(([key, source]) => ({
-          key,
-          etag: source,
-          size: Buffer.byteLength(source),
-        })),
-      truncated: false,
-    }),
+// One store for both buckets, each refusing the other's keys: sources are
+// read from the site bucket, and what is kept under _naru-runtime/ from the
+// private one only.
+const mockBucket = (runtime: boolean): RevisionBucket => {
+  const own = (key: string) => {
+    if (key.startsWith("_naru-runtime/") !== runtime)
+      throw new Error(
+        `${key} is not in the ${runtime ? "private" : "site"} bucket`,
+      );
+  };
+  return {
+    list: async ({ prefix }: { prefix: string }) => {
+      own(prefix);
+      return {
+        objects: [...mockObjects]
+          .filter(([key]) => key.startsWith(prefix))
+          .map(([key, source]) => ({
+            key,
+            etag: source,
+            size: Buffer.byteLength(source),
+          })),
+        truncated: false,
+      };
+    },
     get: async (key: string) => {
+      own(key);
       const source = mockObjects.get(key);
       return source === undefined
         ? null
@@ -32,9 +45,14 @@ jest.mock("@/lib/site-functions/storage", () => ({
           };
     },
     put: async (key: string, source: string) => {
+      own(key);
       mockObjects.set(key, source);
     },
-  } satisfies RevisionBucket,
+  };
+};
+jest.mock("@/lib/site-functions/storage", () => ({
+  siteStorage: mockBucket(false),
+  runtimeStorage: mockBucket(true),
   deleteRevision: async (site: string, revision: string) => {
     mockDeletes.push(revision);
     for (const key of mockObjects.keys())

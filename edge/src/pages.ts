@@ -38,6 +38,12 @@ import { ROUTES_OFF, STATEMENT_PAUSED } from "./types";
 export interface PagesEnv {
   /** The site bucket: each site's files under `<login>/`. */
   SITE_FILES: R2Bucket;
+  /**
+   * The private bucket, which no public domain serves: Naru's own files
+   * beside the sites, `_naru-runtime/<site>/` (routes.json, releases,
+   * restore points).
+   */
+  PRIVATE_FILES: R2Bucket;
   PLATFORM_DOMAIN: string;
   R2_PUBLIC_DOMAIN: string;
   /** How long a data center keeps a lookup; unset or 0 keeps none. */
@@ -302,7 +308,7 @@ async function siteRoutes(env: PagesEnv, login: string) {
   if (known && known.until > Date.now()) return known.routes;
   let routes = NO_ROUTES;
   try {
-    const object = await env.SITE_FILES.get(routesKey(login));
+    const object = await env.PRIVATE_FILES.get(routesKey(login));
     const stored = object ? ((await object.json()) as Partial<RouteRules>) : {};
     const strings = (list: unknown) =>
       Array.isArray(list)

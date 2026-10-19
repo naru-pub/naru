@@ -6,6 +6,7 @@ import "@testing-library/jest-dom";
 
 // Mock environment variables
 process.env.S3_BUCKET_NAME = "test-bucket";
+process.env.S3_PRIVATE_BUCKET_NAME = "test-private-bucket";
 process.env.CLOUDFLARE_ZONE_ID = "test-zone";
 process.env.CLOUDFLARE_USER_API_TOKEN = "test-token";
 process.env.NEXT_PUBLIC_DOMAIN = "test.com";

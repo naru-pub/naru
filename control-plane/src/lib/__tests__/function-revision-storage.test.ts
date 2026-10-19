@@ -18,6 +18,7 @@ test("deletes only one revision, handles pagination and keeps the task lease ali
     calls.push(command);
     if (command.constructor.name === "ListObjectsV2Command") {
       expect(command.input.Prefix).toBe(prefix);
+      expect(command.input.Bucket).toBe("test-private-bucket");
       return command.input.ContinuationToken
         ? { Contents: [{ Key: prefix + "manifest.json", ETag: "m", Size: 1 }] }
         : {

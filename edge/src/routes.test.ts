@@ -154,12 +154,12 @@ describe("serving", () => {
       "<html><head><title>앱</title></head><body>app</body></html>",
     "carol/about.html": "about",
   };
-  const env: PagesEnv = {
-    PLATFORM_DOMAIN: "naru.pub",
-    R2_PUBLIC_DOMAIN: "r2.naru.pub",
-    SITE_FILES: {
+  // The private bucket holds _naru-runtime/, the site bucket the rest.
+  const bucket = (runtime: boolean) =>
+    ({
       async get(key: string) {
-        if (!(key in files)) return null;
+        if (!(key in files) || key.startsWith("_naru-runtime/") !== runtime)
+          return null;
         return {
           size: files[key].length,
           httpMetadata: { contentType: "text/html" },
@@ -167,7 +167,12 @@ describe("serving", () => {
           json: async () => JSON.parse(files[key]),
         };
       },
-    } as unknown as R2Bucket,
+    }) as unknown as R2Bucket;
+  const env: PagesEnv = {
+    PLATFORM_DOMAIN: "naru.pub",
+    R2_PUBLIC_DOMAIN: "r2.naru.pub",
+    SITE_FILES: bucket(false),
+    PRIVATE_FILES: bucket(true),
   };
   const ctx = { waitUntil: () => {} };
   const asked: Parameters<RenderRoute>[0][] = [];

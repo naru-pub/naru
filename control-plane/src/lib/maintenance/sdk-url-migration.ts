@@ -25,8 +25,9 @@ import {
 // - template snapshots, `_templates/<id>/v<n>/...`, which applying a template
 //   copies into a site (board/templates.ts).
 //
-// Not the other prefixes: `_naru-runtime/` holds releases named by the hash
-// of their sources, built from `<login>/_naru/`; `__deploy_uploads/` holds a
+// Not the other prefixes, nor the private bucket's `_naru-runtime/`, which
+// holds releases named by the hash of their sources, built from
+// `<login>/_naru/`: `__deploy_uploads/` holds a
 // deploy's staged files, checked against its manifest's digests when it
 // publishes; `_screenshots/` and the media bucket hold images.
 //

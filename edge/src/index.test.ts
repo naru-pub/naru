@@ -30,6 +30,7 @@ const env = {
       };
     },
   },
+  PRIVATE_FILES: { get: async () => null },
   DOMAINS: {
     async get() {
       return {
@@ -80,28 +81,31 @@ describe("the platform's hosts on Cloudflare", () => {
   });
 });
 
+/** A bucket holding just `objects`. */
+const holding = (objects: Record<string, string>) => ({
+  async get(key: string) {
+    if (!(key in objects)) return null;
+    const body = objects[key];
+    return {
+      size: body.length,
+      httpEtag: '"1"',
+      httpMetadata: { contentType: "text/html" },
+      body: new Response(body).body,
+      json: async () => JSON.parse(body),
+    };
+  },
+});
+
 describe("a route's page rendered on the mini, through the Standby object", () => {
   const routed = (forward: (request: Request) => Promise<Response>) => ({
     ...(env as object),
     SDK_ORIGIN_SECRET: "secret",
-    SITE_FILES: {
-      async get(key: string) {
-        const body =
-          key === "_naru-runtime/bob/routes.json"
-            ? JSON.stringify({ include: ["/posts/*"] })
-            : key === "bob/index.html"
-              ? "<p>bob's app</p>"
-              : null;
-        if (body === null) return null;
-        return {
-          size: body.length,
-          httpEtag: '"1"',
-          httpMetadata: { contentType: "text/html" },
-          body: new Response(body).body,
-          json: async () => JSON.parse(body),
-        };
-      },
-    },
+    SITE_FILES: holding({ "bob/index.html": "<p>bob's app</p>" }),
+    PRIVATE_FILES: holding({
+      "_naru-runtime/bob/routes.json": JSON.stringify({
+        include: ["/posts/*"],
+      }),
+    }),
     STANDBY: {
       idFromName: () => ({}),
       get: () => ({ forward }),

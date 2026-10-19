@@ -118,7 +118,11 @@ and a bucket failure a `502`. It needs no database: a site's files are its
 `<login>/` prefix, and deleting an account deletes them.
 
 `r2.naru.pub` serves the whole site bucket, not only sites: any object is
-public to whoever knows its key. What else lives there either is public on
+public to whoever knows its key. So what Naru keeps for itself beside the
+sites, `_naru-runtime/<site>/` (function releases, the routes the Worker
+reads, restore points), is in another bucket, `naru-private`, which no
+public domain serves (`PRIVATE_FILES`, `S3_PRIVATE_BUCKET_NAME`,
+`R2_PRIVATE_BUCKET`). What else lives in the site bucket either is public on
 purpose (`_templates/`, screenshots) or hides behind a random key:
 home directory exports are `__exports/<128-bit token>/<login>-export.zip`,
 reached through the presigned link in their email, and GitHub deploys stage
@@ -185,8 +189,9 @@ done
 The Worker's custom domain `edge.naru.pub` takes precedence over every
 route.
 
-The Worker reads the bucket through its `SITE_FILES` binding, so it deploys
-with a token that can read R2 (Workers Builds' does).
+The Worker reads the bucket through its `SITE_FILES` binding, and the
+private one's `_naru-runtime/<site>/routes.json` through `PRIVATE_FILES`, so
+it deploys with a token that can read R2 (Workers Builds' does).
 
 Pageviews go to the Worker's pageview log, one Durable Object, and the
 `edge-pageview-drain` job moves them into the pageview tables every minute

@@ -37,7 +37,7 @@ with these in the environment (and, sharded, those under "Shards"):
 |---|---|
 | `EDGE_WORKER_SECRET` | What the control plane sends for site operations (its `SITE_DATA_SECRET`) and signs live tickets with |
 | `PASSTHROUGH_ORIGIN` | The control plane on this host, for requests with a token, such as `http://127.0.0.1:40000` |
-| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | The site bucket, where sites' code and its releases are: a key that can read and write it |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PRIVATE_BUCKET` | The site bucket, where sites' code is, and the private one (`naru-private`), where its releases, routes and restore points are: a key that can read and write both |
 | `SITE_BUCKET_URL` | Never on the mini: naru-dev's local site bucket (`src/http-bucket.ts`), read instead of R2 when set; naru-dev's own config (`../naru-dev/scripts/build-worker.mjs`) binds it |
 | `WORKERD_SQLITE_STATEMENT_TIMEOUT_MS` | `3000`: Naru's workerd stops any one step of a site's statement after this long (`workerd/`), and the object says so with it; unset or 0, never |
 

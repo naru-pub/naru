@@ -5,7 +5,7 @@ import { MAINTENANCE_QUEUE } from "@/lib/maintenance/jobs";
 import { uuidv7 } from "@/lib/uuid";
 import { DataError } from "@/lib/site-data/validation";
 import { FunctionRevisions, routesKey } from "./revisions";
-import { revisionStorage, deleteRevision } from "./storage";
+import { siteStorage, runtimeStorage, deleteRevision } from "./storage";
 import type { TaskContext } from "absurd-sdk";
 
 export const FUNCTION_RELEASE_TASK = "function-release-v1";
@@ -47,7 +47,8 @@ export async function publishSiteFunctions(
       .orderBy("id", "desc")
       .executeTakeFirst();
     const revision = await new FunctionRevisions(
-      revisionStorage,
+      siteStorage,
+      runtimeStorage,
       site,
     ).publish();
     const generation = uuidv7(
@@ -102,7 +103,11 @@ export async function activateRelease(release: FunctionRelease) {
     .executeTakeFirst();
   // A cleaned release or deleted account must not be reactivated by a late task.
   if (!owner) return null;
-  const revisions = new FunctionRevisions(revisionStorage, release.site);
+  const revisions = new FunctionRevisions(
+    siteStorage,
+    runtimeStorage,
+    release.site,
+  );
   const active = await callSiteObject<{ revision: string }>(
     release.site,
     "activateFunctions",
@@ -116,7 +121,7 @@ export async function activateRelease(release: FunctionRelease) {
   );
   // The paths the active release routes, for the edge Worker (routes.ts),
   // whichever release that is.
-  await revisionStorage.put(
+  await runtimeStorage.put(
     routesKey(release.site),
     JSON.stringify({
       revision: active.revision,

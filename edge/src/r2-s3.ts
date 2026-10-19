@@ -1,6 +1,7 @@
 import { AwsClient } from "aws4fetch";
 
-// The site bucket through R2's S3 API, where there is no R2 binding: the
+// The site bucket, or the private one, through R2's S3 API, where there is
+// no R2 binding: the
 // Worker under workerd on the mini (seoul.ts). Only what SiteData uses: list
 // (with upload times), get (as text or a stream), put (optionally only where
 // nothing is yet, optionally with a content type), delete (a key or several)
@@ -11,6 +12,8 @@ export interface S3Env {
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   R2_BUCKET: string;
+  /** The private bucket, `_naru-runtime/` (PagesEnv's PRIVATE_FILES). */
+  R2_PRIVATE_BUCKET: string;
 }
 
 const ENTITIES: Record<string, string> = {
@@ -40,7 +43,7 @@ const contentType = (options?: {
     ? { "Content-Type": options.httpMetadata.contentType }
     : {};
 
-export function s3Bucket(env: S3Env) {
+export function s3Bucket(env: S3Env, bucket = env.R2_BUCKET) {
   const client = new AwsClient({
     accessKeyId: env.R2_ACCESS_KEY_ID,
     secretAccessKey: env.R2_SECRET_ACCESS_KEY,
@@ -50,7 +53,7 @@ export function s3Bucket(env: S3Env) {
     // its sources should fail soon instead.
     retries: 2,
   });
-  const base = `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.R2_BUCKET}`;
+  const base = `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${bucket}`;
   const url = (key: string) =>
     `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
   const failed = (what: string, response: Response) =>

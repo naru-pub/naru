@@ -6,6 +6,7 @@ const env = {
   R2_ACCESS_KEY_ID: "key",
   R2_SECRET_ACCESS_KEY: "secret",
   R2_BUCKET: "naru-pub",
+  R2_PRIVATE_BUCKET: "naru-private",
 };
 const BASE = "https://account.r2.cloudflarestorage.com/naru-pub";
 

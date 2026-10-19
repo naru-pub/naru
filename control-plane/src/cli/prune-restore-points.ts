@@ -5,7 +5,7 @@ import {
 } from "@/lib/site-functions/storage";
 
 // Deletes restore points past their week (RESTORE_POINT_DAYS) for every site
-// with a `_naru-runtime/<site>/` folder in the site bucket: only keys under
+// with a `_naru-runtime/<site>/` folder in the private bucket: only keys under
 // its `restore-points/`. A site's object also prunes its own each time it
 // writes one; this catches the sites that stopped writing them. The nightly
 // B2 backup keeps what is deleted here for about 30 days more.

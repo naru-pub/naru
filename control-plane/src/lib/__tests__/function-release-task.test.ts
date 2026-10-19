@@ -6,7 +6,8 @@ const mockDeletedRows: string[] = [];
 jest.mock("@/lib/edge/client", () => ({ callSiteObject: jest.fn() }));
 jest.mock("@/lib/site-functions/storage", () => ({
   deleteRevision: jest.fn(),
-  revisionStorage: { put: async () => {} },
+  siteStorage: {},
+  runtimeStorage: { put: async () => {} },
 }));
 // A release without migrations or routes.
 jest.mock("@/lib/site-functions/revisions", () => ({

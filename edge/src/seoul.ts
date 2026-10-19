@@ -12,7 +12,8 @@ import { parseShards, SERVED, shardOf, siteOfPath } from "./shards";
 // operations on 127.0.0.1 (index.ts). Hosted pages, their pageviews
 // and custom domains stay on Cloudflare (index.ts), so this answers nothing
 // else. There is no R2 binding here: the site bucket, where site functions'
-// sources are, is reached through R2's S3 API (r2-s3.ts), or, given
+// sources are, and the private one, where their releases and restore points
+// are, are reached through R2's S3 API (r2-s3.ts), or, given
 // SITE_BUCKET_URL, a local folder naru-dev serves (http-bucket.ts).
 
 type SeoulEnv = Env &
@@ -32,11 +33,15 @@ type SeoulEnv = Env &
     NARU_SDK_SHARD_OVERRIDES?: string;
   };
 
+// naru-dev's one local bucket holds both: their keys never meet.
 const withBucket = (env: SeoulEnv): SeoulEnv => ({
   ...env,
   SITE_FILES: (env.SITE_BUCKET_URL
     ? httpBucket(env as HttpBucketEnv)
     : s3Bucket(env)) as unknown as R2Bucket,
+  PRIVATE_FILES: (env.SITE_BUCKET_URL
+    ? httpBucket(env as HttpBucketEnv)
+    : s3Bucket(env, env.R2_PRIVATE_BUCKET)) as unknown as R2Bucket,
 });
 
 export class SiteData extends EdgeSiteData {
