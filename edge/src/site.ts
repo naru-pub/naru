@@ -1,9 +1,5 @@
 import { callerKey } from "./addresses";
-import {
-  FunctionRevisions,
-  isSiteCode,
-  migrationPath,
-} from "./function-revisions";
+import { FunctionRevisions, migrationPath } from "./function-revisions";
 import { DurableObject } from "cloudflare:workers";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -1528,27 +1524,11 @@ export class SiteData extends DurableObject<Env> {
       );
   }
 
-  /**
-   * `<site>/_naru/` where it is kept: `shared/` with the site's files, the
-   * rest in the private bucket (site-code-bucket.ts).
-   */
-  private siteCode() {
-    const bucket = (key: string) =>
-      isSiteCode(key) ? this.env.PRIVATE_FILES : this.env.SITE_FILES;
-    return {
-      list: (options: { prefix: string; cursor?: string }) =>
-        bucket(options.prefix).list(options),
-      get: (key: string) => bucket(key).get(key),
-      put: (key: string, value: string, options?: R2PutOptions) =>
-        bucket(key).put(key, value, options),
-      delete: (key: string) => bucket(key).delete(key),
-    };
-  }
-
   private functionRevisions: FunctionRevisions | undefined;
   private revisions(site: string) {
+    // Both in the private bucket: `<site>/_naru/` is kept there too.
     return (this.functionRevisions ??= new FunctionRevisions(
-      this.siteCode(),
+      this.env.PRIVATE_FILES,
       this.env.PRIVATE_FILES,
       site,
     ));
@@ -2654,19 +2634,13 @@ export class SiteData extends DurableObject<Env> {
     site: string;
     file: string;
     source: string | null;
-    folder:
-      | "modules"
-      | "shared"
-      | "migrations"
-      | "queries"
-      | "mutations"
-      | "root";
+    folder: "modules" | "migrations" | "queries" | "mutations" | "root";
     /** False stores the file only, for a batch published by its last file. */
     publish?: boolean;
   }) {
     const folder = input.folder;
     if (
-      !["modules", "shared", "migrations", "queries", "mutations", "root"].includes(
+      !["modules", "migrations", "queries", "mutations", "root"].includes(
         folder,
       ) ||
       (folder === "root" && !["routes.js", "routes.json"].includes(input.file))
@@ -2680,8 +2654,8 @@ export class SiteData extends DurableObject<Env> {
         : folder === "migrations"
           ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
           : `${input.site}/_naru/${folder}/${functionModule(input.file)}.js`;
-    if (input.source === null) await this.siteCode().delete(key);
-    else await this.siteCode().put(key, input.source);
+    if (input.source === null) await this.env.PRIVATE_FILES.delete(key);
+    else await this.env.PRIVATE_FILES.put(key, input.source);
     if (input.publish === false) return { ok: true, value: null };
     const published = await this.publishFunctions({ site: input.site });
     if (!published.ok) return published;

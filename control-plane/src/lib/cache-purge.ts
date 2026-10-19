@@ -49,7 +49,7 @@ export async function purgeSiteObjects(
   const sites = new Set(
     keys.flatMap((key) => {
       const match =
-        /^([^/]+)\/_naru\/(?:modules|shared|migrations|queries|mutations|routes)\//.exec(
+        /^([^/]+)\/_naru\/(?:modules|migrations|queries|mutations|routes)\//.exec(
           key,
         );
       return match ? [match[1]] : [];

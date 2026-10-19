@@ -118,8 +118,7 @@ and a bucket failure a `502`. It needs no database: a site's files are its
 `<login>/` prefix, and deleting an account deletes them.
 
 `r2.naru.pub` serves the whole site bucket, not only sites: any object is
-public to whoever knows its key. So each site's code, `<login>/_naru/` (all
-but `_naru/shared/`, which its pages import too), and
+public to whoever knows its key. So each site's code, `<login>/_naru/`, and
 what Naru keeps for itself beside the sites, `_naru-runtime/<site>/`
 (function releases, the routes the Worker reads, restore points), are in
 another bucket, `naru-private`, which no public domain serves

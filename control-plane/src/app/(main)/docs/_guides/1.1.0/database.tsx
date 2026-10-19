@@ -1154,16 +1154,9 @@ await naru.mutate("guestbook:write", { name: "손님", text: "안녕하세요", 
                 import하거나 다시 내보낼 수 있습니다. 경로에 <code>.js</code>를
                 포함하세요. 번들 생성은 필요하지 않습니다. 패키지 이름과 URL,
                 동적 import, 최상위 await는 지원하지 않습니다. 공통 모듈은
-                페이지에서 직접 부를 수 없습니다.
-              </p>
-              <p>
-                <code>_naru/</code>의 파일은 방문자에게 공개되지 않습니다.
-                사이트 페이지도 함께 import해야 하는 코드만{" "}
-                <code>_naru/shared/</code>에 두세요. 이 폴더는 사이트의 다른
-                파일처럼 공개되어 페이지에서 <code>/_naru/shared/text.js</code>
-                로 불러올 수 있으니, 누구에게 보여도 괜찮은 코드만 넣어야
-                합니다. <code>_naru/modules/</code>와 마찬가지로 쿼리와
-                뮤테이션, 라우트에서 import할 수 있습니다.
+                페이지에서 직접 부를 수 없습니다. <code>_naru/</code>의 파일은
+                방문자에게 공개되지 않으니, 페이지도 같은 코드를 써야 한다면 그
+                사본을 사이트의 다른 폴더에 함께 올리세요.
               </p>
               <Code>{`// _naru/modules/text.js
 export const clean = (value, max) => String(value ?? "").trim().slice(0, max);

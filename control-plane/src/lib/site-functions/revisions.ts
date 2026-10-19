@@ -128,7 +128,7 @@ export class FunctionRevisions {
         throw new DataError(400, `_naru/${name} exceeds 256 KiB.`);
       files.push({ path: name, key: object.key, etag: object.etag });
     }
-    for (const folder of ["modules", "shared", "queries", "mutations"]) {
+    for (const folder of ["modules", "queries", "mutations"]) {
       const prefix = `${this.site}/_naru/${folder}/`;
       let cursor: string | undefined;
       do {
