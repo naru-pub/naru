@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { AuthorizeInput } from "@/lib/app-api/tokens";
 import { Button } from "@/components/ui/button";
 import { APP_PANEL } from "../panel";
-import SwitchAccount from "../SwitchAccount";
+import SwitchAccount from "@/components/SwitchAccount";
 
 export default function AppConsent({
   input,

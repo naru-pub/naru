@@ -3,7 +3,7 @@ import { validateRequest } from "@/lib/auth";
 import StoreDeletionNotice from "../../../../(main)/account/StoreDeletionNotice";
 import DeleteAccountButton from "../../../../(main)/account/DeleteAccountButton";
 import AppSignIn from "../../authorize/AppSignIn";
-import SwitchAccount from "../../SwitchAccount";
+import SwitchAccount from "@/components/SwitchAccount";
 import { APP_PANEL } from "../../panel";
 
 export const metadata: Metadata = { title: "계정 삭제 · 나루" };

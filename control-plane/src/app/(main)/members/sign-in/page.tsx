@@ -5,6 +5,7 @@ import {
   previewMemberSignIn,
 } from "@/lib/site-data/member-auth";
 import { DataError } from "@/lib/site-data/validation";
+import SwitchAccount from "@/components/SwitchAccount";
 import MemberConsent from "./MemberConsent";
 
 // Where a site's naru.members.signIn() sends its visitor: any Naru account can
@@ -71,6 +72,7 @@ export default async function MemberSignInPage({
         <Link href="/supporter" className="underline">
           나루 후원하기
         </Link>
+        <SwitchAccount account={user.loginName} />
       </div>
     );
   if (preview.needsVerifiedEmail)
@@ -85,6 +87,7 @@ export default async function MemberSignInPage({
         <Link href="/account" className="underline">
           이메일 인증하러 가기
         </Link>
+        <SwitchAccount account={user.loginName} />
       </div>
     );
   return (

@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { MemberSignInInput } from "@/lib/site-data/member-auth";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import SwitchAccount from "@/components/SwitchAccount";
 
 export default function MemberConsent({
   input,
@@ -84,6 +85,7 @@ export default function MemberConsent({
           취소
         </Button>
       </div>
+      <SwitchAccount account={account} />
     </div>
   );
 }
