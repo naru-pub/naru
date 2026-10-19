@@ -93,8 +93,10 @@ export function forgetCachedRevisions() {
 /** Immutable module snapshots. Mutable working files are never fetched during execution. */
 export class FunctionRevisions {
   /**
-   * `sources` is the site bucket, where `<site>/_naru/` is; `runtime` the
-   * private one its releases are kept in, which no public domain serves.
+   * `sources` is where `<site>/_naru/` is, `runtime` where its releases are
+   * kept: both the private bucket, which no public domain serves (the
+   * control plane names the site bucket, and its S3 client routes `_naru/`
+   * there, site-code-bucket.ts).
    */
   constructor(
     private sources: RevisionBucket,

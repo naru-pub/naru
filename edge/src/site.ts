@@ -1526,8 +1526,9 @@ export class SiteData extends DurableObject<Env> {
 
   private functionRevisions: FunctionRevisions | undefined;
   private revisions(site: string) {
+    // Both in the private bucket: `<site>/_naru/` is kept there too.
     return (this.functionRevisions ??= new FunctionRevisions(
-      this.env.SITE_FILES,
+      this.env.PRIVATE_FILES,
       this.env.PRIVATE_FILES,
       site,
     ));
@@ -2653,8 +2654,8 @@ export class SiteData extends DurableObject<Env> {
         : folder === "migrations"
           ? `${input.site}/_naru/${migrationPath(`migrations/${input.file}.sql`)}`
           : `${input.site}/_naru/${folder}/${functionModule(input.file)}.js`;
-    if (input.source === null) await this.env.SITE_FILES.delete(key);
-    else await this.env.SITE_FILES.put(key, input.source);
+    if (input.source === null) await this.env.PRIVATE_FILES.delete(key);
+    else await this.env.PRIVATE_FILES.put(key, input.source);
     if (input.publish === false) return { ok: true, value: null };
     const published = await this.publishFunctions({ site: input.site });
     if (!published.ok) return published;

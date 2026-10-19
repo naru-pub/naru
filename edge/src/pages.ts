@@ -39,9 +39,9 @@ export interface PagesEnv {
   /** The site bucket: each site's files under `<login>/`. */
   SITE_FILES: R2Bucket;
   /**
-   * The private bucket, which no public domain serves: Naru's own files
-   * beside the sites, `_naru-runtime/<site>/` (routes.json, releases,
-   * restore points).
+   * The private bucket, which no public domain serves: each site's code,
+   * `<login>/_naru/`, and Naru's own files beside the sites,
+   * `_naru-runtime/<site>/` (routes.json, releases, restore points).
    */
   PRIVATE_FILES: R2Bucket;
   PLATFORM_DOMAIN: string;

@@ -118,17 +118,20 @@ and a bucket failure a `502`. It needs no database: a site's files are its
 `<login>/` prefix, and deleting an account deletes them.
 
 `r2.naru.pub` serves the whole site bucket, not only sites: any object is
-public to whoever knows its key. So what Naru keeps for itself beside the
-sites, `_naru-runtime/<site>/` (function releases, the routes the Worker
-reads, restore points), is in another bucket, `naru-private`, which no
-public domain serves (`PRIVATE_FILES`, `S3_PRIVATE_BUCKET_NAME`,
-`R2_PRIVATE_BUCKET`). What else lives in the site bucket either is public on
-purpose (`_templates/`, screenshots) or hides behind a random key:
+public to whoever knows its key. So each site's code, `<login>/_naru/`, and
+what Naru keeps for itself beside the sites, `_naru-runtime/<site>/`
+(function releases, the routes the Worker reads, restore points), are in
+another bucket, `naru-private`, which no public domain serves
+(`PRIVATE_FILES`, `S3_PRIVATE_BUCKET_NAME`, `R2_PRIVATE_BUCKET`). The control
+plane names the site bucket for `_naru/` like any of a site's files; its S3
+client sends those keys to the private one (`site-code-bucket.ts`). What
+else lives in the site bucket either is public on purpose (`_templates/`,
+screenshots) or hides behind a random key:
 home directory exports are `__exports/<128-bit token>/<login>-export.zip`,
 reached through the presigned link in their email, and GitHub deploys stage
 under `__deploy_uploads/<user id>/<deployment id>/`. Account deletion removes a
-user's exports with their site, and their `_naru-runtime/<login>/` from the
-private bucket; the export job deletes any zip no export row points at.
+user's exports with their site (its `_naru/` included), and their
+`_naru-runtime/<login>/` from the private bucket; the export job deletes any zip no export row points at.
 
 Pages carry `Cache-Control: public, max-age=0, stale-if-error=86400`, a
 file's redirect to `r2.naru.pub` `public, max-age=604800, stale-if-error=86400`

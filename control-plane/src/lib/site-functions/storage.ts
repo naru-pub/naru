@@ -7,9 +7,10 @@ import {
 import { s3Client } from "@/lib/s3";
 import type { RevisionBucket } from "./revisions";
 import type { RestorePointBucket } from "./restore-points";
-// The site bucket, where `<site>/_naru/` is, and the private one, which no
-// public domain serves, where Naru keeps `_naru-runtime/<site>/`: releases,
-// routes.json and restore points.
+// The site bucket, and the private one, which no public domain serves, where
+// Naru keeps `_naru-runtime/<site>/` (releases, routes.json and restore
+// points) and each site's code, `<site>/_naru/`: named as the site bucket's,
+// the S3 client keeps it there (site-code-bucket.ts).
 const siteBucket = () => process.env.S3_BUCKET_NAME!;
 const privateBucket = () => process.env.S3_PRIVATE_BUCKET_NAME!;
 const objectStorage = (bucket: () => string): RevisionBucket => ({

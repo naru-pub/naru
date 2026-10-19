@@ -11,9 +11,9 @@ import { parseShards, SERVED, shardOf, siteOfPath } from "./shards";
 // website.ts), which only this serves, and the control plane's site
 // operations on 127.0.0.1 (index.ts). Hosted pages, their pageviews
 // and custom domains stay on Cloudflare (index.ts), so this answers nothing
-// else. There is no R2 binding here: the site bucket, where site functions'
-// sources are, and the private one, where their releases and restore points
-// are, are reached through R2's S3 API (r2-s3.ts), or, given
+// else. There is no R2 binding here: the site bucket and the private one,
+// where site functions' sources (`<site>/_naru/`), their releases and
+// restore points are, are reached through R2's S3 API (r2-s3.ts), or, given
 // SITE_BUCKET_URL, a local folder naru-dev serves (http-bucket.ts).
 
 type SeoulEnv = Env &

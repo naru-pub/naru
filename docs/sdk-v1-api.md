@@ -470,8 +470,10 @@ parses, read at most 500,000 rows in all, run for tens of milliseconds in
 reads are: 600 a minute per member, or per address for visitors. A member may
 make 30 mutations a minute; visitors 20 a minute per address and 300 a minute
 for the whole site. Members' and visitors' calls count against the site's
-monthly budget; the owner's do not. The files under `_naru/` are served like
-any other file of the site, so do not put secrets in them.
+monthly budget; the owner's do not. The files under `_naru/` are not served:
+the site's pages and its files' addresses answer 404 for them, and visitors
+reach them only by calling them. The owner sees them in the file manager and
+the site's export.
 
 **SQL limits.** Naru does not check a statement's plan before it runs; a
 slow statement is stopped instead. Each `ctx.sql` statement is held to these
