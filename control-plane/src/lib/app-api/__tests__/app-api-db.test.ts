@@ -31,6 +31,15 @@ jest.mock("@/lib/federation", () => ({
   },
 }));
 
+// The operators' Discord.
+const alerts: string[] = [];
+jest.mock("@/lib/operator-alerts", () => ({
+  operatorAlertsConfigured: () => true,
+  sendOperatorAlert: async (alert: { title: string }) => {
+    alerts.push(alert.title);
+  },
+}));
+
 // Required after the mocks: this transform does not hoist jest.mock above imports.
 const { sql } = require("kysely") as typeof import("kysely");
 const { db } = require("@/lib/database") as typeof import("@/lib/database");
@@ -424,6 +433,8 @@ integration("the Naru app's API", () => {
         { site: "app-site", reason: "sexual" },
       ),
     ).toEqual({ hidden: false });
+    // The signed-in report alerts the operators; the signed-out one does not.
+    expect(alerts).toEqual(["앱 신고: app-site (앱 게시판)"]);
     const kept = await db
       .selectFrom("app_reports")
       .select(["reporter_user_id", "reporter_ip", "reason"])
@@ -445,6 +456,18 @@ integration("the Naru app's API", () => {
     await expect(
       moderation.report({ user, ip: null }, { site: "app-site", reason: "other" }),
     ).rejects.toMatchObject({ status: 429 });
+
+    // Signed out, the report that brings a site to five reporters in a day
+    // alerts, once; a reporter already counted does not.
+    alerts.length = 0;
+    for (const ip of ["203.0.113.8", "203.0.113.9", "203.0.113.7"])
+      await moderation.report({ user: null, ip }, { site: "app-site", reason: "spam" });
+    expect(alerts).toEqual([]);
+    await moderation.report({ user: null, ip: "203.0.113.10" }, { site: "app-site", reason: "spam" });
+    expect(alerts).toEqual(["앱 신고 누적 (24시간 동안 5명): app-site (앱 게시판)"]);
+    for (const ip of ["203.0.113.10", "203.0.113.11"])
+      await moderation.report({ user: null, ip }, { site: "app-site", reason: "spam" });
+    expect(alerts).toHaveLength(1);
   });
 
   test("suspends a site: kept, its files moved, without data or notifications", async () => {

@@ -15,7 +15,8 @@ import type { AppUser } from "./tokens";
 //
 // A report is kept in app_reports. A signed-in report also goes to the
 // operators' Discord and hides the site for the reporter; a signed-out one
-// is only kept, limited by address (the gateway's X-Real-IP).
+// is limited by address (the gateway's X-Real-IP) and goes to Discord only
+// as the report that brings a site to REPORTERS_TO_ALERT reporters in a day.
 
 export const REPORT_REASONS = ["spam", "abuse", "sexual", "illegal", "other"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
@@ -28,6 +29,8 @@ export const REPORT_REASON_LABELS: Record<ReportReason, string> = {
 };
 /** Reports one reporter (an account, or an address signed out) may make an hour. */
 export const REPORTS_PER_HOUR = 20;
+/** Distinct reporters (accounts or addresses) in a day that alert the operators, signed in or not. */
+export const REPORTERS_TO_ALERT = 5;
 
 async function siteNamed(name: string) {
   const site = await db
@@ -129,14 +132,13 @@ export async function report(
     throw new DataError(400, "신고를 받지 못했습니다. 로그인한 뒤 다시 시도해 주세요.");
   const site = await siteNamed(name);
 
+  const byReporter = reporter.user
+    ? sql<boolean>`reporter_user_id = ${reporter.user.id}`
+    : sql<boolean>`reporter_ip = ${reporter.ip}`;
   const recent = await db
     .selectFrom("app_reports")
     .select(sql<number>`count(*)::int`.as("count"))
-    .where(
-      reporter.user
-        ? sql<boolean>`reporter_user_id = ${reporter.user.id}`
-        : sql<boolean>`reporter_ip = ${reporter.ip}`,
-    )
+    .where(byReporter)
     .where("created_at", ">", new Date(Date.now() - 60 * 60 * 1000))
     .executeTakeFirstOrThrow();
   if (recent.count >= REPORTS_PER_HOUR)
@@ -165,15 +167,29 @@ export async function report(
       reason: reason as ReportReason,
     })
     .execute();
-  if (!reporter.user) return { hidden: false };
-  await hideSite(reporter.user, site.login_name);
+  if (reporter.user) await hideSite(reporter.user, site.login_name);
 
-  if (operatorAlertsConfigured())
+  // The day's reporters of the site, and whether this one is new among them:
+  // the report that brings them to REPORTERS_TO_ALERT is the one that alerts.
+  const day = await db
+    .selectFrom("app_reports")
+    .select([
+      sql<number>`count(distinct coalesce(reporter_user_id::text, reporter_ip))::int`.as(
+        "reporters",
+      ),
+      sql<number>`(count(*) filter (where ${byReporter}))::int`.as("mine"),
+    ])
+    .where("site_user_id", "=", site.id)
+    .where("created_at", ">", new Date(Date.now() - 24 * 60 * 60 * 1000))
+    .executeTakeFirstOrThrow();
+  const piledUp = day.reporters === REPORTERS_TO_ALERT && day.mine === 1;
+
+  if ((reporter.user || piledUp) && operatorAlertsConfigured())
     await sendOperatorAlert({
-      title: `앱 신고: ${site.login_name}${site.site_title ? ` (${site.site_title})` : ""}`,
+      title: `${piledUp ? `앱 신고 누적 (24시간 동안 ${day.reporters}명)` : "앱 신고"}: ${site.login_name}${site.site_title ? ` (${site.site_title})` : ""}`,
       lines: [
         `사유: ${REPORT_REASON_LABELS[reason as ReportReason]}`,
-        `신고자: ${reporter.user.loginName}`,
+        `신고자: ${reporter.user ? reporter.user.loginName : "로그인하지 않은 방문자"}`,
         ...(notification
           ? [
               `알림: ${notification.title}`,
@@ -184,5 +200,5 @@ export async function report(
         `조치: ${adminModerationUrl(site.login_name)}`,
       ],
     }).catch((error) => console.error("[app-report] Discord:", error));
-  return { hidden: true };
+  return { hidden: reporter.user !== null };
 }
