@@ -13,9 +13,9 @@ import type { AppUser } from "./tokens";
 // sends the account is dropped (delivery.ts), until the account shows it
 // again. Hiding a starred site unstars it. Signed out, the apps hide sites on the device alone.
 //
-// A report goes to the operators' Discord and is kept in app_reports. A
-// signed-in report hides the site for the reporter too; a signed-out one is
-// limited by address (the gateway's X-Real-IP).
+// A report is kept in app_reports. A signed-in report also goes to the
+// operators' Discord and hides the site for the reporter; a signed-out one
+// is only kept, limited by address (the gateway's X-Real-IP).
 
 export const REPORT_REASONS = ["spam", "abuse", "sexual", "illegal", "other"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
@@ -165,14 +165,15 @@ export async function report(
       reason: reason as ReportReason,
     })
     .execute();
-  if (reporter.user) await hideSite(reporter.user, site.login_name);
+  if (!reporter.user) return { hidden: false };
+  await hideSite(reporter.user, site.login_name);
 
   if (operatorAlertsConfigured())
     await sendOperatorAlert({
       title: `앱 신고: ${site.login_name}${site.site_title ? ` (${site.site_title})` : ""}`,
       lines: [
         `사유: ${REPORT_REASON_LABELS[reason as ReportReason]}`,
-        `신고자: ${reporter.user ? reporter.user.loginName : "로그인하지 않은 방문자"}`,
+        `신고자: ${reporter.user.loginName}`,
         ...(notification
           ? [
               `알림: ${notification.title}`,
@@ -183,5 +184,5 @@ export async function report(
         `조치: ${adminModerationUrl(site.login_name)}`,
       ],
     }).catch((error) => console.error("[app-report] Discord:", error));
-  return { hidden: reporter.user !== null };
+  return { hidden: true };
 }
