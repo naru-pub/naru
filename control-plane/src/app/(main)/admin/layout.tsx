@@ -35,6 +35,7 @@ export default async function AdminLayout({
     { href: "/admin/toss-calls", label: "Toss 호출" },
     { href: "/admin/records", label: "결제 기록" },
     { href: "/admin/billing-keys", label: "빌링키 삭제" },
+    { href: "/admin/jobs", label: "예약 작업" },
     // The lab charges and refunds for real, so it exists only with test keys.
     ...(isTossTestMode() ? [{ href: "/admin/lab", label: "결제 실험실" }] : []),
     { href: "/admin/board", label: "게시판" },

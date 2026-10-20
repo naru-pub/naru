@@ -355,6 +355,14 @@ export interface CardRegistrations {
   user_id: string;
 }
 
+export interface CronJobEvents {
+  created_at: Generated<Timestamp>;
+  detail: string | null;
+  id: Generated<string>;
+  job_name: string;
+  kind: "stalled" | "resumed" | "failed" | "recovered";
+}
+
 export interface CronJobs {
   every_seconds: number;
   failed_at: Timestamp | null;
@@ -944,6 +952,7 @@ export interface DB {
   board_template_versions: BoardTemplateVersions;
   board_templates: BoardTemplates;
   card_registrations: CardRegistrations;
+  cron_job_events: CronJobEvents;
   cron_jobs: CronJobs;
   custom_domains: CustomDomains;
   edge_pageview_cursors: EdgePageviewCursors;

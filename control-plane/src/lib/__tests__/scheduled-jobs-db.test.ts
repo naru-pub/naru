@@ -72,6 +72,7 @@ integration("scheduled jobs", () => {
     await sql`truncate absurd.c_maintenance, absurd.e_maintenance, absurd.r_maintenance,
       absurd.t_maintenance, absurd.w_maintenance cascade`.execute(db);
     await db.deleteFrom("cron_jobs").execute();
+    await db.deleteFrom("cron_job_events").execute();
     alerts.sendOperatorAlert.mockReset();
     alerts.sendOperatorAlert.mockResolvedValue(undefined);
   });
@@ -110,6 +111,22 @@ integration("scheduled jobs", () => {
       title: "예약 작업 재개: every-minute",
       lines: [],
     });
+
+    // Each transition is kept for /admin/jobs, with the alert's line.
+    const events = await db
+      .selectFrom("cron_job_events")
+      .select(["job_name", "kind", "detail"])
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+    expect(events).toEqual([
+      {
+        job_name: "every-minute",
+        kind: "stalled",
+        detail: alerts.sendOperatorAlert.mock.calls[0][0].lines[0],
+      },
+      { job_name: "every-minute", kind: "resumed", detail: null },
+    ]);
   });
 
   test("a healthy long export is not stalled, and an existing false alert recovers", async () => {
@@ -226,6 +243,10 @@ integration("scheduled jobs", () => {
     alerts.sendOperatorAlert.mockRejectedValueOnce(new Error("discord down"));
 
     await expect(checkStalledJobs()).rejects.toThrow("discord down");
+    // Rolled back with the mark: recorded once, when the alert is posted.
+    expect(
+      await db.selectFrom("cron_job_events").selectAll().execute(),
+    ).toEqual([]);
     expect(await checkStalledJobs()).toEqual({
       stalled: ["worker"],
       recovered: [],

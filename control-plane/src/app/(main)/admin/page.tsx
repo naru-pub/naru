@@ -68,6 +68,7 @@ export default async function AdminOverviewPage() {
     webhooks,
     events,
     keys,
+    scheduledJobs,
     recentEvents,
     recentDeliveries,
   ] = await Promise.all([
@@ -149,6 +150,18 @@ export default async function AdminOverviewPage() {
         sql<number>`count(*)::int`.as("queued"),
         sql<number>`count(*) filter (where delete_attempts >= ${STUCK_AFTER_ATTEMPTS})::int`.as(
           "stuck",
+        ),
+      ])
+      .executeTakeFirstOrThrow(),
+    db
+      .selectFrom("cron_jobs")
+      .select([
+        sql<number>`count(*)::int`.as("total"),
+        sql<number>`count(*) filter (where stalled_at is not null)::int`.as(
+          "stalled",
+        ),
+        sql<number>`count(*) filter (where failed_at is not null and failure_notified)::int`.as(
+          "failed",
         ),
       ])
       .executeTakeFirstOrThrow(),
@@ -303,6 +316,13 @@ export default async function AdminOverviewPage() {
               now.getTime() - new Date(events.oldestUnsent).getTime() >
                 30 * 60 * 1000
             }
+          />
+          <Stat
+            label="멈추거나 실패한 예약 작업"
+            value={scheduledJobs.stalled + scheduledJobs.failed}
+            detail={`작업 ${scheduledJobs.total}개 · 멈춤 ${scheduledJobs.stalled} · 실패 ${scheduledJobs.failed}`}
+            href="/admin/jobs"
+            alert={scheduledJobs.stalled + scheduledJobs.failed > 0}
           />
         </div>
       </section>

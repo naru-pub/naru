@@ -1,5 +1,6 @@
-import { sql } from "kysely";
+import { sql, type Insertable, type Transaction } from "kysely";
 import { db } from "@/lib/database";
+import type { CronJobEvents, DB } from "@/lib/db";
 import {
   operatorAlertsConfigured,
   sendOperatorAlert,
@@ -81,7 +82,7 @@ const KST = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
 });
 
-function every(seconds: number): string {
+export function every(seconds: number): string {
   if (seconds % 86400 === 0) return `${seconds / 86400}일마다`;
   if (seconds % 3600 === 0) return `${seconds / 3600}시간마다`;
   if (seconds % 60 === 0) return `${seconds / 60}분마다`;
@@ -163,14 +164,27 @@ export async function checkStalledJobs(): Promise<{
       stalled: stalled.rows.map((row) => row.name),
       recovered: recovered.rows.map((row) => row.name),
     };
+    const stalledLines = stalled.rows.map(
+      (row) =>
+        `${row.name} (${row.process}, ${every(row.every_seconds)}) — 마지막 시작 ${KST.format(new Date(row.last_started_at))}, 유예 ${Math.round(graceSeconds(row.every_seconds) / 60)}분 지남`,
+    );
+    await recordJobEvents(trx, [
+      ...stalled.rows.map((row, i) => ({
+        job_name: row.name,
+        kind: "stalled" as const,
+        detail: stalledLines[i],
+      })),
+      ...recovered.rows.map((row) => ({
+        job_name: row.name,
+        kind: "resumed" as const,
+        detail: null,
+      })),
+    ]);
     if (!operatorAlertsConfigured()) return result;
     if (stalled.rows.length > 0) {
       await sendOperatorAlert({
         title: `예약 작업 멈춤: ${result.stalled.join(", ")}`,
-        lines: stalled.rows.map(
-          (row) =>
-            `${row.name} (${row.process}, ${every(row.every_seconds)}) — 마지막 시작 ${KST.format(new Date(row.last_started_at))}, 유예 ${Math.round(graceSeconds(row.every_seconds) / 60)}분 지남`,
-        ),
+        lines: stalledLines,
       });
     }
     if (recovered.rows.length > 0) {
@@ -181,6 +195,21 @@ export async function checkStalledJobs(): Promise<{
     }
     return result;
   });
+}
+
+// What the operators are alerted to, kept for /admin/jobs with the alert's
+// transaction (an alert that fails to post rolls its events back with its
+// marks). Events past 90 days are dropped on the way.
+async function recordJobEvents(
+  trx: Transaction<DB>,
+  events: Insertable<CronJobEvents>[],
+): Promise<void> {
+  if (events.length === 0) return;
+  await trx.insertInto("cron_job_events").values(events).execute();
+  await trx
+    .deleteFrom("cron_job_events")
+    .where("created_at", "<", sql<Date>`now() - interval '90 days'`)
+    .execute();
 }
 
 export async function noteJobResult(
@@ -234,6 +263,14 @@ export async function checkJobFailures(): Promise<void> {
       )
       .forUpdate()
       .execute();
+    await recordJobEvents(
+      trx,
+      jobs.map((job) => ({
+        job_name: job.name,
+        kind: job.failed_at !== null ? "failed" : "recovered",
+        detail: job.failed_at !== null ? job.failure_message : null,
+      })),
+    );
     for (const job of jobs) {
       const failed = job.failed_at !== null;
       if (operatorAlertsConfigured())

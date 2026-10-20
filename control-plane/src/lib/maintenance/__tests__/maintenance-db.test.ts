@@ -40,6 +40,7 @@ integration("durable maintenance", () => {
       db,
     );
     await db.deleteFrom("cron_jobs").execute();
+    await db.deleteFrom("cron_job_events").execute();
     await registerJobs(
       "worker",
       MAINTENANCE_JOBS.map((job) => ({
@@ -314,6 +315,18 @@ integration("durable maintenance", () => {
     expect(alerts.sendOperatorAlert.mock.calls[1][0].title).toBe(
       "작업 복구: edge-sync",
     );
+    // Only the transitions alerted to are kept for /admin/jobs.
+    const events = await db
+      .selectFrom("cron_job_events")
+      .select(["kind", "detail"])
+      .where("job_name", "=", "edge-sync")
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+    expect(events).toEqual([
+      { kind: "failed", detail: "still unavailable" },
+      { kind: "recovered", detail: null },
+    ]);
   });
 
   test("failed alert delivery retains state for the next worker heartbeat", async () => {

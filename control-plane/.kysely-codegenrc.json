@@ -12,6 +12,7 @@
       "board_templates.license": "\"cc0-1.0\" | \"unlicense\" | \"0bsd\" | \"cc-by-4.0\" | \"mit\" | \"apache-2.0\" | \"bsd-2-clause\" | \"bsd-3-clause\" | \"isc\" | \"zlib\" | \"cc-by-sa-4.0\" | \"mpl-2.0\" | \"lgpl-3.0-or-later\" | \"gpl-2.0-or-later\" | \"gpl-3.0-or-later\" | \"agpl-3.0-or-later\" | \"eupl-1.2\" | \"ofl-1.1\"",
       "board_notifications.reason": "\"reply_to_post\" | \"reply_to_reply\"",
       "cron_jobs.process": "\"cron\" | \"worker\"",
+      "cron_job_events.kind": "\"stalled\" | \"resumed\" | \"failed\" | \"recovered\"",
       "site_request_overrides.mode": "\"block\" | \"exempt\"",
       "card_registrations.kind": "\"signup\" | \"card_change\"",
       "card_registrations.billing_interval": "\"month\" | \"year\" | null",
