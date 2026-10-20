@@ -149,7 +149,8 @@ export default async function Home() {
     applyCount: post.template ? post.template.applyCount : null,
     thumbnailUrl: postThumbnailUrl(post),
   });
-  const latestForKind = (kind: PostKind) => latestByKind[POST_KINDS.indexOf(kind)];
+  const latestForKind = (kind: PostKind) =>
+    latestByKind[POST_KINDS.indexOf(kind)];
   const boardPosts = {
     template: [...latestForKind("template"), ...latestForKind("site")]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -191,10 +192,7 @@ export default async function Home() {
           <h1 className="text-[clamp(2.5rem,5.2vw,4.25rem)] font-bold leading-[1.12] tracking-[-0.035em]">
             당신의 공간을
             <br />
-            <span className="highlight">
-              나루
-            </span>
-            에 띄워 보세요
+            <span className="highlight">나루</span>에 띄워 보세요
           </h1>
           <p className="max-w-xl text-lg leading-relaxed text-muted-foreground">
             HTML 파일 몇 개면 충분해요. 브라우저에서 바로 고치고, 다른 사람이
@@ -383,7 +381,9 @@ export default async function Home() {
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <h3 className="text-xl font-bold">{step.title}</h3>
-                <p className="leading-relaxed text-muted-foreground">{step.body}</p>
+                <p className="leading-relaxed text-muted-foreground">
+                  {step.body}
+                </p>
               </li>
             ))}
           </ol>
@@ -399,6 +399,13 @@ export default async function Home() {
               <dd className="inline text-muted-foreground">
                 {" "}
                 —{" "}
+                <a
+                  href="mailto:hello@naru.pub"
+                  className="underline underline-offset-4"
+                >
+                  hello@naru.pub
+                </a>{" "}
+                또는{" "}
                 <Link
                   href="https://x.com/naru_pub"
                   className="underline underline-offset-4"
