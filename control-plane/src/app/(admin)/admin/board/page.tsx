@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { tabLinkClass } from "@/components/ui/tab-link";
-import { formatRelative } from "../../board/_components/format";
+import { formatRelative } from "@/app/(main)/board/_components/format";
 import { ModerationButton } from "./ModerationButton";
 
 export const metadata: Metadata = { title: "게시판 관리 · 나루" };

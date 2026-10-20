@@ -14,12 +14,7 @@ function daysAgo(now: Date, days: number) {
 type Condition = (now: Date) => RawBuilder<boolean>;
 
 export type PaymentFilterKey =
-  | "paid_30d"
-  | "refunded_30d"
-  | "pending"
-  | "errors"
-  | "failed_7d"
-  | "orphaned";
+  "paid_30d" | "refunded_30d" | "pending" | "errors" | "failed_7d" | "orphaned";
 
 export const PAYMENT_FILTERS: Record<
   PaymentFilterKey,

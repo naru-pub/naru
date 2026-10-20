@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
-import { boardRequest } from "../../board/_components/api";
+import { boardRequest } from "@/app/(main)/board/_components/api";
 
 // Deleting uses the same routes an author does; admins may delete anyone's.
 // Restoring has its own admin-only routes.

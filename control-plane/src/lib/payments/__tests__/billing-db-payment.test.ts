@@ -115,7 +115,7 @@ const { runLabAction, labSnapshot } =
 const { sendPaymentEventDigest } =
   require("@/lib/payments/payment-events") as typeof import("@/lib/payments/payment-events");
 const { PAYMENT_FILTERS, supporterCondition } =
-  require("@/app/(main)/admin/_components/metrics") as typeof import("@/app/(main)/admin/_components/metrics");
+  require("@/app/(admin)/admin/_components/metrics") as typeof import("@/app/(admin)/admin/_components/metrics");
 const { getUserEntitlement } =
   require("@/lib/entitlements") as typeof import("@/lib/entitlements");
 const { deleteRetiredBillingKey, deleteRetiredBillingKeys, retireBillingKey } =

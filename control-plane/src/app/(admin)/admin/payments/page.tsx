@@ -284,9 +284,7 @@ export default async function PaymentOperatorPage({
                       } as Record<string, string>
                     )[task.state] ?? task.state;
                   const error = task.last_error as
-                    | { message?: string }
-                    | string
-                    | null;
+                    { message?: string } | string | null;
                   return (
                     <TableRow key={task.task_id}>
                       <TableCell>

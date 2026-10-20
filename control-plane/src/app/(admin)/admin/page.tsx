@@ -201,6 +201,7 @@ export default async function AdminOverviewPage() {
 
   return (
     <div className="space-y-6">
+      <h2 className="text-xl font-bold">개요</h2>
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <Badge variant={live ? "default" : "outline"}>Toss {mode} 키</Badge>
         {`${live ? "결제 이벤트는" : "결제 실패 이벤트만"} 운영자 Discord 채널에 알립니다${events.lastNotified ? ` (마지막 ${formatDate(events.lastNotified)})` : ""}.`}
