@@ -340,6 +340,66 @@ export async function sendSubscriptionRenewalNoticeEmail(opts: {
   return receipt;
 }
 
+// Sent a few days before a free trial (lib/supporter-trial) ends, to an
+// account with no plan waiting to start then: nothing is charged.
+export async function sendTrialEndingEmail(opts: {
+  ref?: PaymentMailRef;
+  email: string;
+  loginName: string;
+  endsAt: Date;
+}) {
+  const supporterUrl = `${process.env.BASE_URL}/supporter`;
+  const endsLabel = formatKoreanDateTime(opts.endsAt);
+  const next =
+    "체험이 끝나면 유료 기능이 닫히고, 연결한 커스텀 도메인은 삭제됩니다. 데이터베이스의 데이터는 지워지지 않아 결제하면 다시 쓸 수 있습니다. 계속 이용하시려면 체험이 끝나기 전에 결제해 주세요. 지금 결제해도 남은 체험 기간은 그대로이고, 첫 결제는 체험이 끝난 뒤입니다.";
+
+  const message = createMessage({
+    from: process.env.FROM_EMAIL || "noreply@naru.pub",
+    to: opts.email,
+    subject: "나루 무료 체험이 곧 끝납니다",
+    content: {
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>나루 무료 체험 종료 안내</h2>
+          <p>${opts.loginName}님, 나루 유료 기능 무료 체험이 곧 끝납니다.</p>
+          <p><strong>체험 종료:</strong> ${endsLabel}</p>
+          <p>${next}</p>
+          <p>
+            <a href="${supporterUrl}" style="background-color: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+              결제 페이지로 가기
+            </a>
+          </p>
+        </div>
+      `,
+      text: `
+        나루 무료 체험 종료 안내
+
+        ${opts.loginName}님, 나루 유료 기능 무료 체험이 곧 끝납니다.
+
+        체험 종료: ${endsLabel}
+
+        ${next}
+
+        결제 페이지: ${supporterUrl}
+      `,
+    },
+    tags: ["billing", "trial-ending"],
+  });
+
+  const receipt = await sendPaymentMail(
+    message,
+    "trial_ending_notice",
+    opts.email,
+    opts.ref,
+  );
+  if (!receipt.successful) {
+    throw new Error(
+      `Failed to send trial ending email: ${receipt.errorMessages?.join(", ")}`,
+    );
+  }
+  return receipt;
+}
+
 export async function sendSubscriptionPaymentGraceEmail(opts: {
   // What the mail is about, for the payment_mails record.
   ref?: PaymentMailRef;

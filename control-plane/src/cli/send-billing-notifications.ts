@@ -2,7 +2,11 @@ import { renewalChargeAt } from "@/lib/payments/renewal-time";
 // Also keeps each renewal notice in payment_mails.
 import { mailRecipient } from "@/lib/payments/payment-mails";
 import { db } from "@/lib/database";
-import { sendSubscriptionRenewalNoticeEmail } from "@/lib/email";
+import {
+  sendSubscriptionRenewalNoticeEmail,
+  sendTrialEndingEmail,
+} from "@/lib/email";
+import { plansOf } from "@/lib/payments/subscriptions";
 
 const RENEWAL_NOTICE_DAYS = 3;
 
@@ -73,6 +77,65 @@ async function main() {
     } catch (error) {
       console.error(
         `[send-billing-notifications] subscription ${sub.id}: failed to send renewal notice:`,
+        error,
+      );
+    }
+  }
+
+  await sendTrialEndingNotices(now, noticeUntil);
+}
+
+// Free trials ending within the notice window, told once. Not when the
+// account has since paid or been comped, nor when a plan started during the
+// trial is charged at its end: the renewal notice above says that.
+async function sendTrialEndingNotices(now: Date, noticeUntil: Date) {
+  const ending = await db
+    .selectFrom("supporter_trials")
+    .innerJoin("users", "users.id", "supporter_trials.user_id")
+    .select([
+      "supporter_trials.id",
+      "supporter_trials.user_id",
+      "supporter_trials.ends_at",
+    ])
+    .where("supporter_trials.ending_notice_sent_at", "is", null)
+    .where("supporter_trials.ends_at", ">", now)
+    .where("supporter_trials.ends_at", "<=", noticeUntil)
+    .where("users.deleted_at", "is", null)
+    .where("users.supporter_comp", "=", false)
+    .where((eb) =>
+      eb.or([
+        eb("users.supporter_until", "is", null),
+        eb("users.supporter_until", "<", eb.ref("supporter_trials.ends_at")),
+      ]),
+    )
+    .execute();
+
+  console.log(
+    `[send-billing-notifications] ${ending.length} trial ending notice(s) to send`,
+  );
+
+  for (const trial of ending) {
+    try {
+      const to = await mailRecipient(trial.user_id);
+      if (!to) continue;
+      const plan = await plansOf(db, trial.user_id)
+        .select("status")
+        .executeTakeFirst();
+      if (plan?.status !== "scheduled")
+        await sendTrialEndingEmail({
+          email: to.email,
+          loginName: to.loginName,
+          endsAt: new Date(trial.ends_at),
+          ref: { userId: trial.user_id },
+        });
+      await db
+        .updateTable("supporter_trials")
+        .set({ ending_notice_sent_at: new Date() })
+        .where("id", "=", trial.id)
+        .execute();
+    } catch (error) {
+      console.error(
+        `[send-billing-notifications] trial ${trial.id}: failed to send ending notice:`,
         error,
       );
     }

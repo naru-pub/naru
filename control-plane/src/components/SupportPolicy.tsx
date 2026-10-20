@@ -10,6 +10,7 @@ import {
   ONE_TIME_YEAR_AMOUNT,
   PLAN_AMOUNTS,
 } from "@/lib/payments/toss";
+import { TRIAL_DAYS } from "@/lib/supporter-trial";
 
 const krw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 
@@ -67,14 +68,21 @@ export function SupportPolicy() {
             <li>정기 결제 (월간): 결제일로부터 1개월</li>
             <li>정기 결제 (연간): 결제일로부터 1년</li>
             <li>
-              일회성 결제: 결제일로부터 {MAX_PURCHASABLE_ONE_TIME_YEARS}년.
-              이미 이용 기간이 남아 있으면 그 기간이 끝난 날부터{" "}
+              일회성 결제: 결제일로부터 {MAX_PURCHASABLE_ONE_TIME_YEARS}년. 이미
+              이용 기간이 남아 있으면 그 기간이 끝난 날부터{" "}
               {MAX_PURCHASABLE_ONE_TIME_YEARS}년입니다.
             </li>
           </ul>
           <p className="text-muted-foreground">
-            유료 기능은 결제가 완료된 직후 바로 사용할 수 있으며, 한 번의
-            결제로 제공되는 기간은 최대 1년입니다.
+            유료 기능은 결제가 완료된 직후 바로 사용할 수 있으며, 한 번의 결제로
+            제공되는 기간은 최대 1년입니다.
+          </p>
+          <p className="text-muted-foreground">
+            무료 체험: 나루가 정한 신청 기간 동안, 결제한 적이 없고 이메일을
+            인증한 계정은 이메일 주소 하나당 한 번, {TRIAL_DAYS}일 동안 유료
+            기능을 무료로 이용할 수 있습니다. 카드를 등록하지 않으며 체험이
+            끝나도 자동으로 결제되지 않습니다. 체험 중에 결제하면 정기 결제의 첫
+            결제와 일회성 결제의 이용 기간은 체험이 끝난 날부터 시작합니다.
           </p>
         </section>
 
@@ -83,14 +91,14 @@ export function SupportPolicy() {
           <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
             <li>
               결제일로부터 {REFUND_WINDOW_DAYS}일 이내에는 이유를 묻지 않고 전액
-              환불해 드립니다. 유료 기능을 이미 쓰셨더라도 괜찮습니다.
-              결제 내역에서 직접 신청하시면 바로 처리되며, 사유를 적으실 필요도
+              환불해 드립니다. 유료 기능을 이미 쓰셨더라도 괜찮습니다. 결제
+              내역에서 직접 신청하시면 바로 처리되며, 사유를 적으실 필요도
               없습니다.
             </li>
             <li>
               환불이 완료되면 해당 결제로 제공된 이용 기간이 취소됩니다. 남은
-              이용 기간이 없으면 최대 {PAYMENT_GRACE_DAYS}일의 결제 유예 기간
-              뒤 커스텀 도메인·데이터베이스·방문자 현황·GitHub 배포를 더 이상
+              이용 기간이 없으면 최대 {PAYMENT_GRACE_DAYS}일의 결제 유예 기간 뒤
+              커스텀 도메인·데이터베이스·방문자 현황·GitHub 배포를 더 이상
               이용할 수 없습니다. 무료로 제공되는 웹사이트 호스팅은 그대로
               유지됩니다.
             </li>
@@ -103,8 +111,8 @@ export function SupportPolicy() {
               않습니다.
             </li>
             <li>
-              나루의 장애나 서비스 중단으로 유료 기능을 이용하지 못한
-              경우에는 기간 경과와 관계없이 환불해 드립니다.
+              나루의 장애나 서비스 중단으로 유료 기능을 이용하지 못한 경우에는
+              기간 경과와 관계없이 환불해 드립니다.
             </li>
           </ul>
         </section>
@@ -141,10 +149,11 @@ export function SupportPolicy() {
         <section className="space-y-2">
           <h3 className="font-bold text-foreground">앱에서 구독한 경우</h3>
           <p className="text-muted-foreground">
-            나루 앱에서 App Store나 Google Play로 구독하셨다면 결제, 해지, 환불은
-            각 스토어의 정책과 절차를 따릅니다. 해지는 스토어의 구독 관리에서,
-            환불은 Apple(reportaproblem.apple.com)이나 Google Play에 신청해
-            주세요. 스토어가 환불한 결제의 이용 기간은 나루에서도 취소됩니다.
+            나루 앱에서 App Store나 Google Play로 구독하셨다면 결제, 해지,
+            환불은 각 스토어의 정책과 절차를 따릅니다. 해지는 스토어의 구독
+            관리에서, 환불은 Apple(reportaproblem.apple.com)이나 Google Play에
+            신청해 주세요. 스토어가 환불한 결제의 이용 기간은 나루에서도
+            취소됩니다.
           </p>
         </section>
       </CardContent>

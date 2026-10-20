@@ -816,6 +816,25 @@ export interface Subscriptions {
   user_id: string;
 }
 
+export interface SupporterTrials {
+  claimed_at: Generated<Timestamp>;
+  email_digest: string;
+  ending_notice_sent_at: Timestamp | null;
+  ends_at: Timestamp;
+  id: Generated<string>;
+  user_id: string;
+  window_id: string;
+}
+
+export interface SupporterTrialWindows {
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  ends_at: Timestamp;
+  id: Generated<string>;
+  note: Generated<string>;
+  starts_at: Timestamp;
+}
+
 export interface TossCalls {
   created_at: Generated<Timestamp>;
   duration_ms: number;
@@ -965,6 +984,8 @@ export interface DB {
   store_subscriptions: StoreSubscriptions;
   store_transactions: StoreTransactions;
   subscriptions: Subscriptions;
+  supporter_trial_windows: SupporterTrialWindows;
+  supporter_trials: SupporterTrials;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;
   toss_window_outcomes: TossWindowOutcomes;

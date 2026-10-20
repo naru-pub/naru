@@ -41,6 +41,7 @@ import {
   scheduleSubscriptionStart,
 } from "@/lib/payments/subscriptions";
 import { AccountBusyError, withAccountLock } from "@/lib/payments/account-lock";
+import { laterOf, trialEndsAt } from "@/lib/supporter-trial";
 import {
   BillingInterval,
   describeTossError,
@@ -406,7 +407,11 @@ async function adoptSignupKey(opts: {
       .select("supporter_until")
       .where("id", "=", opts.userId)
       .executeTakeFirstOrThrow();
-    const startsAt = scheduledRecurringStart(user.supporter_until, now);
+    // Paid time or a free trial left: the first charge waits for its end.
+    const startsAt = scheduledRecurringStart(
+      laterOf(user.supporter_until, await trialEndsAt(trx, opts.userId)),
+      now,
+    );
     if (startsAt) {
       await scheduleSubscriptionStart(plan.id, startsAt, now, trx);
       await recordPaymentEvent(trx, {
@@ -639,7 +644,11 @@ export async function confirmSubscription(opts: {
     return confirmAdoptedSignup({
       sub: { ...plan, billing_key_id: plan.billing_key_id! },
       userId,
-      userRow: paidTime,
+      // A free trial left defers the first charge as paid time does.
+      paidThrough: laterOf(
+        paidTime.supporter_until,
+        await trialEndsAt(db, userId),
+      ),
     });
   });
 }
@@ -654,15 +663,12 @@ async function confirmAdoptedSignup(opts: {
     billing_key_id: string;
   };
   userId: string;
-  userRow: { supporter_until: Date | null };
+  paidThrough: Date | null;
 }): Promise<ConfirmOutcome> {
-  const { sub, userId, userRow } = opts;
+  const { sub, userId, paidThrough } = opts;
   const interval = sub.billing_interval as BillingInterval;
   const now = new Date();
-  const scheduledStart = scheduledRecurringStart(
-    userRow.supporter_until ?? null,
-    now,
-  );
+  const scheduledStart = scheduledRecurringStart(paidThrough, now);
   if (scheduledStart) {
     if (!(await scheduleSubscriptionStart(sub.id, scheduledStart, now))) {
       return fail(409, SIGNUP_CHANGED_MESSAGE);

@@ -17,13 +17,15 @@ import { ONE_TIME_YEAR_AMOUNT, PLAN_AMOUNTS } from "@/lib/payments/toss";
 import SupportCard from "../account/SupportCard";
 import { renewingStoreSubscription } from "@/lib/payments/store/ledger";
 import { StoreSubscriptionCard } from "./StoreSubscriptionCard";
+import { TrialCard } from "./TrialCard";
+import { openTrialWindow, TRIAL_DAYS, trialState } from "@/lib/supporter-trial";
 
 const krw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 
 // 결제 없이 상품과 가격만 보여주는 비회원 화면. 카드사 심사관은 로그인하지
 // 않은 채로 '메인 - 상품 - 결제' 경로를 확인하므로 이 페이지가 로그인 뒤에
 // 숨어 있으면 심사가 반려된다.
-function SignedOutSupportCard() {
+function SignedOutSupportCard({ trialUntil }: { trialUntil: Date | null }) {
   return (
     <Card className="rounded-none bg-card border-2 border-line">
       <CardHeader className="border-b border-border">
@@ -37,6 +39,13 @@ function SignedOutSupportCard() {
           나루는 유료 서비스로 운영되는 작은 인디웹 서비스입니다. 결제하시면
           아래 유료 기능을 쓰실 수 있습니다 🌱
         </p>
+        {trialUntil && (
+          <p className="text-sm text-muted-foreground">
+            {trialUntil.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}
+            까지 가입하면 이메일을 인증한 계정은 결제 전에 {TRIAL_DAYS}일 동안
+            무료로 체험할 수 있습니다.
+          </p>
+        )}
 
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">정기 결제</p>
@@ -93,7 +102,9 @@ export default async function SupportPage({
     return (
       <div className="bg-background min-h-screen">
         <div className="max-w-4xl mx-auto p-6 space-y-4">
-          <SignedOutSupportCard />
+          <SignedOutSupportCard
+            trialUntil={(await openTrialWindow(db))?.endsAt ?? null}
+          />
           <SupportPerks />
           <SupportPolicy />
         </div>
@@ -130,6 +141,7 @@ export default async function SupportPage({
     : null;
 
   const storePlan = await renewingStoreSubscription(db, user.id);
+  const trial = await trialState(db, user.id);
 
   return (
     <div className="bg-background min-h-screen">
@@ -140,6 +152,19 @@ export default async function SupportPage({
         />
       )}
       <div className="max-w-4xl mx-auto p-6 space-y-4">
+        {(trial.state === "eligible" || trial.state === "active") && (
+          <TrialCard
+            days={TRIAL_DAYS}
+            endsAt={
+              trial.state === "active" ? trial.endsAt.toISOString() : null
+            }
+            claimUntil={
+              trial.state === "eligible"
+                ? trial.window.endsAt.toISOString()
+                : null
+            }
+          />
+        )}
         {storePlan ? (
           <StoreSubscriptionCard
             store={storePlan.store}

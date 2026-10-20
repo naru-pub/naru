@@ -19,7 +19,7 @@ import { DataError, name } from "./validation";
 //
 // Members need no Naru supporter plan, unless Naru's operators require one of
 // a site's members (users.site_members_free off; it is on by default). Then a
-// plan (comp, paid, or within the payment grace) is checked at sign-in and on
+// plan (comp, paid, within the payment grace, or a free trial) is checked at sign-in and on
 // every request, so a member whose support ends, or whose site comes to
 // require one, loses access without signing out.
 //
@@ -76,7 +76,7 @@ async function mayJoin(tx: Kysely<DB>, userId: string, siteUserId: string) {
     .executeTakeFirst();
   return (
     site?.site_members_free === true ||
-    (await getUserEntitlement(userId, tx)).isSupporter
+    (await getUserEntitlement(userId, tx)).hasPaidFeatures
   );
 }
 

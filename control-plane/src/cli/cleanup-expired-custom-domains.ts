@@ -1,6 +1,6 @@
 import { db } from "@/lib/database";
 import { deleteCloudflareCustomHostnameIfExists } from "@/lib/customDomains";
-import { addPaymentGrace } from "@/lib/payments/subscriptions";
+import { accessEndsAtOf } from "@/lib/entitlements";
 
 const ABANDONED_PENDING_DOMAIN_DAYS = 14;
 
@@ -35,23 +35,26 @@ async function main() {
   const expiredDomains = await db
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
+    .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
     .select([
       "custom_domains.id",
       "custom_domains.hostname",
       "custom_domains.cloudflare_hostname_id",
       "custom_domains.user_id",
+      "users.supporter_comp",
       "users.supporter_until",
+      "supporter_trials.ends_at as trial_ends_at",
     ])
     .where("users.supporter_comp", "=", false)
     .execute();
 
-  const reclaimableDomains = expiredDomains.filter((domain) => {
-    if (!domain.supporter_until) return true;
-    return addPaymentGrace(new Date(domain.supporter_until)) <= now;
-  });
+  // Past paid access, its payment grace and any free trial.
+  const reclaimableDomains = expiredDomains.filter(
+    (domain) => (accessEndsAtOf(domain) ?? Infinity) <= now.getTime(),
+  );
 
   console.log(
-    `[cleanup-expired-custom-domains] ${reclaimableDomains.length} expired domain(s) outside paid access/payment grace`,
+    `[cleanup-expired-custom-domains] ${reclaimableDomains.length} expired domain(s) outside paid access/payment grace/trial`,
   );
 
   for (const domain of reclaimableDomains) {

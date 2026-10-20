@@ -205,7 +205,7 @@ export async function siteRequestStatuses(
   for (const user of users) {
     const requests = requestsOf.get(user.id) ?? 0;
     const override = overrideOf.get(user.id);
-    const supporter = (await getUserEntitlement(user.id)).isSupporter;
+    const supporter = (await getUserEntitlement(user.id)).hasPaidFeatures;
     const blocked =
       override?.mode === "block" ||
       (requests >= allowance && !supporter && override?.mode !== "exempt");

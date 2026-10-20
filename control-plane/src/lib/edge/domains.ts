@@ -1,11 +1,12 @@
 import { db } from "@/lib/database";
-import { addPaymentGrace } from "@/lib/payments/subscriptions";
+import { accessEndsAtOf } from "@/lib/entitlements";
 import { CONFIRMATION_MS, replaceEdgeDomains } from "./client";
 
 // The custom domains the edge serves (edge/src/domains.ts): every domain
 // active in Cloudflare and verified, whose owner is paid up, mapped to the
 // owner's site. The owner is paid up through the grace period after the last
-// paid day, or always for a complimentary account, as the proxy decided.
+// paid day or through a free trial, or always for a complimentary account, as
+// the proxy decided.
 //
 // The whole table is sent each time, so a domain removed here, or whose owner
 // lapsed, is gone from the edge on the next push. syncEdge pushes it every few
@@ -19,11 +20,13 @@ export async function pushEdgeDomains() {
   const rows = await db
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
+    .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
     .select([
       "custom_domains.hostname",
       "users.login_name",
       "users.supporter_comp",
       "users.supporter_until",
+      "supporter_trials.ends_at as trial_ends_at",
     ])
     .where("custom_domains.verified_at", "is not", null)
     .where("custom_domains.cloudflare_status", "=", "active")
@@ -36,11 +39,7 @@ export async function pushEdgeDomains() {
     { login: string; entitledUntil: number | null }
   > = {};
   for (const row of rows) {
-    const entitledUntil = row.supporter_comp
-      ? null
-      : row.supporter_until
-        ? addPaymentGrace(row.supporter_until).getTime()
-        : 0;
+    const entitledUntil = accessEndsAtOf(row);
     if (entitledUntil !== null && entitledUntil <= now) continue;
     domains[row.hostname.toLowerCase()] = {
       login: row.login_name,

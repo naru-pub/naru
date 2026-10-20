@@ -1,5 +1,5 @@
 import { db } from "@/lib/database";
-import { addPaymentGrace } from "@/lib/payments/subscriptions";
+import { accessEndsAtOf } from "@/lib/entitlements";
 import { getHomepageUrl } from "@/lib/site-urls";
 
 // Where the apps open a site: its custom domain when the edge serves one
@@ -23,11 +23,13 @@ export async function siteOrigins(loginNames: string[]) {
   const rows = await db
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
+    .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
     .select([
       "custom_domains.hostname",
       "users.login_name",
       "users.supporter_comp",
       "users.supporter_until",
+      "supporter_trials.ends_at as trial_ends_at",
     ])
     .where("users.login_name", "in", [...new Set(loginNames)])
     .where("custom_domains.verified_at", "is not", null)
@@ -39,11 +41,8 @@ export async function siteOrigins(loginNames: string[]) {
   const now = Date.now();
   // Newest first, so the oldest is set last and wins.
   for (const row of rows) {
-    const paid =
-      row.supporter_comp ||
-      (row.supporter_until !== null &&
-        addPaymentGrace(row.supporter_until).getTime() > now);
-    if (paid)
+    const until = accessEndsAtOf(row);
+    if (until === null || until > now)
       origins.set(row.login_name, `https://${row.hostname.toLowerCase()}`);
   }
   return origins;

@@ -37,17 +37,13 @@ export default async function RootLayout({
   const { user } = await validateRequest();
   const entitlement = user ? await getUserEntitlement(user.id) : null;
   const features = new Set<Feature>(
-    entitlement?.isSupporter
+    entitlement?.hasPaidFeatures
       ? (PLAN_FEATURES[entitlement.plan ?? "supporter"] ?? [])
       : [],
   );
 
   return (
-    <html
-      lang="ko"
-      suppressHydrationWarning
-      className={fontVariables}
-    >
+    <html lang="ko" suppressHydrationWarning className={fontVariables}>
       <body>
         <ThemeProvider
           attribute="class"
@@ -86,7 +82,7 @@ export default async function RootLayout({
                       <NavLink href="/board">게시판</NavLink>
                       <NavLink href="/docs">길잡이</NavLink>
                       {user && <NavLink href="/files">파일</NavLink>}
-                      {entitlement?.isSupporter ? (
+                      {entitlement?.hasPaidFeatures ? (
                         <SupporterMenu
                           analytics={features.has("analytics")}
                           database={features.has("database")}

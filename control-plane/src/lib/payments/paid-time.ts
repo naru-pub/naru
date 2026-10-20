@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import type { Executor } from "@/lib/entitlements";
+import { laterOf, trialEndsAt } from "@/lib/supporter-trial";
 
 // users.supporter_until — the paid time the proxy and the entitlement layer
 // gate on — is written here and nowhere else (billing-key-writes-payment.test.ts
@@ -218,7 +219,10 @@ export async function repairPaidTime(trx: Executor, userId: string) {
     .where("supporter_comp", "=", false)
     .execute();
   if (before && (!after || after < before)) {
-    const due = after && after > new Date() ? after : new Date();
+    // Not before a free trial left ends, which the plan waited for too.
+    const due =
+      laterOf(laterOf(after, new Date()), await trialEndsAt(trx, userId)) ??
+      new Date();
     await trx
       .updateTable("subscriptions")
       .set({

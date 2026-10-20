@@ -31,6 +31,7 @@ import {
   recordPaymentEvent,
   won,
 } from "@/lib/payments/payment-events";
+import { laterOf, trialEndsAt } from "@/lib/supporter-trial";
 
 const ENDED_PAYMENT_STATUSES = [
   "canceled",
@@ -244,7 +245,12 @@ async function grantApproval(
   const now = new Date();
   const paidAt = approvedAt(tossPayment, now);
   const paidUntil = await lockPaidTime(trx, payment.user_id);
-  const base = grant.kind === "one-time" ? now : grant.from;
+  // A one-time purchase made during a free trial starts when the trial ends,
+  // as one made with paid time left starts after it.
+  const base =
+    grant.kind === "one-time"
+      ? (laterOf(now, await trialEndsAt(trx, payment.user_id)) ?? now)
+      : grant.from;
   const periodStart = paidUntil && paidUntil > base ? paidUntil : base;
   const periodEnd =
     grant.kind === "one-time"
@@ -475,7 +481,12 @@ async function applyEndedPayment(
   // back, never pushed out; with no paid time left it is charged on
   // the next run.
   if (newlyRefunded && !stopped) {
-    const due = recomputed && recomputed > new Date() ? recomputed : new Date();
+    // Nor before a free trial left ends.
+    const due =
+      laterOf(
+        laterOf(recomputed, new Date()),
+        await trialEndsAt(trx, payment.user_id),
+      ) ?? new Date();
     await trx
       .updateTable("subscriptions")
       .set({

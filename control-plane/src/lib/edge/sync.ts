@@ -37,7 +37,7 @@ export async function databaseEntitledUntil(userId: string) {
   )
     return 0;
   if (entitlement.comp) return null;
-  return entitlement.graceEndsAt?.getTime() ?? 0;
+  return entitlement.accessEndsAt?.getTime() ?? 0;
 }
 
 /** Confirms the site's paid status to its object; returns its usage. */
@@ -79,6 +79,17 @@ export async function syncEdge() {
           "supporter_until",
           ">",
           sql<Date>`now() - make_interval(days => ${LAPSED_DAYS})`,
+        ),
+        eb.exists(
+          eb
+            .selectFrom("supporter_trials")
+            .select("supporter_trials.id")
+            .whereRef("supporter_trials.user_id", "=", "users.id")
+            .where(
+              "supporter_trials.ends_at",
+              ">",
+              sql<Date>`now() - make_interval(days => ${LAPSED_DAYS})`,
+            ),
         ),
       ]),
     )
