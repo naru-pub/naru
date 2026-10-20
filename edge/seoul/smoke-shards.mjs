@@ -266,7 +266,19 @@ try {
     421,
     "a shard refuses a site it does not hold",
   );
-  assert.equal((await operate(beta, "dump", {}, shardOrigin(0))).status, 421);
+  // Without a body: Node's fetch retries a 421 on a new connection, as the
+  // Fetch standard says, and undici before 8.11 (Node 24's) sometimes resends
+  // a string body from the stream the first try used up, failing with
+  // UND_ERR_REQ_CONTENT_LENGTH_MISMATCH. The shard refuses before reading one.
+  assert.equal(
+    (
+      await fetch(`${shardOrigin(0)}/v1/sites/${beta}/dump`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}` },
+      })
+    ).status,
+    421,
+  );
   // As naru's containers call, with a name that is not the platform's.
   assert.equal(
     (
@@ -338,9 +350,6 @@ try {
     headers: { Authorization: `Bearer ${secret}` },
     body: "{}",
   });
-  // Printed for a failure on CI that never reproduced locally (Node 24's
-  // fetch once said a request body's length did not match its header).
-  console.log(`dump answered with ${JSON.stringify([...dump.headers])}`);
   assert.equal(dump.status, 200);
   assert.equal(dump.headers.get("content-type"), "application/x-ndjson");
   const restored = await fetch(`${router}/v1/sites/${delta}/restore`, {
