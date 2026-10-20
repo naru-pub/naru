@@ -749,8 +749,7 @@ input.oninput = async () => {
                 <code>&quot;pending&quot;</code> 또는{" "}
                 <code>&quot;banned&quot;</code>이니 페이지에서 알맞은 안내를
                 보여 주세요. 로그인은 남아 있어서, 승인되면 다시 로그인하지
-                않아도 됩니다. 사이트에 회원으로 가입하려면 그 나루 계정에 후원
-                플랜이 있어야 합니다.
+                않아도 됩니다.
               </p>
               <h3 className="font-bold">역할</h3>
               <p>

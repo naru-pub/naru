@@ -17,10 +17,11 @@ import { DataError, name } from "./validation";
 // identity there, not the owner's collections. A member's id is a row in
 // site_members, so a site never learns which account is behind it.
 //
-// Members need a Naru supporter plan (comp, paid, or within the payment
-// grace), except on sites Naru's operators exempt (users.site_members_free).
-// It is checked at sign-in and on every request, so a member whose support
-// ends, or whose site loses its exemption, loses access without signing out.
+// Members need no Naru supporter plan, unless Naru's operators require one of
+// a site's members (users.site_members_free off; it is on by default). Then a
+// plan (comp, paid, or within the payment grace) is checked at sign-in and on
+// every request, so a member whose support ends, or whose site comes to
+// require one, loses access without signing out.
 //
 // A site may also require a verified email (site_member_verified_email): an
 // account without one cannot sign in to it as a member, new or returning.
@@ -66,7 +67,7 @@ async function emailVerified(tx: Kysely<DB>, userId: string) {
   return Boolean(user?.email && user.email_verified_at);
 }
 
-/** Whether an account may be a member of the site: it supports Naru, or the site is exempt. */
+/** Whether an account may be a member of the site: the site is free to join, or it supports Naru. */
 async function mayJoin(tx: Kysely<DB>, userId: string, siteUserId: string) {
   const site = await tx
     .selectFrom("users")

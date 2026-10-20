@@ -211,7 +211,7 @@ export default async function AccountPage({
           </Field>
           <Field label="다음 결제">{formatDate(user.next_billing_at)}</Field>
           <Field label="사이트 회원">
-            {user.site_members_free ? "후원 없이 가입 가능" : "후원 플랜 필요"}
+            {user.site_members_free ? "누구나 가입 가능" : "후원 플랜 필요"}
             {!user.deleted_at && (
               <span className="ml-2">
                 <SiteMembersFreeToggle

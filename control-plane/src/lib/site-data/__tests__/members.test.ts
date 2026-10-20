@@ -242,14 +242,18 @@ integration("site members", () => {
           .executeTakeFirst()
       )?.state;
     // Ticked unless the account turned them off; an old page sends nothing.
-    expect((await previewMemberSignIn(users.dave, input())).notifications).toBe(true);
+    expect((await previewMemberSignIn(users.dave, input())).notifications).toBe(
+      true,
+    );
     await approveMemberSignIn(users.dave, "dave-session", input());
     expect(await consent()).toBeUndefined();
     await approveMemberSignIn(users.dave, "dave-session", input(), true);
     expect(await consent()).toBe("allowed");
     await approveMemberSignIn(users.dave, "dave-session", input(), false);
     expect(await consent()).toBe("muted");
-    expect((await previewMemberSignIn(users.dave, input())).notifications).toBe(false);
+    expect((await previewMemberSignIn(users.dave, input())).notifications).toBe(
+      false,
+    );
     await approveMemberSignIn(users.dave, "dave-session", input(), true);
     expect(await consent()).toBe("allowed");
   });
@@ -340,58 +344,54 @@ integration("site members", () => {
     );
   });
 
-  test("members need a supporter plan, also once signed in", async () => {
-    // An account without one is told so, and cannot join.
+  test("operators can require a supporter plan of a site's members, also once signed in", async () => {
+    // By default, accounts without a plan are members.
     expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
-      mayJoin: false,
+      mayJoin: true,
     });
-    await expect(
-      approveMemberSignIn(users.ivy, "ivy-session", input()),
-    ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
-    // A member whose support ends loses access on the next request, and
-    // gets it back when it resumes.
+    const free = await signIn("ivy");
+    await expect(probe(free.accessToken)).resolves.toBeDefined();
     const member = await signIn("erin");
-    await expect(probe(member.accessToken)).resolves.toBeDefined();
-    await sql`update users set supporter_comp = false where id = ${users.erin}`.execute(
+    await sql`update users set site_members_free = false where id = ${owner}`.execute(
       db,
     );
     try {
-      await expect(probe(member.accessToken)).rejects.toMatchObject({
-        status: 403,
-        code: "ACCESS_DENIED",
-      });
-      await expect(code("erin")).rejects.toMatchObject({ status: 403 });
-    } finally {
-      await sql`update users set supporter_comp = true where id = ${users.erin}`.execute(
-        db,
-      );
-    }
-    await expect(probe(member.accessToken)).resolves.toBeDefined();
-  });
-
-  test("operators can exempt a site, letting accounts without a plan be members", async () => {
-    await sql`update users set site_members_free = true where id = ${owner}`.execute(
-      db,
-    );
-    try {
-      expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
-        mayJoin: true,
-      });
-      const free = await signIn("ivy");
-      await expect(probe(free.accessToken)).resolves.toBeDefined();
-      // Withdrawing the exemption reaches members already signed in.
-      await sql`update users set site_members_free = false where id = ${owner}`.execute(
-        db,
-      );
+      // Requiring one reaches members already signed in; an account without
+      // one is told so, and cannot join.
       await expect(probe(free.accessToken)).rejects.toMatchObject({
         status: 403,
         code: "ACCESS_DENIED",
       });
+      expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
+        mayJoin: false,
+      });
+      await expect(
+        approveMemberSignIn(users.ivy, "ivy-session", input()),
+      ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+      // A member whose support ends loses access on the next request, and
+      // gets it back when it resumes.
+      await expect(probe(member.accessToken)).resolves.toBeDefined();
+      await sql`update users set supporter_comp = false where id = ${users.erin}`.execute(
+        db,
+      );
+      try {
+        await expect(probe(member.accessToken)).rejects.toMatchObject({
+          status: 403,
+          code: "ACCESS_DENIED",
+        });
+        await expect(code("erin")).rejects.toMatchObject({ status: 403 });
+      } finally {
+        await sql`update users set supporter_comp = true where id = ${users.erin}`.execute(
+          db,
+        );
+      }
+      await expect(probe(member.accessToken)).resolves.toBeDefined();
     } finally {
-      await sql`update users set site_members_free = false where id = ${owner}`.execute(
+      await sql`update users set site_members_free = true where id = ${owner}`.execute(
         db,
       );
     }
+    await expect(probe(free.accessToken)).resolves.toBeDefined();
   });
 
   test("the owner gives members roles, which a member's query reads", async () => {

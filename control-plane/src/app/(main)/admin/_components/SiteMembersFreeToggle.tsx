@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 
-// Exempts the account's site from the supporter plan its members need.
+// Requires a supporter plan of the account's site's members, or lifts it.
 export function SiteMembersFreeToggle({
   loginName,
   free,
@@ -20,7 +20,7 @@ export function SiteMembersFreeToggle({
     const next = !free;
     if (
       !(await confirm({
-        title: next ? "회원 후원 요건 면제" : "면제 해제",
+        title: next ? "회원 후원 요구 해제" : "회원 후원 요구",
         description: next
           ? `${loginName} 사이트의 회원은 후원 플랜 없이 로그인할 수 있게 됩니다.`
           : `${loginName} 사이트의 후원 플랜이 없는 회원은 다음 요청부터 이용할 수 없게 됩니다.`,
@@ -41,7 +41,7 @@ export function SiteMembersFreeToggle({
       const body = await response.json();
       if (!response.ok || !body.success) throw new Error("변경 실패");
       toast.success(
-        next ? "회원 후원 요건을 면제했습니다." : "면제를 해제했습니다.",
+        next ? "회원 후원 요구를 해제했습니다." : "회원에게 후원을 요구합니다.",
       );
       router.refresh();
     } catch (error) {
@@ -52,7 +52,7 @@ export function SiteMembersFreeToggle({
   }
   return (
     <Button size="sm" variant="outline" disabled={pending} onClick={toggle}>
-      {free ? "회원 후원 면제 해제" : "회원 후원 면제"}
+      {free ? "회원 후원 요구" : "회원 후원 요구 해제"}
     </Button>
   );
 }

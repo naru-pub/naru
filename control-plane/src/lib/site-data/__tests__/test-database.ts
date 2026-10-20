@@ -32,6 +32,7 @@ import { up as membershipUp } from "@/migrations/1791800344085_site_membership_a
 import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
 import { up as verifiedEmailUp } from "@/migrations/1791981028752_site_member_verified_email";
 import { up as membersFreeUp } from "@/migrations/1791981384263_site_members_free";
+import { up as membersFreeByDefaultUp } from "@/migrations/1792503307965_site_members_free_by_default";
 import { up as managedMediaUp } from "@/migrations/1791981970276_site_data_files_managed";
 
 /**
@@ -94,6 +95,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await membershipUp(db);
   await verifiedEmailUp(db);
   await membersFreeUp(db);
+  await membersFreeByDefaultUp(db);
   await managedMediaUp(db);
   await mediaDeletionUp(db);
   // Member sign-in sets the Naru app's consent for the site; a suspended site

@@ -4,8 +4,8 @@ import { db } from "@/lib/database";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 import { assertJsonContentType } from "@/lib/utils";
 
-// Operators exempt a site from the supporter plan its members otherwise need,
-// or withdraw the exemption: { free: boolean }. Members already signed in are
+// Operators require a supporter plan of a site's members, or lift that
+// requirement: { free: boolean }. Members already signed in are
 // checked on their next request either way.
 export async function POST(
   request: NextRequest,
