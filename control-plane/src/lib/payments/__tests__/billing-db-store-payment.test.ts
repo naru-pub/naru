@@ -38,6 +38,8 @@ const { checkPaymentInvariants } =
   require("@/lib/payments/payment-invariants") as typeof import("@/lib/payments/payment-invariants");
 const { recomputePaidTime } =
   require("@/lib/payments/paid-time") as typeof import("@/lib/payments/paid-time");
+const { getUserEntitlement } =
+  require("@/lib/entitlements") as typeof import("@/lib/entitlements");
 const { entitlementRepairCandidates } =
   require("@/lib/payments/entitlement-repair") as typeof import("@/lib/payments/entitlement-repair");
 
@@ -237,6 +239,41 @@ integration("store subscriptions", () => {
     );
     await db.transaction().execute((trx) => recomputePaidTime(trx, userId));
     expect(await paidUntil(userId)).toEqual(storeEnd);
+  });
+
+  test("only a renewing store subscription gets the payment grace", async () => {
+    const userId = await makeUser();
+    const ended = new Date(Date.now() - DAY);
+    await applyStoreState(
+      appleState(userId, { transactions: [{ id: "t1", end: ended }] }),
+    );
+    // Renewing: the charge may still come, so access runs on through grace.
+    let ent = await getUserEntitlement(userId);
+    expect(ent).toMatchObject({ inPaymentGrace: true, isSupporter: true });
+    expect((await supporterStatus(userId, "apple")).supporter).toBe(true);
+
+    // Auto-renew turned off, with no new period: access ended with the time.
+    await applyStoreState(
+      appleState(userId, {
+        transactions: [{ id: "t1", end: ended }],
+        autoRenews: false,
+      }),
+    );
+    ent = await getUserEntitlement(userId);
+    expect(ent).toMatchObject({
+      inPaymentGrace: false,
+      isSupporter: false,
+      graceEndsAt: ended,
+      accessEndsAt: ended,
+    });
+    expect((await supporterStatus(userId, "apple")).supporter).toBe(false);
+
+    // The store still retrying a renewing one keeps the grace.
+    await applyStoreState({
+      ...appleState(userId, { transactions: [{ id: "t1", end: ended }] }),
+      status: "billing_retry",
+    });
+    expect((await getUserEntitlement(userId)).inPaymentGrace).toBe(true);
   });
 
   test("one recurring plan at a time across Toss and the stores", async () => {

@@ -5,6 +5,7 @@ import {
   extendPaidTime,
   lockPaidTime,
   recomputePaidTime,
+  refreshPaymentGrace,
 } from "@/lib/payments/paid-time";
 import { parseUuid } from "@/lib/uuid";
 import { STORE_LABELS, type Store } from "./products";
@@ -211,6 +212,8 @@ export async function applyStoreState(
 
     if (latest) await extendPaidTime(trx, owner, latest);
     if (shortened) await recomputePaidTime(trx, owner);
+    // Whether it renews decides the payment grace, even with no new period.
+    await refreshPaymentGrace(trx, owner);
     return { applied: true, userId: owner, subscriptionId: subscription.id };
   });
 }

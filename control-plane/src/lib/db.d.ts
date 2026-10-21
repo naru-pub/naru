@@ -916,6 +916,7 @@ export interface Users {
   site_title: string | null;
   site_updated_at: Timestamp | null;
   supporter_comp: Generated<boolean>;
+  supporter_grace: Generated<boolean>;
   supporter_until: Timestamp | null;
   toss_customer_key: string | null;
 }

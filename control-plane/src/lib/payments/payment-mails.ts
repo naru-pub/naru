@@ -32,6 +32,8 @@ export type MailRecipient = {
   email: string;
   loginName: string;
   supporterUntil: Date | null;
+  // Whether the payment grace window follows supporterUntil.
+  supporterGrace: boolean;
   supporterComp: boolean;
 };
 
@@ -48,6 +50,7 @@ export async function mailRecipient(
       "email_verified_at",
       "login_name",
       "supporter_until",
+      "supporter_grace",
       "supporter_comp",
     ])
     .where("id", "=", userId)
@@ -60,6 +63,7 @@ export async function mailRecipient(
     supporterUntil: user.supporter_until
       ? new Date(user.supporter_until)
       : null,
+    supporterGrace: user.supporter_grace,
     supporterComp: user.supporter_comp,
   };
 }

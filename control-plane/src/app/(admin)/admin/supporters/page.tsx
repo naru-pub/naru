@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/database";
-import { addPaymentGrace, isCurrentPlan } from "@/lib/payments/subscriptions";
+import { isCurrentPlan, paidAccessEndsAt } from "@/lib/payments/subscriptions";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -36,6 +36,7 @@ export default async function SupportersPage() {
       "users.login_name",
       "users.supporter_comp",
       "users.supporter_until",
+      "users.supporter_grace",
       "subscriptions.status as subscription_status",
       "subscriptions.next_billing_at",
     ])
@@ -100,7 +101,7 @@ export default async function SupportersPage() {
                 !user.supporter_comp &&
                 until !== null &&
                 until <= now &&
-                addPaymentGrace(until) > now;
+                paidAccessEndsAt(until, user.supporter_grace) > now;
               return (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">

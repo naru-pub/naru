@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/database";
-import { addPaymentGrace, isCurrentPlan } from "@/lib/payments/subscriptions";
+import { isCurrentPlan, paidAccessEndsAt } from "@/lib/payments/subscriptions";
 import { getHomepageUrl } from "@/lib/site-urls";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -57,6 +57,7 @@ export default async function AccountPage({
       "users.home_directory_size_bytes_updated_at",
       "users.supporter_comp",
       "users.supporter_until",
+      "users.supporter_grace",
       "users.site_members_free",
       "subscriptions.status as subscription_status",
       "subscriptions.billing_interval",
@@ -139,7 +140,7 @@ export default async function AccountPage({
     ? { label: "무료 제공", variant: "secondary" as const }
     : until && until > now
       ? { label: "유료", variant: "outline" as const }
-      : until && addPaymentGrace(until) > now
+      : until && paidAccessEndsAt(until, user.supporter_grace) > now
         ? { label: "결제 유예 중", variant: "destructive" as const }
         : null;
   const userQuery = `user=${encodeURIComponent(user.login_name)}`;

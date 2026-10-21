@@ -66,9 +66,10 @@ export function isPaymentFilter(value: unknown): value is PaymentFilterKey {
 }
 
 // Has paid features right now: a permanent comp, or paid time that has not
-// run past the payment grace window — the rule getUserEntitlement applies.
+// run past the payment grace window, when it has one — the rule
+// getUserEntitlement applies.
 export const supporterCondition: Condition = (now) =>
-  sql<boolean>`(users.supporter_comp or users.supporter_until > ${daysAgo(now, PAYMENT_GRACE_DAYS)})`;
+  sql<boolean>`(users.supporter_comp or users.supporter_until > case when users.supporter_grace then ${daysAgo(now, PAYMENT_GRACE_DAYS)}::timestamptz else ${now}::timestamptz end)`;
 
 export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
   active: "활성",

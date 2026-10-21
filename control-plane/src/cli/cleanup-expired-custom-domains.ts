@@ -43,6 +43,7 @@ async function main() {
       "custom_domains.user_id",
       "users.supporter_comp",
       "users.supporter_until",
+      "users.supporter_grace",
       "supporter_trials.ends_at as trial_ends_at",
     ])
     .where("users.supporter_comp", "=", false)

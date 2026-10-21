@@ -26,6 +26,7 @@ export async function pushEdgeDomains() {
       "users.login_name",
       "users.supporter_comp",
       "users.supporter_until",
+      "users.supporter_grace",
       "supporter_trials.ends_at as trial_ends_at",
     ])
     .where("custom_domains.verified_at", "is not", null)

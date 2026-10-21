@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 import { db } from "@/lib/database";
 import type { DB } from "@/lib/db";
-import { addPaymentGrace, isCurrentPlan } from "@/lib/payments/subscriptions";
+import { isCurrentPlan, paidAccessEndsAt } from "@/lib/payments/subscriptions";
 
 /**
  * Callers already inside a transaction must pass their own `tx`. Reaching for
@@ -60,7 +60,8 @@ export type UserEntitlement = {
 };
 
 // Resolves a user's current entitlement. A user is a supporter if they have a
-// permanent comp or a paid-through date that has not passed the grace window.
+// permanent comp or a paid-through date that has not passed the grace window,
+// when it has one.
 // A free trial opens the same features without making the user a supporter:
 // payment code reads isSupporter, access reads hasPaidFeatures.
 export async function getUserEntitlement(
@@ -76,6 +77,7 @@ export async function getUserEntitlement(
     .select([
       "users.supporter_comp as comp",
       "users.supporter_until as supporterUntil",
+      "users.supporter_grace as grace",
       "subscriptions.plan as plan",
       "supporter_trials.ends_at as trialEndsAt",
     ])
@@ -103,7 +105,10 @@ export async function getUserEntitlement(
   const supporterUntil = row.supporterUntil
     ? new Date(row.supporterUntil)
     : null;
-  const graceEndsAt = supporterUntil ? addPaymentGrace(supporterUntil) : null;
+  // Without a grace window (users.supporter_grace) it ends with the paid time.
+  const graceEndsAt = supporterUntil
+    ? paidAccessEndsAt(supporterUntil, row.grace)
+    : null;
   const paid = supporterUntil != null && supporterUntil.getTime() > Date.now();
   const inPaymentGrace =
     !paid && graceEndsAt != null && graceEndsAt.getTime() > Date.now();
@@ -142,11 +147,15 @@ export async function getUserEntitlement(
 export function accessEndsAtOf(row: {
   supporter_comp: boolean;
   supporter_until: Date | string | null;
+  supporter_grace: boolean;
   trial_ends_at: Date | string | null;
 }): number | null {
   if (row.supporter_comp) return null;
   const paid = row.supporter_until
-    ? addPaymentGrace(new Date(row.supporter_until)).getTime()
+    ? paidAccessEndsAt(
+        new Date(row.supporter_until),
+        row.supporter_grace,
+      ).getTime()
     : 0;
   const trial = row.trial_ends_at ? new Date(row.trial_ends_at).getTime() : 0;
   return Math.max(paid, trial);

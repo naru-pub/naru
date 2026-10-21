@@ -1,5 +1,5 @@
 import { db } from "@/lib/database";
-import { addPaymentGrace } from "@/lib/payments/subscriptions";
+import { paidAccessEndsAt } from "@/lib/payments/subscriptions";
 import {
   mailRecipient,
   type MailRecipient,
@@ -17,13 +17,13 @@ import {
 
 // When paid features actually end after the change, or null when they
 // already have (or a comp, whose access no date describes): the paid time
-// left, and past it the payment grace window entitlements grant, which a
-// refund does not take away.
+// left, and past it the payment grace window entitlements grant when the
+// account has one, which a refund does not take away.
 function remainingAccess(user: MailRecipient): Date | null {
   if (user.supporterComp || !user.supporterUntil) return null;
   const until = user.supporterUntil;
   if (until.getTime() > Date.now()) return until;
-  const graceEndsAt = addPaymentGrace(until);
+  const graceEndsAt = paidAccessEndsAt(until, user.supporterGrace);
   return graceEndsAt.getTime() > Date.now() ? graceEndsAt : null;
 }
 

@@ -13,6 +13,9 @@ import { laterOf, trialEndsAt } from "@/lib/supporter-trial";
 // payments: the App Store and Google Play charged for them and set their
 // dates, so they are never compacted, and one the store revoked or refunded
 // is left out (storePaidPeriods).
+//
+// users.supporter_grace, whether that paid time is followed by the payment
+// grace window, is kept here beside it (refreshPaymentGrace).
 
 // Locks the account's paid time for a grant and reads it. FOR NO KEY UPDATE
 // serializes grants without blocking the key-share lock a payment_events
@@ -45,6 +48,7 @@ export async function extendPaidTime(
     .where("id", "=", userId)
     .where("deleted_at", "is", null)
     .execute();
+  await refreshPaymentGrace(trx, userId);
 }
 
 // After a refund: paid time is where the periods the unrefunded payments
@@ -77,6 +81,7 @@ export async function recomputePaidTime(
       .where("id", "=", userId)
       .execute();
   }
+  await refreshPaymentGrace(trx, userId);
   return recomputed;
 }
 
@@ -218,6 +223,7 @@ export async function repairPaidTime(trx: Executor, userId: string) {
     .where("deleted_at", "is", null)
     .where("supporter_comp", "=", false)
     .execute();
+  await refreshPaymentGrace(trx, userId);
   if (before && (!after || after < before)) {
     // Not before a free trial left ends, which the plan waited for too.
     const due =
@@ -250,6 +256,34 @@ export async function movePaidTimeForLab(
     .set({ supporter_until: until })
     .where("id", "=", userId)
     .where("deleted_at", "is", null)
+    .execute();
+  await refreshPaymentGrace(trx, userId);
+}
+
+// Whether the account's paid time gets the payment grace window after it
+// ends. It does, unless the period it ends with was bought in a store
+// subscription that will not renew (cancelled, or the store gave up on it):
+// the grace is time for a charge to come through, and none is coming. A store
+// that is still retrying (billing_retry) keeps it. Run whenever paid time or
+// a store subscription changes; migration 1792549929453 backfilled the same
+// rule.
+export async function refreshPaymentGrace(
+  trx: Executor,
+  userId: string,
+): Promise<void> {
+  await trx
+    .updateTable("users")
+    .set({
+      supporter_grace: sql<boolean>`not exists (
+        select 1 from store_transactions t
+        join store_subscriptions s on s.id = t.store_subscription_id
+        where t.user_id = users.id
+          and t.revoked_at is null
+          and t.period_end >= users.supporter_until
+          and not (s.auto_renews and s.status in ('active', 'billing_retry'))
+      )`,
+    })
+    .where("id", "=", userId)
     .execute();
 }
 

@@ -2,7 +2,7 @@
 
 결제 코드는 `control-plane/src/lib/payments/`에, 그 테스트는 `control-plane/src/lib/payments/__tests__/`에 있습니다.
 
-유료 기능은 **시간 기반 엔티틀먼트**로 제어됩니다. 영구 무료 제공 계정은 `users.supporter_comp`(이런 계정은 남아 있는 정기 결제가 있어도 갱신 청구·갱신 예정 안내를 하지 않고, `/supporter`에서 그 정기 결제를 해지할 수 있습니다), 결제로 얻은 유료 기간은 `users.supporter_until`(유료 기간이 끝나는 시각)로 나타냅니다. 접근 권한 = `supporter_comp OR supporter_until + PAYMENT_GRACE_DAYS > now()`입니다. 즉 `supporter_until`은 유료 기간 경계로 남고, 결제 유예 기간 동안은 유료 기능도 계속 열려 있습니다.
+유료 기능은 **시간 기반 엔티틀먼트**로 제어됩니다. 영구 무료 제공 계정은 `users.supporter_comp`(이런 계정은 남아 있는 정기 결제가 있어도 갱신 청구·갱신 예정 안내를 하지 않고, `/supporter`에서 그 정기 결제를 해지할 수 있습니다), 결제로 얻은 유료 기간은 `users.supporter_until`(유료 기간이 끝나는 시각)로 나타냅니다. 접근 권한 = `supporter_comp OR supporter_until + (supporter_grace ? PAYMENT_GRACE_DAYS : 0) > now()`입니다. 즉 `supporter_until`은 유료 기간 경계로 남고, 결제 유예 기간 동안은 유료 기능도 계속 열려 있습니다. 유예가 없는 경우는 하나입니다: 유료 기간의 끝이 갱신되지 않을 스토어 구독(자동 갱신 꺼짐, 또는 `active`·`billing_retry`가 아님)이 산 기간이면 `users.supporter_grace`가 false라 그 끝에서 바로 닫힙니다. 이 값은 `lib/payments/paid-time.ts`의 `refreshPaymentGrace`가 이용 기한이나 스토어 구독이 바뀔 때마다 다시 계산합니다.
 
 기능 묶음은 `lib/entitlements.ts`의 `PLAN_FEATURES`에 정의됩니다. 지금은 `supporter → [custom_domains, github_deploys, analytics]`입니다. 새 플랜은 키를 추가해 확장합니다.
 
@@ -153,7 +153,7 @@
 - 상품: App Store `pub.naru.supporter.monthly`·`pub.naru.supporter.yearly`(구독 그룹 하나), Google Play 구독 `supporter`의 기본 요금제 `monthly`·`yearly`. 가격은 App Store Connect와 Play Console에서 정하고 서버는 상품 id만 확인합니다.
 - 계정 연결: 앱은 구매에 계정 id를 붙입니다(`appAccountToken`, `obfuscatedAccountId`). 구독은 처음 연결된 계정의 것이고 다른 계정으로 옮겨지지 않습니다 — 같은 Apple 계정으로 다른 나루 계정에서 복원하면 409입니다.
 - 들어오는 길: 앱이 구매·복원 직후 보내는 거래(`POST /api/app/v1/supporter/apple`·`/google`), 스토어 알림(`/api/webhooks/apple`, `/api/webhooks/google-play`), 15분마다의 대조(`reconcile-store-subscriptions.ts`). 세 길 모두 서명을 확인하거나(Apple JWS, Apple Root CA G3) Play Developer API에 다시 물은 뒤 `applyStoreState` 하나로 반영합니다. 받은 알림은 모두 `store_notifications`에 남습니다.
-- 이용 기한: 새 결제 기간은 `extendPaidTime`으로 늘립니다. 스토어가 환불·회수한 기간(`revoked_at`)은 빠지고 `recomputePaidTime`이 줄입니다. 원장 계산(`recomputePaidTime`, `repairPaidTime`, 데이터 확인, 이용 기한 복구)은 Toss 결제와 회수되지 않은 스토어 기간을 함께 봅니다. 스토어 기간은 스토어가 정한 날짜라 압축하지 않습니다.
+- 이용 기한: 새 결제 기간은 `extendPaidTime`으로 늘립니다. 스토어가 환불·회수한 기간(`revoked_at`)은 빠지고 `recomputePaidTime`이 줄입니다. 원장 계산(`recomputePaidTime`, `repairPaidTime`, 데이터 확인, 이용 기한 복구)은 Toss 결제와 회수되지 않은 스토어 기간을 함께 봅니다. 스토어 기간은 스토어가 정한 날짜라 압축하지 않습니다. 결제 유예는 자동 갱신되는 스토어 구독에만 줍니다(`supporter_grace`): 해지했거나 스토어가 포기한 구독은 기다릴 결제가 없고, 갱신 실패는 스토어가 자기 유예·재시도(`billing_retry`)로 다룹니다.
 - Play 확인(acknowledge): 사흘 안에 확인하지 않은 구매는 Play가 환불합니다. 계정에 반영한 뒤 확인하고, 실패하면 대조가 다시 합니다(실패가 6시간 이어지면 알림).
 - 한 번에 정기 결제 하나: 갱신될 스토어 구독이 있으면 웹은 Toss 정기 결제와 한 번만 결제를 시작하지 않고(`renewingStoreSubscription`) `/supporter`에 스토어 관리 안내를 보여 줍니다. 앱은 Toss 정기 결제 중이거나, 다른 스토어에서 갱신 중이거나, 웹에서 산 이용 기간이 남아 있으면 팔지 않습니다(`supporterStatus`) — 스토어 구독은 나중에 시작할 수 없어 겹치는 기간을 두 번 사게 되기 때문입니다. 스토어 구독을 해지하면 남은 기간이 끝난 뒤로 Toss 정기 결제가 예약됩니다(`scheduledRecurringStart`).
 - 계정 옮기기: 같은 사람의 다른 계정으로 운영자가 옮깁니다(`/admin/users/<계정>`의 앱 구독 → 다른 계정으로 옮기기, `moveStoreSubscription`). 지금 기간까지 옮겨 원래 계정의 이용 기한에서 빼고 새 계정에 더하며, 이후 갱신과 복원은 새 계정의 것입니다(스토어의 계정 연결은 바뀌지 않지만 나루에 기록된 주인을 따릅니다). 새 계정에 웹 정기 결제나 갱신되는 다른 스토어 구독이 있거나, 원래 계정의 웹 정기 결제가 이 기간 뒤로 예약되어 있으면 거절합니다. 두 계정 모두 `store_moved` 이벤트가 남습니다.

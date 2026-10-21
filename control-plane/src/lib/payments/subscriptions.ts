@@ -108,6 +108,12 @@ export function addPaymentGrace(until: Date): Date {
   return graceEndsAt;
 }
 
+// When an account's paid features close: its paid time, and past it the
+// payment grace window when users.supporter_grace grants one (paid-time.ts).
+export function paidAccessEndsAt(until: Date, grace: boolean): Date {
+  return grace ? addPaymentGrace(until) : new Date(until);
+}
+
 // Defers the first recurring charge to the end of prepaid access. Notice
 // markers are reset because they may be left over from an earlier, canceled
 // subscription; the renewal notice cron would otherwise skip the reminder

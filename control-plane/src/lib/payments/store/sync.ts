@@ -1,5 +1,5 @@
 import { db } from "@/lib/database";
-import { addPaymentGrace, plansOf } from "@/lib/payments/subscriptions";
+import { paidAccessEndsAt, plansOf } from "@/lib/payments/subscriptions";
 import { ONE_TIME_BLOCKING_STATUSES } from "@/lib/payments/payment-states";
 import { verifyAppleTransaction, fetchAppleState } from "./apple";
 import {
@@ -129,7 +129,7 @@ export async function supporterStatus(
 ): Promise<SupporterStatus> {
   const user = await db
     .selectFrom("users")
-    .select(["supporter_comp", "supporter_until"])
+    .select(["supporter_comp", "supporter_until", "supporter_grace"])
     .where("id", "=", userId)
     .executeTakeFirstOrThrow();
   const plan = await plansOf(db, userId).select("status").executeTakeFirst();
@@ -154,7 +154,9 @@ export async function supporterStatus(
   const paidByStore =
     !!until && !!storeUntil && storeUntil.getTime() >= until.getTime() - 60_000;
   const supporter =
-    comp || (!!until && addPaymentGrace(until).getTime() > now.getTime());
+    comp ||
+    (!!until &&
+      paidAccessEndsAt(until, user.supporter_grace).getTime() > now.getTime());
   const current = subs.find((sub) => sub.store === store) ?? subs[0] ?? null;
 
   let message: string | null = null;
