@@ -57,7 +57,9 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
     db,
   );
   await sql`create table custom_domains(id serial primary key, user_id integer references users(id), hostname text,
-    verified_at timestamptz, cloudflare_status text, ssl_status text)`.execute(
+    verified_at timestamptz, cloudflare_status text, ssl_status text,
+    dns_resolves boolean not null default false, dns_checked_at timestamptz,
+    dns_failing_since timestamptz, released_at timestamptz)`.execute(
     db,
   );
   await baseUp(db);
