@@ -286,6 +286,12 @@ async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
     : await domainSite(url.hostname, env);
   if (!login) return notFound();
   if (await siteSuspended(login, env)) return suspended();
+  // Which site this host serves, for the control plane to see that a custom
+  // domain reaches Naru however its DNS gets here (domain-dns.ts there).
+  if (url.pathname === SITE_PROBE_PATH)
+    return new Response(login, {
+      headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+    });
   if (subdomain) {
     const redirect = await domainRedirect(request, url, login, env);
     if (redirect) return redirect;
@@ -307,6 +313,9 @@ async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
     (input) => renderRoute(env, input),
   );
 }
+
+/** Answered on every hosted host with the site it serves. */
+export const SITE_PROBE_PATH = "/.well-known/naru-site";
 
 /**
  * A site served on a custom domain moves its subdomain's pages there, so

@@ -123,6 +123,18 @@ describe("a site served on a custom domain", () => {
     expect(response.status).not.toBe(301);
   });
 
+  test("names the site it serves at the probe path, on either host", async () => {
+    for (const host of ["alice.example", "alice.naru.pub"]) {
+      const response = await request(`https://${host}/.well-known/naru-site`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("alice");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+    expect(
+      (await request("https://unknown.example/.well-known/naru-site")).status,
+    ).toBe(404);
+  });
+
   test("leaves the subdomain alone while the domain does not resolve", async () => {
     const response = await request("https://erin.naru.pub/");
     expect(response.status).not.toBe(301);

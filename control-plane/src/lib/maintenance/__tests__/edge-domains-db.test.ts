@@ -147,11 +147,19 @@ integration("edge custom domains", () => {
       "missing.example": [],
       "elsewhere.example": ["192.0.2.1"],
       "timeout.example": null,
+      // On its owner's own Cloudflare zone, proxied here: that zone's
+      // addresses, but it serves the site.
+      "proxied.example": ["198.51.100.7"],
     };
     const looked: string[] = [];
     const lookup = async (host: string) => {
       looked.push(host);
       return answers[host] ?? null;
+    };
+    const probed: string[] = [];
+    const probe = async (host: string, login: string) => {
+      probed.push(host);
+      return host === "proxied.example" && login.startsWith("edge-dns-");
     };
     const state = async () =>
       Object.fromEntries(
@@ -169,11 +177,14 @@ integration("edge custom domains", () => {
     try {
       for (const host of Object.keys(answers).slice(1)) await insert(host);
 
-      expect(await checkCustomDomainDns(lookup)).toBe(3);
+      expect(await checkCustomDomainDns(lookup, probe)).toBe(4);
+      // Only domains with someone else's addresses are asked over HTTPS.
+      expect(probed.sort()).toEqual(["elsewhere.example", "proxied.example"]);
       expect(await state()).toEqual({
         "alias.example": { resolves: true, checked: true },
         "missing.example": { resolves: false, checked: true },
         "elsewhere.example": { resolves: false, checked: true },
+        "proxied.example": { resolves: true, checked: true },
         // No answer: nothing is recorded, and it is asked again next run.
         "timeout.example": { resolves: false, checked: false },
       });
@@ -183,7 +194,7 @@ integration("edge custom domains", () => {
 
       // A resolving domain waits an hour; the others are asked every run.
       looked.length = 0;
-      await checkCustomDomainDns(lookup);
+      await checkCustomDomainDns(lookup, probe);
       expect(looked).not.toContain("alias.example");
       expect(looked).toEqual(
         expect.arrayContaining([
@@ -195,13 +206,13 @@ integration("edge custom domains", () => {
 
       // Records added: it redirects from the next run.
       answers["missing.example"] = ["104.21.58.28"];
-      await checkCustomDomainDns(lookup);
+      await checkCustomDomainDns(lookup, probe);
       expect((await state())["missing.example"].resolves).toBe(true);
 
       // Without the target's addresses nothing changes.
       answers["customers.naru.pub"] = null;
       answers["elsewhere.example"] = target;
-      expect(await checkCustomDomainDns(lookup)).toBe(0);
+      expect(await checkCustomDomainDns(lookup, probe)).toBe(0);
       expect((await state())["elsewhere.example"].resolves).toBe(false);
     } finally {
       await db.deleteFrom("users").where("id", "in", users).execute();
