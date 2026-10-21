@@ -69,6 +69,16 @@ describe("validation", () => {
     ).toBeNull();
   });
 
+  test("accepts an internationalized domain in punycode", () => {
+    expect(
+      invalidTable(
+        table({
+          "xn--2j5bi8c29q.xn--mk1bu44c": { login: "a", entitledUntil: null },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   test.each([
     [null],
     [{ domains: {} }],

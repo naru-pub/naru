@@ -40,8 +40,10 @@ const DOMAINS_KEY = "domains";
 // it read for half that, so a busy domain costs no read per request.
 const KV_CACHE_SECONDS = 60;
 const MEMO_MS = 30_000;
+// The last label is letters, or an internationalized TLD in punycode
+// (xn--mk1bu44c is .닷컴).
 const HOSTNAME =
-  /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+  /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})$/;
 
 let memo: { table: DomainTable | null; until: number } | undefined;
 
