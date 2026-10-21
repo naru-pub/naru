@@ -41,6 +41,7 @@ export default async function AdminLayout({
       sections: [
         { href: "/admin/users", label: "계정" },
         { href: "/admin/moderation", label: "사이트 관리" },
+        { href: "/admin/domains", label: "커스텀 도메인" },
         { href: "/admin/supporters", label: "유료 이용자" },
         { href: "/admin/trials", label: "무료 체험" },
         { href: "/admin/usage", label: "사용량" },
