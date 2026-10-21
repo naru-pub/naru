@@ -288,20 +288,55 @@ export default function CustomDomainsCard({
                             <strong className="text-foreground break-all">
                               {target}
                             </strong>
-                            (으)로 향하는 레코드를 추가해주세요. 루트 도메인은
-                            CNAME을 쓸 수 없으니 ALIAS 또는 ANAME을 사용하세요.
+                            (으)로 향하는 CNAME 레코드를 추가해주세요.
                           </p>
                           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 bg-background border border-border rounded p-2">
                             <span className="text-muted-foreground">종류</span>
-                            <span className="font-mono break-all">
-                              CNAME (루트 도메인은 ALIAS/ANAME)
-                            </span>
+                            <span className="font-mono break-all">CNAME</span>
                             <span className="text-muted-foreground">이름</span>
                             <span className="font-mono break-all">
                               {domain.hostname}
                             </span>
                             <span className="text-muted-foreground">대상</span>
                             <span className="font-mono break-all">{target}</span>
+                          </div>
+                          {/* An ALIAS/ANAME is flattened by the registrar into
+                              the target's Cloudflare IPs. Once the hostname
+                              resolves there, Cloudflare treats it as another
+                              Cloudflare zone's and refuses TXT validation, so
+                              apex domains must validate before pointing. */}
+                          <div className="bg-background border border-border rounded p-2 space-y-1 text-muted-foreground">
+                            <p className="font-medium text-foreground">
+                              루트 도메인(예: example.com)이라면
+                            </p>
+                            <p>
+                              루트 도메인에는 CNAME을 쓸 수 없고, ALIAS/ANAME을
+                              먼저 추가하면 Cloudflare가 아래 TXT 레코드로
+                              소유권을 확인하지 못합니다. 다음 순서를 지켜주세요.
+                            </p>
+                            <ol className="list-decimal pl-5 space-y-1">
+                              <li>
+                                ALIAS/ANAME 레코드 없이 아래 TXT 레코드만 먼저
+                                추가해주세요. 이미 추가했다면 잠시 삭제해주세요.
+                              </li>
+                              <li>
+                                상태 확인을 눌러 호스트와 SSL이 모두 active가
+                                될 때까지 기다려주세요.
+                              </li>
+                              <li>
+                                active가 되면{" "}
+                                <span className="font-mono">
+                                  ALIAS {domain.hostname} → {target}
+                                </span>{" "}
+                                레코드를 추가해주세요.
+                              </li>
+                            </ol>
+                            <p>
+                              가장 확실한 방법은 www 주소(예: www.example.com)를
+                              CNAME으로 연결하고, 도메인 등록기관의 URL
+                              리디렉션으로 루트 도메인을 www 주소로 보내는
+                              것입니다.
+                            </p>
                           </div>
                         </div>
                         {domain.ownershipVerificationName &&
