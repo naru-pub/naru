@@ -66,11 +66,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existingDomain = await db
+    let existingDomain = await db
       .selectFrom("custom_domains")
-      .select(["id", "user_id"])
+      .select(["id", "user_id", "released_at"])
       .where("hostname", "=", normalizedHostname)
       .executeTakeFirst();
+
+    // Another account's released domain holds no Cloudflare hostname: the
+    // hostname is free to whoever adds it now (lib/custom-domain-housekeeping).
+    if (
+      existingDomain &&
+      existingDomain.user_id !== user.id &&
+      existingDomain.released_at
+    ) {
+      await db
+        .deleteFrom("custom_domains")
+        .where("id", "=", existingDomain.id)
+        .where("released_at", "is not", null)
+        .execute();
+      existingDomain = undefined;
+    }
 
     if (existingDomain && existingDomain.user_id !== user.id) {
       return NextResponse.json(
@@ -82,7 +97,9 @@ export async function POST(request: NextRequest) {
     if (existingDomain) {
       return NextResponse.json({
         success: true,
-        message: "이미 등록된 도메인입니다.",
+        message: existingDomain.released_at
+          ? "연결이 해제된 도메인입니다. 다시 연결을 눌러주세요."
+          : "이미 등록된 도메인입니다.",
       });
     }
 
@@ -141,6 +158,42 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Connects a released domain again under a new Cloudflare hostname, which
+ * may ask for its ownership and certificate records again. Of two requests at
+ * once, the second finds it connected and gives its hostname back.
+ */
+async function reconnect(
+  domain: { id: string; hostname: string },
+  userId: string,
+) {
+  const cloudflareHostname = await createCloudflareCustomHostname(
+    domain.hostname,
+  );
+  const updated = await db
+    .updateTable("custom_domains")
+    .set({
+      ...toCustomDomainRow(cloudflareHostname),
+      released_at: null,
+      release_reason: null,
+      release_notice_sent_at: null,
+    })
+    .where("id", "=", domain.id)
+    .where("user_id", "=", userId)
+    .where("released_at", "is not", null)
+    .executeTakeFirst();
+  if (!updated.numUpdatedRows) {
+    await deleteCloudflareCustomHostnameIfExists(cloudflareHostname.id);
+  } else {
+    await pushEdgeDomainsSoon();
+  }
+  return NextResponse.json({
+    success: true,
+    message:
+      "도메인을 다시 연결했습니다. DNS 레코드를 확인한 뒤 상태를 확인해주세요.",
+  });
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     try {
@@ -177,7 +230,7 @@ export async function PATCH(request: NextRequest) {
 
     const domain = await db
       .selectFrom("custom_domains")
-      .select(["id", "cloudflare_hostname_id"])
+      .select(["id", "hostname", "cloudflare_hostname_id"])
       .where("id", "=", id)
       .where("user_id", "=", user.id)
       .executeTakeFirst();
@@ -188,6 +241,9 @@ export async function PATCH(request: NextRequest) {
         { status: 404 },
       );
     }
+
+    // A released domain is connected again: a new Cloudflare hostname.
+    if (!domain.cloudflare_hostname_id) return reconnect(domain, user.id);
 
     const cloudflareHostname = await getCloudflareCustomHostname(
       domain.cloudflare_hostname_id,
@@ -260,9 +316,11 @@ export async function DELETE(request: NextRequest) {
     }
 
     try {
-      await deleteCloudflareCustomHostnameIfExists(
-        domain.cloudflare_hostname_id,
-      );
+      // A released domain has no Cloudflare hostname left.
+      if (domain.cloudflare_hostname_id)
+        await deleteCloudflareCustomHostnameIfExists(
+          domain.cloudflare_hostname_id,
+        );
     } catch (error) {
       console.error("Cloudflare custom hostname delete error:", error);
       return NextResponse.json(

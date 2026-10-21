@@ -32,10 +32,10 @@ These jobs are registered in `lib/maintenance/jobs.ts` and run through
 | github-deployment-cleanup | Every 15 minutes |
 | media-cleanup | Every 15 minutes |
 | site-data-grant-cleanup | Every 30 minutes |
+| custom-domain-housekeeping | Every 30 minutes |
 | home-directory-updater | 13:00 (22:00 KST) |
 | payment-refund-sync | 19:15 (04:15 KST) |
 | billing-notifications | 00:00 (09:00 KST) |
-| expired-custom-domain-cleanup | 19:30 (04:30 KST) |
 | toss-transaction-check | 19:45 (04:45 KST) |
 | payment-invariant-check | 20:00 (05:00 KST) |
 

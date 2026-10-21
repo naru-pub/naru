@@ -16,7 +16,8 @@ import { getCustomDomainTarget } from "@/lib/customDomains";
 // are added; one that resolves is looked up again hourly, since one rarely
 // stops. A lookup that gets no answer (a timeout, a resolver failure) changes
 // nothing, and the run stops looking past its budget, so a slow resolver
-// never holds up the sync.
+// never holds up the sync. A domain that keeps failing is released after a
+// while (lib/custom-domain-housekeeping.ts), from dns_failing_since.
 
 const RECHECK_RESOLVING = "1 hour";
 const LOOKUP_TIMEOUT_MS = 3_000;
@@ -75,11 +76,16 @@ export async function checkCustomDomainDns(lookup: Lookup = publicResolver()) {
       const domain = due[next++];
       const addresses = await lookup(domain.hostname);
       if (addresses === null) continue;
+      const resolves = addresses.some((a) => targetAddresses.has(a));
       await db
         .updateTable("custom_domains")
         .set({
-          dns_resolves: addresses.some((a) => targetAddresses.has(a)),
+          dns_resolves: resolves,
           dns_checked_at: new Date(),
+          // Since when it has not, for housekeeping to release it.
+          dns_failing_since: resolves
+            ? null
+            : sql<Date>`coalesce(dns_failing_since, now())`,
         })
         .where("id", "=", domain.id)
         .execute();

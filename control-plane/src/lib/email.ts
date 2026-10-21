@@ -276,6 +276,71 @@ function formatKrw(amount: number) {
   }).format(amount);
 }
 
+// Before housekeeping releases a custom domain (custom-domain-housekeeping).
+export async function sendCustomDomainReleaseNoticeEmail(opts: {
+  email: string;
+  loginName: string;
+  hostname: string;
+  reason: "lapsed" | "pending" | "dns";
+  releaseAt: Date;
+}) {
+  const domainsUrl = `${process.env.BASE_URL}/domains`;
+  const supporterUrl = `${process.env.BASE_URL}/supporter`;
+  const releaseLabel = formatKoreanDateTime(opts.releaseAt);
+  const why = {
+    lapsed: `유료 이용 기간이 끝나 ${opts.hostname} 도메인의 연결이 해제됩니다. 그 전에 결제하시면 그대로 유지됩니다.`,
+    pending: `${opts.hostname} 도메인의 연결이 아직 끝나지 않아 등록이 해제됩니다. 그 전에 도메인 페이지의 안내대로 DNS 레코드를 추가해주세요.`,
+    dns: `${opts.hostname} 도메인의 DNS가 한동안 나루를 가리키지 않아 연결이 해제됩니다. 계속 쓰시려면 그 전에 DNS 레코드를 확인해주세요.`,
+  }[opts.reason];
+  const after =
+    "해제된 뒤에도 도메인 페이지에서 '다시 연결'을 누르면 다시 쓸 수 있습니다. 이때 DNS 인증 레코드를 다시 추가해야 할 수 있습니다.";
+  const link =
+    opts.reason === "lapsed"
+      ? { url: supporterUrl, label: "결제 페이지로 가기" }
+      : { url: domainsUrl, label: "도메인 페이지로 가기" };
+
+  const message = createMessage({
+    from: process.env.FROM_EMAIL || "noreply@naru.pub",
+    to: opts.email,
+    subject: `커스텀 도메인 ${opts.hostname}의 연결이 곧 해제됩니다`,
+    content: {
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>커스텀 도메인 연결 해제 안내</h2>
+          <p>${opts.loginName}님, ${why}</p>
+          <p><strong>해제 예정:</strong> ${releaseLabel}</p>
+          <p>${after}</p>
+          <p>
+            <a href="${link.url}" style="background-color: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+              ${link.label}
+            </a>
+          </p>
+        </div>
+      `,
+      text: `
+        커스텀 도메인 연결 해제 안내
+
+        ${opts.loginName}님, ${why}
+
+        해제 예정: ${releaseLabel}
+
+        ${after}
+
+        ${link.label}: ${link.url}
+      `,
+    },
+    tags: ["custom-domain", "release-notice"],
+  });
+
+  const receipt = await transport.send(message);
+  if (!receipt.successful) {
+    throw new Error(
+      `Failed to send custom domain release notice: ${receipt.errorMessages?.join(", ")}`,
+    );
+  }
+  return receipt;
+}
+
 export async function sendSubscriptionRenewalNoticeEmail(opts: {
   // What the mail is about, for the payment_mails record.
   ref?: PaymentMailRef;
@@ -351,7 +416,7 @@ export async function sendTrialEndingEmail(opts: {
   const supporterUrl = `${process.env.BASE_URL}/supporter`;
   const endsLabel = formatKoreanDateTime(opts.endsAt);
   const next =
-    "체험이 끝나면 유료 기능이 닫히고, 연결한 커스텀 도메인은 삭제됩니다. 데이터베이스의 데이터는 지워지지 않아 결제하면 다시 쓸 수 있습니다. 계속 이용하시려면 체험이 끝나기 전에 결제해 주세요. 지금 결제해도 남은 체험 기간은 그대로이고, 첫 결제는 체험이 끝난 뒤입니다.";
+    "체험이 끝나면 유료 기능이 닫히고, 연결한 커스텀 도메인은 30일 뒤 연결이 해제됩니다. 데이터베이스의 데이터는 지워지지 않아 결제하면 다시 쓸 수 있습니다. 계속 이용하시려면 체험이 끝나기 전에 결제해 주세요. 지금 결제해도 남은 체험 기간은 그대로이고, 첫 결제는 체험이 끝난 뒤입니다.";
 
   const message = createMessage({
     from: process.env.FROM_EMAIL || "noreply@naru.pub",

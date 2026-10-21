@@ -182,11 +182,9 @@ export const MAINTENANCE_JOBS = [
     payment: true,
   },
   {
-    name: "expired-custom-domain-cleanup",
-    script: "cleanup-expired-custom-domains.ts",
-    minutes: 1440,
-    hour: 19,
-    minute: 30,
+    name: "custom-domain-housekeeping",
+    script: "custom-domain-housekeeping.ts",
+    minutes: 30,
     timeout: 300,
   },
   {

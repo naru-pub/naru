@@ -28,7 +28,33 @@ type CustomDomain = {
   sslValidationRecords: unknown;
   verificationErrors: unknown;
   verifiedAt: string | null;
+  /** When housekeeping released it (no Cloudflare hostname), and why. */
+  releasedAt: string | null;
+  releaseReason: "lapsed" | "pending" | "dns" | null;
+  /** When it will be released, once its owner has been told. */
+  releaseAt: string | null;
+  releaseAtReason: "lapsed" | "pending" | "dns" | null;
 };
+
+const RELEASED: Record<"lapsed" | "pending" | "dns", string> = {
+  lapsed: "유료 이용이 끝나 연결이 해제되었습니다.",
+  pending: "연결이 끝나지 않아 등록이 해제되었습니다.",
+  dns: "DNS가 한동안 나루를 가리키지 않아 연결이 해제되었습니다.",
+};
+
+const RELEASING: Record<"lapsed" | "pending" | "dns", string> = {
+  lapsed: "그 전에 결제하시면 그대로 유지됩니다.",
+  pending: "그 전에 아래 DNS 레코드를 추가해주세요.",
+  dns: `그 전에 DNS 레코드가 나루를 가리키는지 확인해주세요.`,
+};
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Asia/Seoul",
+  }).format(new Date(value));
+}
 
 type SslValidationRecord = {
   status?: string;
@@ -198,14 +224,15 @@ export default function CustomDomainsCard({
               ) : (
                 domains.map((domain) => {
                   const sslValidationRecords = getSslValidationRecords(
-                    domain.sslValidationRecords
+                    domain.sslValidationRecords,
                   );
                   const verificationErrors = getVerificationErrors(
-                    domain.verificationErrors
+                    domain.verificationErrors,
                   );
                   const isActive =
                     domain.cloudflareStatus === "active" &&
                     domain.sslStatus === "active";
+                  const released = domain.releasedAt !== null;
 
                   return (
                     <div
@@ -232,7 +259,11 @@ export default function CustomDomainsCard({
                               {domain.hostname}
                             </p>
                           )}
-                          {isActive ? (
+                          {released ? (
+                            <p className="text-sm text-muted-foreground">
+                              연결 해제됨
+                            </p>
+                          ) : isActive ? (
                             <p className="text-sm font-medium text-success flex items-center gap-1">
                               <CheckCircle2 size={14} />
                               연결 완료
@@ -256,7 +287,7 @@ export default function CustomDomainsCard({
                             className="flex items-center gap-2"
                           >
                             <RefreshCw size={14} />
-                            상태 확인
+                            {released ? "다시 연결" : "상태 확인"}
                           </Button>
                           <Button
                             type="button"
@@ -272,140 +303,174 @@ export default function CustomDomainsCard({
                         </div>
                       </div>
 
-                      {!isActive && (
-                      <div className="grid gap-2 text-sm">
-                        <div className="bg-secondary border-2 border-primary rounded p-3 space-y-2">
-                          <div className="flex items-center gap-2 font-bold text-foreground">
-                            <Link2 size={16} />
-                            1단계: DNS 연결 (필수)
-                          </div>
-                          <p className="text-muted-foreground">
-                            도메인 등록기관(DNS) 설정에서{" "}
-                            <strong className="text-foreground break-all">
-                              {domain.hostname}
-                            </strong>
-                            을(를){" "}
-                            <strong className="text-foreground break-all">
-                              {target}
-                            </strong>
-                            (으)로 향하는 CNAME 레코드를 추가해주세요.
+                      {released && domain.releaseReason && (
+                        <div className="bg-muted border border-border rounded p-3 text-sm text-muted-foreground space-y-1">
+                          <p>{RELEASED[domain.releaseReason]}</p>
+                          <p>
+                            다시 연결을 누르면 새로 연결합니다. 이때 DNS 인증
+                            레코드를 다시 추가해야 할 수 있습니다.
                           </p>
-                          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 bg-background border border-border rounded p-2">
-                            <span className="text-muted-foreground">종류</span>
-                            <span className="font-mono break-all">CNAME</span>
-                            <span className="text-muted-foreground">이름</span>
-                            <span className="font-mono break-all">
-                              {domain.hostname}
-                            </span>
-                            <span className="text-muted-foreground">대상</span>
-                            <span className="font-mono break-all">{target}</span>
-                          </div>
-                          {/* An ALIAS/ANAME is flattened by the registrar into
+                        </div>
+                      )}
+
+                      {domain.releaseAt && domain.releaseAtReason && (
+                        <div className="border-2 border-destructive rounded p-3 text-sm">
+                          <p className="font-medium text-destructive">
+                            {formatDateTime(domain.releaseAt)}에 연결이
+                            해제됩니다.
+                          </p>
+                          <p className="text-muted-foreground">
+                            {RELEASING[domain.releaseAtReason]}
+                          </p>
+                        </div>
+                      )}
+
+                      {!isActive && !released && (
+                        <div className="grid gap-2 text-sm">
+                          <div className="bg-secondary border-2 border-primary rounded p-3 space-y-2">
+                            <div className="flex items-center gap-2 font-bold text-foreground">
+                              <Link2 size={16} />
+                              1단계: DNS 연결 (필수)
+                            </div>
+                            <p className="text-muted-foreground">
+                              도메인 등록기관(DNS) 설정에서{" "}
+                              <strong className="text-foreground break-all">
+                                {domain.hostname}
+                              </strong>
+                              을(를){" "}
+                              <strong className="text-foreground break-all">
+                                {target}
+                              </strong>
+                              (으)로 향하는 CNAME 레코드를 추가해주세요.
+                            </p>
+                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 bg-background border border-border rounded p-2">
+                              <span className="text-muted-foreground">
+                                종류
+                              </span>
+                              <span className="font-mono break-all">CNAME</span>
+                              <span className="text-muted-foreground">
+                                이름
+                              </span>
+                              <span className="font-mono break-all">
+                                {domain.hostname}
+                              </span>
+                              <span className="text-muted-foreground">
+                                대상
+                              </span>
+                              <span className="font-mono break-all">
+                                {target}
+                              </span>
+                            </div>
+                            {/* An ALIAS/ANAME is flattened by the registrar into
                               the target's Cloudflare IPs. Once the hostname
                               resolves there, Cloudflare treats it as another
                               Cloudflare zone's and refuses TXT validation, so
                               apex domains must validate before pointing. */}
-                          <div className="bg-background border border-border rounded p-2 space-y-1 text-muted-foreground">
-                            <p className="font-medium text-foreground">
-                              루트 도메인(예: example.com)이라면
-                            </p>
-                            <p>
-                              루트 도메인에는 CNAME을 쓸 수 없고, ALIAS/ANAME을
-                              먼저 추가하면 Cloudflare가 아래 TXT 레코드로
-                              소유권을 확인하지 못합니다. 다음 순서를 지켜주세요.
-                            </p>
-                            <ol className="list-decimal pl-5 space-y-1">
-                              <li>
-                                ALIAS/ANAME 레코드 없이 아래 TXT 레코드만 먼저
-                                추가해주세요. 이미 추가했다면 잠시 삭제해주세요.
-                              </li>
-                              <li>
-                                상태 확인을 눌러 호스트와 SSL이 모두 active가
-                                될 때까지 기다려주세요.
-                              </li>
-                              <li>
-                                active가 되면{" "}
-                                <span className="font-mono">
-                                  ALIAS {domain.hostname} → {target}
-                                </span>{" "}
-                                레코드를 추가해주세요.
-                              </li>
-                            </ol>
-                            <p>
-                              가장 확실한 방법은 www 주소(예: www.example.com)를
-                              CNAME으로 연결하고, 도메인 등록기관의 URL
-                              리디렉션으로 루트 도메인을 www 주소로 보내는
-                              것입니다.
-                            </p>
-                          </div>
-                        </div>
-                        {domain.ownershipVerificationName &&
-                          domain.ownershipVerificationValue && (
-                            <div className="bg-background border border-border rounded p-2">
-                              <span className="text-muted-foreground">
-                                소유권 {domain.ownershipVerificationType ?? "TXT"}
-                              </span>
-                              <p className="font-mono break-all">
-                                {domain.ownershipVerificationName}
+                            <div className="bg-background border border-border rounded p-2 space-y-1 text-muted-foreground">
+                              <p className="font-medium text-foreground">
+                                루트 도메인(예: example.com)이라면
                               </p>
-                              <p className="font-mono break-all">
-                                {domain.ownershipVerificationValue}
+                              <p>
+                                루트 도메인에는 CNAME을 쓸 수 없고,
+                                ALIAS/ANAME을 먼저 추가하면 Cloudflare가 아래
+                                TXT 레코드로 소유권을 확인하지 못합니다. 다음
+                                순서를 지켜주세요.
+                              </p>
+                              <ol className="list-decimal pl-5 space-y-1">
+                                <li>
+                                  ALIAS/ANAME 레코드 없이 아래 TXT 레코드만 먼저
+                                  추가해주세요. 이미 추가했다면 잠시
+                                  삭제해주세요.
+                                </li>
+                                <li>
+                                  상태 확인을 눌러 호스트와 SSL이 모두 active가
+                                  될 때까지 기다려주세요.
+                                </li>
+                                <li>
+                                  active가 되면{" "}
+                                  <span className="font-mono">
+                                    ALIAS {domain.hostname} → {target}
+                                  </span>{" "}
+                                  레코드를 추가해주세요.
+                                </li>
+                              </ol>
+                              <p>
+                                가장 확실한 방법은 www 주소(예:
+                                www.example.com)를 CNAME으로 연결하고, 도메인
+                                등록기관의 URL 리디렉션으로 루트 도메인을 www
+                                주소로 보내는 것입니다.
                               </p>
                             </div>
+                          </div>
+                          {domain.ownershipVerificationName &&
+                            domain.ownershipVerificationValue && (
+                              <div className="bg-background border border-border rounded p-2">
+                                <span className="text-muted-foreground">
+                                  소유권{" "}
+                                  {domain.ownershipVerificationType ?? "TXT"}
+                                </span>
+                                <p className="font-mono break-all">
+                                  {domain.ownershipVerificationName}
+                                </p>
+                                <p className="font-mono break-all">
+                                  {domain.ownershipVerificationValue}
+                                </p>
+                              </div>
+                            )}
+                          {sslValidationRecords.map((record, index) => (
+                            <div
+                              key={`${domain.id}-${index}`}
+                              className="bg-background border border-border rounded p-2"
+                            >
+                              <span className="text-muted-foreground">
+                                인증서 검증{" "}
+                                {record.status ? `(${record.status})` : ""}
+                              </span>
+                              {record.txt_name && record.txt_value && (
+                                <>
+                                  <p className="font-mono break-all">
+                                    {record.txt_name}
+                                  </p>
+                                  <p className="font-mono break-all">
+                                    {record.txt_value}
+                                  </p>
+                                </>
+                              )}
+                              {record.cname && record.cname_target && (
+                                <>
+                                  <p className="font-mono break-all">
+                                    {record.cname}
+                                  </p>
+                                  <p className="font-mono break-all">
+                                    {record.cname_target}
+                                  </p>
+                                </>
+                              )}
+                              {record.http_url && record.http_body && (
+                                <>
+                                  <p className="font-mono break-all">
+                                    {record.http_url}
+                                  </p>
+                                  <p className="font-mono break-all">
+                                    {record.http_body}
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                          {verificationErrors.length > 0 && (
+                            <div className="bg-background border border-border rounded p-2">
+                              <span className="text-muted-foreground">
+                                Cloudflare 오류
+                              </span>
+                              {verificationErrors.map((error, index) => (
+                                <p key={index} className="break-words">
+                                  {error}
+                                </p>
+                              ))}
+                            </div>
                           )}
-                        {sslValidationRecords.map((record, index) => (
-                          <div
-                            key={`${domain.id}-${index}`}
-                            className="bg-background border border-border rounded p-2"
-                          >
-                            <span className="text-muted-foreground">
-                              인증서 검증 {record.status ? `(${record.status})` : ""}
-                            </span>
-                            {record.txt_name && record.txt_value && (
-                              <>
-                                <p className="font-mono break-all">
-                                  {record.txt_name}
-                                </p>
-                                <p className="font-mono break-all">
-                                  {record.txt_value}
-                                </p>
-                              </>
-                            )}
-                            {record.cname && record.cname_target && (
-                              <>
-                                <p className="font-mono break-all">
-                                  {record.cname}
-                                </p>
-                                <p className="font-mono break-all">
-                                  {record.cname_target}
-                                </p>
-                              </>
-                            )}
-                            {record.http_url && record.http_body && (
-                              <>
-                                <p className="font-mono break-all">
-                                  {record.http_url}
-                                </p>
-                                <p className="font-mono break-all">
-                                  {record.http_body}
-                                </p>
-                              </>
-                            )}
-                          </div>
-                        ))}
-                        {verificationErrors.length > 0 && (
-                          <div className="bg-background border border-border rounded p-2">
-                            <span className="text-muted-foreground">
-                              Cloudflare 오류
-                            </span>
-                            {verificationErrors.map((error, index) => (
-                              <p key={index} className="break-words">
-                                {error}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                        </div>
                       )}
                     </div>
                   );

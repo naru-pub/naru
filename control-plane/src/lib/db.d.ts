@@ -376,16 +376,20 @@ export interface CronJobs {
 }
 
 export interface CustomDomains {
-  cloudflare_hostname_id: string;
+  cloudflare_hostname_id: string | null;
   cloudflare_status: string;
   created_at: Generated<Timestamp>;
   dns_checked_at: Timestamp | null;
+  dns_failing_since: Timestamp | null;
   dns_resolves: Generated<boolean>;
   hostname: string;
   id: Generated<string>;
   ownership_verification_name: string | null;
   ownership_verification_type: string | null;
   ownership_verification_value: string | null;
+  release_notice_sent_at: Timestamp | null;
+  release_reason: "lapsed" | "pending" | "dns" | null;
+  released_at: Timestamp | null;
   ssl_status: string | null;
   ssl_validation_records: unknown | null;
   updated_at: Generated<Timestamp>;

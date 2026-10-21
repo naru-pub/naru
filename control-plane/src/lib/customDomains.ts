@@ -51,8 +51,7 @@ export function getPlatformDomain() {
 
 export function getCustomDomainTarget() {
   return (
-    process.env.CUSTOM_DOMAIN_CNAME_TARGET ??
-    `customers.${getPlatformDomain()}`
+    process.env.CUSTOM_DOMAIN_CNAME_TARGET ?? `customers.${getPlatformDomain()}`
   )
     .toLowerCase()
     .replace(/\.$/, "");
@@ -229,7 +228,11 @@ export async function deleteCustomDomainsForUser(userId: string) {
     .execute();
 
   for (const domain of domains) {
-    await deleteCloudflareCustomHostnameIfExists(domain.cloudflare_hostname_id);
+    // A released domain has no Cloudflare hostname left.
+    if (domain.cloudflare_hostname_id)
+      await deleteCloudflareCustomHostnameIfExists(
+        domain.cloudflare_hostname_id,
+      );
     await db.deleteFrom("custom_domains").where("id", "=", domain.id).execute();
     console.log(
       `Deleted custom domain ${domain.hostname} for user ${userId} from Cloudflare`,

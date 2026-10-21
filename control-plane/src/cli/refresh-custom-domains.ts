@@ -8,25 +8,23 @@ import {
 // Polls Cloudflare for the status of custom domains that aren't fully active
 // yet, so verification completes without the user re-opening the account page
 // and clicking 상태 확인. Active domains are skipped (they no longer match the
-// predicate). Domains older than MAX_AGE_DAYS are left for the manual button to
-// avoid polling abandoned/misconfigured domains against the Cloudflare API
-// forever.
-const MAX_AGE_DAYS = 14;
+// predicate), and so are released ones, which have no Cloudflare hostname. A
+// domain that never validates is released within weeks
+// (lib/custom-domain-housekeeping.ts), which bounds the polling.
 
 async function main() {
-  const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
-
   const pending = await db
     .selectFrom("custom_domains")
     .select(["id", "hostname", "cloudflare_hostname_id"])
-    .where("created_at", ">", cutoff)
+    .where("cloudflare_hostname_id", "is not", null)
+    .$narrowType<{ cloudflare_hostname_id: string }>()
     .where((eb) =>
       eb.or([
         eb("verified_at", "is", null),
         eb("cloudflare_status", "!=", "active"),
         eb("ssl_status", "is", null),
         eb("ssl_status", "!=", "active"),
-      ])
+      ]),
     )
     .execute();
 
@@ -36,7 +34,7 @@ async function main() {
   for (const domain of pending) {
     try {
       const cloudflareHostname = await getCloudflareCustomHostname(
-        domain.cloudflare_hostname_id
+        domain.cloudflare_hostname_id,
       );
       const row = toCustomDomainRow(cloudflareHostname);
 
@@ -48,11 +46,11 @@ async function main() {
       if (row.verified_at) activated = true;
 
       console.log(
-        `[refresh-custom-domains] ${domain.hostname}: host=${row.cloudflare_status} ssl=${row.ssl_status ?? "-"}${row.verified_at ? " (active)" : ""}`
+        `[refresh-custom-domains] ${domain.hostname}: host=${row.cloudflare_status} ssl=${row.ssl_status ?? "-"}${row.verified_at ? " (active)" : ""}`,
       );
     } catch (error) {
       console.error(
-        `[refresh-custom-domains] ${domain.hostname} failed: ${error}`
+        `[refresh-custom-domains] ${domain.hostname} failed: ${error}`,
       );
     }
   }

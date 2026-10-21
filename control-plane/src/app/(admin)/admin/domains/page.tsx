@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/database";
 import { accessEndsAtOf } from "@/lib/entitlements";
+import {
+  releaseSchedule,
+  type ReleaseReason,
+} from "@/lib/custom-domain-housekeeping";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -17,12 +21,14 @@ import { requireOperator } from "../_components/requireOperator";
 
 export const metadata: Metadata = { title: "커스텀 도메인 · 운영 · 나루" };
 
-// cli/cleanup-expired-custom-domains.ts removes a domain still pending this
-// long after it was added.
-const ABANDONED_PENDING_DOMAIN_DAYS = 14;
+const REASONS: Record<ReleaseReason, string> = {
+  lapsed: "유료 이용 끝남",
+  pending: "연결 안 됨",
+  dns: "DNS 안 맞음",
+};
 
-// A domain serves once Cloudflare has the hostname and its certificate active;
-// the cleanup also wants its ownership verified.
+// A domain serves once Cloudflare has the hostname and its certificate active
+// and its ownership verified.
 function isConnected(domain: {
   cloudflare_status: string;
   ssl_status: string | null;
@@ -72,6 +78,10 @@ export default async function DomainsPage({
       "custom_domains.verification_errors",
       "custom_domains.created_at",
       "custom_domains.updated_at",
+      "custom_domains.released_at",
+      "custom_domains.release_reason",
+      "custom_domains.release_notice_sent_at",
+      "custom_domains.dns_failing_since",
       "users.login_name",
       "users.supporter_comp",
       "users.supporter_until",
@@ -89,8 +99,6 @@ export default async function DomainsPage({
         ? !isConnected(domain)
         : true,
   );
-  const abandonedBefore =
-    now.getTime() - ABANDONED_PENDING_DOMAIN_DAYS * 24 * 60 * 60 * 1000;
 
   const filters = [
     { value: undefined, label: `전체 ${domains.length}` },
@@ -103,10 +111,11 @@ export default async function DomainsPage({
       <div className="space-y-1">
         <h2 className="text-xl font-bold">커스텀 도메인</h2>
         <p className="text-sm text-muted-foreground">
-          계정이 연결한 도메인과 Cloudflare의 호스트·인증서 상태입니다. 상태는
-          이용자가 확인하거나 연결할 때 갱신됩니다. 유료 이용이 끝난 계정의
-          도메인과 {ABANDONED_PENDING_DOMAIN_DAYS}일 넘게 연결되지 않은 도메인은
-          정리 작업이 지웁니다.
+          계정이 연결한 도메인과 Cloudflare의 호스트·인증서 상태입니다. 유료
+          이용이 끝난 지 30일, 추가하고 14일 동안 연결되지 않았거나 DNS가 30일
+          동안 나루를 가리키지 않은 도메인은 소유자에게 메일로 알린 뒤 7일이
+          지나면 연결이 해제됩니다(Cloudflare 호스트 삭제). 해제된 도메인은
+          소유자가 다시 연결할 수 있습니다.
         </p>
       </div>
 
@@ -148,9 +157,22 @@ export default async function DomainsPage({
               const live = isConnected(domain);
               const errors = verificationErrors(domain.verification_errors);
               const accessEndsAt = accessEndsAtOf(domain);
-              const abandoned =
-                !live &&
-                new Date(domain.created_at).getTime() <= abandonedBefore;
+              const schedule = domain.released_at
+                ? null
+                : releaseSchedule(
+                    {
+                      createdAt: new Date(domain.created_at),
+                      active: live,
+                      dnsFailingSince: domain.dns_failing_since
+                        ? new Date(domain.dns_failing_since)
+                        : null,
+                      accessEndsAt,
+                      noticeSentAt: domain.release_notice_sent_at
+                        ? new Date(domain.release_notice_sent_at)
+                        : null,
+                    },
+                    now.getTime(),
+                  );
               return (
                 <TableRow key={domain.id}>
                   <TableCell className="font-medium break-all">
@@ -191,10 +213,19 @@ export default async function DomainsPage({
                             소유 미확인
                           </span>
                         )}
-                        {abandoned && (
-                          <Badge variant="destructive">정리 대상</Badge>
-                        )}
                       </div>
+                    )}
+                    {domain.release_reason && (
+                      <Badge variant="secondary">
+                        해제됨 · {REASONS[domain.release_reason]}
+                      </Badge>
+                    )}
+                    {schedule && (
+                      <Badge variant="destructive">
+                        {schedule.releaseAt
+                          ? `${formatDate(schedule.releaseAt)} 해제 · ${REASONS[schedule.reason]}`
+                          : `해제 대상 · ${REASONS[schedule.reason]}`}
+                      </Badge>
                     )}
                     {errors.map((error) => (
                       <div key={error} className="text-xs text-destructive">
@@ -208,7 +239,7 @@ export default async function DomainsPage({
                     ) : accessEndsAt > now.getTime() ? (
                       `~ ${formatDate(new Date(accessEndsAt))}`
                     ) : (
-                      <Badge variant="destructive">끝남 · 정리 대상</Badge>
+                      <Badge variant="destructive">끝남</Badge>
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
