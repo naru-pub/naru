@@ -1,5 +1,6 @@
 import {
   domainSite,
+  siteDomain,
   siteSuspended,
   invalidTable,
   storeDomains,
@@ -278,12 +279,17 @@ const pageviews = (env: Env) =>
  * the control plane listed the domain for. Any other host is not found.
  */
 async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
-  const host = new URL(request.url).hostname;
-  const login = host.endsWith(`.${env.PLATFORM_DOMAIN}`)
-    ? siteOf(host, env)
-    : await domainSite(host, env);
+  const url = new URL(request.url);
+  const subdomain = url.hostname.endsWith(`.${env.PLATFORM_DOMAIN}`);
+  const login = subdomain
+    ? siteOf(url.hostname, env)
+    : await domainSite(url.hostname, env);
   if (!login) return notFound();
   if (await siteSuspended(login, env)) return suspended();
+  if (subdomain) {
+    const redirect = await domainRedirect(request, url, login, env);
+    if (redirect) return redirect;
+  }
   return servePage(
     request,
     env,
@@ -300,6 +306,31 @@ async function hostedSite(request: Request, env: Env, ctx: ExecutionContext) {
       ),
     (input) => renderRoute(env, input),
   );
+}
+
+/**
+ * A site served on a custom domain moves its subdomain's pages there, so
+ * links and search results settle on the one address. Only reads move: a
+ * form posted to the subdomain is answered where it was sent. Browsers keep
+ * the redirect a day, not forever, so a domain that later lapses or is
+ * removed sends no one to it for long.
+ */
+async function domainRedirect(
+  request: Request,
+  url: URL,
+  login: string,
+  env: Env,
+) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const domain = await siteDomain(login, env);
+  if (!domain) return null;
+  return new Response(null, {
+    status: 301,
+    headers: {
+      Location: `https://${domain}${url.pathname}${url.search}`,
+      "Cache-Control": "max-age=86400",
+    },
+  });
 }
 
 /**

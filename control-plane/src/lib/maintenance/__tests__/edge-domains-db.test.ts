@@ -16,7 +16,7 @@ jest.mock("@/lib/edge/client", () => ({
     return null;
   },
 }));
-const { pushEdgeDomains } =
+const { pushEdgeDomains, servedCustomDomains } =
   require("@/lib/edge/domains") as typeof import("@/lib/edge/domains");
 
 const integration =
@@ -55,20 +55,16 @@ integration("edge custom domains", () => {
       );
     try {
       await domain("comp.example", await user("edge-comp", true, null));
-      await domain("paid.example", await user("edge-paid", false, paid));
+      const paidUser = await user("edge-paid", false, paid);
+      await domain("paid.example", paidUser);
       await domain(
         "grace.example",
         await user("edge-grace", false, now - 2 * day),
       );
-      await domain(
-        "expired.example",
-        await user("edge-expired", false, now - 10 * day),
-      );
-      await domain(
-        "pending.example",
-        await user("edge-pending", false, paid),
-        false,
-      );
+      const expired = await user("edge-expired", false, now - 10 * day);
+      await domain("expired.example", expired);
+      const pending = await user("edge-pending", false, paid);
+      await domain("pending.example", pending, false);
 
       expect(await pushEdgeDomains()).toBe(3);
       const table = tables.at(-1)!;
@@ -89,6 +85,12 @@ integration("edge custom domains", () => {
         Math.round((table.domains["paid.example"].entitledUntil! - paid) / day),
       ).toBe(4);
       expect(table.suspended).toEqual([]);
+      // One owner's served domain, as the prompt shows it.
+      expect(
+        (await servedCustomDomains(paidUser)).map((d) => d.hostname),
+      ).toEqual(["paid.example"]);
+      expect(await servedCustomDomains(expired)).toEqual([]);
+      expect(await servedCustomDomains(pending)).toEqual([]);
       // A suspended site is listed, for the edge to refuse on every host.
       await db
         .updateTable("users")

@@ -69,6 +69,27 @@ export async function domainSite(host: string, env: DomainsEnv) {
   return domain.login;
 }
 
+/**
+ * The custom domain a site is served on now, or null: the one domainSite
+ * answers for, so the site's subdomain only ever sends visitors to a domain
+ * that serves them. An account has one domain; were there more, the first by
+ * name is chosen, so it is always the same one.
+ */
+export async function siteDomain(login: string, env: DomainsEnv) {
+  const current = await table(env);
+  const now = Date.now();
+  if (!current || current.confirmedUntil <= now) return null;
+  const served = Object.entries(current.domains)
+    .filter(
+      ([, domain]) =>
+        domain.login === login &&
+        (domain.entitledUntil === null || domain.entitledUntil > now),
+    )
+    .map(([host]) => host)
+    .sort();
+  return served[0] ?? null;
+}
+
 /** Whether operators suspended the site, by the last table pushed. */
 export async function siteSuspended(login: string, env: DomainsEnv) {
   return (await table(env))?.suspended?.includes(login) ?? false;

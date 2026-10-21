@@ -15,9 +15,12 @@ import { CONFIRMATION_MS, replaceEdgeDomains } from "./client";
 // It also lists the sites operators suspended (site-moderation.ts), which the
 // edge refuses on every host; a suspension pushes it at once.
 
-/** Sends the edge the current table; returns how many domains it serves. */
-export async function pushEdgeDomains() {
-  const rows = await db
+/**
+ * The domains served now, each with its owner's site and when the owner's
+ * paid period ends (null never); only `userId`'s when given.
+ */
+export async function servedCustomDomains(userId?: string) {
+  let query = db
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
     .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
@@ -32,21 +35,32 @@ export async function pushEdgeDomains() {
     .where("custom_domains.verified_at", "is not", null)
     .where("custom_domains.cloudflare_status", "=", "active")
     .where("custom_domains.ssl_status", "=", "active")
-    .where("users.deleted_at", "is", null)
-    .execute();
+    .where("users.deleted_at", "is", null);
+  if (userId) query = query.where("users.id", "=", userId);
+  const rows = await query.execute();
+  const now = Date.now();
+  return rows.flatMap((row) => {
+    const entitledUntil = accessEndsAtOf(row);
+    if (entitledUntil !== null && entitledUntil <= now) return [];
+    return [
+      {
+        hostname: row.hostname.toLowerCase(),
+        login: row.login_name,
+        entitledUntil,
+      },
+    ];
+  });
+}
+
+/** Sends the edge the current table; returns how many domains it serves. */
+export async function pushEdgeDomains() {
   const now = Date.now();
   const domains: Record<
     string,
     { login: string; entitledUntil: number | null }
   > = {};
-  for (const row of rows) {
-    const entitledUntil = accessEndsAtOf(row);
-    if (entitledUntil !== null && entitledUntil <= now) continue;
-    domains[row.hostname.toLowerCase()] = {
-      login: row.login_name,
-      entitledUntil,
-    };
-  }
+  for (const { hostname, login, entitledUntil } of await servedCustomDomains())
+    domains[hostname] = { login, entitledUntil };
   const suspended = await db
     .selectFrom("users")
     .select("login_name")

@@ -13,6 +13,7 @@ import { ModeToggle } from "@/components/ModeToggle";
 import { LoadingBar } from "@/components/LoadingBar";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
+import { servedCustomDomains } from "@/lib/edge/domains";
 import {
   getUserEntitlement,
   PLAN_FEATURES,
@@ -42,6 +43,16 @@ export default async function RootLayout({
       ? (PLAN_FEATURES[entitlement.plan ?? "supporter"] ?? [])
       : [],
   );
+  // The address the site is visited at: its custom domain while the edge
+  // serves it, where the subdomain redirects, chosen as the edge chooses.
+  const customDomain = user
+    ? (await servedCustomDomains(user.id)).map((d) => d.hostname).sort()[0]
+    : undefined;
+  const siteUrl = user
+    ? customDomain
+      ? `https://${customDomain}`
+      : getHomepageUrl(user.loginName)
+    : null;
 
   return (
     <html lang="ko" suppressHydrationWarning className={fontVariables}>
@@ -138,11 +149,11 @@ export default async function RootLayout({
                           open
                         </span>
                         <Link
-                          href={getHomepageUrl(user.loginName)}
+                          href={siteUrl!}
                           target="_blank"
                           className="text-link font-medium underline-offset-4 hover:underline"
                         >
-                          {getHomepageUrl(user.loginName)}
+                          {siteUrl}
                         </Link>
                         <span
                           aria-hidden="true"

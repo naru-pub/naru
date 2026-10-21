@@ -12,10 +12,11 @@ const { notFound } = await import("./pages");
 // site's own /sdk/ and /api/data/v1/ paths, on its subdomain or a custom
 // domain, are its files like any other path.
 
-const files: Record<string, string> = {
-  "alice/sdk/1.0.0/naru.js": "alice's own naru.js",
-  "alice/api/data/v1/alice/posts.json": "alice's own posts",
-};
+const files: Record<string, string> = {};
+for (const login of ["alice", "carol"]) {
+  files[`${login}/sdk/1.0.0/naru.js`] = `${login}'s own naru.js`;
+  files[`${login}/api/data/v1/${login}/posts.json`] = `${login}'s own posts`;
+}
 const env = {
   PLATFORM_DOMAIN: "naru.pub",
   R2_PUBLIC_DOMAIN: "r2.naru.pub",
@@ -35,7 +36,10 @@ const env = {
     async get() {
       return {
         confirmedUntil: Date.now() + 60_000,
-        domains: { "alice.example": { login: "alice", entitledUntil: null } },
+        domains: {
+          "alice.example": { login: "alice", entitledUntil: null },
+          "lapsed.example": { login: "lapsed", entitledUntil: 1 },
+        },
       };
     },
   },
@@ -56,20 +60,55 @@ describe("a hosted site's /sdk/ and /api/data/v1/ paths", () => {
     ["in local runs", local],
   ] as const)
     test(`are its own files ${name}`, async () => {
-      for (const host of ["alice.naru.pub", "alice.example"]) {
+      // carol has no custom domain, so carol.naru.pub serves the site.
+      for (const [host, login] of [
+        ["carol.naru.pub", "carol"],
+        ["alice.example", "alice"],
+      ]) {
         const sdk = await get(handler, `https://${host}/sdk/1.0.0/naru.js`);
         expect(sdk.status).toBe(200);
-        expect(await sdk.text()).toBe("alice's own naru.js");
+        expect(await sdk.text()).toBe(`${login}'s own naru.js`);
         const data = await get(
           handler,
-          `https://${host}/api/data/v1/alice/posts.json`,
+          `https://${host}/api/data/v1/${login}/posts.json`,
         );
         expect(data.status).toBe(200);
-        expect(await data.text()).toBe("alice's own posts");
+        expect(await data.text()).toBe(`${login}'s own posts`);
         const missing = await get(handler, `https://${host}/sdk/1/naru.js`);
         expect(missing.status).toBe(404);
       }
     });
+});
+
+describe("a site served on a custom domain", () => {
+  const request = (url: string, init?: RequestInit) =>
+    worker.fetch!(new Request(url, init) as never, env, ctx);
+
+  test("moves its subdomain's pages there, keeping path and query", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await request(
+        "https://alice.naru.pub/sdk/1.0.0/naru.js?v=2",
+        { method },
+      );
+      expect(response.status).toBe(301);
+      expect(response.headers.get("Location")).toBe(
+        "https://alice.example/sdk/1.0.0/naru.js?v=2",
+      );
+      expect(response.headers.get("Cache-Control")).toBe("max-age=86400");
+    }
+  });
+
+  test("answers a post where it was sent", async () => {
+    const response = await request("https://alice.naru.pub/form", {
+      method: "POST",
+    });
+    expect(response.status).not.toBe(301);
+  });
+
+  test("leaves the subdomain alone once the domain is not served", async () => {
+    const response = await request("https://lapsed.naru.pub/");
+    expect(response.status).not.toBe(301);
+  });
 });
 
 describe("the platform's hosts on Cloudflare", () => {

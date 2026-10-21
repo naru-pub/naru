@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import {
   domainSite,
+  siteDomain,
   invalidTable,
   siteSuspended,
   storeDomains,
@@ -52,6 +53,30 @@ describe("serving", () => {
       domains: { "example.com": { login: "alice", entitledUntil: null } },
     });
     expect(await domainSite("example.com", env)).toBeNull();
+  });
+});
+
+describe("a site's domain", () => {
+  test("is the one it is served on, while it is served", async () => {
+    await storeDomains(env, {
+      confirmedUntil: Date.now() + hour,
+      domains: {
+        "www.example.com": { login: "alice", entitledUntil: null },
+        "example.com": { login: "alice", entitledUntil: null },
+        "lapsed.example": { login: "carol", entitledUntil: Date.now() - 1 },
+      },
+    });
+    expect(await siteDomain("alice", env)).toBe("example.com");
+    expect(await siteDomain("carol", env)).toBeNull();
+    expect(await siteDomain("dave", env)).toBeNull();
+  });
+
+  test("is none from a table past its confirmation", async () => {
+    await storeDomains(env, {
+      confirmedUntil: Date.now() - 1,
+      domains: { "example.com": { login: "alice", entitledUntil: null } },
+    });
+    expect(await siteDomain("alice", env)).toBeNull();
   });
 });
 
