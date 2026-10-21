@@ -37,8 +37,21 @@ const env = {
       return {
         confirmedUntil: Date.now() + 60_000,
         domains: {
-          "alice.example": { login: "alice", entitledUntil: null },
-          "lapsed.example": { login: "lapsed", entitledUntil: 1 },
+          "alice.example": {
+            login: "alice",
+            entitledUntil: null,
+            redirect: true,
+          },
+          "lapsed.example": {
+            login: "lapsed",
+            entitledUntil: 1,
+            redirect: true,
+          },
+          "unresolved.example": {
+            login: "erin",
+            entitledUntil: null,
+            redirect: false,
+          },
         },
       };
     },
@@ -107,6 +120,11 @@ describe("a site served on a custom domain", () => {
 
   test("leaves the subdomain alone once the domain is not served", async () => {
     const response = await request("https://lapsed.naru.pub/");
+    expect(response.status).not.toBe(301);
+  });
+
+  test("leaves the subdomain alone while the domain does not resolve", async () => {
+    const response = await request("https://erin.naru.pub/");
     expect(response.status).not.toBe(301);
   });
 });

@@ -57,24 +57,45 @@ describe("serving", () => {
 });
 
 describe("a site's domain", () => {
-  test("is the one it is served on, while it is served", async () => {
+  test("is the one it is served on and that resolves, while it is served", async () => {
     await storeDomains(env, {
       confirmedUntil: Date.now() + hour,
       domains: {
-        "www.example.com": { login: "alice", entitledUntil: null },
-        "example.com": { login: "alice", entitledUntil: null },
-        "lapsed.example": { login: "carol", entitledUntil: Date.now() - 1 },
+        "www.example.com": {
+          login: "alice",
+          entitledUntil: null,
+          redirect: true,
+        },
+        "example.com": { login: "alice", entitledUntil: null, redirect: true },
+        "lapsed.example": {
+          login: "carol",
+          entitledUntil: Date.now() - 1,
+          redirect: true,
+        },
+        "unresolved.example": {
+          login: "erin",
+          entitledUntil: null,
+          redirect: false,
+        },
+        "older.example": { login: "frank", entitledUntil: null },
       },
     });
     expect(await siteDomain("alice", env)).toBe("example.com");
     expect(await siteDomain("carol", env)).toBeNull();
     expect(await siteDomain("dave", env)).toBeNull();
+    // Served on its domain, but its DNS does not reach Naru, or the push
+    // predates the check: the subdomain stays.
+    expect(await domainSite("unresolved.example", env)).toBe("erin");
+    expect(await siteDomain("erin", env)).toBeNull();
+    expect(await siteDomain("frank", env)).toBeNull();
   });
 
   test("is none from a table past its confirmation", async () => {
     await storeDomains(env, {
       confirmedUntil: Date.now() - 1,
-      domains: { "example.com": { login: "alice", entitledUntil: null } },
+      domains: {
+        "example.com": { login: "alice", entitledUntil: null, redirect: true },
+      },
     });
     expect(await siteDomain("alice", env)).toBeNull();
   });
@@ -112,6 +133,15 @@ describe("validation", () => {
     [table({ "example..com": { login: "a", entitledUntil: null } })],
     [table({ "example.com": { login: "Bad", entitledUntil: null } })],
     [table({ "example.com": { login: "a", entitledUntil: "soon" as never } })],
+    [
+      table({
+        "example.com": {
+          login: "a",
+          entitledUntil: null,
+          redirect: 1 as never,
+        },
+      }),
+    ],
   ])("refuses %j", (input) => {
     expect(invalidTable(input)).not.toBeNull();
   });

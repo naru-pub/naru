@@ -44,9 +44,13 @@ export default async function RootLayout({
       : [],
   );
   // The address the site is visited at: its custom domain while the edge
-  // serves it, where the subdomain redirects, chosen as the edge chooses.
+  // serves it and its DNS reaches Naru, where the subdomain redirects, chosen
+  // as the edge chooses.
   const customDomain = user
-    ? (await servedCustomDomains(user.id)).map((d) => d.hostname).sort()[0]
+    ? (await servedCustomDomains(user.id))
+        .filter((d) => d.resolves)
+        .map((d) => d.hostname)
+        .sort()[0]
     : undefined;
   const siteUrl = user
     ? customDomain

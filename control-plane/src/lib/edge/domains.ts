@@ -16,8 +16,9 @@ import { CONFIRMATION_MS, replaceEdgeDomains } from "./client";
 // edge refuses on every host; a suspension pushes it at once.
 
 /**
- * The domains served now, each with its owner's site and when the owner's
- * paid period ends (null never); only `userId`'s when given.
+ * The domains served now, each with its owner's site, when the owner's paid
+ * period ends (null never) and whether its DNS was last found to reach Naru
+ * (domain-dns.ts); only `userId`'s when given.
  */
 export async function servedCustomDomains(userId?: string) {
   let query = db
@@ -31,6 +32,7 @@ export async function servedCustomDomains(userId?: string) {
       "users.supporter_until",
       "users.supporter_grace",
       "supporter_trials.ends_at as trial_ends_at",
+      "custom_domains.dns_resolves",
     ])
     .where("custom_domains.verified_at", "is not", null)
     .where("custom_domains.cloudflare_status", "=", "active")
@@ -47,6 +49,7 @@ export async function servedCustomDomains(userId?: string) {
         hostname: row.hostname.toLowerCase(),
         login: row.login_name,
         entitledUntil,
+        resolves: row.dns_resolves,
       },
     ];
   });
@@ -57,10 +60,15 @@ export async function pushEdgeDomains() {
   const now = Date.now();
   const domains: Record<
     string,
-    { login: string; entitledUntil: number | null }
+    { login: string; entitledUntil: number | null; redirect: boolean }
   > = {};
-  for (const { hostname, login, entitledUntil } of await servedCustomDomains())
-    domains[hostname] = { login, entitledUntil };
+  for (const domain of await servedCustomDomains())
+    domains[domain.hostname] = {
+      login: domain.login,
+      entitledUntil: domain.entitledUntil,
+      // The site's subdomain redirects only to a domain that opens.
+      redirect: domain.resolves,
+    };
   const suspended = await db
     .selectFrom("users")
     .select("login_name")

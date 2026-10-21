@@ -6,7 +6,10 @@ import { db } from "@/lib/database";
 // The Worker stands in, keeping the custom domain tables it is sent.
 const tables: {
   confirmedUntil: number;
-  domains: Record<string, { login: string; entitledUntil: number | null }>;
+  domains: Record<
+    string,
+    { login: string; entitledUntil: number | null; redirect: boolean }
+  >;
   suspended: string[];
 }[] = [];
 jest.mock("@/lib/edge/client", () => ({
@@ -18,6 +21,8 @@ jest.mock("@/lib/edge/client", () => ({
 }));
 const { pushEdgeDomains, servedCustomDomains } =
   require("@/lib/edge/domains") as typeof import("@/lib/edge/domains");
+const { checkCustomDomainDns } =
+  require("@/lib/edge/domain-dns") as typeof import("@/lib/edge/domain-dns");
 
 const integration =
   process.env.NARU_PAYMENTS_DB_TEST === "1" ? describe : describe.skip;
@@ -70,14 +75,20 @@ integration("edge custom domains", () => {
       const table = tables.at(-1)!;
       expect(table.confirmedUntil).toBeGreaterThan(now);
       expect(table.domains).toEqual({
-        "comp.example": { login: "edge-comp", entitledUntil: null },
+        "comp.example": {
+          login: "edge-comp",
+          entitledUntil: null,
+          redirect: false,
+        },
         "grace.example": {
           login: "edge-grace",
           entitledUntil: expect.any(Number),
+          redirect: false,
         },
         "paid.example": {
           login: "edge-paid",
           entitledUntil: expect.any(Number),
+          redirect: false,
         },
       });
       // Four days of grace after the last paid day.
@@ -99,6 +110,99 @@ integration("edge custom domains", () => {
         .execute();
       await pushEdgeDomains();
       expect(tables.at(-1)!.suspended).toEqual(["edge-paid"]);
+    } finally {
+      await db.deleteFrom("users").where("id", "in", users).execute();
+    }
+  });
+  test("redirects to a domain only once its DNS reaches the target", async () => {
+    const users: string[] = [];
+    // An account has one domain: one account each.
+    const insert = async (host: string) => {
+      const { id } = await db
+        .insertInto("users")
+        .values({
+          login_name: `edge-dns-${users.length}`,
+          password_hash: "x",
+          supporter_comp: true,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      users.push(id);
+      await db
+        .insertInto("custom_domains")
+        .values({
+          user_id: id,
+          hostname: host,
+          cloudflare_hostname_id: `cf-${host}`,
+          cloudflare_status: "active",
+          ssl_status: "active",
+          verified_at: new Date(),
+        })
+        .execute();
+    };
+    const target = ["104.21.58.28", "172.67.198.242"];
+    const answers: Record<string, string[] | null> = {
+      "customers.naru.pub": target,
+      "alias.example": ["172.67.198.242"],
+      "missing.example": [],
+      "elsewhere.example": ["192.0.2.1"],
+      "timeout.example": null,
+    };
+    const looked: string[] = [];
+    const lookup = async (host: string) => {
+      looked.push(host);
+      return answers[host] ?? null;
+    };
+    const state = async () =>
+      Object.fromEntries(
+        (
+          await db
+            .selectFrom("custom_domains")
+            .select(["hostname", "dns_resolves", "dns_checked_at"])
+            .where("user_id", "in", users)
+            .execute()
+        ).map((row) => [
+          row.hostname,
+          { resolves: row.dns_resolves, checked: row.dns_checked_at !== null },
+        ]),
+      );
+    try {
+      for (const host of Object.keys(answers).slice(1)) await insert(host);
+
+      expect(await checkCustomDomainDns(lookup)).toBe(3);
+      expect(await state()).toEqual({
+        "alias.example": { resolves: true, checked: true },
+        "missing.example": { resolves: false, checked: true },
+        "elsewhere.example": { resolves: false, checked: true },
+        // No answer: nothing is recorded, and it is asked again next run.
+        "timeout.example": { resolves: false, checked: false },
+      });
+      await pushEdgeDomains();
+      expect(tables.at(-1)!.domains["alias.example"].redirect).toBe(true);
+      expect(tables.at(-1)!.domains["missing.example"].redirect).toBe(false);
+
+      // A resolving domain waits an hour; the others are asked every run.
+      looked.length = 0;
+      await checkCustomDomainDns(lookup);
+      expect(looked).not.toContain("alias.example");
+      expect(looked).toEqual(
+        expect.arrayContaining([
+          "missing.example",
+          "elsewhere.example",
+          "timeout.example",
+        ]),
+      );
+
+      // Records added: it redirects from the next run.
+      answers["missing.example"] = ["104.21.58.28"];
+      await checkCustomDomainDns(lookup);
+      expect((await state())["missing.example"].resolves).toBe(true);
+
+      // Without the target's addresses nothing changes.
+      answers["customers.naru.pub"] = null;
+      answers["elsewhere.example"] = target;
+      expect(await checkCustomDomainDns(lookup)).toBe(0);
+      expect((await state())["elsewhere.example"].resolves).toBe(false);
     } finally {
       await db.deleteFrom("users").where("id", "in", users).execute();
     }

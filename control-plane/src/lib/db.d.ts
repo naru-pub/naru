@@ -379,6 +379,8 @@ export interface CustomDomains {
   cloudflare_hostname_id: string;
   cloudflare_status: string;
   created_at: Generated<Timestamp>;
+  dns_checked_at: Timestamp | null;
+  dns_resolves: Generated<boolean>;
   hostname: string;
   id: Generated<string>;
   ownership_verification_name: string | null;

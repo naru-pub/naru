@@ -73,7 +73,10 @@ export const CONFIRMATION_MS = 3 * 24 * 60 * 60 * 1000;
  */
 export function replaceEdgeDomains(table: {
   confirmedUntil: number;
-  domains: Record<string, { login: string; entitledUntil: number | null }>;
+  domains: Record<
+    string,
+    { login: string; entitledUntil: number | null; redirect: boolean }
+  >;
   suspended: string[];
 }) {
   return callWorker<null>("/v1/domains/replace", "domain table", table);

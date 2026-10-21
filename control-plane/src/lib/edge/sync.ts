@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { getUserEntitlement, PLAN_FEATURES } from "@/lib/entitlements";
 import { CONFIRMATION_MS, callSiteObject } from "./client";
+import { checkCustomDomainDns } from "./domain-dns";
 import { pushEdgeDomains } from "./domains";
 
 // The edge Worker answers visitors at Cloudflare's edge, where the one check
@@ -56,8 +57,9 @@ export async function configureEdge(site: string, ownerId: string) {
 /**
  * Renews the confirmation of every site with the database feature, of sites
  * that lost it recently and of sites holding data, and copies each one's
- * usage to `users` for the /admin usage page; and sends the custom domain
- * table (domains.ts). Run by the edge-sync job.
+ * usage to `users` for the /admin usage page; and checks the custom domains'
+ * DNS (domain-dns.ts) and sends their table (domains.ts). Run by the
+ * edge-sync job.
  *
  * A site that fails is tried once more after the others: an object that
  * stalls for a moment should not fail the job, and a missed sync costs
@@ -105,6 +107,12 @@ export async function syncEdge() {
       .where("id", "=", site.id)
       .execute();
   };
+  try {
+    await checkCustomDomainDns();
+  } catch (error) {
+    // The domains keep their last result; the next run looks again.
+    console.warn("Checking custom domains' DNS failed", error);
+  }
   let domains: number | null = null;
   try {
     domains = await pushEdgeDomains();

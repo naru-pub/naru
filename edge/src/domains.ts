@@ -29,6 +29,12 @@ export type DomainTable = {
       login: string;
       /** Epoch ms when the owner's paid period, with grace, ends; null never. */
       entitledUntil: number | null;
+      /**
+       * Whether the site's subdomain redirects here: the control plane found
+       * the domain's DNS reaching Naru. Absent from older pushes, which
+       * redirect nothing.
+       */
+      redirect?: boolean;
     }
   >;
   /** Logins of the sites operators suspended. Absent from older pushes. */
@@ -70,10 +76,11 @@ export async function domainSite(host: string, env: DomainsEnv) {
 }
 
 /**
- * The custom domain a site is served on now, or null: the one domainSite
- * answers for, so the site's subdomain only ever sends visitors to a domain
- * that serves them. An account has one domain; were there more, the first by
- * name is chosen, so it is always the same one.
+ * The custom domain a site's subdomain redirects to now, or null: one
+ * domainSite answers for and whose DNS the control plane found reaching Naru,
+ * so the subdomain only ever sends visitors to a domain that opens and serves
+ * them. An account has one domain; were there more, the first by name is
+ * chosen, so it is always the same one.
  */
 export async function siteDomain(login: string, env: DomainsEnv) {
   const current = await table(env);
@@ -83,6 +90,7 @@ export async function siteDomain(login: string, env: DomainsEnv) {
     .filter(
       ([, domain]) =>
         domain.login === login &&
+        domain.redirect === true &&
         (domain.entitledUntil === null || domain.entitledUntil > now),
     )
     .map(([host]) => host)
@@ -112,6 +120,8 @@ export function invalidTable(input: unknown): string | null {
       !Number.isSafeInteger(domain.entitledUntil)
     )
       return `entitledUntil for ${host} must be epoch ms or null.`;
+    if (domain.redirect !== undefined && typeof domain.redirect !== "boolean")
+      return `redirect for ${host} must be a boolean.`;
   }
   if (
     value.suspended !== undefined &&
