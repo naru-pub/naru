@@ -18,6 +18,9 @@ import { formatDate, formatKrw } from "../../_components/format";
 import { SUBSCRIPTION_STATUS_LABELS } from "../../_components/metrics";
 import { requireOperator } from "../../_components/requireOperator";
 import { SiteMembersFreeToggle } from "../../_components/SiteMembersFreeToggle";
+import { SupporterCompToggle } from "../../_components/SupporterCompToggle";
+import { ImpersonateButton } from "../../_components/ImpersonateButton";
+import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 import { MoveStoreSubscriptionButton } from "../../_components/MoveStoreSubscriptionButton";
 import { STORE_LABELS } from "@/lib/payments/store/products";
 import {
@@ -157,6 +160,17 @@ export default async function AccountPage({
             <span className="text-sm text-muted-foreground">무료</span>
           )}
         </div>
+        {!user.deleted_at && (
+          <div className="flex flex-wrap gap-2">
+            {!PAYMENT_OPERATOR_USERS.has(user.login_name) && (
+              <ImpersonateButton loginName={user.login_name} />
+            )}
+            <SupporterCompToggle
+              loginName={user.login_name}
+              comp={user.supporter_comp}
+            />
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
           {!user.deleted_at && (
             <a

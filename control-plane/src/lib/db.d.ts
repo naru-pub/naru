@@ -637,6 +637,7 @@ export interface RemoteActors {
 export interface Sessions {
   expires_at: Timestamp;
   id: string;
+  impersonator_session_id: string | null;
   user_id: string;
 }
 

@@ -2,7 +2,10 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 
 // An in-memory sessions table behind the few Kysely chains auth.ts uses.
-const sessions = new Map<string, { user_id: string; expires_at: Date }>();
+const sessions = new Map<
+  string,
+  { user_id: string; expires_at: Date; impersonator_session_id?: string | null }
+>();
 const user = {
   user_id: "user-1",
   login_name: "alice",
@@ -33,6 +36,7 @@ jest.mock("../database", () => ({
                 user_id: row.user_id,
                 session_id: id,
                 session_expires_at: row.expires_at,
+                impersonator_session_id: row.impersonator_session_id ?? null,
               }
             : undefined;
         },
@@ -40,7 +44,12 @@ jest.mock("../database", () => ({
       return chain;
     },
     insertInto: () => ({
-      values: (row: { id: string; user_id: string; expires_at: Date }) => ({
+      values: (row: {
+        id: string;
+        user_id: string;
+        expires_at: Date;
+        impersonator_session_id: string | null;
+      }) => ({
         execute: async () => void sessions.set(row.id, row),
       }),
     }),
@@ -221,6 +230,52 @@ describe("development session cookie", () => {
         value: "dev",
         options: expect.objectContaining({ secure: false }),
       },
+    ]);
+  });
+});
+
+describe("an operator's view as another account", () => {
+  test("lasts an hour and is never extended", async () => {
+    const auth = loadAuth("production");
+    sessions.set("operator", { user_id: "user-1", expires_at: inDays(29) });
+    const session = await auth.createImpersonationSession("user-2", "operator");
+    expect(session.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(
+      3_600_000,
+    );
+    cookieHeader = `__Host-auth_session=${session.id}`;
+
+    const result = await auth.validateRequest();
+
+    expect(result.session).toMatchObject({
+      id: session.id,
+      fresh: false,
+      impersonatorSessionId: "operator",
+    });
+    expect(sessions.get(session.id)?.expires_at).toEqual(session.expiresAt);
+    expect(setCookies).toEqual([]);
+  });
+
+  test("ends by signing the operator back into their own session", async () => {
+    const auth = loadAuth("production");
+    sessions.set("operator", { user_id: "user-1", expires_at: inDays(29) });
+    const session = await auth.createImpersonationSession("user-2", "operator");
+
+    const operator = await auth.endImpersonation(session);
+
+    expect(operator?.id).toBe("user-1");
+    expect(sessions.has(session.id)).toBe(false);
+    expect(setCookies.map(({ name, value }) => [name, value])).toEqual([
+      ["__Host-auth_session", "operator"],
+    ]);
+  });
+
+  test("ends signed out when the operator's session is gone", async () => {
+    const auth = loadAuth("production");
+    const session = await auth.createImpersonationSession("user-2", "gone");
+
+    expect(await auth.endImpersonation(session)).toBeNull();
+    expect(setCookies.map(({ name, value }) => [name, value])).toEqual([
+      ["__Host-auth_session", ""],
     ]);
   });
 });

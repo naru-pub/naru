@@ -38,6 +38,9 @@ export default async function UsersPage({
     if (found) redirect(`/admin/users/${encodeURIComponent(found.login_name)}`);
   }
 
+  // An exact login name opens the account; anything else lists the accounts
+  // whose login name contains it.
+  const pattern = query && `%${query.replace(/[\\%_]/g, "\\$&")}%`;
   const recent = await db
     .selectFrom("users")
     .select([
@@ -48,6 +51,7 @@ export default async function UsersPage({
       "supporter_comp",
       supporterCondition(now).as("supporter"),
     ])
+    .$if(!!pattern, (qb) => qb.where("login_name", "like", pattern!))
     .orderBy("created_at", "desc")
     .limit(50)
     .execute();
@@ -76,55 +80,59 @@ export default async function UsersPage({
         <Button type="submit" variant="outline">
           찾기
         </Button>
-        {query && (
+        {query && recent.length === 0 && (
           <span className="text-sm text-destructive">
-            {query} 계정이 없습니다.
+            {query}이(가) 들어간 계정이 없습니다.
           </span>
         )}
       </form>
 
-      <div className="space-y-2">
-        <h3 className="font-bold">최근 가입한 계정</h3>
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>계정</TableHead>
-                <TableHead>이용</TableHead>
-                <TableHead>가입</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recent.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/admin/users/${encodeURIComponent(user.login_name)}`}
-                      className="underline"
-                    >
-                      {user.login_name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    {user.deleted_at ? (
-                      <Badge variant="destructive">삭제됨</Badge>
-                    ) : user.supporter_comp ? (
-                      <Badge variant="secondary">무료 제공</Badge>
-                    ) : user.supporter ? (
-                      <Badge variant="outline">유료</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">무료</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">
-                    {formatDate(user.created_at)}
-                  </TableCell>
+      {(!query || recent.length > 0) && (
+        <div className="space-y-2">
+          <h3 className="font-bold">
+            {query ? `${query}이(가) 들어간 계정` : "최근 가입한 계정"}
+          </h3>
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>계정</TableHead>
+                  <TableHead>이용</TableHead>
+                  <TableHead>가입</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
+              </TableHeader>
+              <TableBody>
+                {recent.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/admin/users/${encodeURIComponent(user.login_name)}`}
+                        className="underline"
+                      >
+                        {user.login_name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {user.deleted_at ? (
+                        <Badge variant="destructive">삭제됨</Badge>
+                      ) : user.supporter_comp ? (
+                        <Badge variant="secondary">무료 제공</Badge>
+                      ) : user.supporter ? (
+                        <Badge variant="outline">유료</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">무료</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">
+                      {formatDate(user.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertSameOriginRequest } from "@/lib/utils";
-import { deleteSessionCookie, invalidateSession, validateRequest } from "@/lib/auth";
+import {
+  deleteSessionCookie,
+  endImpersonation,
+  invalidateSession,
+  validateRequest,
+} from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,8 +22,18 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json(
         { success: false, message: "로그인이 필요합니다." },
-        { status: 401 }
+        { status: 401 },
       );
+    }
+
+    // Signing out of a view as another account returns the operator to
+    // their own session.
+    if (session.impersonatorSessionId) {
+      await endImpersonation(session);
+      return NextResponse.json({
+        success: true,
+        message: "로그아웃되었습니다.",
+      });
     }
 
     await invalidateSession(session.id);
@@ -32,7 +47,7 @@ export async function POST(request: NextRequest) {
     console.error("Logout error:", error);
     return NextResponse.json(
       { success: false, message: "로그아웃 중 오류가 발생했습니다." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

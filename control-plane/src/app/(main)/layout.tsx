@@ -11,6 +11,7 @@ import { getHomepageUrl } from "@/lib/site-urls";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ModeToggle } from "@/components/ModeToggle";
 import { LoadingBar } from "@/components/LoadingBar";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 import {
   getUserEntitlement,
@@ -34,7 +35,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const { user } = await validateRequest();
+  const { user, session } = await validateRequest();
   const entitlement = user ? await getUserEntitlement(user.id) : null;
   const features = new Set<Feature>(
     entitlement?.hasPaidFeatures
@@ -53,6 +54,9 @@ export default async function RootLayout({
         >
           <ConfirmProvider>
             <div className="bg-background h-screen flex flex-col">
+              {session?.impersonatorSessionId && (
+                <ImpersonationBanner loginName={user.loginName} />
+              )}
               <nav className="relative bg-card border-b-2 border-line">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                   {/* On a phone the links drop to a second row under the

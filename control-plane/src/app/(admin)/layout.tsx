@@ -13,6 +13,9 @@ import { ConfirmProvider } from "@/components/ui/confirm";
 import { Toaster } from "@/components/ui/sonner";
 import { ModeToggle } from "@/components/ModeToggle";
 import { LoadingBar } from "@/components/LoadingBar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import { AdminNav, type AdminSectionGroup } from "./admin/_components/AdminNav";
 
 export const metadata: Metadata = { title: "운영 · 나루" };
@@ -108,6 +111,30 @@ export default async function AdminLayout({
                   </Link>
                   <ModeToggle />
                 </div>
+                <form
+                  action="/admin/users"
+                  role="search"
+                  className="flex gap-1 px-4 pb-3"
+                >
+                  <label htmlFor="admin-user-search" className="sr-only">
+                    계정 아이디
+                  </label>
+                  <Input
+                    id="admin-user-search"
+                    name="user"
+                    placeholder="계정 찾기"
+                    className="h-8 min-w-0 flex-1 text-sm"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    aria-label="찾기"
+                    className="h-8 px-2"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                </form>
                 <AdminNav groups={groups} />
                 <div className="hidden space-y-1 border-t border-border px-4 py-3 text-xs text-muted-foreground lg:block">
                   <div className="font-mono">{user.loginName}</div>
