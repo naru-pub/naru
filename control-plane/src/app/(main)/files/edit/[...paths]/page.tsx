@@ -3,7 +3,7 @@ import { HeadObjectCommand, NotFound } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 import { getUserObjectKey } from "@/lib/site-urls";
 import { buildFileTree } from "@/lib/fileUtils";
-import FileExplorerWithSelected from "@/components/browser/FileExplorerWithSelected";
+import FileExplorer from "@/components/browser/FileExplorer";
 
 export default async function EditPage(props: {
   params: Promise<{ paths: string[] }>;
@@ -47,7 +47,7 @@ export default async function EditPage(props: {
 
   return (
     <div className="w-full h-full">
-      <FileExplorerWithSelected
+      <FileExplorer
         initialFiles={fileTree}
         userLoginName={user.loginName}
         initialSelectedFile={fileExists ? filename : null}

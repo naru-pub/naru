@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { EDITABLE_FILE_EXTENSIONS, IMAGE_FILE_EXTENSIONS, AUDIO_FILE_EXTENSIONS } from "@/lib/const";
+import { useState, useRef, useEffect } from "react";
 import { FileNode } from "@/lib/fileUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useConfirm } from "@/components/ui/confirm";
@@ -16,20 +17,17 @@ import { toast } from "sonner";
 import {
   Folder,
   FolderOpen,
-  Globe,
-  Palette,
-  FileCode,
-  Braces,
-  FileText,
-  Image as ImageIcon,
-  Music,
-  File as FileIcon,
   Upload,
   FolderPlus,
   FilePlus,
+  Pencil,
   Trash2,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 import { loadingFetch } from "@/lib/loading-bar";
+import { getFileIcon } from "./file-icons";
+import { findNode, isHtml, parentOf, renameSelection } from "./file-tree";
 
 interface DirectoryTreeProps {
   files: FileNode[];
@@ -37,63 +35,25 @@ interface DirectoryTreeProps {
   expandedFolders: Set<string>;
   onFileSelect: (filePath: string, isDirectory: boolean) => void;
   onFolderToggle: (folderPath: string) => void;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
   uploading: boolean;
   onUpload: (files: File[], directory: string) => Promise<boolean>;
+  // Files with unsaved edits, marked with a dot.
+  dirtyPaths: ReadonlySet<string>;
+  // The item whose name is being edited in place, if any.
+  renamingPath: string | null;
+  onStartRename: (path: string) => void;
+  onCancelRename: () => void;
+  onRename: (path: string, newName: string, isDirectory: boolean) => void;
+  onCreated: (path: string) => void;
+  onDeleted: (path: string) => void;
+  onMoved: (from: string, to: string) => void;
+  onPreview: (path: string) => void;
+  publicUrl: (path: string) => string | null;
 }
 
-function getFileIcon(fileName: string, isDirectory: boolean): React.ReactNode {
-  const cls = "inline-block align-middle shrink-0";
-  const size = 16;
-  if (isDirectory) return <Folder size={size} className={cls} />;
-
-  const extension = fileName.split('.').pop()?.toLowerCase() || "";
-
-  if (EDITABLE_FILE_EXTENSIONS.includes(extension)) {
-    switch (extension) {
-      case "html":
-      case "htm":
-        return <Globe size={size} className={cls} />;
-      case "css":
-        return <Palette size={size} className={cls} />;
-      case "js":
-        return <FileCode size={size} className={cls} />;
-      case "json":
-        return <Braces size={size} className={cls} />;
-      case "md":
-      case "markdown":
-        return <FileText size={size} className={cls} />;
-      default:
-        return <FileIcon size={size} className={cls} />;
-    }
-  }
-
-  if (IMAGE_FILE_EXTENSIONS.includes(extension)) {
-    return <ImageIcon size={size} className={cls} />;
-  }
-
-  if (AUDIO_FILE_EXTENSIONS.includes(extension)) {
-    return <Music size={size} className={cls} />;
-  }
-
-  return <FileIcon size={size} className={cls} />;
-}
-
-function TreeNode({
-  node,
-  level = 0,
-  selectedFile,
-  expandedFolders,
-  onFileSelect,
-  onFolderToggle,
-  onDelete,
-  flashingItems,
-  onMoveFile,
-  dragOverDirectory,
-  onDragOverDirectoryChange
-}: {
-  node: FileNode;
-  level?: number;
+// What every row needs from the tree, passed down as one prop.
+interface TreeActions {
   selectedFile: string | null;
   expandedFolders: Set<string>;
   onFileSelect: (filePath: string, isDirectory: boolean) => void;
@@ -103,7 +63,87 @@ function TreeNode({
   onMoveFile: (sourcePath: string, targetDirectory: string) => void;
   dragOverDirectory: string | null;
   onDragOverDirectoryChange: (directory: string | null) => void;
+  dirtyPaths: ReadonlySet<string>;
+  renamingPath: string | null;
+  onStartRename: (path: string) => void;
+  onCancelRename: () => void;
+  onRename: (path: string, newName: string, isDirectory: boolean) => void;
+  onNewFile: (directory: string) => void;
+  onNewFolder: (directory: string) => void;
+  onPreview: (path: string) => void;
+  publicUrl: (path: string) => string | null;
+}
+
+// A name edited in place, as in an editor's file tree: Enter or leaving the
+// field renames, Esc cancels. It starts with the name, extension aside,
+// selected.
+function RenameInput({
+  node,
+  onRename,
+  onCancel,
+}: {
+  node: FileNode;
+  onRename: (newName: string) => void;
+  onCancel: () => void;
 }) {
+  const [value, setValue] = useState(node.name);
+  const ref = useRef<HTMLInputElement>(null);
+  const settled = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.setSelectionRange(
+      0,
+      renameSelection(node.name, node.isDirectory),
+    );
+  }, [node.name, node.isDirectory]);
+
+  const settle = (commit: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    const name = value.trim();
+    if (commit && name && name !== node.name) onRename(name);
+    else onCancel();
+  };
+
+  return (
+    <Input
+      ref={ref}
+      value={value}
+      aria-label="새 이름"
+      className="h-6 min-w-0 flex-1 px-1 py-0 text-sm md:text-sm"
+      onChange={(e) => setValue(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") settle(true);
+        else if (e.key === "Escape") settle(false);
+      }}
+      onBlur={() => settle(true)}
+    />
+  );
+}
+
+function TreeNode({
+  node,
+  level = 0,
+  actions,
+}: {
+  node: FileNode;
+  level?: number;
+  actions: TreeActions;
+}) {
+  const {
+    selectedFile,
+    expandedFolders,
+    onFileSelect,
+    onFolderToggle,
+    onDelete,
+    flashingItems,
+    onMoveFile,
+    dragOverDirectory,
+    onDragOverDirectoryChange,
+  } = actions;
   const confirm = useConfirm();
   const [isDragging, setIsDragging] = useState(false);
   const isExpanded = expandedFolders.has(node.path);
@@ -276,10 +316,67 @@ function TreeNode({
               </span>
             )}
             <span className="mr-2">{getFileIcon(node.name, node.isDirectory)}</span>
-            <span className="text-sm text-foreground truncate">{node.name}</span>
+            {actions.renamingPath === node.path ? (
+              <RenameInput
+                node={node}
+                onRename={(name) =>
+                  actions.onRename(node.path, name, node.isDirectory)
+                }
+                onCancel={actions.onCancelRename}
+              />
+            ) : (
+              <span className="text-sm text-foreground truncate">{node.name}</span>
+            )}
+            {actions.dirtyPaths.has(node.path) && (
+              <span
+                className="ml-auto size-2 shrink-0 rounded-full bg-primary"
+                title="저장하지 않은 변경 사항"
+                aria-label="저장하지 않음"
+              />
+            )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem
+            onSelect={() =>
+              actions.onNewFile(node.isDirectory ? node.path : parentOf(node.path))
+            }
+          >
+            <FilePlus /> 새 파일
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() =>
+              actions.onNewFolder(
+                node.isDirectory ? node.path : parentOf(node.path),
+              )
+            }
+          >
+            <FolderPlus /> 새 폴더
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          {isHtml(node.path) && (
+            <ContextMenuItem onSelect={() => actions.onPreview(node.path)}>
+              <Eye /> 미리보기
+            </ContextMenuItem>
+          )}
+          {!node.isDirectory && actions.publicUrl(node.path) && (
+            <ContextMenuItem
+              onSelect={() =>
+                window.open(
+                  actions.publicUrl(node.path)!,
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+            >
+              <ExternalLink /> 새 탭에서 열기
+            </ContextMenuItem>
+          )}
+          {node.path !== "index.html" && (
+            <ContextMenuItem onSelect={() => actions.onStartRename(node.path)}>
+              <Pencil /> 이름 변경 <span className="ml-auto pl-4 text-xs text-muted-foreground">F2</span>
+            </ContextMenuItem>
+          )}
           <ContextMenuItem destructive onSelect={handleDelete}>
             <Trash2 /> 삭제
           </ContextMenuItem>
@@ -293,15 +390,7 @@ function TreeNode({
               key={child.path}
               node={child}
               level={level + 1}
-              selectedFile={selectedFile}
-              expandedFolders={expandedFolders}
-              onFileSelect={onFileSelect}
-              onFolderToggle={onFolderToggle}
-              onDelete={onDelete}
-              flashingItems={flashingItems}
-              onMoveFile={onMoveFile}
-              dragOverDirectory={dragOverDirectory}
-              onDragOverDirectoryChange={onDragOverDirectoryChange}
+              actions={actions}
             />
           ))}
         </div>
@@ -319,11 +408,23 @@ export default function DirectoryTree({
   onRefresh,
   uploading,
   onUpload,
+  dirtyPaths,
+  renamingPath,
+  onStartRename,
+  onCancelRename,
+  onRename,
+  onCreated,
+  onDeleted,
+  onMoved,
+  onPreview,
+  publicUrl,
 }: DirectoryTreeProps) {
   const [newDirectoryName, setNewDirectoryName] = useState("");
   const [newFileName, setNewFileName] = useState("");
   const [showNewDirectoryInput, setShowNewDirectoryInput] = useState(false);
   const [showNewFileInput, setShowNewFileInput] = useState(false);
+  // New HTML files start from a page skeleton unless this is unchecked.
+  const [useTemplate, setUseTemplate] = useState(true);
   const [flashingItems, setFlashingItems] = useState<Set<string>>(new Set());
   const [isRootDropZone, setIsRootDropZone] = useState(false);
   const [dragOverDirectory, setDragOverDirectory] = useState<string | null>(null);
@@ -332,28 +433,9 @@ export default function DirectoryTree({
   // Get current directory based on selected file/folder
   const getCurrentDirectory = () => {
     if (!selectedFile) return "";
-    
-    // If selected item is a directory, use it as current directory
-    const findNode = (nodes: FileNode[], path: string): FileNode | null => {
-      for (const node of nodes) {
-        if (node.path === path) return node;
-        if (node.children) {
-          const found = findNode(node.children, path);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    const selectedNode = findNode(files, selectedFile);
-    if (selectedNode?.isDirectory) {
-      return selectedFile;
-    } else {
-      // If selected item is a file, use its parent directory
-      const parts = selectedFile.split('/');
-      parts.pop(); // Remove file name
-      return parts.join('/');
-    }
+    return findNode(files, selectedFile)?.isDirectory
+      ? selectedFile
+      : parentOf(selectedFile);
   };
 
   const targetDirectory = getCurrentDirectory();
@@ -427,6 +509,7 @@ export default function DirectoryTree({
         body: JSON.stringify({
           directory: targetDirectory,
           filename: newFileName,
+          template: useTemplate,
         }),
       });
 
@@ -436,8 +519,9 @@ export default function DirectoryTree({
         const newFilePath = targetDirectory ? `${targetDirectory}/${newFileName}` : newFileName;
         setNewFileName("");
         setShowNewFileInput(false);
-        onRefresh();
+        await onRefresh();
         flashItem(newFilePath);
+        onCreated(newFilePath);
       } else {
         toast.error(result.message);
       }
@@ -463,10 +547,7 @@ export default function DirectoryTree({
 
       if (result.success) {
         onRefresh();
-        // If deleted file was selected, clear selection
-        if (selectedFile === filePath) {
-          onFileSelect("", false);
-        }
+        onDeleted(filePath);
       } else {
         toast.error(result.message);
       }
@@ -499,9 +580,8 @@ export default function DirectoryTree({
 
         onRefresh();
 
-        // Update selected file if it was the moved file
-        if (selectedFile === sourcePath && result.newPath) {
-          onFileSelect(result.newPath, false);
+        if (result.newPath) {
+          onMoved(sourcePath, result.newPath);
         }
 
         // Flash the moved file in its new location
@@ -568,8 +648,52 @@ export default function DirectoryTree({
     }
   };
 
+  const actions: TreeActions = {
+    selectedFile,
+    expandedFolders,
+    onFileSelect,
+    onFolderToggle,
+    onDelete: handleDelete,
+    flashingItems,
+    onMoveFile: handleMoveFile,
+    dragOverDirectory,
+    onDragOverDirectoryChange: handleDragOverDirectoryChange,
+    dirtyPaths,
+    renamingPath,
+    onStartRename,
+    onCancelRename,
+    onRename,
+    onNewFile: (directory) => {
+      onFileSelect(directory, true);
+      setShowNewDirectoryInput(false);
+      setShowNewFileInput(true);
+    },
+    onNewFolder: (directory) => {
+      onFileSelect(directory, true);
+      setShowNewFileInput(false);
+      setShowNewDirectoryInput(true);
+    },
+    onPreview,
+    publicUrl,
+  };
+
   return (
-    <div>
+    <div
+      // Focusable, so F2 renames what is selected after a click in the tree.
+      tabIndex={-1}
+      className="outline-none"
+      onKeyDown={(e) => {
+        if (
+          e.key === "F2" &&
+          selectedFile &&
+          selectedFile !== "index.html" &&
+          !renamingPath
+        ) {
+          e.preventDefault();
+          onStartRename(selectedFile);
+        }
+      }}
+    >
       {/* Toolbar */}
       <div className="p-2 border-b border-border bg-secondary">
         <div className="space-y-2">
@@ -614,7 +738,11 @@ export default function DirectoryTree({
                 onChange={(e) => setNewDirectoryName(e.target.value)}
                 placeholder="폴더 이름"
                 className="h-8 min-w-0 flex-1 px-2 py-1 text-xs md:text-xs"
-                onKeyDown={(e) => e.key === "Enter" && handleCreateDirectory()}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateDirectory();
+                  else if (e.key === "Escape") setShowNewDirectoryInput(false);
+                }}
               />
               <Button size="sm" onClick={handleCreateDirectory} className="h-8 text-xs">
                 생성
@@ -623,18 +751,34 @@ export default function DirectoryTree({
           )}
 
           {showNewFileInput && (
-            <div className="flex space-x-1">
-              <Input
-                type="text"
-                value={newFileName}
-                onChange={(e) => setNewFileName(e.target.value)}
-                placeholder="파일 이름 (예: test.html)"
-                className="h-8 min-w-0 flex-1 px-2 py-1 text-xs md:text-xs"
-                onKeyDown={(e) => e.key === "Enter" && handleCreateFile()}
-              />
-              <Button size="sm" onClick={handleCreateFile} className="h-8 text-xs">
-                생성
-              </Button>
+            <div className="space-y-1">
+              <div className="flex space-x-1">
+                <Input
+                  type="text"
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  placeholder="파일 이름 (예: test.html)"
+                  className="h-8 min-w-0 flex-1 px-2 py-1 text-xs md:text-xs"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateFile();
+                    else if (e.key === "Escape") setShowNewFileInput(false);
+                  }}
+                />
+                <Button size="sm" onClick={handleCreateFile} className="h-8 text-xs">
+                  생성
+                </Button>
+              </div>
+              {isHtml(newFileName.trim()) && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={useTemplate}
+                    onCheckedChange={(checked) => setUseTemplate(checked === true)}
+                    className="size-4"
+                  />
+                  HTML 기본 틀로 시작
+                </label>
+              )}
             </div>
           )}
         </div>
@@ -651,19 +795,7 @@ export default function DirectoryTree({
       {/* File Tree */}
       <div className="p-2">
         {files.map((file) => (
-          <TreeNode
-            key={file.path}
-            node={file}
-            selectedFile={selectedFile}
-            expandedFolders={expandedFolders}
-            onFileSelect={onFileSelect}
-            onFolderToggle={onFolderToggle}
-            onDelete={handleDelete}
-            flashingItems={flashingItems}
-            onMoveFile={handleMoveFile}
-            dragOverDirectory={dragOverDirectory}
-            onDragOverDirectoryChange={handleDragOverDirectoryChange}
-          />
+          <TreeNode key={file.path} node={file} actions={actions} />
         ))}
 
         {files.length === 0 && (

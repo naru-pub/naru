@@ -17,6 +17,7 @@ import * as Sentry from "@sentry/nextjs";
 import {
   EDITABLE_FILE_EXTENSIONS,
   FILE_EXTENSION_MIMETYPE_MAP,
+  NEW_HTML_FILE_TEMPLATE,
 } from "@/lib/const";
 import { recordSiteEdit } from "@/lib/database";
 
@@ -48,7 +49,8 @@ export async function POST(request: NextRequest) {
     const suspended = await refuseSuspendedSite(user.id);
     if (suspended) return suspended;
 
-    const { directory, filename } = await request.json();
+    // template: start an HTML file from NEW_HTML_FILE_TEMPLATE, not empty.
+    const { directory, filename, template } = await request.json();
 
     if (directory === null || directory === undefined || !filename) {
       return NextResponse.json(
@@ -94,7 +96,10 @@ export async function POST(request: NextRequest) {
             new PutObjectCommand({
               Bucket: process.env.S3_BUCKET_NAME!,
               Key: normalizedKey,
-              Body: "", // Create empty file
+              Body:
+                template && /\.html?$/i.test(filename)
+                  ? NEW_HTML_FILE_TEMPLATE
+                  : "",
               ContentType:
                 FILE_EXTENSION_MIMETYPE_MAP[filename.split(".").pop()!],
             }),

@@ -85,9 +85,13 @@ export async function GET(request: NextRequest) {
     const response = await s3Client.send(command);
     const content = (await response.Body?.transformToString()) || "";
 
+    // The editor sends the ETag back when it saves, so a save over a newer
+    // version (from MCP, the apps, another tab) is refused, not lost.
     return new NextResponse(content, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        ...(response.ETag ? { ETag: response.ETag } : {}),
       },
     });
   } catch (error) {

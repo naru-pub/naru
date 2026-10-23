@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { validateRequest } from "@/lib/auth";
 import { refuseSuspendedSite } from "@/lib/site-suspension";
 import { s3Client } from "@/lib/s3";
@@ -43,7 +43,9 @@ export async function POST(request: NextRequest) {
     const suspended = await refuseSuspendedSite(user.id);
     if (suspended) return suspended;
 
-    const { filename, contents } = await request.json();
+    // etag: the version the editor loaded, from /api/files/content. When
+    // given, the save is refused if the file has changed since.
+    const { filename, contents, etag } = await request.json();
 
     if (!filename || typeof contents !== "string") {
       return NextResponse.json(
@@ -70,8 +72,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (typeof etag === "string") {
+      let current: string | undefined;
+      try {
+        current = (
+          await s3Client.send(
+            new HeadObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME!,
+              Key: getUserObjectKey(user.loginName, filename),
+            }),
+          )
+        ).ETag;
+      } catch (e) {
+        const name = (e as { name?: string }).name;
+        if (name !== "NotFound" && name !== "NoSuchKey") throw e;
+      }
+      if (current !== etag) {
+        return NextResponse.json(
+          {
+            success: false,
+            type: "CONFLICT",
+            message: current
+              ? "다른 곳에서 파일이 변경되었습니다."
+              : "다른 곳에서 파일이 삭제되었습니다.",
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    let savedEtag: string | undefined;
     try {
-      await s3Client.send(
+      const put = await s3Client.send(
         new PutObjectCommand({
           Bucket: process.env.S3_BUCKET_NAME!,
           Key: getUserObjectKey(user.loginName, filename),
@@ -79,6 +111,7 @@ export async function POST(request: NextRequest) {
           ContentType: FILE_EXTENSION_MIMETYPE_MAP[filename.split(".").pop()!],
         }),
       );
+      savedEtag = put.ETag;
     } catch (e) {
       console.error("S3 save error:", e);
       return NextResponse.json(
@@ -116,6 +149,7 @@ export async function POST(request: NextRequest) {
           success: false,
           message:
             "File saved, but the function update did not finish. Check the function files and retry. Queued updates retry automatically.",
+          etag: savedEtag,
         },
         { status: 503 },
       );
@@ -124,6 +158,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "파일이 저장되었습니다.",
+      etag: savedEtag,
     });
   } catch (error) {
     console.error("Save file error:", error);

@@ -117,6 +117,19 @@ export const ALLOWED_FILE_EXTENSIONS = [
   ...FONT_FILE_EXTENSIONS,
 ];
 
+// What the file manager writes into a new HTML file when asked for a starter.
+export const NEW_HTML_FILE_TEMPLATE = `<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title></title>
+  </head>
+  <body>
+  </body>
+</html>
+`;
+
 export const DEFAULT_INDEX_HTML = `<!DOCTYPE html>
 <html lang="ko">
   <head>
