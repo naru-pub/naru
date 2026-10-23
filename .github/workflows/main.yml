@@ -26,13 +26,17 @@ jobs:
         run: echo arch=arm64 >> "$GITHUB_OUTPUT"
       # Two targets of one Dockerfile: the Next.js standalone server, and the
       # image worker and migrations run from. The second build reuses the
-      # first's dependency install from this builder's cache.
-      - uses: docker/build-push-action@v6
+      # first's dependency install from this builder's cache. Each is also
+      # loaded here for the smoke test below. Named: `mise run deploy naru`
+      # in infra starts pulling on the server once the jobs image is pushed.
+      - name: Build and push the web image
+        uses: docker/build-push-action@v6
         with:
           context: control-plane
           target: web
           pull: "true"
           push: "true"
+          load: "true"
           no-cache: "false"
           build-args: GIT_COMMIT=${{ github.sha }}
           tags: ghcr.io/${{ github.repository }}-control-plane:git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
@@ -41,12 +45,14 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane:build-cache-${{ steps.arch.outputs.arch }}
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane:build-cache-${{ steps.arch.outputs.arch }},mode=max
           provenance: false
-      - uses: docker/build-push-action@v6
+      - name: Build and push the jobs image
+        uses: docker/build-push-action@v6
         with:
           context: control-plane
           target: jobs
           pull: "true"
           push: "true"
+          load: "true"
           no-cache: "false"
           build-args: GIT_COMMIT=${{ github.sha }}
           tags: ghcr.io/${{ github.repository }}-control-plane-jobs:git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
@@ -55,6 +61,14 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane-jobs:build-cache-${{ steps.arch.outputs.arch }}
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane-jobs:build-cache-${{ steps.arch.outputs.arch }},mode=max
           provenance: false
+      # Runs the images just built as a deploy would. A deploy takes only a
+      # commit whose whole run succeeded, so a failure here keeps it off the
+      # server.
+      - name: Smoke-test the images
+        run: |
+          image=ghcr.io/${{ github.repository }}-control-plane
+          tag=git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
+          scripts/smoke-test-images.sh "$image:$tag" "$image-jobs:$tag"
 
   # The payment tests: unit tests, then the database tests against a throwaway
   # PostgreSQL cluster the script starts itself. Part of the run a deploy
@@ -219,25 +233,3 @@ jobs:
       - run: pnpm typecheck
         working-directory: naru-dev
       - run: naru-dev/scripts/check-package.sh "$RUNNER_TEMP/naru-dev"
-
-  # Runs the images just pushed as a deploy would. A deploy takes only a
-  # commit whose whole run succeeded, so a failure here keeps it off the server.
-  smoke-test-control-plane:
-    needs: image-control-plane
-    permissions:
-      contents: read
-      packages: read
-    runs-on: ubuntu-26.04-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - run: |
-          image=ghcr.io/${{ github.repository }}-control-plane
-          tag=git-${{ github.sha }}-arm64
-          docker pull --quiet "$image:$tag"
-          docker pull --quiet "$image-jobs:$tag"
-          control-plane/scripts/smoke-test-images.sh "$image:$tag" "$image-jobs:$tag"
