@@ -16,9 +16,9 @@ How the server meets them: [design/naru-mcp.md](design/naru-mcp.md).
 
 ## Before submitting
 
-- [ ] **Privacy policy covers MCP.** `/privacy` doesn't mention MCP
-      connections yet; a missing or incomplete policy is an immediate
-      rejection. See [Privacy policy additions](#privacy-policy-additions).
+- [x] **Privacy policy covers MCP.** `/privacy` lists MCP connections in
+      sections 1, 3 and 4, effective 2026-10-30, a week after it was posted
+      as its section 12 promises. See [Privacy policy additions](#privacy-policy-additions).
 - [ ] **Reviewer account.** A production account comped the supporter plan
       (`/admin/users/<login>`), with a few pages, a stylesheet, an image and a
       `_naru/collections.json`, so every tool has something to work on.
@@ -169,8 +169,8 @@ acknowledgments.
 
 ## Privacy policy additions
 
-A draft for `control-plane/src/app/(main)/privacy/page.tsx`, to review before
-it's published (with the usual notice of a policy change):
+Added to `control-plane/src/app/(main)/privacy/page.tsx` on 2026-10-23,
+effective 2026-10-30:
 
 **1. 수집하는 개인정보**, a new row:
 
