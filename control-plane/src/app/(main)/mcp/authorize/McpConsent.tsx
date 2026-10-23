@@ -12,6 +12,8 @@ export default function McpConsent({
   request,
   appName,
   host,
+  identity,
+  loopback,
   scopes,
   account,
   entitled,
@@ -19,6 +21,10 @@ export default function McpConsent({
   request: Record<string, string>;
   appName: string;
   host: string;
+  /** The host whose metadata document names the app, when it has one. */
+  identity: string | null;
+  /** Whether the app returns to a program on this computer. */
+  loopback: boolean;
   scopes: Scope[];
   account: string;
   entitled: boolean;
@@ -56,9 +62,22 @@ export default function McpConsent({
         연결하려고 합니다.
       </p>
       <p className="text-sm text-muted-foreground">
-        연결이 끝나면 <code>{host}</code>(으)로 돌아갑니다. 앱 이름은 앱이 직접
-        밝힌 것이니, 이 주소가 쓰려던 앱의 것인지 확인하세요.
+        {identity ? (
+          <>
+            앱 정보는 <code>{identity}</code>에서 확인했습니다.{" "}
+          </>
+        ) : (
+          <>앱 이름은 앱이 직접 밝힌 것입니다. </>
+        )}
+        연결이 끝나면 <code>{host}</code>(으)로 돌아갑니다. 쓰려던 앱의 주소인지
+        확인하세요.
       </p>
+      {loopback && (
+        <p role="note" className="text-sm">
+          이 앱은 이 컴퓨터에서 실행되는 프로그램으로 돌아갑니다. 직접 시작한
+          연결이 아니라면 취소하세요.
+        </p>
+      )}
       {entitled ? (
         <>
           <fieldset className="space-y-3">

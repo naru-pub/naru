@@ -524,7 +524,9 @@ export interface McpAuthCodes {
 
 export interface McpClients {
   created_at: Generated<Timestamp>;
+  fetched_at: Timestamp | null;
   id: Generated<string>;
+  metadata_url: string | null;
   name: string;
   redirect_uris: string[];
 }

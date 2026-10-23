@@ -84,6 +84,18 @@ jest.mock("@/lib/cache-purge", () => ({
   },
 }));
 jest.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// Apps' Client ID Metadata Documents, by URL, instead of the network.
+const documents = new Map<string, unknown>();
+const fetched: string[] = [];
+jest.mock("../client-metadata", () => ({
+  ...(jest.requireActual("../client-metadata") as object),
+  fetchMetadataDocument: async (url: string) => {
+    fetched.push(url);
+    if (!documents.has(url))
+      throw new Error("The client metadata answered 404.");
+    return documents.get(url);
+  },
+}));
 
 // Required after the mocks: this transform does not hoist jest.mock above imports.
 const { sql } = require("kysely") as typeof import("kysely");
@@ -290,6 +302,108 @@ integration("Naru MCP", () => {
         refresh_token: second.refresh_token,
       }),
     ).rejects.toMatchObject({ error: "invalid_grant" });
+  });
+
+  test("matches a loopback redirect on any port, and nothing else loosely", async () => {
+    const client = await oauth.registerClient({
+      redirect_uris: ["http://127.0.0.1/callback", "https://app.example/cb"],
+    });
+    const ask = (redirect_uri: string) =>
+      oauth.authorizeRequest({
+        response_type: "code",
+        client_id: client.client_id,
+        redirect_uri,
+        code_challenge: s256(verifier),
+        code_challenge_method: "S256",
+      });
+    await expect(ask("http://127.0.0.1:53682/callback")).resolves.toMatchObject(
+      {
+        redirectUri: "http://127.0.0.1:53682/callback",
+      },
+    );
+    for (const uri of [
+      "http://localhost:53682/callback",
+      "http://127.0.0.1:53682/other",
+      "https://app.example:8443/cb",
+    ])
+      await expect(ask(uri)).rejects.toBeInstanceOf(oauth.ConsentError);
+  });
+
+  test("signs in an app by its Client ID Metadata Document", async () => {
+    const url = "https://claude.ai/oauth/claude-code-client-metadata";
+    documents.set(url, {
+      client_id: url,
+      client_name: "Claude Code",
+      redirect_uris: ["http://localhost/callback", "http://127.0.0.1/callback"],
+      token_endpoint_auth_method: "none",
+    });
+    const before = fetched.length;
+    const ask = () =>
+      oauth.authorizeRequest({
+        response_type: "code",
+        client_id: url,
+        redirect_uri: "http://localhost:41234/callback",
+        code_challenge: s256(verifier),
+        code_challenge_method: "S256",
+        resource: "https://naru.test/mcp",
+      });
+    const input = await ask();
+    expect(input.client).toMatchObject({
+      name: "Claude Code",
+      identity: "claude.ai",
+    });
+    // Read once, then kept for a day.
+    await ask();
+    expect(fetched.length - before).toBe(1);
+
+    const code = new URL(
+      await oauth.approveAuthorization(owner, input, ["read"]),
+    ).searchParams.get("code")!;
+    const tokens = await exchange({
+      grant_type: "authorization_code",
+      client_id: url,
+      code,
+      code_verifier: verifier,
+      redirect_uri: "http://localhost:41234/callback",
+    });
+    expect(tokens.scope).toBe("read");
+    const refreshed = await exchange({
+      grant_type: "refresh_token",
+      client_id: url,
+      refresh_token: tokens.refresh_token,
+    });
+    expect(
+      await oauth.grantForAccessToken(refreshed.access_token),
+    ).toMatchObject({
+      scopes: ["read"],
+    });
+    expect(
+      (await oauth.listGrants(owner)).find((g) => g.name === "Claude Code"),
+    ).toMatchObject({ host: "claude.ai" });
+  });
+
+  test("refuses a metadata document that isn't the app's own", async () => {
+    const url = "https://evil.example/client.json";
+    documents.set(url, {
+      client_id: "https://claude.ai/oauth/claude-code-client-metadata",
+      client_name: "Claude Code",
+      redirect_uris: ["https://evil.example/cb"],
+    });
+    const ask = (client_id: string) =>
+      oauth.authorizeRequest({
+        response_type: "code",
+        client_id,
+        redirect_uri: "https://evil.example/cb",
+        code_challenge: s256(verifier),
+        code_challenge_method: "S256",
+      });
+    await expect(ask(url)).rejects.toThrow("client_id");
+    await expect(ask("https://gone.example/client.json")).rejects.toThrow(
+      "읽지 못했습니다",
+    );
+    await expect(ask("http://claude.ai/client.json")).rejects.toThrow(
+      "등록되지 않은 앱",
+    );
   });
 
   test("revokes a connection from /account", async () => {

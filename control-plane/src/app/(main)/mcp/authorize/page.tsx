@@ -5,6 +5,7 @@ import { userHasFeature } from "@/lib/entitlements";
 import {
   authorizeRequest,
   ConsentError,
+  isLoopbackRedirect,
   redirectHost,
   type AuthorizeRequest,
 } from "@/lib/mcp/oauth";
@@ -60,6 +61,8 @@ export default async function McpAuthorizePage({
       request={query}
       appName={input.client.name}
       host={redirectHost(input.redirectUri)}
+      identity={input.client.identity}
+      loopback={isLoopbackRedirect(input.redirectUri)}
       scopes={input.scopes}
       account={user.loginName}
       entitled={await userHasFeature(user.id, "mcp")}

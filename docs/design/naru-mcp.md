@@ -82,5 +82,3 @@ read no cookies.
 
 - An undo history for changes made through MCP.
 - Database tools (see above).
-- Client ID metadata documents, which some apps use instead of
-  registration.

@@ -3,12 +3,14 @@ import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
 import { parseUuid } from "@/lib/uuid";
+import { fetchMetadataDocument, isMetadataUrl } from "./client-metadata";
 import { SCOPES, type Scope } from "./scopes";
 
 // Signing in to Naru MCP (docs/design/naru-mcp.md) with OAuth 2.1, the way
 // the MCP authorization spec asks: the app finds this server from /mcp's 401
 // (RFC 9728 protected resource metadata, then RFC 8414 server metadata),
-// registers itself (RFC 7591), sends the person to /mcp/authorize, where they
+// identifies itself with a Client ID Metadata Document (client-metadata.ts)
+// or registers itself (RFC 7591), sends the person to /mcp/authorize, where they
 // sign in to naru.pub and approve it, and exchanges the code with its PKCE
 // verifier for an access token and a refresh token.
 //
@@ -26,6 +28,8 @@ const TOUCH_SECONDS = 60 * 60;
 /** Registrations accepted per hour across Naru, since anyone may register. */
 const REGISTRATIONS_PER_HOUR = 500;
 const MAX_REDIRECT_URIS = 5;
+/** A metadata document is read again once it is this old. */
+const METADATA_TTL_HOURS = 24;
 const MAX_CLIENT_NAME = 100;
 
 /** naru.pub, the issuer and the MCP server's origin. */
@@ -74,6 +78,7 @@ export function authorizationServerMetadata() {
     authorization_endpoint: `${origin}/mcp/authorize`,
     token_endpoint: `${origin}/api/mcp/oauth/token`,
     registration_endpoint: `${origin}/api/mcp/oauth/register`,
+    client_id_metadata_document_supported: true,
     scopes_supported: [...SCOPES],
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
@@ -131,6 +136,32 @@ export function validRedirectUri(value: unknown): value is string {
 export function redirectHost(redirectUri: string) {
   const url = new URL(redirectUri);
   return url.host || url.protocol.replace(/:$/, "");
+}
+
+/** Whether a redirect returns to a program on the person's own computer. */
+export function isLoopbackRedirect(redirectUri: string) {
+  const url = new URL(redirectUri);
+  return url.protocol === "http:" && LOOPBACK.has(url.hostname);
+}
+
+/**
+ * Whether an app may be sent back to `given`: one of its redirects exactly,
+ * or, for a loopback one, on any port (RFC 8252 §7.3), since a desktop app
+ * such as Claude Code listens on a port the system picks for each sign-in.
+ */
+export function redirectMatches(registered: string[], given: string) {
+  if (registered.includes(given)) return true;
+  if (!validRedirectUri(given) || !isLoopbackRedirect(given)) return false;
+  const asked = new URL(given);
+  return registered.some((uri) => {
+    if (!isLoopbackRedirect(uri)) return false;
+    const url = new URL(uri);
+    return (
+      url.hostname === asked.hostname &&
+      url.pathname === asked.pathname &&
+      url.search === asked.search
+    );
+  });
 }
 
 /** POST /api/mcp/oauth/register (RFC 7591). */
@@ -238,6 +269,110 @@ export function parseScope(value: unknown): Scope[] {
   return SCOPES.filter((scope) => asked.includes(scope));
 }
 
+const CLIENT_COLUMNS = ["id", "name", "redirect_uris", "metadata_url"] as const;
+
+/** A metadata document's name and redirects, checked as the draft asks. */
+function parseMetadataDocument(url: string, document: unknown) {
+  const metadata =
+    document && typeof document === "object" && !Array.isArray(document)
+      ? (document as Record<string, unknown>)
+      : null;
+  if (!metadata || metadata.client_id !== url)
+    throw new ConsentError(
+      "앱 정보 문서가 올바르지 않습니다: client_id가 문서 주소와 다릅니다.",
+    );
+  const redirectUris = metadata.redirect_uris;
+  if (
+    typeof metadata.client_name !== "string" ||
+    !metadata.client_name.trim() ||
+    !Array.isArray(redirectUris) ||
+    !redirectUris.length ||
+    redirectUris.length > 10 ||
+    !redirectUris.every(validRedirectUri)
+  )
+    throw new ConsentError(
+      "앱 정보 문서가 올바르지 않습니다: 이름이나 돌아갈 주소가 없습니다.",
+    );
+  if (
+    metadata.token_endpoint_auth_method !== undefined &&
+    metadata.token_endpoint_auth_method !== "none"
+  )
+    throw new ConsentError(
+      "나루는 클라이언트 비밀이 없는 앱만 연결할 수 있습니다.",
+    );
+  return {
+    name: metadata.client_name.trim().slice(0, MAX_CLIENT_NAME),
+    redirectUris: redirectUris as string[],
+  };
+}
+
+/**
+ * The app a sign-in names: a registration by its id, or a metadata document
+ * by its URL, read again when the copy Naru keeps is over a day old. When the
+ * document can't be read, a copy Naru already has is used.
+ */
+async function clientForAuthorization(value: unknown) {
+  const id = parseUuid(value);
+  if (id)
+    return db
+      .selectFrom("mcp_clients")
+      .select(CLIENT_COLUMNS)
+      .where("id", "=", id)
+      .executeTakeFirst();
+  if (!isMetadataUrl(value)) return undefined;
+  const cached = await db
+    .selectFrom("mcp_clients")
+    .select([...CLIENT_COLUMNS, "fetched_at"])
+    .where("metadata_url", "=", value)
+    .executeTakeFirst();
+  if (
+    cached?.fetched_at &&
+    Date.now() - new Date(cached.fetched_at).getTime() <
+      METADATA_TTL_HOURS * 3600 * 1000
+  )
+    return cached;
+  let document: unknown;
+  try {
+    document = await fetchMetadataDocument(value);
+  } catch (error) {
+    if (cached) return cached;
+    throw new ConsentError(
+      `앱 정보 문서를 읽지 못했습니다. (${(error as Error).message})`,
+    );
+  }
+  const { name, redirectUris } = parseMetadataDocument(value, document);
+  return db
+    .insertInto("mcp_clients")
+    .values({
+      name,
+      redirect_uris: redirectUris,
+      metadata_url: value,
+      fetched_at: new Date(),
+    })
+    .onConflict((oc) =>
+      oc.column("metadata_url").doUpdateSet({
+        name,
+        redirect_uris: redirectUris,
+        fetched_at: new Date(),
+      }),
+    )
+    .returning(CLIENT_COLUMNS)
+    .executeTakeFirstOrThrow();
+}
+
+/** The mcp_clients row a token request's client_id names, if any. */
+async function clientRowId(value: string | null) {
+  const id = parseUuid(value);
+  if (id) return id;
+  if (!isMetadataUrl(value)) return null;
+  const row = await db
+    .selectFrom("mcp_clients")
+    .select("id")
+    .where("metadata_url", "=", value)
+    .executeTakeFirst();
+  return row?.id ?? null;
+}
+
 export type AuthorizeRequest = Awaited<ReturnType<typeof authorizeRequest>>;
 
 /**
@@ -246,14 +381,7 @@ export type AuthorizeRequest = Awaited<ReturnType<typeof authorizeRequest>>;
  * a redirect until it is known to be the app's own.
  */
 export async function authorizeRequest(params: Record<string, unknown>) {
-  const clientId = parseUuid(params.client_id);
-  const client = clientId
-    ? await db
-        .selectFrom("mcp_clients")
-        .select(["id", "name", "redirect_uris"])
-        .where("id", "=", clientId)
-        .executeTakeFirst()
-    : undefined;
+  const client = await clientForAuthorization(params.client_id);
   if (!client)
     throw new ConsentError(
       "등록되지 않은 앱입니다. 앱에서 다시 연결해 주세요.",
@@ -264,7 +392,7 @@ export async function authorizeRequest(params: Record<string, unknown>) {
       : params.redirect_uri;
   if (
     typeof redirectUri !== "string" ||
-    !client.redirect_uris.includes(redirectUri)
+    !redirectMatches(client.redirect_uris, redirectUri)
   )
     throw new ConsentError("앱으로 돌아갈 주소가 등록된 주소와 다릅니다.");
   const challenge = params.code_challenge;
@@ -291,7 +419,13 @@ export async function authorizeRequest(params: Record<string, unknown>) {
     throw new ConsentError("앱이 알 수 없는 권한을 요청했습니다.");
   }
   return {
-    client: { id: client.id, name: client.name },
+    client: {
+      id: client.id,
+      name: client.name,
+      // The host that vouches for the app's name: its metadata document's.
+      // A registration's name is only the app's own word.
+      identity: client.metadata_url ? new URL(client.metadata_url).host : null,
+    },
     redirectUri,
     challenge,
     state: typeof state === "string" ? state : null,
@@ -376,9 +510,13 @@ const invalidGrant = () =>
 /** POST /api/mcp/oauth/token: both grant types, from the form's fields. */
 export async function exchangeToken(form: URLSearchParams) {
   const grantType = form.get("grant_type");
-  const clientId = parseUuid(form.get("client_id"));
+  const clientId = await clientRowId(form.get("client_id"));
   if (!clientId)
-    throw new OAuthError(401, "invalid_client", "client_id is required.");
+    throw new OAuthError(
+      401,
+      "invalid_client",
+      "client_id is missing or unknown.",
+    );
   if (grantType === "authorization_code") return exchangeCode(form, clientId);
   if (grantType === "refresh_token") return refresh(form, clientId);
   throw new OAuthError(
@@ -545,6 +683,7 @@ export async function listGrants(userId: string) {
       "mcp_grants.last_used_at",
       "mcp_clients.name",
       "mcp_clients.redirect_uris",
+      "mcp_clients.metadata_url",
     ])
     .where("mcp_grants.user_id", "=", userId)
     .orderBy("mcp_grants.id", "desc")
@@ -552,7 +691,9 @@ export async function listGrants(userId: string) {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    host: redirectHost(row.redirect_uris[0]),
+    host: row.metadata_url
+      ? new URL(row.metadata_url).host
+      : redirectHost(row.redirect_uris[0]),
     scopes: parseScope(row.scope),
     createdAt: new Date(row.created_at).toISOString(),
     lastUsedAt: new Date(row.last_used_at).toISOString(),
