@@ -45,6 +45,19 @@ export default function DocsIndex({
           </p>
         </header>
 
+        <Link
+          href="/docs/ai"
+          className="group mb-6 block rounded-lg border-2 border-line p-6 transition-colors hover:border-primary hover:bg-primary/5"
+        >
+          <h2 className="text-xl font-bold group-hover:text-primary">
+            AI로 사이트 만들기 →
+          </h2>
+          <p className="mt-3 leading-7 text-muted-foreground">
+            안내문을 AI에게 붙여 넣으면, 나루에서 그대로 동작하는 사이트를
+            만들어 줍니다.
+          </p>
+        </Link>
+
         <div className="grid gap-6 md:grid-cols-3">
           {guides(version).map((guide) => (
             <a
