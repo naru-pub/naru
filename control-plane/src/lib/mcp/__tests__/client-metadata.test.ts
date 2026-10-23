@@ -14,12 +14,12 @@ describe("reading a Client ID Metadata Document", () => {
   test("returns the address format requested by Node's connection code", () => {
     const addresses = [{ address: "1.1.1.1", family: 4 }];
     const spy = jest.spyOn(dns, "lookup").mockImplementation(((
-      _host,
-      _options,
-      callback,
+      _host: string,
+      _options: dns.LookupAllOptions,
+      callback: (error: null, found: dns.LookupAddress[]) => void,
     ) => {
       callback(null, addresses);
-    }) as typeof dns.lookup);
+    }) as unknown as typeof dns.lookup);
     try {
       const all = jest.fn();
       publicLookup("example.com", { all: true }, all);
