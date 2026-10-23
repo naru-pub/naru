@@ -3,7 +3,7 @@
 Naru is listed in Anthropic's Claude directory twice, as Anthropic asks for a
 plugin that uses its own MCP server: the **Naru connector** (the server at
 `https://naru.pub/mcp`) and the **Naru plugin** (the connector plus the
-`naru-site` skill, from [naru-pub/claude-plugin](https://github.com/naru-pub/claude-plugin)).
+`edit-site` skill, from [naru-pub/claude-plugin](https://github.com/naru-pub/claude-plugin)).
 Both are submitted at [claude.ai/directory/manage](https://claude.ai/directory/manage),
 from a paid Claude plan, connector first. This page is what the portal asks
 for, ready to paste.
@@ -168,7 +168,7 @@ acknowledgments.
 - How new versions reach the directory: GitHub push webhook (needs admin on
   naru-pub/claude-plugin), then **Set up push updates**.
 - Raise `version` in `plugin.json` with every release.
-- Keep `skills/naru-site/references/data-sdk.md` in step with the Data SDK's
+- Keep `skills/edit-site/references/data-sdk.md` in step with the Data SDK's
   stable version.
 
 ## Privacy policy additions
