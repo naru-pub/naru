@@ -512,6 +512,36 @@ export interface HomeDirectoryExports {
   user_id: string;
 }
 
+export interface McpAuthCodes {
+  challenge: string;
+  client_id: string;
+  expires_at: Timestamp;
+  hash: string;
+  redirect_uri: string;
+  scope: string;
+  user_id: string;
+}
+
+export interface McpClients {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  name: string;
+  redirect_uris: string[];
+}
+
+export interface McpGrants {
+  access_expires_at: Timestamp;
+  access_hash: string;
+  client_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  last_used_at: Generated<Timestamp>;
+  previous_refresh_hash: string | null;
+  refresh_hash: string;
+  scope: string;
+  user_id: string;
+}
+
 export interface PageviewDailyBrowsers {
   browser: string;
   date: Timestamp;
@@ -972,6 +1002,9 @@ export interface DB {
   github_deployments: GithubDeployments;
   github_installations: GithubInstallations;
   home_directory_exports: HomeDirectoryExports;
+  mcp_auth_codes: McpAuthCodes;
+  mcp_clients: McpClients;
+  mcp_grants: McpGrants;
   pageview_daily_browsers: PageviewDailyBrowsers;
   pageview_daily_paths: PageviewDailyPaths;
   pageview_daily_referrers: PageviewDailyReferrers;

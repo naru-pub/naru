@@ -14,13 +14,14 @@ export type Executor = Kysely<DB>;
 // Features that a paid (supporter) plan can unlock. Add new features here as
 // they become gated.
 export type Feature =
-  "custom_domains" | "github_deploys" | "analytics" | "database";
+  "custom_domains" | "github_deploys" | "analytics" | "database" | "mcp";
 
 export const ALL_FEATURES: Feature[] = [
   "custom_domains",
   "github_deploys",
   "analytics",
   "database",
+  "mcp",
 ];
 
 // Shown wherever a feature has to be named to a person — the refund screens and
@@ -30,10 +31,17 @@ export const FEATURE_LABELS: Record<Feature, string> = {
   github_deploys: "GitHub 배포",
   analytics: "방문자 현황",
   database: "데이터베이스",
+  mcp: "MCP 연결",
 };
 
 export const PLAN_FEATURES: Record<string, Feature[]> = {
-  supporter: ["custom_domains", "github_deploys", "analytics", "database"],
+  supporter: [
+    "custom_domains",
+    "github_deploys",
+    "analytics",
+    "database",
+    "mcp",
+  ],
   // To add a richer tier later, add another plan key with its feature list.
 };
 

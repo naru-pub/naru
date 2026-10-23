@@ -12,6 +12,7 @@ export default function DocsNav({
     [guidePath(version, "database"), "데이터베이스", "database"],
     [guidePath(version, "media"), "미디어", "media"],
     [guidePath(version, "sdk"), `SDK ${version}`, "sdk"],
+    ["/docs/mcp", "MCP 연결", "mcp"],
   ] as const;
   return (
     <nav aria-label="문서" className="mb-10">

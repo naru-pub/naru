@@ -6,7 +6,10 @@ import DeleteAccountButton from "./DeleteAccountButton";
 import DownloadDirectoryButton from "./DownloadDirectoryButton";
 import ChangePasswordForm from "./ChangePasswordForm";
 import EmailManagement from "./EmailManagement";
+import McpConnectionsCard from "./McpConnectionsCard";
 import { hasVerifiedEmail } from "@/lib/payments/support";
+import { userHasFeature } from "@/lib/entitlements";
+import { listGrants, mcpResource } from "@/lib/mcp/oauth";
 import { Settings, User } from "lucide-react";
 
 export default async function AccountPage() {
@@ -15,6 +18,10 @@ export default async function AccountPage() {
   if (!user) {
     redirect("/");
   }
+  const [mcpConnections, mcpEntitled] = await Promise.all([
+    listGrants(user.id),
+    userHasFeature(user.id, "mcp"),
+  ]);
 
   return (
     <div className="bg-background min-h-screen">
@@ -45,6 +52,11 @@ export default async function AccountPage() {
           emailVerifiedAt={user.emailVerifiedAt}
         />
         <ChangePasswordForm />
+        <McpConnectionsCard
+          serverUrl={mcpResource()}
+          entitled={mcpEntitled}
+          connections={mcpConnections}
+        />
 
         <Card className="bg-card border-2 border-line">
           <CardHeader className="border-b border-border">

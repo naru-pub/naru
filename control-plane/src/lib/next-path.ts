@@ -6,6 +6,7 @@ const RETURN_PATHS = new Set([
   "/database/authorize",
   "/members/sign-in",
   "/account/delete",
+  "/mcp/authorize",
 ]);
 
 export function safeNextPath(next: string | null | undefined): string | null {
