@@ -147,12 +147,16 @@ more checks. The listing details come from `plugin.json` and the README.
 
 ### Data handling
 
-- Reads or stores personal data: the plugin itself stores nothing. Through
-  its declared connector, it reads and writes the files of the user's own
-  Naru site.
-- Sends data to services other than its declared connectors: no.
-- Keeps data: no.
-- Intended for people under 18: answer from Naru's own terms.
+- Reads or stores personal data: **Reads and stores.** The connector reads
+  the user's site files and saves what Claude writes to them, and personal
+  homepages hold names and contact details. It doesn't reach the site
+  database or its visitors' data.
+- Sends data to services other than its declared connectors: **No.**
+- Retains data received from Claude: **Longer.** Written files are the
+  user's website until they delete them; the connection record lasts until
+  they disconnect.
+- Intended for users under 18: **No.** It's for Claude users, who must be 18
+  or older; Naru itself accepts sign-ups from 14.
 
 ### Compliance
 
