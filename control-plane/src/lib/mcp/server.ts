@@ -28,6 +28,7 @@ import {
 // its address and its files. A connection with only the read scope is not
 // offered the tools that change files. Tool text is English, which every
 // MCP app's model reads; it says what Naru is and nothing about who writes.
+// File mutations affect the publicly served site, so their openWorldHint is true.
 
 const VERSION = "1.0.0";
 
@@ -88,7 +89,11 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
       title: "Get site",
       description:
         "The site's address, title, when it last changed, until when the account's plan is open, and the limits on its files.",
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
     },
     tool(entitled, async () => {
       const [origins, row, entitlement] = await Promise.all([
@@ -133,7 +138,11 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
           .optional()
           .describe("A folder relative to the site's root, such as css."),
       },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
     },
     tool(entitled, async ({ folder }: { folder?: string }) => {
       const listed = await listFiles(site, folderPath(folder));
@@ -158,7 +167,11 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
           .max(1000)
           .describe("The file's path relative to the site's root."),
       },
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
     },
     tool(entitled, async ({ path: value }: { path: string }) => {
       const path = filePath(value);
@@ -203,7 +216,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     tool(
@@ -244,7 +257,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: false,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     tool(entitled, async ({ from, to }: { from: string; to: string }) => {
@@ -271,7 +284,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     tool(entitled, async ({ path: value }: { path: string }) => {
