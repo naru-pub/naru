@@ -1,14 +1,45 @@
 /**
  * @jest-environment node
  */
-import { describe, expect, test } from "@jest/globals";
+import { describe, expect, jest, test } from "@jest/globals";
+import dns from "node:dns";
 import {
   fetchMetadataDocument,
   isMetadataUrl,
   isPublicAddress,
+  publicLookup,
 } from "../client-metadata";
 
 describe("reading a Client ID Metadata Document", () => {
+  test("returns the address format requested by Node's connection code", () => {
+    const addresses = [{ address: "1.1.1.1", family: 4 }];
+    const spy = jest.spyOn(dns, "lookup").mockImplementation(((
+      _host,
+      _options,
+      callback,
+    ) => {
+      callback(null, addresses);
+    }) as typeof dns.lookup);
+    try {
+      const all = jest.fn();
+      publicLookup("example.com", { all: true }, all);
+      expect(all).toHaveBeenCalledWith(null, addresses);
+      const single = jest.fn();
+      publicLookup("example.com", { all: false }, single);
+      expect(single).toHaveBeenCalledWith(null, "1.1.1.1", 4);
+      addresses.push({ address: "127.0.0.1", family: 4 });
+      const blocked = jest.fn();
+      publicLookup("example.com", { all: true }, blocked);
+      expect(blocked).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "EADDRNOTPUBLIC" }),
+        "",
+        0,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test("takes only https URLs with a path on the default port", () => {
     expect(
       isMetadataUrl("https://claude.ai/oauth/claude-code-client-metadata"),

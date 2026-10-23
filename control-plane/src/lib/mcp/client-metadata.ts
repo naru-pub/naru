@@ -75,10 +75,13 @@ export function isMetadataUrl(value: unknown): value is string {
 
 // dns.lookup, refusing a name whose address isn't public: the connection
 // uses the address this returns, so what's checked is what's reached.
-const publicLookup: LookupFunction = (hostname, options, callback) =>
-  lookup(hostname, { ...options, all: false }, (error, address, family) => {
+export const publicLookup: LookupFunction = (hostname, options, callback) =>
+  lookup(hostname, { ...options, all: true }, (error, addresses) => {
     if (error) return callback(error, "", 0);
-    if (!isPublicAddress(address as string))
+    if (
+      !addresses.length ||
+      addresses.some(({ address }) => !isPublicAddress(address))
+    )
       return callback(
         Object.assign(new Error(`${hostname} is not a public address`), {
           code: "EADDRNOTPUBLIC",
@@ -86,7 +89,8 @@ const publicLookup: LookupFunction = (hostname, options, callback) =>
         "",
         0,
       );
-    callback(null, address as string, family);
+    if (options.all) callback(null, addresses);
+    else callback(null, addresses[0].address, addresses[0].family);
   });
 
 /** The document at a metadata URL, parsed, or an Error saying why not. */
