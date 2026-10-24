@@ -6,6 +6,7 @@ import { DataError } from "../../control-plane/src/lib/site-data/validation";
 import { newEngine } from "./engine";
 import {
   MAX_OPERATIONS,
+  MAX_RANDOM_DRAWS,
   MAX_PASSWORD_OPERATIONS,
   retired,
   runFunction,
@@ -844,6 +845,25 @@ describe("the host", () => {
         "f",
       ),
     ).toEqual([{ balance: MAX_OPERATIONS - 2 }]);
+  });
+
+  test("Math.random() draws have their own cap, apart from database operations", () => {
+    // A row ID made in JavaScript takes many draws; they leave the call's
+    // database operations untouched.
+    expect(
+      run(
+        `export async function f(ctx) {
+          let sum = 0;
+          for (let i = 0; i < ${MAX_RANDOM_DRAWS}; i++) sum += Math.random();
+          for (let i = 0; i < ${MAX_OPERATIONS}; i++) await ctx.sql("SELECT 1");
+          return sum;
+        }`,
+        "f",
+      ),
+    ).toBe(MAX_RANDOM_DRAWS * 0.5);
+    expect(() =>
+      run(`export function f() { for (;;) Math.random(); }`, "f"),
+    ).toThrow(`more than ${MAX_RANDOM_DRAWS} Math.random() draws`);
   });
 
   test("ctx is frozen, and nothing outlives a call", () => {

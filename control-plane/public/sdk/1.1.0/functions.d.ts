@@ -65,8 +65,8 @@ export interface SqlResult<Row> {
  * `sql`. Anyone may call one, signed in or not, so its code decides what
  * each caller may see. A query's `sql` only reads. A call runs in one
  * transaction, for tens of milliseconds in 32 MiB, makes at most 100
- * database operations and 1,000 URL parses, reads at most 500,000 rows in
- * all, and returns at most 1 MiB of JSON. Every method's promise must be
+ * database operations, 1,000 URL parses and 2,000 Math.random() draws,
+ * reads at most 500,000 rows in all, and returns at most 1 MiB of JSON. Every method's promise must be
  * used (awaited, returned or chained), or the call fails.
  */
 export interface QueryCtx {

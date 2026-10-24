@@ -423,7 +423,8 @@ functions, `parseInt` and the like), and besides them:
   `RegExp`, `Map`, `Set`, `ArrayBuffer` and `Uint8Array`, keeping cycles;
   anything else (functions, class instances, other typed arrays) throws a
   `DataCloneError`;
-- `Math.random()`, from the host's random source;
+- `Math.random()`, from the host's random source (at most 2,000 draws a
+  call);
 - `Date` and `Date.now()`, the server's clock; prefer `ctx.now`, fixed for
   the call. Local time is the server's, which need not be Korea's: use
   `toISOString()` or the `getUTC…` methods and add the offset you want;
@@ -464,8 +465,8 @@ export async function edit(ctx, { id, text, password }) {
 ```
 
 **Limits.** A call may make 100 database operations (each `ctx.sql`
-statement, writes included), three password hashes or checks and 1,000 URL
-parses, read at most 500,000 rows in all, run for tens of milliseconds in
+statement, writes included), three password hashes or checks, 1,000 URL
+parses and 2,000 `Math.random()` draws, read at most 500,000 rows in all, run for tens of milliseconds in
 32 MiB of memory, and return at most 1 MiB of JSON. Queries are limited as
 reads are: 600 a minute per member, or per address for visitors. A member may
 make 30 mutations a minute; visitors 20 a minute per address and 300 a minute

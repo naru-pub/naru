@@ -70,6 +70,14 @@ export const MAX_FAILURE_DETAILS_BYTES = 4 * 1024;
 /** URL parses a call may make: each is host time the interrupt checks miss. */
 export const MAX_URL_PARSES = 1000;
 /**
+ * Math.random() draws a call may make: each asks the host's
+ * crypto.getRandomValues, host time the interrupt checks miss. A draw is
+ * about 3 µs of it (a URL parse about 9 µs, a statement 200 µs), so draws
+ * are not database operations: 2,000 are some 6 ms, under the URL parses'
+ * 9 ms, and enough for code that makes IDs or rolls dice in JavaScript.
+ */
+export const MAX_RANDOM_DRAWS = 2000;
+/**
  * Promise jobs (each step of an async function) a call may run. A job too
  * small to reach QuickJS's next interrupt check escapes the CPU budget, so
  * `for (;;) await null` would otherwise run some thirty times past it.
@@ -473,6 +481,7 @@ export function runFunction(
     setContext(context);
     let operations = 0;
     let parses = 0;
+    let draws = 0;
     let passwords = 0;
     let hostError: DataError | undefined;
     const entry = context.newFunction("__host", (operation, args) => {
@@ -557,8 +566,10 @@ export function runFunction(
           throw failed(
             `more than ${MAX_PASSWORD_OPERATIONS} password operations.`,
           );
-        operations += 1;
-        if (operations > MAX_OPERATIONS)
+        if (name === "random") {
+          if (++draws > MAX_RANDOM_DRAWS)
+            throw failed(`more than ${MAX_RANDOM_DRAWS} Math.random() draws.`);
+        } else if (++operations > MAX_OPERATIONS)
           throw failed(`more than ${MAX_OPERATIONS} database operations.`);
         // Whether site SQL may write is the call's to say, not the code's.
         const out = host(
