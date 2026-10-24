@@ -23,6 +23,9 @@ import { DataError, name } from "./validation";
 // every request, so a member whose support ends, or whose site comes to
 // require one, loses access without signing out.
 //
+// A site's owner may require a plan of its members too
+// (site_member_supporters_only), checked the same way.
+//
 // A site may also require a verified email (site_member_verified_email): an
 // account without one cannot sign in to it as a member, new or returning.
 // Requests with a token already issued are not re-checked; verification is
@@ -71,11 +74,11 @@ async function emailVerified(tx: Kysely<DB>, userId: string) {
 async function mayJoin(tx: Kysely<DB>, userId: string, siteUserId: string) {
   const site = await tx
     .selectFrom("users")
-    .select("site_members_free")
+    .select(["site_members_free", "site_member_supporters_only"])
     .where("id", "=", siteUserId)
     .executeTakeFirst();
   return (
-    site?.site_members_free === true ||
+    (site?.site_members_free === true && !site.site_member_supporters_only) ||
     (await getUserEntitlement(userId, tx)).hasPaidFeatures
   );
 }

@@ -948,6 +948,7 @@ export interface Users {
   site_data_bytes_used: ColumnType<string, never, number>;
   site_data_document_count: ColumnType<string, never, number>;
   site_member_admission: ColumnType<"open" | "approval" | "closed", "open" | "approval" | "closed" | undefined>;
+  site_member_supporters_only: Generated<boolean>;
   site_member_verified_email: Generated<boolean>;
   site_members_free: Generated<boolean>;
   site_moderation: "hidden" | "suspended" | null;

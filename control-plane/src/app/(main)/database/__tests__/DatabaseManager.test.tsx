@@ -188,6 +188,7 @@ beforeEach(() => {
       return json({
         admission: "open",
         verifiedEmail: false,
+        supportersOnly: false,
         members: [],
         nextCursor: null,
       });

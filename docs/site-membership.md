@@ -14,6 +14,11 @@ Naru's operators require one of a site's members (`users.site_members_free`
 off; it is on by default). That is separate: supporters may be comp accounts
 without a verified email, so a supporter plan does not imply one.
 
+A site's owner may require a supporter plan of its members too
+(`users.site_member_supporters_only`, off by default). It is checked like the
+operators' requirement: at sign-in and on every request, so a member whose
+support ends loses access without signing out.
+
 Members are `pending`, `approved`, or `banned`. Only the signed-in site owner
 can change admission or member states in the database control panel. Any state
 can transition to either of the other states. IDs, roles and the site's data
@@ -50,7 +55,7 @@ only enable approval/ban controls once all processes run the new version.
 
 Owner API: GET /api/account/site-members lists 100 members at a time with an
 opaque member-id `nextCursor` (pass it as `after`). PATCH accepts either
-`{ admission }`, `{ verifiedEmail }` or `{ id, status }`. It uses the owner's same-origin Naru session.
+`{ admission }`, `{ verifiedEmail }`, `{ supportersOnly }` or `{ id, status }`. It uses the owner's same-origin Naru session.
 SDK 1.0.0 and the existing data-v1 response shapes remain unchanged.
 
 neo-avocado's application membership documents are not automatically migrated.

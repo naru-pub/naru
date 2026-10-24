@@ -394,6 +394,35 @@ integration("site members", () => {
     await expect(probe(free.accessToken)).resolves.toBeDefined();
   });
 
+  test("a site's owner can require a supporter plan of its members", async () => {
+    const free = await signIn("ivy");
+    const member = await signIn("erin");
+    try {
+      expect((await manageMembership(owner, "GET")).supportersOnly).toBe(false);
+      await manageMembership(owner, "PATCH", { supportersOnly: true });
+      expect((await manageMembership(owner, "GET")).supportersOnly).toBe(true);
+      // An account without a plan is told so, cannot join, and loses access
+      // already signed in; a supporter keeps it.
+      expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
+        mayJoin: false,
+      });
+      await expect(
+        approveMemberSignIn(users.ivy, "ivy-session", input()),
+      ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
+      await expect(probe(free.accessToken)).rejects.toMatchObject({
+        status: 403,
+        code: "ACCESS_DENIED",
+      });
+      await expect(probe(member.accessToken)).resolves.toBeDefined();
+      await expect(
+        manageMembership(owner, "PATCH", { supportersOnly: "yes" }),
+      ).rejects.toMatchObject({ status: 400 });
+    } finally {
+      await manageMembership(owner, "PATCH", { supportersOnly: false });
+    }
+    await expect(probe(free.accessToken)).resolves.toBeDefined();
+  });
+
   test("the owner gives members roles, which a member's query reads", async () => {
     users.rolf = await insertUser("rolf");
     await sql`insert into sessions values ('rolf-session', ${users.rolf}, now() + interval '60 days')`.execute(

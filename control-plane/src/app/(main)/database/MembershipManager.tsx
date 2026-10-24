@@ -16,6 +16,7 @@ type Member = {
 type Page = {
   admission: Admission;
   verifiedEmail: boolean;
+  supportersOnly: boolean;
   members: Member[];
   nextCursor: string | null;
 };
@@ -60,6 +61,7 @@ export default function MembershipManager() {
     body:
       | { admission: Admission }
       | { verifiedEmail: boolean }
+      | { supportersOnly: boolean }
       | { id: string; status: Status }
       | { id: string; roles: string[] },
   ) {
@@ -70,7 +72,9 @@ export default function MembershipManager() {
       setPage(
         (current) =>
           current &&
-          ("admission" in body || "verifiedEmail" in body
+          ("admission" in body ||
+          "verifiedEmail" in body ||
+          "supportersOnly" in body
             ? { ...current, ...body }
             : {
                 ...current,
@@ -147,6 +151,20 @@ export default function MembershipManager() {
             켜면 이메일을 인증하지 않은 계정은 가입하거나 다시 로그인할 수
             없습니다. 이미 로그인한 회원은 로그인이 끝날 때까지 이용할 수
             있습니다. 사이트는 회원의 이메일 주소를 받지 않습니다.
+          </p>
+          <label className="flex cursor-pointer gap-3 items-center">
+            <Checkbox
+              checked={page.supportersOnly}
+              disabled={busy}
+              onCheckedChange={(checked) =>
+                change({ supportersOnly: checked === true })
+              }
+            />
+            나루 후원자만 회원으로 로그인
+          </label>
+          <p className="text-sm text-muted-foreground">
+            켜면 나루 후원 플랜이 없는 계정은 가입하거나 로그인할 수 없고, 이미
+            로그인한 회원도 후원이 끝나면 바로 이용할 수 없게 됩니다.
           </p>
           <p className="text-sm text-muted-foreground">
             승인 대기 중이거나 차단된 회원은 회원 데이터와 함수를 이용하거나

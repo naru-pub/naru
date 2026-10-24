@@ -66,7 +66,7 @@ export default async function MemberSignInPage({
       <div className="max-w-xl mx-auto p-6 space-y-5">
         <h1 className="text-2xl font-bold">{input.site} 회원으로 로그인</h1>
         <p>
-          나루 사이트의 회원이 되려면 나루 후원 플랜이 필요합니다. 후원을 시작한
+          이 사이트의 회원이 되려면 나루 후원 플랜이 필요합니다. 후원을 시작한
           뒤 사이트에서 다시 로그인해 주세요.
         </p>
         <Link href="/supporter" className="underline">

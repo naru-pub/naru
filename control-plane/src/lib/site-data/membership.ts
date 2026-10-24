@@ -7,6 +7,7 @@ import type { AdmissionMode, MembershipStatus } from "./member-auth";
 type MemberPage = {
   admission: AdmissionMode;
   verifiedEmail: boolean;
+  supportersOnly: boolean;
   members: {
     id: string;
     status: MembershipStatus;
@@ -31,6 +32,7 @@ export function manageMembership(
   | MemberPage
   | { admission: AdmissionMode }
   | { verifiedEmail: boolean }
+  | { supportersOnly: boolean }
   | { id: string; status: MembershipStatus }
   | { id: string; roles: string[] }
 >;
@@ -49,6 +51,7 @@ export async function manageMembership(
         "login_name",
         "site_member_admission",
         "site_member_verified_email",
+        "site_member_supporters_only",
       ])
       .where("id", "=", ownerId)
       .executeTakeFirstOrThrow();
@@ -77,6 +80,7 @@ export async function manageMembership(
     return {
       admission: settings.site_member_admission,
       verifiedEmail: settings.site_member_verified_email,
+      supportersOnly: settings.site_member_supporters_only,
       members,
       nextCursor: rows.length > 100 ? members.at(-1)!.id : null,
     };
@@ -110,6 +114,19 @@ export async function manageMembership(
       .execute();
     return { verifiedEmail };
   }
+  if (
+    keys.length === 1 &&
+    keys[0] === "supportersOnly" &&
+    typeof body.supportersOnly === "boolean"
+  ) {
+    const supportersOnly = body.supportersOnly;
+    await db
+      .updateTable("users")
+      .set({ site_member_supporters_only: supportersOnly })
+      .where("id", "=", ownerId)
+      .execute();
+    return { supportersOnly };
+  }
   if (keys.length === 2 && keys.includes("id") && keys.includes("roles")) {
     const id = uuidId(body.id);
     const owner = await db
@@ -136,7 +153,7 @@ export async function manageMembership(
   )
     throw new DataError(
       400,
-      "Provide admission, verifiedEmail, or a member id and status or roles.",
+      "Provide admission, verifiedEmail, supportersOnly, or a member id and status or roles.",
     );
   const id = uuidId(body.id);
   const status = body.status as MembershipStatus;
