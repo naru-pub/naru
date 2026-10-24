@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 import type { NextRequest } from "next/server";
 
-// The file manager's save and rename routes against a bucket held in memory,
+// The file manager's save, rename and delete routes against a bucket held in memory,
 // with the session, the purge and the database standing in.
 
 const bucket = new Map<string, { body: string; etag: string }>();
@@ -26,13 +26,21 @@ jest.mock("@/lib/s3", () => ({
         case "PutObjectCommand":
           put(input.Key, input.Body);
           return { ETag: bucket.get(input.Key)!.etag };
-        case "ListObjectsV2Command":
+        case "ListObjectsV2Command": {
+          // Two keys a page, so callers have to follow the pages.
+          const keys = [...bucket.keys()]
+            .filter((key) => key.startsWith(input.Prefix))
+            .sort();
+          const from = Number(input.ContinuationToken ?? 0);
           return {
-            Contents: [...bucket.keys()]
-              .filter((key) => key.startsWith(input.Prefix))
-              .sort()
-              .map((Key) => ({ Key })),
+            Contents: keys.slice(from, from + 2).map((Key) => ({ Key })),
+            IsTruncated: from + 2 < keys.length,
+            NextContinuationToken: String(from + 2),
           };
+        }
+        case "DeleteObjectsCommand":
+          for (const { Key } of input.Delete.Objects) bucket.delete(Key);
+          return {};
         case "CopyObjectCommand": {
           const [, ...path] = (input.CopySource as string).split("/");
           const source = decodeURIComponent(path.join("/"));
@@ -58,6 +66,7 @@ jest.mock("@/lib/site-suspension", () => ({
 jest.mock("@/lib/cache-purge", () => ({
   purgeSiteFiles: async (login: string, paths: string[]) =>
     void purged.push(...paths.map((path) => `${login}/${path}`)),
+  purgeSiteObjects: async (keys: string[]) => void purged.push(...keys),
 }));
 jest.mock("@/lib/database", () => ({
   db: {
@@ -72,6 +81,7 @@ jest.mock("@sentry/nextjs", () => ({ captureException: () => {} }));
 
 const save = require("../save/route") as typeof import("../save/route");
 const rename = require("../rename/route") as typeof import("../rename/route");
+const remove = require("../delete/route") as typeof import("../delete/route");
 
 // jest.setup.js replaces Request, so the routes get what they read of one.
 const post = (body: unknown) =>
@@ -195,5 +205,55 @@ describe("rename", () => {
     expect(response.status).toBe(409);
     expect(bucket.get("alice/b/index.html")!.body).toBe("b");
     expect(bucket.has("alice/a/index.html")).toBe(true);
+  });
+});
+
+describe("delete", () => {
+  beforeEach(() => {
+    put("alice/index.html", "home");
+    put("alice/blog/index.html", "blog");
+    put("alice/blog/posts/1.html", "one");
+    put("alice/blog/posts/2.html", "two");
+    put("alice/blogroll.html", "beside the folder");
+    put("alice/page", "a file with no extension");
+    put("alice/page.html.bak", "beside the file");
+  });
+
+  const keys = () => [...bucket.keys()].sort();
+
+  test("deletes a file and nothing whose name starts with it", async () => {
+    const response = await remove.POST(post({ filename: "page" }));
+    expect(await response.json()).toMatchObject({ success: true });
+    expect(bucket.has("alice/page")).toBe(false);
+    expect(bucket.has("alice/page.html.bak")).toBe(true);
+    expect(purged).toEqual(["alice/page"]);
+  });
+
+  test("deletes a folder with everything in it, across listing pages", async () => {
+    const response = await remove.POST(post({ filename: "blog" }));
+    expect(await response.json()).toMatchObject({ success: true });
+    expect(keys()).toEqual([
+      "alice/blogroll.html",
+      "alice/index.html",
+      "alice/page",
+      "alice/page.html.bak",
+    ]);
+    expect(purged.sort()).toEqual([
+      "alice/blog/index.html",
+      "alice/blog/posts/1.html",
+      "alice/blog/posts/2.html",
+    ]);
+  });
+
+  test("takes a folder with its trailing slash", async () => {
+    await remove.POST(post({ filename: "blog/posts/" }));
+    expect(keys()).toContain("alice/blog/index.html");
+    expect(keys()).not.toContain("alice/blog/posts/1.html");
+  });
+
+  test("keeps the home page", async () => {
+    const response = await remove.POST(post({ filename: "index.html" }));
+    expect(response.status).toBe(400);
+    expect(bucket.has("alice/index.html")).toBe(true);
   });
 });

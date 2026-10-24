@@ -50,38 +50,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (filename === "/index.html") {
+    // A folder comes with or without its trailing slash.
+    const path = filename.replace(/\/+$/, "");
+
+    if (path === "index.html") {
       return NextResponse.json(
         { success: false, message: "홈 페이지는 삭제할 수 없습니다." },
         { status: 400 },
       );
     }
 
-    const key = getUserObjectKey(user.loginName, filename);
+    const key = getUserObjectKey(user.loginName, path);
 
     try {
-      // List all objects with the prefix
-      const listCommand = new ListObjectsV2Command({
-        Bucket: process.env.S3_BUCKET_NAME!,
-        Prefix: key,
-      });
-      const objects = await s3Client.send(listCommand);
+      // The file at the path, or the files in the folder at it: "blog" is
+      // blog and blog/…, never blogroll.html beside it.
+      const keys: string[] = [];
+      let token: string | undefined;
+      do {
+        const page = await s3Client.send(
+          new ListObjectsV2Command({
+            Bucket: process.env.S3_BUCKET_NAME!,
+            Prefix: key,
+            ContinuationToken: token,
+          }),
+        );
+        for (const object of page.Contents ?? []) {
+          if (object.Key === key || object.Key?.startsWith(`${key}/`))
+            keys.push(object.Key);
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
 
-      // Delete all objects with the prefix
-      if (objects.Contents && objects.Contents.length > 0) {
+      // DeleteObjects takes at most 1000 keys.
+      for (let i = 0; i < keys.length; i += 1000) {
         await s3Client.send(
           new DeleteObjectsCommand({
             Bucket: process.env.S3_BUCKET_NAME!,
             Delete: {
-              Objects: objects.Contents.map((obj) => ({ Key: obj.Key! })),
+              Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })),
             },
           }),
         );
       }
 
-      await purgeSiteObjects(
-        (objects.Contents ?? []).flatMap((obj) => (obj.Key ? [obj.Key] : [])),
-      );
+      await purgeSiteObjects(keys);
     } catch (e) {
       Sentry.captureException(e);
       console.error("S3 delete error:", e);
