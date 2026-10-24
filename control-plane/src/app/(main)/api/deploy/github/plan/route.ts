@@ -5,6 +5,7 @@ import {
   verifyGitHubActionsToken,
 } from "@/lib/deploy/githubOidc";
 import { createGitHubDeploymentPlan } from "@/lib/deploy/siteDeploy";
+import { planTemplateUpload } from "@/lib/board/template-uploads";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,12 +19,20 @@ export async function POST(request: NextRequest) {
 
     const claims = await verifyGitHubActionsToken(token);
     const body = await request.json();
-    const plan = await createGitHubDeploymentPlan({
-      claims,
-      site: String(body.site ?? ""),
-      targetPrefix: body.targetPrefix,
-      manifest: body.manifest,
-    });
+    // A template's workflow names the template instead of a site.
+    const plan = body.template
+      ? await planTemplateUpload({
+          claims,
+          templateId: String(body.template),
+          manifest: body.manifest,
+          changelog: body.changelog,
+        })
+      : await createGitHubDeploymentPlan({
+          claims,
+          site: String(body.site ?? ""),
+          targetPrefix: body.targetPrefix,
+          manifest: body.manifest,
+        });
 
     return NextResponse.json({ success: true, ...plan });
   } catch (error) {

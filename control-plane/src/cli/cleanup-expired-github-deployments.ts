@@ -1,6 +1,7 @@
 import { DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { db } from "@/lib/database";
 import { s3Client } from "@/lib/s3";
+import { expireTemplateUploads } from "@/lib/board/template-uploads";
 
 async function deletePrefix(prefix: string) {
   let continuationToken: string | undefined;
@@ -71,7 +72,16 @@ async function main() {
   }
 }
 
+async function expireTemplates() {
+  // A template version's workflow stages its files the same way.
+  const count = await expireTemplateUploads();
+  console.log(
+    `[cleanup-expired-github-deployments] ${count} expired template upload(s)`,
+  );
+}
+
 main()
+  .then(expireTemplates)
   .then(() => process.exit(0))
   .catch((error) => {
     console.error("[cleanup-expired-github-deployments] fatal:", error);

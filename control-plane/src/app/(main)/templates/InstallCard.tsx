@@ -1,0 +1,269 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { LICENSES, type UpdatePreference } from "@/lib/board/constants";
+import type {
+  InstallSummary,
+  UpdateAction,
+  UpdatePlan,
+  UpdateResult,
+} from "@/lib/board/updates";
+import { boardRequest } from "../board/_components/api";
+
+const ACTIONS: Record<UpdateAction, { label: string; className: string }> = {
+  create: { label: "+ 새 파일", className: "text-success" },
+  update: { label: "~ 바뀜", className: "text-primary" },
+  modified: { label: "! 직접 고침 — 보관 후 바꿈", className: "text-warning" },
+  overwrite: { label: "! 내 파일 — 보관 후 바꿈", className: "text-warning" },
+  delete: { label: "− 지움", className: "text-destructive" },
+  keep: { label: "= 직접 고쳐서 남겨 둠", className: "text-muted-foreground" },
+};
+
+const PREFERENCES: [UpdatePreference, string][] = [
+  ["notify", "알려 주기"],
+  ["auto", "자동으로 업데이트 (마이그레이션이 있는 버전은 직접)"],
+  ["never", "받지 않기"],
+];
+
+export function InstallCard({ install }: { install: InstallSummary }) {
+  const router = useRouter();
+  const confirm = useConfirm();
+  const [plan, setPlan] = useState<UpdatePlan | null>(null);
+  const [result, setResult] = useState<UpdateResult | null>(null);
+  const [updates, setUpdates] = useState(install.updates);
+  const [busy, setBusy] = useState(false);
+  const base = `/api/board/installs/${install.id}`;
+
+  async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
+    setBusy(true);
+    try {
+      return await work();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const review = () =>
+    run(async () => {
+      const { plan } = await boardRequest<{ plan: UpdatePlan }>(
+        `${base}/update/plan`,
+        "POST",
+        { versionId: install.latest?.id },
+      );
+      setPlan(plan);
+    });
+
+  const update = () =>
+    run(async () => {
+      const { result } = await boardRequest<{ result: UpdateResult }>(
+        `${base}/update`,
+        "POST",
+        { versionId: plan?.to.id },
+      );
+      setResult(result);
+      setPlan(null);
+      toast.success(`v${result.version}로 업데이트했어요.`);
+      router.refresh();
+    });
+
+  const choose = (value: UpdatePreference) =>
+    run(async () => {
+      await boardRequest(base, "PATCH", { updates: value });
+      setUpdates(value);
+    });
+
+  const disconnect = async () => {
+    const ok = await confirm({
+      title: "템플릿 연결 끊기",
+      description:
+        "파일은 그대로 내 것이 되고, 더는 업데이트되지 않아요. 다른 템플릿의 사이트 코드를 설치하려면 먼저 연결을 끊어야 해요.",
+      confirmText: "연결 끊기",
+      destructive: true,
+    });
+    if (!ok) return;
+    await run(async () => {
+      await boardRequest(base, "DELETE", {});
+      router.refresh();
+    });
+  };
+
+  return (
+    <section className="border-2 border-line bg-card">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b-2 border-line p-4">
+        <div className="min-w-0 space-y-1">
+          <Link
+            href={`/board/${install.postId}`}
+            className="block font-bold hover:underline"
+          >
+            {install.title}
+          </Link>
+          <span className="block text-xs text-muted-foreground">
+            {install.author}/{install.slug} · /{install.targetPath} ·{" "}
+            {LICENSES[install.license].name}
+            {install.deleted && " · 작성자가 지운 템플릿"}
+          </span>
+        </div>
+        <span className="font-mono text-sm">
+          v{install.version.version}
+          {install.latest && (
+            <>
+              {" "}
+              →{" "}
+              <strong className="text-primary">
+                v{install.latest.version}
+              </strong>
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="space-y-4 p-4">
+        {install.latest && !plan && (
+          <div className="space-y-3">
+            <p className="text-sm font-bold">새 버전이 나왔어요</p>
+            {install.latest.changelog && (
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {install.latest.changelog}
+              </p>
+            )}
+            <Button onClick={review} disabled={busy}>
+              {busy ? "확인하는 중…" : "바뀌는 파일 보기"}
+            </Button>
+          </div>
+        )}
+
+        {plan && (
+          <div className="space-y-3">
+            <p className="text-sm font-bold">
+              v{plan.from.version} → v{plan.to.version}
+            </p>
+            {plan.changelogs.map((entry) =>
+              entry.changelog ? (
+                <p
+                  key={entry.version}
+                  className="whitespace-pre-wrap text-xs text-muted-foreground"
+                >
+                  v{entry.version}: {entry.changelog}
+                </p>
+              ) : null,
+            )}
+            <div className="max-h-72 overflow-y-auto border border-border">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-secondary text-left text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-normal">변경</th>
+                    <th className="px-3 py-2 font-normal">경로</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.files.map((file) => (
+                    <tr key={file.path} className="border-t border-border">
+                      <td
+                        className={`whitespace-nowrap px-3 py-2 font-bold ${ACTIONS[file.action].className}`}
+                      >
+                        {ACTIONS[file.action].label}
+                      </td>
+                      <td className="break-all px-3 py-2 font-mono">
+                        /{file.path}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              바뀌지 않는 파일 {plan.unchanged}개는 그대로 둬요. 바꾸거나 지우는
+              파일은 모두 /.backup/ 에 보관해요.
+            </p>
+            {plan.migrations.length > 0 && (
+              <p className="border border-border p-3 text-sm">
+                <span className="block font-bold">
+                  마이그레이션 {plan.migrations.length}개
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {plan.migrations.join(", ")} — 업데이트 전에 데이터베이스의
+                  복원 지점을 남겨요. 커뮤의 데이터는 그대로예요.
+                </span>
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              나루가 새 사이트 코드를 거절하면 모든 파일을 되돌려서 v
+              {plan.from.version} 그대로 둬요.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setPlan(null)}
+                disabled={busy}
+              >
+                취소
+              </Button>
+              <Button onClick={update} disabled={busy}>
+                {busy ? "업데이트하는 중…" : `v${plan.to.version}로 업데이트`}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <p className="text-sm text-muted-foreground" role="status">
+            v{result.version}로 업데이트했어요. 파일 {result.written}개를 쓰고{" "}
+            {result.deleted}개를 지웠어요
+            {result.kept > 0 &&
+              `, 직접 고친 파일 ${result.kept}개는 남겨 뒀어요`}
+            .
+            {result.backupPath &&
+              ` 원래 파일은 /${result.backupPath}에 있어요.`}
+          </p>
+        )}
+
+        {!install.latest && !result && (
+          <p className="text-sm text-muted-foreground">최신 버전이에요.</p>
+        )}
+
+        <fieldset className="space-y-2">
+          <legend
+            id={`updates-${install.id}`}
+            className="mb-2 text-sm font-bold"
+          >
+            새 버전이 나오면
+          </legend>
+          <RadioGroup
+            aria-labelledby={`updates-${install.id}`}
+            value={updates}
+            onValueChange={(value) => choose(value as UpdatePreference)}
+            className="gap-2"
+          >
+            {PREFERENCES.map(([value, label]) => (
+              <label
+                key={value}
+                className="flex cursor-pointer items-center gap-2 text-sm"
+              >
+                <RadioGroupItem value={value} disabled={busy} />
+                {label}
+              </label>
+            ))}
+          </RadioGroup>
+        </fieldset>
+
+        <Button
+          type="button"
+          variant="link"
+          onClick={disconnect}
+          disabled={busy}
+          className="h-auto p-0 text-xs text-destructive"
+        >
+          템플릿 연결 끊기 (파일은 그대로 내 것이 돼요)
+        </Button>
+      </div>
+    </section>
+  );
+}

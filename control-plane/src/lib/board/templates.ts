@@ -7,7 +7,7 @@ import {
   ALLOWED_FILE_EXTENSIONS,
   FILE_EXTENSION_MIMETYPE_MAP,
 } from "@/lib/const";
-import { getUserFeatures } from "@/lib/entitlements";
+import { getUserFeatures, userHasFeature } from "@/lib/entitlements";
 import { assertNoPathTraversal } from "@/lib/file-paths";
 import {
   collapseSlashes,
@@ -23,11 +23,27 @@ import {
   TEMPLATE_MAX_FILES,
   LICENSES,
   TEMPLATE_SLUG_REGEX,
+  GITHUB_REF_REGEX,
+  GITHUB_REPOSITORY_REGEX,
   formatBytes,
+  hasSiteCode,
   isLicense,
+  isUpdatePreference,
   type License,
+  type TemplateSource,
+  type UpdatePreference,
 } from "./constants";
 import { BoardError } from "./errors";
+import {
+  BACKUP_DIRECTORY,
+  backUp,
+  backupStamp,
+  enqueueTemplateUpdates,
+  installedFiles,
+  putBack,
+  recordInstall,
+  recordVersionEtags,
+} from "./installs";
 import { assertUnderHourlyLimit } from "./limits";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
 import {
@@ -38,8 +54,7 @@ import {
 import * as storage from "./storage";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 
-// Where applying a template keeps the files it replaced.
-export const BACKUP_DIRECTORY = ".backup";
+export { BACKUP_DIRECTORY };
 
 // "" is the whole site; anything else is a folder, returned as "a/b/".
 export function normalizeFolder(value: unknown): string {
@@ -279,6 +294,44 @@ export interface PublishTemplateInput {
   licenseAccepted: unknown;
   files: unknown;
   collections: unknown;
+  // "github": versions come from a workflow; the post starts with none.
+  source?: unknown;
+  githubRepository?: unknown;
+  githubRef?: unknown;
+}
+
+export interface GitHubSource {
+  repository: string;
+  ref: string;
+}
+
+// The repository and ref a template's workflow publishes from.
+function validateGitHubSource(repository: unknown, ref: unknown): GitHubSource {
+  const repo = typeof repository === "string" ? repository.trim() : "";
+  if (!GITHUB_REPOSITORY_REGEX.test(repo)) {
+    throw new BoardError(400, "저장소는 owner/name 꼴로 적어 주세요.");
+  }
+  const branch = typeof ref === "string" ? ref.trim() : "";
+  const fullRef = branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
+  if (!GITHUB_REF_REGEX.test(fullRef)) {
+    throw new BoardError(400, "브랜치 이름이 올바르지 않습니다.");
+  }
+  return { repository: repo, ref: fullRef };
+}
+
+function validateSource(value: unknown): TemplateSource {
+  if (value === undefined || value === null || value === "site") return "site";
+  if (value === "github") return "github";
+  throw new BoardError(400, "버전을 올리는 곳이 올바르지 않습니다.");
+}
+
+async function assertCanPublishFromGitHub(userId: string) {
+  if (!(await userHasFeature(userId, "github_deploys"))) {
+    throw new BoardError(
+      403,
+      "GitHub Actions에서 버전을 올리려면 서포터 플랜이 필요해요.",
+    );
+  }
 }
 
 // Creates a template post and publishes its first version in one step.
@@ -299,8 +352,14 @@ export async function publishTemplatePost(
       `${LICENSES[license].name} 라이선스로 공개하는 데 동의해 주세요.`,
     );
   }
-  const selection = validateSelection(input.files);
+  const source = validateSource(input.source);
+  const github =
+    source === "github"
+      ? validateGitHubSource(input.githubRepository, input.githubRef)
+      : null;
+  const selection = github ? [] : validateSelection(input.files);
   await assertCanPost(user.id);
+  if (github) await assertCanPublishFromGitHub(user.id);
 
   const taken = await db
     .selectFrom("board_templates")
@@ -310,6 +369,31 @@ export async function publishTemplatePost(
     .executeTakeFirst();
   if (taken) {
     throw new BoardError(409, `이미 「${slug}」라는 템플릿이 있어요.`);
+  }
+
+  if (github) {
+    // Its first version comes from the workflow's first run.
+    return await db.transaction().execute(async (tx) => {
+      const post = await tx
+        .insertInto("board_posts")
+        .values({ user_id: user.id, kind: "template", title, body })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      const template = await tx
+        .insertInto("board_templates")
+        .values({
+          post_id: post.id,
+          user_id: user.id,
+          slug,
+          license,
+          source: "github",
+          github_repository: github.repository,
+          github_ref: github.ref,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      return { postId: post.id, templateId: template.id };
+    });
   }
 
   const collections = await resolveCollections(user, input.collections);
@@ -344,6 +428,7 @@ export async function publishTemplatePost(
         file_count: files.length,
         size_bytes: size,
         data_collections: JSON.stringify(collections),
+        site_code: hasSiteCode(files.map((file) => file.path)),
       })
       .returning("id")
       .executeTakeFirstOrThrow();
@@ -364,6 +449,7 @@ export async function publishTemplatePost(
       .where("id", "=", template.id)
       .execute();
     await copyIntoTemplate(template.id, 1, files);
+    await recordVersionEtags(tx, template.id, 1, version.id);
     // Durable work is visible only after this version commits.
     await enqueueTemplatePreview(tx, version.id);
     return { postId: post.id, templateId: template.id };
@@ -375,7 +461,14 @@ async function findLiveTemplate(templateId: string) {
     .selectFrom("board_templates as t")
     .innerJoin("board_posts as p", "p.id", "t.post_id")
     .leftJoin("board_template_versions as v", "v.id", "t.latest_version_id")
-    .select(["t.id", "t.user_id", "t.post_id", "v.version", "v.source_path"])
+    .select([
+      "t.id",
+      "t.user_id",
+      "t.post_id",
+      "t.source",
+      "v.version",
+      "v.source_path",
+    ])
     .where("t.id", "=", templateId)
     .where("p.deleted_at", "is", null)
     .executeTakeFirst();
@@ -395,6 +488,12 @@ export async function publishTemplateVersion(
   const template = await findLiveTemplate(templateId);
   if (template.user_id !== user.id) {
     throw new BoardError(403, "내 템플릿만 새 버전을 올릴 수 있어요.");
+  }
+  if (template.source === "github") {
+    throw new BoardError(
+      400,
+      "이 템플릿은 GitHub Actions에서 새 버전을 올려요. 버전 올리는 곳을 내 사이트로 바꾸면 여기서 올릴 수 있어요.",
+    );
   }
   const selection = validateSelection(input.files);
   const changelog = validateChangelog(input.changelog);
@@ -429,6 +528,7 @@ export async function publishTemplateVersion(
         size_bytes: size,
         data_collections: JSON.stringify(collections),
         changelog,
+        site_code: hasSiteCode(files.map((file) => file.path)),
       })
       .returning("id")
       .executeTakeFirstOrThrow();
@@ -454,9 +554,53 @@ export async function publishTemplateVersion(
       .where("id", "=", template.post_id)
       .execute();
     await copyIntoTemplate(templateId, versionNumber, files);
+    await recordVersionEtags(tx, templateId, versionNumber, version.id);
     await enqueueTemplatePreview(tx, version.id);
+    await enqueueTemplateUpdates(tx, templateId, version.id);
     return versionNumber;
   });
+}
+
+/**
+ * Where a template's new versions come from: its author's site (each "새 버전
+ * 올리기"), or a GitHub Actions workflow on `repository` and `ref`.
+ */
+export async function setTemplateSource(
+  user: User,
+  templateId: string,
+  input: { source: unknown; githubRepository?: unknown; githubRef?: unknown },
+): Promise<void> {
+  const template = await findLiveTemplate(templateId);
+  if (template.user_id !== user.id) {
+    throw new BoardError(403, "내 템플릿만 고칠 수 있어요.");
+  }
+  const source = validateSource(input.source);
+  if (source === "site") {
+    await db
+      .updateTable("board_templates")
+      .set({ source: "site" })
+      .where("id", "=", templateId)
+      .execute();
+    return;
+  }
+  const github = validateGitHubSource(input.githubRepository, input.githubRef);
+  await assertCanPublishFromGitHub(user.id);
+  await db
+    .updateTable("board_templates")
+    .set((eb) => ({
+      source: "github",
+      github_repository: github.repository,
+      github_ref: github.ref,
+      // A different repository is a different identity to bind.
+      github_repository_id: eb
+        .case()
+        .when("github_repository", "=", github.repository)
+        .then(eb.ref("github_repository_id"))
+        .else(null)
+        .end(),
+    }))
+    .where("id", "=", templateId)
+    .execute();
 }
 
 export interface TemplateDetail {
@@ -464,6 +608,8 @@ export interface TemplateDetail {
   slug: string;
   license: License;
   applyCount: number;
+  source: TemplateSource;
+  github: GitHubSource | null;
   versions: {
     id: string;
     version: number;
@@ -474,6 +620,10 @@ export interface TemplateDetail {
     changelog: string | null;
     previewUrl: string | null;
     createdAt: Date;
+    siteCode: boolean;
+    githubSha: string | null;
+    // Site code migrations this version adds to the one before it.
+    newMigrations: string[];
   }[];
   files: { path: string; sizeBytes: number }[];
 }
@@ -489,6 +639,9 @@ export async function getTemplateForPost(
       "t.license",
       "t.apply_count",
       "t.latest_version_id",
+      "t.source",
+      "t.github_repository",
+      "t.github_ref",
     ])
     .where("t.post_id", "=", postId)
     .executeTakeFirst();
@@ -500,6 +653,17 @@ export async function getTemplateForPost(
     .where("template_id", "=", template.id)
     .orderBy("version", "desc")
     .execute();
+  const migrations = await db
+    .selectFrom("board_template_files as f")
+    .innerJoin("board_template_versions as v", "v.id", "f.version_id")
+    .select(["v.version", "f.path"])
+    .where("v.template_id", "=", template.id)
+    .where("f.path", "like", "\\_naru/migrations/%")
+    .execute();
+  const migrationsOf = (version: number) =>
+    new Set(
+      migrations.filter((row) => row.version === version).map((r) => r.path),
+    );
   const files = template.latest_version_id
     ? await db
         .selectFrom("board_template_files")
@@ -514,7 +678,12 @@ export async function getTemplateForPost(
     slug: template.slug,
     license: template.license,
     applyCount: template.apply_count,
-    versions: versions.map((version) => ({
+    source: template.source,
+    github:
+      template.github_repository && template.github_ref
+        ? { repository: template.github_repository, ref: template.github_ref }
+        : null,
+    versions: versions.map((version, index) => ({
       id: version.id,
       version: version.version,
       sourcePath: version.source_path,
@@ -528,6 +697,16 @@ export async function getTemplateForPost(
         version.preview_rendered_at,
       ),
       createdAt: version.created_at,
+      siteCode: version.site_code,
+      githubSha: version.github_sha,
+      newMigrations: (() => {
+        const before = versions[index + 1]
+          ? migrationsOf(versions[index + 1].version)
+          : new Set<string>();
+        return [...migrationsOf(version.version)]
+          .filter((path) => !before.has(path))
+          .sort();
+      })(),
     })),
     files: files.map((file) => ({
       path: file.path,
@@ -560,6 +739,7 @@ async function findApplicableVersion(versionId: string) {
       "v.version",
       "v.template_id",
       "v.data_collections",
+      "v.site_code",
       "t.slug",
     ])
     .where("v.id", "=", versionId)
@@ -571,6 +751,10 @@ async function findApplicableVersion(versionId: string) {
 
 export interface ApplicationPlan {
   targetPath: string;
+  // The template has site code (_naru/): it installs at the site's root.
+  siteCode: boolean;
+  // Why it cannot be applied now; empty when it can.
+  blockers: string[];
   files: {
     path: string;
     sizeBytes: number;
@@ -594,6 +778,22 @@ function normalizeTarget(value: unknown): string {
   return target;
 }
 
+/**
+ * Another template whose site code is installed on this site: a site has
+ * one _naru/, so it must be disconnected before another is installed.
+ */
+async function otherSiteCodeInstall(userId: string, templateId: string) {
+  return await db
+    .selectFrom("board_template_installs as i")
+    .innerJoin("board_template_versions as v", "v.id", "i.version_id")
+    .innerJoin("board_templates as t", "t.id", "i.template_id")
+    .select(["t.slug"])
+    .where("i.user_id", "=", userId)
+    .where("i.template_id", "<>", templateId)
+    .where("v.site_code", "=", true)
+    .executeTakeFirst();
+}
+
 // What applying would do, without writing anything. Apply recomputes it
 // rather than trusting the plan the page was shown.
 export async function planApplication(
@@ -603,6 +803,12 @@ export async function planApplication(
 ): Promise<ApplicationPlan> {
   const version = await findApplicableVersion(versionId);
   const targetPath = normalizeTarget(targetInput);
+  if (version.site_code && targetPath !== "") {
+    throw new BoardError(
+      400,
+      "사이트 코드가 있는 템플릿은 사이트 전체(/)에만 설치할 수 있어요.",
+    );
+  }
   const files = await db
     .selectFrom("board_template_files")
     .select(["path", "size_bytes"])
@@ -623,6 +829,21 @@ export async function planApplication(
     (await listCollections(user, collectionNames)).map((row) => row.name),
   );
 
+  const blockers: string[] = [];
+  if (version.site_code) {
+    if (!hasDatabase) {
+      blockers.push(
+        "사이트 코드가 있는 템플릿은 데이터베이스가 필요해요. 서포터 플랜에서 쓸 수 있어요.",
+      );
+    }
+    const other = await otherSiteCodeInstall(user.id, version.template_id);
+    if (other) {
+      blockers.push(
+        `다른 템플릿(${other.slug})의 사이트 코드가 설치되어 있어요. 설치한 템플릿에서 그 템플릿의 연결을 먼저 끊어 주세요.`,
+      );
+    }
+  }
+
   const planned = files.map((file) => {
     const path = `${targetPath}${file.path}`;
     return {
@@ -633,6 +854,8 @@ export async function planApplication(
   });
   return {
     targetPath,
+    siteCode: version.site_code,
+    blockers,
     files: planned,
     collections: collectionNames.map((name) => ({
       name,
@@ -646,25 +869,9 @@ export async function planApplication(
   };
 }
 
-function backupStamp(now: Date): string {
-  // Seoul time, as the people reading the folder name are in Korea.
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const get = (type: string) =>
-    parts.find((part) => part.type === type)?.value ?? "00";
-  return `${get("year")}-${get("month")}-${get("day")}-${get("hour")}${get("minute")}${get("second")}`;
-}
-
 export interface ApplicationResult {
   applicationId: string;
+  installId: string;
   targetPath: string;
   backupPath: string | null;
   written: number;
@@ -675,22 +882,47 @@ export interface ApplicationResult {
   unavailableCollections: string[];
 }
 
+/** Why the site's code was refused, for a person to read. */
+function refusalMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length > 300 ? `${message.slice(0, 300)}…` : message;
+}
+
 export async function applyTemplate(
   user: User,
   versionId: string,
-  input: { targetPath: unknown; backup: unknown; createCollections: unknown },
+  input: {
+    targetPath: unknown;
+    backup: unknown;
+    createCollections: unknown;
+    updates?: unknown;
+  },
 ): Promise<ApplicationResult> {
-  if (await siteSuspended(user.id)) throw new BoardError(403, SUSPENDED_MESSAGE);
+  if (await siteSuspended(user.id))
+    throw new BoardError(403, SUSPENDED_MESSAGE);
   await assertUnderHourlyLimit(
     "board_template_applications",
     user.id,
     APPLICATIONS_PER_HOUR,
   );
+  const updates: UpdatePreference =
+    input.updates === undefined || input.updates === null
+      ? "notify"
+      : isUpdatePreference(input.updates)
+        ? input.updates
+        : (() => {
+            throw new BoardError(400, "업데이트 방식이 올바르지 않습니다.");
+          })();
   const version = await findApplicableVersion(versionId);
   const plan = await planApplication(user, versionId, input.targetPath);
-  const backup = input.backup !== false;
+  if (plan.blockers.length > 0) throw new BoardError(409, plan.blockers[0]);
+  // Site code is put back on failure, so its backups are always kept.
+  const backup = plan.siteCode || input.backup !== false;
   const overwritten = plan.files
     .filter((file) => file.action === "overwrite")
+    .map((file) => file.path);
+  const created = plan.files
+    .filter((file) => file.action === "create")
     .map((file) => file.path);
   const backupPath =
     backup && overwritten.length > 0
@@ -698,14 +930,7 @@ export async function applyTemplate(
       : null;
 
   // Backups first: if anything after this fails, the originals are safe.
-  if (backupPath) {
-    for (const path of overwritten) {
-      await storage.copyObject(
-        getUserObjectKey(user.loginName, path),
-        getUserObjectKey(user.loginName, `${backupPath}${path}`),
-      );
-    }
-  }
+  if (backupPath) await backUp(user.loginName, backupPath, overwritten);
 
   const written: string[] = [];
   const sources = await db
@@ -723,6 +948,26 @@ export async function applyTemplate(
     written.push(path);
   }
 
+  // Purging publishes the site's code when the files hold some, and Naru may
+  // refuse it (a migration that fails): then the site goes back as it was.
+  try {
+    await storage.purgeSiteFiles(user.loginName, written);
+  } catch (error) {
+    if (!plan.siteCode) throw error;
+    await putBack(user.loginName, {
+      backupPath,
+      backedUp: backupPath ? overwritten : [],
+      created,
+    });
+    await storage
+      .purgeSiteFiles(user.loginName, written)
+      .catch((cause) => console.error("Purge after putting back", cause));
+    throw new BoardError(
+      422,
+      `사이트 코드를 적용하지 못해서 설치를 되돌렸어요: ${refusalMessage(error)}`,
+    );
+  }
+
   const createdCollections: string[] = [];
   const skippedCollections: string[] = [];
   const unavailableCollections: string[] = [];
@@ -738,56 +983,67 @@ export async function applyTemplate(
     return false;
   });
 
-  const application = await db.transaction().execute(async (tx) => {
-    const firstTime = !(await tx
-      .selectFrom("board_template_applications as a")
-      .innerJoin("board_template_versions as v", "v.id", "a.version_id")
-      .select("a.id")
-      .where("a.user_id", "=", user.id)
-      .where("v.template_id", "=", version.template_id)
-      .executeTakeFirst());
+  const files = await installedFiles(user.loginName, plan.targetPath, written);
+  const { application, installId } = await db
+    .transaction()
+    .execute(async (tx) => {
+      const firstTime = !(await tx
+        .selectFrom("board_template_applications as a")
+        .innerJoin("board_template_versions as v", "v.id", "a.version_id")
+        .select("a.id")
+        .where("a.user_id", "=", user.id)
+        .where("v.template_id", "=", version.template_id)
+        .executeTakeFirst());
 
-    const row = await tx
-      .insertInto("board_template_applications")
-      .values({
-        version_id: version.id,
-        user_id: user.id,
-      })
-      .returning("id")
-      .executeTakeFirstOrThrow();
+      const row = await tx
+        .insertInto("board_template_applications")
+        .values({
+          version_id: version.id,
+          user_id: user.id,
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
 
-    if (firstTime) {
-      await tx
-        .updateTable("board_templates")
-        .set({ apply_count: sql`apply_count + 1` })
-        .where("id", "=", version.template_id)
-        .execute();
-    }
-    return row;
-  });
+      if (firstTime) {
+        await tx
+          .updateTable("board_templates")
+          .set({ apply_count: sql`apply_count + 1` })
+          .where("id", "=", version.template_id)
+          .execute();
+      }
+      const installId = await recordInstall(tx, {
+        userId: user.id,
+        templateId: version.template_id,
+        versionId: version.id,
+        targetPath: plan.targetPath,
+        updates,
+        files,
+      });
+      return { application: row, installId };
+    });
 
   // After the application is recorded: the collections are in the site's
   // Durable Object, outside this transaction. They are empty, so one that
   // fails is only reported as skipped; the files are in place either way.
   if (toCreate.length > 0) {
-    let created: string[] | null = null;
+    let createdNames: string[] | null = null;
     try {
-      created = await createCollections(user, toCreate);
+      createdNames = await createCollections(user, toCreate);
     } catch (error) {
       console.error("Template collections were not created", error);
     }
-    if (created === null) {
+    if (createdNames === null) {
       skippedCollections.push(...toCreate.map((c) => c.name));
     } else {
-      createdCollections.push(...created);
+      createdCollections.push(...createdNames);
     }
   }
 
   await recordSiteEdit(user.id);
-  await storage.purgeSiteFiles(user.loginName, written);
 
   return {
     applicationId: application.id,
+    installId,
     targetPath: plan.targetPath,
     backupPath,
     written: written.length,

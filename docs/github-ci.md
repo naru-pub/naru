@@ -81,3 +81,15 @@ jobs:
 ```
 
 The target must be registered in Naru before this workflow can deploy.
+
+## Template Versions
+
+A board template whose versions come from GitHub Actions (its edit page)
+publishes through the same three calls with `template: <template id>` (and
+`changelog`, the commit message) in place of `site` and `targetPrefix`. The
+token must name the template's repository and ref. Plan answers uploads only
+for files the previous version lacked by sha256; finalize copies the rest from
+that version, refuses site code that does not parse, publishes the next
+version and answers `{ version, functions: null }`: the code runs on the sites
+that install it, not here. Status answers the upload's state. See
+[board.md](board.md), "Where versions come from".

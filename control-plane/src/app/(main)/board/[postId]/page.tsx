@@ -10,6 +10,7 @@ import {
   getTemplateForPost,
   listTemplateAppliers,
 } from "@/lib/board/templates";
+import { findInstall } from "@/lib/board/updates";
 import { getHomepageUrl, getRenderedSiteUrl } from "@/lib/site-urls";
 import { ApplyTemplateDialog } from "../_components/ApplyTemplateDialog";
 import { BoardText } from "../_components/BoardText";
@@ -88,6 +89,11 @@ export default async function PostPage({
   }));
 
   const latest = template?.versions[0] ?? null;
+  const install =
+    template && user ? await findInstall(user, template.id) : undefined;
+  const githubUrl = template?.github
+    ? `https://github.com/${template.github.repository}`
+    : null;
   const siteUrl = getHomepageUrl(post.authorLoginName);
   const heroImage = latest
     ? latest.previewUrl
@@ -202,6 +208,24 @@ export default async function PostPage({
                 사이트 방문 ↗
               </a>
             )}
+            {template && !latest && (
+              <section className="space-y-2 border-2 border-line bg-card p-4 text-sm">
+                <h2 className="font-bold">아직 버전이 없어요</h2>
+                <p className="text-xs text-muted-foreground">
+                  {template.github ? (
+                    <>
+                      <a href={githubUrl!} className="underline">
+                        {template.github.repository}
+                      </a>
+                      의 GitHub Actions 워크플로가 첫 버전을 올리면 설치할 수
+                      있어요.
+                    </>
+                  ) : (
+                    "작성자가 첫 버전을 올리면 설치할 수 있어요."
+                  )}
+                </p>
+              </section>
+            )}
             {template && latest && (
               <>
                 <section className="space-y-3 border-2 border-primary bg-primary/5 p-4">
@@ -218,6 +242,7 @@ export default async function PostPage({
                     versions={template.versions.map((v) => ({
                       id: v.id,
                       version: v.version,
+                      siteCode: v.siteCode,
                     }))}
                     siteUrl={user ? getHomepageUrl(user.loginName) : null}
                   />
@@ -227,6 +252,24 @@ export default async function PostPage({
                     </div>
                     <div className="text-xs text-muted-foreground">적용</div>
                   </div>
+                  {install && (
+                    <p className="border border-border bg-background p-3 text-xs">
+                      내 사이트에 v{install.version.version} 설치됨
+                      {install.latest ? (
+                        <>
+                          {" · "}
+                          <Link
+                            href="/templates"
+                            className="font-bold text-primary underline"
+                          >
+                            v{install.latest.version}로 업데이트
+                          </Link>
+                        </>
+                      ) : (
+                        " · 최신"
+                      )}
+                    </p>
+                  )}
                 </section>
 
                 <section className="border-2 border-line bg-card">
@@ -242,6 +285,26 @@ export default async function PostPage({
                     <dd>
                       v{latest.version} · {formatDate(latest.createdAt)}
                     </dd>
+                    <dt className="text-muted-foreground">출처</dt>
+                    <dd className="break-all">
+                      {template.github ? (
+                        <>
+                          <a href={githubUrl!} className="underline">
+                            {template.github.repository}
+                          </a>{" "}
+                          · {template.github.ref.replace(/^refs\/heads\//, "")}{" "}
+                          (GitHub Actions)
+                        </>
+                      ) : (
+                        "작성자의 사이트"
+                      )}
+                    </dd>
+                    {latest.siteCode && (
+                      <>
+                        <dt className="text-muted-foreground">설치 위치</dt>
+                        <dd>사이트 전체 (/)</dd>
+                      </>
+                    )}
                     <dt className="text-muted-foreground">라이선스</dt>
                     <dd>
                       <a
@@ -280,6 +343,17 @@ export default async function PostPage({
                   </ul>
                 </section>
 
+                {latest.siteCode && (
+                  <section className="space-y-2 border-2 border-line bg-card p-4 text-xs leading-relaxed">
+                    <h2 className="text-sm font-bold">사이트 코드</h2>
+                    <p className="text-muted-foreground">
+                      이 템플릿은 사이트 코드(_naru/)와 데이터베이스를 써요.
+                      사이트 맨 위에 설치되고, 사이트에 하나만 둘 수 있어요.
+                      데이터베이스는 서포터 플랜에서 쓸 수 있어요.
+                    </p>
+                  </section>
+                )}
+
                 {latest.collections.length > 0 && (
                   <section className="space-y-2 border-2 border-line bg-card p-4 text-xs leading-relaxed">
                     <h2 className="text-sm font-bold">필요한 기능</h2>
@@ -310,6 +384,19 @@ export default async function PostPage({
                             v{version.version}{" "}
                             <span className="font-normal text-muted-foreground">
                               {formatDate(version.createdAt)}
+                              {version.githubSha && githubUrl && (
+                                <>
+                                  {" · "}
+                                  <a
+                                    href={`${githubUrl}/commit/${version.githubSha}`}
+                                    className="font-mono underline"
+                                  >
+                                    {version.githubSha.slice(0, 7)}
+                                  </a>
+                                </>
+                              )}
+                              {version.newMigrations.length > 0 &&
+                                ` · 마이그레이션 ${version.newMigrations.length}개`}
                             </span>
                           </div>
                           {version.changelog && (

@@ -14,6 +14,7 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 import { servedCustomDomains } from "@/lib/edge/domains";
+import { db } from "@/lib/database";
 import {
   getUserEntitlement,
   PLAN_FEATURES,
@@ -46,6 +47,15 @@ export default async function RootLayout({
   // The address the site is visited at: its custom domain while the edge
   // serves it and its DNS reaches Naru, where the subdomain redirects, chosen
   // as the edge chooses.
+  // The installed-templates page, for people who installed one.
+  const hasInstalls = user
+    ? !!(await db
+        .selectFrom("board_template_installs")
+        .select("id")
+        .where("user_id", "=", user.id)
+        .limit(1)
+        .executeTakeFirst())
+    : false;
   const customDomain = user
     ? (await servedCustomDomains(user.id))
         .filter((d) => d.resolves)
@@ -101,6 +111,9 @@ export default async function RootLayout({
                       <NavLink href="/board">게시판</NavLink>
                       <NavLink href="/docs">길잡이</NavLink>
                       {user && <NavLink href="/files">파일</NavLink>}
+                      {hasInstalls && (
+                        <NavLink href="/templates">템플릿</NavLink>
+                      )}
                       {entitlement?.hasPaidFeatures ? (
                         <SupporterMenu
                           analytics={features.has("analytics")}

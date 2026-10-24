@@ -316,19 +316,56 @@ export interface BoardTemplateApplications {
 
 export interface BoardTemplateFiles {
   content_type: string;
+  etag: string | null;
   path: string;
+  sha256: string | null;
   size_bytes: Int8;
+  version_id: string;
+}
+
+export interface BoardTemplateInstalls {
+  created_at: Generated<Timestamp>;
+  files: ColumnType<import("./board/installs").InstalledFile[], string | undefined, string>;
+  id: Generated<string>;
+  target_path: string;
+  template_id: string;
+  updated_at: Generated<Timestamp>;
+  updates: ColumnType<"notify" | "auto" | "never", "notify" | "auto" | "never" | undefined>;
+  user_id: string;
   version_id: string;
 }
 
 export interface BoardTemplates {
   apply_count: Generated<number>;
+  github_ref: string | null;
+  github_repository: string | null;
+  github_repository_id: string | null;
   id: Generated<string>;
   latest_version_id: string | null;
   license: "cc0-1.0" | "unlicense" | "0bsd" | "cc-by-4.0" | "mit" | "apache-2.0" | "bsd-2-clause" | "bsd-3-clause" | "isc" | "zlib" | "cc-by-sa-4.0" | "mpl-2.0" | "lgpl-3.0-or-later" | "gpl-2.0-or-later" | "gpl-3.0-or-later" | "agpl-3.0-or-later" | "eupl-1.2" | "ofl-1.1";
   post_id: string;
   slug: string;
+  source: ColumnType<"site" | "github", "site" | "github" | undefined>;
   user_id: string;
+}
+
+export interface BoardTemplateUploads {
+  changelog: string | null;
+  created_at: Generated<Timestamp>;
+  error_message: string | null;
+  expires_at: Timestamp;
+  finalized_at: Timestamp | null;
+  github_ref: string;
+  github_repository_id: string;
+  github_sha: string;
+  id: string;
+  manifest: ColumnType<import("./deploy/siteDeploy").DeployManifest, string, string>;
+  status: ColumnType<"planned" | "finalized" | "failed" | "expired", "planned" | "finalized" | "failed" | "expired" | undefined>;
+  template_id: string;
+  upload_prefix: string;
+  uploaded_paths: ColumnType<string[], string, string>;
+  user_id: string;
+  version_id: string | null;
 }
 
 export interface BoardTemplateVersions {
@@ -336,8 +373,10 @@ export interface BoardTemplateVersions {
   created_at: Generated<Timestamp>;
   data_collections: ColumnType<import("./board/template-collections").BoardTemplateCollection[], string | undefined, string>;
   file_count: number;
+  github_sha: string | null;
   id: Generated<string>;
   preview_rendered_at: Timestamp | null;
+  site_code: Generated<boolean>;
   size_bytes: Int8;
   source_path: string;
   template_id: string;
@@ -990,6 +1029,8 @@ export interface DB {
   board_reply_likes: BoardReplyLikes;
   board_template_applications: BoardTemplateApplications;
   board_template_files: BoardTemplateFiles;
+  board_template_installs: BoardTemplateInstalls;
+  board_template_uploads: BoardTemplateUploads;
   board_template_versions: BoardTemplateVersions;
   board_templates: BoardTemplates;
   card_registrations: CardRegistrations;

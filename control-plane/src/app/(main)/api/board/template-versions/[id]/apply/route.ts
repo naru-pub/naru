@@ -17,6 +17,7 @@ export async function POST(
       targetPath: body.targetPath,
       backup: body.backup,
       createCollections: body.createCollections,
+      updates: body.updates,
     });
     return NextResponse.json({ success: true, result });
   } catch (error) {

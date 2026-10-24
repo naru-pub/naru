@@ -23,15 +23,15 @@ import { getUserHomeDirectory, getUserObjectKey } from "@/lib/site-urls";
 import { GitHubActionsClaims } from "./githubOidc";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 
-const MAX_DEPLOY_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const DEPLOYMENT_TTL_MS = 60 * 60 * 1000;
-const UPLOAD_URL_TTL_SECONDS = 15 * 60;
+export const MAX_DEPLOY_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+export const DEPLOYMENT_TTL_MS = 60 * 60 * 1000;
+export const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 // Staged files are checked and copied this many at a time: one by one, a
 // deploy of a few hundred files outlasts Cloudflare's 100-second limit on the
 // finalize request.
-const PUBLISH_CONCURRENCY = 16;
+export const PUBLISH_CONCURRENCY = 16;
 
-async function eachLimit<T>(
+export async function eachLimit<T>(
   items: T[],
   limit: number,
   run: (item: T) => Promise<unknown>,
@@ -84,11 +84,11 @@ type UserRow = {
   id: string;
 };
 
-function deploymentId() {
+export function deploymentId() {
   return randomBytes(24).toString("base64url");
 }
 
-function assertSha256(value: string) {
+export function assertSha256(value: string) {
   if (!/^[a-f0-9]{64}$/i.test(value)) {
     throw new Error("Invalid sha256 value");
   }
@@ -138,12 +138,16 @@ function publicPath(targetPrefix: string, path: string) {
   return targetPrefix ? `${targetPrefix}/${path}` : path;
 }
 
-function contentTypeFor(file: DeployManifestFile) {
+export function contentTypeFor(file: DeployManifestFile) {
   if (file.contentType) return file.contentType;
   return FILE_EXTENSION_MIMETYPE_MAP[file.path.split(".").pop()!.toLowerCase()];
 }
 
-export function validateManifest(input: unknown): DeployManifest {
+/** A deploy's manifest; a template's need not have an index.html. */
+export function validateManifest(
+  input: unknown,
+  { requireIndex = true }: { requireIndex?: boolean } = {},
+): DeployManifest {
   if (
     !input ||
     typeof input !== "object" ||
@@ -185,7 +189,7 @@ export function validateManifest(input: unknown): DeployManifest {
     };
   }) as DeployManifestFile[];
 
-  if (!files.some((file) => file.path === "index.html")) {
+  if (requireIndex && !files.some((file) => file.path === "index.html")) {
     throw new Error("Deploy manifest must include index.html");
   }
 
@@ -257,7 +261,7 @@ async function updateUserHomeDirectorySize(userId: string, loginName: string) {
   return directorySize;
 }
 
-async function deleteObjects(keys: string[]) {
+export async function deleteObjects(keys: string[]) {
   for (let i = 0; i < keys.length; i += 1000) {
     const batch = keys.slice(i, i + 1000);
     if (batch.length === 0) continue;
@@ -273,7 +277,7 @@ async function deleteObjects(keys: string[]) {
   }
 }
 
-async function readObjectText(key: string) {
+export async function readObjectText(key: string) {
   const response = await s3Client.send(
     new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME!,
@@ -283,7 +287,7 @@ async function readObjectText(key: string) {
   return response.Body?.transformToString() ?? "";
 }
 
-async function sha256Object(key: string) {
+export async function sha256Object(key: string) {
   const response = await s3Client.send(
     new GetObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME!,
@@ -296,7 +300,7 @@ async function sha256Object(key: string) {
     .digest("hex");
 }
 
-function assertGitHubClaimsAllowed(
+export function assertGitHubClaimsAllowed(
   claims: GitHubActionsClaims,
   target: {
     github_repository: string;

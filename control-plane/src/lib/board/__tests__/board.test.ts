@@ -10,20 +10,29 @@ import {
   test,
 } from "@jest/globals";
 
-// An in-memory bucket stands in for R2: keys to content types.
-const bucket = new Map<string, { size: number; contentType: string }>();
+// An in-memory bucket stands in for R2: keys to content types, ETags (new
+// on every write, kept by a copy, as R2's) and, where a test needs them,
+// bodies.
+type Stored = {
+  size: number;
+  contentType: string;
+  etag: string;
+  body?: Buffer;
+};
+const bucket = new Map<string, Stored>();
+let etags = 0;
 jest.mock("../storage", () => ({
   listObjects: jest.fn(async (prefix: string) =>
     [...bucket]
       .filter(([key]) => key.startsWith(prefix))
-      .map(([key, value]) => ({ key, size: value.size })),
+      .map(([key, value]) => ({ key, size: value.size, etag: value.etag })),
   ),
   copyObject: jest.fn(
     async (source: string, target: string, contentType?: string) => {
       const object = bucket.get(source);
       if (!object) throw new Error(`no such key: ${source}`);
       bucket.set(target, {
-        size: object.size,
+        ...object,
         contentType: contentType ?? object.contentType,
       });
     },
@@ -44,6 +53,45 @@ jest.mock("../limits", () => ({
 }));
 jest.mock("@/lib/entitlements", () => ({
   getUserFeatures: jest.fn(async () => new Set(["database"])),
+  userHasFeature: jest.fn(async () => true),
+}));
+// A template's workflow uploads to signed URLs and finalize reads the staged
+// files back: both from the in-memory bucket.
+jest.mock("@aws-sdk/s3-request-presigner", () => ({
+  getSignedUrl: jest.fn(
+    async (_client: unknown, command: { input: { Key: string } }) =>
+      `https://upload.test/${command.input.Key}`,
+  ),
+}));
+jest.mock("@/lib/s3", () => ({
+  s3Client: {
+    send: jest.fn(
+      async (command: {
+        constructor: { name: string };
+        input: { Key?: string; Delete?: { Objects: { Key: string }[] } };
+      }) => {
+        const name = command.constructor.name;
+        if (name === "DeleteObjectsCommand") {
+          for (const { Key } of command.input.Delete!.Objects)
+            bucket.delete(Key);
+          return {};
+        }
+        const object = bucket.get(command.input.Key!);
+        if (!object) {
+          throw Object.assign(new Error("NotFound"), { name: "NotFound" });
+        }
+        const body = object.body ?? Buffer.alloc(object.size);
+        if (name === "HeadObjectCommand")
+          return { ContentLength: body.byteLength };
+        return {
+          Body: {
+            transformToByteArray: async () => new Uint8Array(body),
+            transformToString: async () => body.toString("utf8"),
+          },
+        };
+      },
+    ),
+  },
 }));
 
 // Required after the mocks: this transform does not hoist jest.mock above
@@ -89,7 +137,25 @@ const {
   planApplication,
   publishTemplatePost,
   publishTemplateVersion,
+  setTemplateSource,
 } = require("../templates") as typeof import("../templates");
+const {
+  applyUpdate,
+  disconnectInstall,
+  listInstalls,
+  planUpdate,
+  setUpdatePreference,
+} = require("../updates") as typeof import("../updates");
+const { finalizeTemplateUpload, planTemplateUpload, templateUploadStatus } =
+  require("../template-uploads") as typeof import("../template-uploads");
+const storageMock = require("../storage") as {
+  purgeSiteFiles: jest.Mock<(login: string, paths: string[]) => Promise<void>>;
+};
+const { userHasFeature } = require("@/lib/entitlements") as {
+  userHasFeature: jest.Mock<typeof import("@/lib/entitlements").userHasFeature>;
+};
+const { DataError } =
+  require("@/lib/site-data/validation") as typeof import("@/lib/site-data/validation");
 // Site databases are Durable Objects: the script starts a local Worker.
 const { createCollections, listCollections } =
   require("@/lib/site-data/service") as typeof import("@/lib/site-data/service");
@@ -123,7 +189,7 @@ async function makeUser(loginName: string, verified = true): Promise<User> {
 }
 
 function put(key: string, contentType = "text/html", size = 10) {
-  bucket.set(key, { size, contentType });
+  bucket.set(key, { size, contentType, etag: `"${++etags}"` });
 }
 
 integration("board", () => {
@@ -719,6 +785,414 @@ integration("board", () => {
       await expect(
         planApplication(bob, versionId, ".backup/x"),
       ).rejects.toMatchObject({ status: 400 });
+    });
+  });
+
+  describe("installs and updates", () => {
+    let n = 0;
+    // A fresh member for each test: a site has one template's site code.
+    const member = () => makeUser(`m${Date.now().toString(36)}${++n}`);
+    // Files in a person's site, under a folder, as path → size.
+    const siteOf = (login: string, folder = "") =>
+      Object.fromEntries(
+        [...bucket]
+          .filter(([key]) => key.startsWith(`${login}/${folder}`))
+          .filter(([key]) => !key.startsWith(`${login}/.backup/`))
+          .map(([key, value]) => [key.slice(login.length + 1), value.etag]),
+      );
+    async function template(author: User, folder: string, files: string[]) {
+      for (const file of files) put(`${author.loginName}/${folder}${file}`);
+      const { postId, templateId } = await publishTemplatePost(author, {
+        title: "템플릿",
+        body: "설명",
+        slug: `t-${Math.random().toString(36).slice(2, 8)}`,
+        license: "agpl-3.0-or-later",
+        licenseAccepted: true,
+        files: files.map((file) => `${folder}${file}`),
+        collections: [],
+      });
+      return { postId, templateId };
+    }
+    const latestVersion = async (postId: string) =>
+      (await getTemplateForPost(postId))!.versions[0];
+
+    test("a template with site code installs at the root, and needs the database", async () => {
+      const author = await member();
+      const { postId } = await template(author, "app/", [
+        "index.html",
+        "_naru/queries/posts.js",
+        "_naru/migrations/0001_core.sql",
+      ]);
+      const version = await latestVersion(postId);
+      expect(version.siteCode).toBe(true);
+      expect(version.newMigrations).toEqual(["_naru/migrations/0001_core.sql"]);
+
+      const site = await member();
+      await expect(
+        planApplication(site, version.id, "community"),
+      ).rejects.toMatchObject({ status: 400 });
+
+      getUserFeatures.mockResolvedValueOnce(new Set());
+      const unpaid = await planApplication(site, version.id, "");
+      expect(unpaid.blockers).toHaveLength(1);
+
+      const result = await applyTemplate(site, version.id, {
+        targetPath: "",
+        backup: false,
+        createCollections: true,
+        updates: "auto",
+      });
+      expect(Object.keys(siteOf(site.loginName)).sort()).toEqual([
+        "_naru/migrations/0001_core.sql",
+        "_naru/queries/posts.js",
+        "index.html",
+      ]);
+      const [install] = await listInstalls(site);
+      expect(install).toMatchObject({
+        id: result.installId,
+        targetPath: "",
+        updates: "auto",
+        latest: null,
+        version: { siteCode: true },
+      });
+
+      // A second template's site code waits until the first is disconnected.
+      const other = await template(author, "other/", [
+        "index.html",
+        "_naru/queries/x.js",
+      ]);
+      const otherVersion = await latestVersion(other.postId);
+      const blocked = await planApplication(site, otherVersion.id, "");
+      expect(blocked.blockers[0]).toMatch(/연결을 먼저 끊어/);
+      await expect(
+        applyTemplate(site, otherVersion.id, {
+          targetPath: "",
+          backup: true,
+          createCollections: true,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      await disconnectInstall(site, result.installId);
+      expect(
+        (await planApplication(site, otherVersion.id, "")).blockers,
+      ).toEqual([]);
+    });
+
+    test("an update changes only the template's files, and backs up the owner's", async () => {
+      const author = await member();
+      const { postId, templateId } = await template(author, "r/", [
+        "index.html",
+        "style.css",
+        "same.css",
+        "old.js",
+        "dropped-edited.js",
+      ]);
+      const site = await member();
+      const v1 = await latestVersion(postId);
+      const { installId } = await applyTemplate(site, v1.id, {
+        targetPath: "t",
+        backup: true,
+        createCollections: true,
+      });
+      // The owner edits two of the template's files and adds their own.
+      put(`${site.loginName}/t/style.css`);
+      put(`${site.loginName}/t/dropped-edited.js`);
+      put(`${site.loginName}/t/own.html`);
+
+      // v2 changes index.html, drops two files, adds new.js and own.html.
+      put(`${author.loginName}/r/index.html`);
+      put(`${author.loginName}/r/new.js`);
+      put(`${author.loginName}/r/own.html`);
+      await publishTemplateVersion(author, templateId, {
+        files: [
+          "r/index.html",
+          "r/style.css",
+          "r/same.css",
+          "r/new.js",
+          "r/own.html",
+        ],
+        changelog: "두 번째",
+        collections: [],
+      });
+      const [summary] = await listInstalls(site);
+      expect(summary.latest).toMatchObject({
+        version: 2,
+        changelog: "두 번째",
+      });
+
+      const plan = await planUpdate(site, installId);
+      expect(
+        Object.fromEntries(plan.files.map((f) => [f.path, f.action])),
+      ).toEqual({
+        "t/index.html": "update",
+        "t/style.css": "modified",
+        "t/new.js": "create",
+        "t/own.html": "overwrite",
+        "t/old.js": "delete",
+        "t/dropped-edited.js": "keep",
+      });
+      expect(plan.unchanged).toBe(1);
+      expect(plan.changelogs).toEqual([{ version: 2, changelog: "두 번째" }]);
+
+      const ownedBefore = bucket.get(`${site.loginName}/t/own.html`)!.etag;
+      const editedBefore = bucket.get(`${site.loginName}/t/style.css`)!.etag;
+      const result = await applyUpdate(site, installId);
+      expect(result).toMatchObject({ version: 2, deleted: 1, kept: 1 });
+      const after = siteOf(site.loginName, "t/");
+      expect(Object.keys(after).sort()).toEqual([
+        "t/dropped-edited.js",
+        "t/index.html",
+        "t/new.js",
+        "t/own.html",
+        "t/same.css",
+        "t/style.css",
+      ]);
+      // What it replaced is in the backup, as it was.
+      expect(
+        bucket.get(`${site.loginName}/${result.backupPath}t/own.html`)?.etag,
+      ).toBe(ownedBefore);
+      expect(
+        bucket.get(`${site.loginName}/${result.backupPath}t/style.css`)?.etag,
+      ).toBe(editedBefore);
+      expect((await listInstalls(site))[0]).toMatchObject({
+        latest: null,
+        version: { id: plan.to.id },
+      });
+      await expect(planUpdate(site, installId)).rejects.toMatchObject({
+        status: 409,
+      });
+      // Another member cannot see or update it.
+      await expect(planUpdate(alice, installId)).rejects.toMatchObject({
+        status: 404,
+      });
+    });
+
+    test("an update Naru refuses puts every file back", async () => {
+      const author = await member();
+      const { postId, templateId } = await template(author, "c/", [
+        "index.html",
+        "_naru/queries/a.js",
+      ]);
+      const site = await member();
+      const { installId } = await applyTemplate(
+        site,
+        (await latestVersion(postId)).id,
+        { targetPath: "", backup: true, createCollections: true },
+      );
+      put(`${author.loginName}/c/_naru/queries/a.js`);
+      put(`${author.loginName}/c/_naru/migrations/0002_bad.sql`);
+      await publishTemplateVersion(author, templateId, {
+        files: [
+          "c/index.html",
+          "c/_naru/queries/a.js",
+          "c/_naru/migrations/0002_bad.sql",
+        ],
+        changelog: null,
+        collections: [],
+      });
+      const before = siteOf(site.loginName);
+      storageMock.purgeSiteFiles.mockImplementationOnce(async () => {
+        throw new DataError(422, "migration failed", "INVALID_REQUEST");
+      });
+      await expect(applyUpdate(site, installId)).rejects.toMatchObject({
+        status: 422,
+        message: expect.stringMatching(/v1 그대로/),
+      });
+      expect(siteOf(site.loginName)).toEqual(before);
+      expect((await listInstalls(site))[0].latest?.version).toBe(2);
+
+      // A first install Naru refuses is taken back too.
+      const fresh = await member();
+      put(`${fresh.loginName}/index.html`);
+      const original = siteOf(fresh.loginName);
+      storageMock.purgeSiteFiles.mockImplementationOnce(async () => {
+        throw new DataError(422, "migration failed", "INVALID_REQUEST");
+      });
+      await expect(
+        applyTemplate(fresh, (await latestVersion(postId)).id, {
+          targetPath: "",
+          backup: false,
+          createCollections: true,
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(siteOf(fresh.loginName)).toEqual(original);
+      expect(await listInstalls(fresh)).toEqual([]);
+    });
+
+    test("automatic updates are queued when a version is published", async () => {
+      const author = await member();
+      const { postId, templateId } = await template(author, "q/", [
+        "index.html",
+      ]);
+      const site = await member();
+      const { installId } = await applyTemplate(
+        site,
+        (await latestVersion(postId)).id,
+        { targetPath: "q", backup: true, createCollections: true },
+      );
+      await expect(
+        setUpdatePreference(site, installId, "sometimes"),
+      ).rejects.toMatchObject({ status: 400 });
+      await setUpdatePreference(site, installId, "auto");
+      await publishTemplateVersion(author, templateId, {
+        files: ["q/index.html"],
+        changelog: null,
+        collections: [],
+      });
+      const queued = await sql<{ params: { installId: string } }>`
+        select params from absurd.t_maintenance
+        where task_name = 'template-update-v1' and params->>'installId' = ${installId}`.execute(
+        db,
+      );
+      expect(queued.rows).toHaveLength(1);
+    });
+
+    test("a GitHub template starts empty and takes versions from its workflow", async () => {
+      const author = await member();
+      const base = {
+        title: "커뮹!",
+        body: "커뮤 앱",
+        slug: `gh-${Math.random().toString(36).slice(2, 8)}`,
+        license: "agpl-3.0-or-later",
+        licenseAccepted: true,
+        files: [],
+        collections: [],
+        source: "github",
+        githubRepository: "naru-pub/commung",
+        githubRef: "main",
+      };
+      await expect(
+        publishTemplatePost(author, { ...base, githubRepository: "nope" }),
+      ).rejects.toMatchObject({ status: 400 });
+      userHasFeature.mockResolvedValueOnce(false);
+      await expect(publishTemplatePost(author, base)).rejects.toMatchObject({
+        status: 403,
+      });
+      const { postId, templateId } = await publishTemplatePost(author, base);
+      expect(await getTemplateForPost(postId)).toMatchObject({
+        source: "github",
+        github: { repository: "naru-pub/commung", ref: "refs/heads/main" },
+        versions: [],
+      });
+      await expect(
+        publishTemplateVersion(author, templateId, {
+          files: ["x"],
+          changelog: null,
+          collections: [],
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+
+      const claims = {
+        iss: "https://token.actions.githubusercontent.com",
+        aud: "https://naru.pub",
+        sub: "repo:naru-pub/commung:ref:refs/heads/main",
+        exp: 0,
+        repository: "naru-pub/commung",
+        repository_id: "42",
+        ref: "refs/heads/main",
+        sha: "a".repeat(40),
+      };
+      const file = (path: string, text: string) => ({
+        path,
+        size: Buffer.byteLength(text),
+        sha256: require("node:crypto")
+          .createHash("sha256")
+          .update(text)
+          .digest("hex"),
+        text,
+      });
+      const v1Files = [
+        file("index.html", "<title>커뮹</title>"),
+        file("_naru/queries/posts.js", "export const list = () => [];"),
+      ];
+      const upload = async (
+        files: typeof v1Files,
+        sha: string,
+        changelog: string,
+      ) => {
+        const plan = await planTemplateUpload({
+          claims: { ...claims, sha },
+          templateId,
+          manifest: { files: files.map(({ text: _, ...f }) => f) },
+          changelog,
+        });
+        for (const target of plan.uploads) {
+          const key = target.url.slice("https://upload.test/".length);
+          const body = Buffer.from(
+            files.find((f) => f.path === target.path)!.text,
+          );
+          bucket.set(key, {
+            size: body.byteLength,
+            contentType: "application/octet-stream",
+            etag: `"${++etags}"`,
+            body,
+          });
+        }
+        return plan;
+      };
+
+      await expect(
+        planTemplateUpload({
+          claims: { ...claims, repository: "someone/else" },
+          templateId,
+          manifest: { files: [] },
+        }),
+      ).rejects.toThrow();
+      const first = await upload(v1Files, "b".repeat(40), "첫 버전");
+      expect(first.uploads.map((u) => u.path).sort()).toEqual([
+        "_naru/queries/posts.js",
+        "index.html",
+      ]);
+      const published = await finalizeTemplateUpload({
+        claims: { ...claims, sha: "b".repeat(40) },
+        deploymentId: first.deploymentId,
+      });
+      expect(published).toMatchObject({ version: 1, functions: null });
+      expect(
+        await templateUploadStatus({
+          claims: { ...claims, sha: "b".repeat(40) },
+          deploymentId: first.deploymentId,
+        }),
+      ).toMatchObject({ status: "finalized" });
+      const v1 = await latestVersion(postId);
+      expect(v1).toMatchObject({
+        version: 1,
+        siteCode: true,
+        githubSha: "b".repeat(40),
+        changelog: "첫 버전",
+      });
+
+      // Only the changed file is uploaded; the rest comes from v1.
+      const v2Files = [
+        v1Files[0],
+        file("_naru/queries/posts.js", "export const list = () => [1];"),
+      ];
+      const second = await upload(v2Files, "c".repeat(40), "두 번째");
+      expect(second.uploads.map((u) => u.path)).toEqual([
+        "_naru/queries/posts.js",
+      ]);
+      await finalizeTemplateUpload({
+        claims: { ...claims, sha: "c".repeat(40) },
+        deploymentId: second.deploymentId,
+      });
+      expect(bucket.has(`_templates/${templateId}/v2/index.html`)).toBe(true);
+
+      // Site code that does not parse is never published.
+      const broken = await upload(
+        [v1Files[0], file("_naru/queries/posts.js", "export const = ;")],
+        "d".repeat(40),
+        "깨짐",
+      );
+      await expect(
+        finalizeTemplateUpload({
+          claims: { ...claims, sha: "d".repeat(40) },
+          deploymentId: broken.deploymentId,
+        }),
+      ).rejects.toThrow(/posts\.js/);
+      expect((await latestVersion(postId)).version).toBe(2);
+
+      // Switching to snapshots lets the author publish from their site.
+      await setTemplateSource(author, templateId, { source: "site" });
+      expect((await getTemplateForPost(postId))?.source).toBe("site");
     });
   });
 });

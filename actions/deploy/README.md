@@ -55,3 +55,19 @@ If published from a multi-action repository, use:
 - `deployed-files`
 - `deleted-files`
 - `directory-size`
+
+## Publishing a template
+
+A board template whose versions come from GitHub Actions (set on its edit
+page) takes `template` instead of `site`: each run publishes `dir` as the
+template's next version, the commit message as its changelog, and the sites
+that installed it are told (or updated, if they chose automatic updates).
+
+```yaml
+- uses: naru-pub/naru/actions/deploy@main
+  with:
+    dir: dist
+    template: 01a1f3c2-7d0e-7b55-9c2e-5a8e0f1b3d44
+```
+
+Only files that changed since the previous version are uploaded.

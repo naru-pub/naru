@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select } from "@/components/ui/select";
-import { formatBytes } from "@/lib/board/constants";
+import { formatBytes, type UpdatePreference } from "@/lib/board/constants";
 import type { ApplicationPlan, ApplicationResult } from "@/lib/board/templates";
 import { boardRequest } from "./api";
 import CollectionName from "@/components/CollectionName";
@@ -41,7 +41,8 @@ export function ApplyTemplateDialog({
   title: string;
   slug: string;
   authorLoginName: string;
-  versions: { id: string; version: number }[];
+  // siteCode: the version has its own site code, so it installs at the root.
+  versions: { id: string; version: number; siteCode: boolean }[];
   // One of the template's files, to show where applying would put it.
   samplePath: string;
   // The viewer's site, or null when nobody is signed in.
@@ -55,15 +56,20 @@ export function ApplyTemplateDialog({
   const [folder, setFolder] = useState(slug);
   const [backup, setBackup] = useState(true);
   const [createCollections, setCreateCollections] = useState(true);
+  const [updates, setUpdates] = useState<UpdatePreference>("notify");
   const [busy, setBusy] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  const targetPath = mode === "root" ? "" : folder;
+  const siteCode =
+    versions.find((version) => version.id === versionId)?.siteCode ?? false;
+  const effectiveMode = siteCode ? "root" : mode;
+  const targetPath = effectiveMode === "root" ? "" : folder;
   const cleanFolder = folder.trim().replace(/^\/+|\/+$/g, "");
-  const targetPrefix = mode === "root" || !cleanFolder ? "" : `${cleanFolder}/`;
+  const targetPrefix =
+    effectiveMode === "root" || !cleanFolder ? "" : `${cleanFolder}/`;
 
   async function review() {
-    if (mode === "folder" && !folder.trim()) {
+    if (effectiveMode === "folder" && !folder.trim()) {
       toast.error("폴더 이름을 입력해 주세요.");
       return;
     }
@@ -88,7 +94,7 @@ export function ApplyTemplateDialog({
       const { result } = await boardRequest<{ result: ApplicationResult }>(
         `/api/board/template-versions/${versionId}/apply`,
         "POST",
-        { targetPath, backup, createCollections },
+        { targetPath, backup, createCollections, updates },
       );
       setStep({ name: "done", result });
       router.refresh();
@@ -171,60 +177,78 @@ export function ApplyTemplateDialog({
                 </Select>
               </div>
             )}
-            <fieldset className="space-y-3">
-              <legend id="apply-mode" className="mb-2 text-sm font-bold">
-                어디에 적용할까요?
-              </legend>
-              <RadioGroup
-                aria-labelledby="apply-mode"
-                value={mode}
-                onValueChange={(value) => setMode(value as "folder" | "root")}
-                className="gap-3"
-              >
-                <label
-                  className={`flex cursor-pointer gap-3 border-2 p-4 ${mode === "folder" ? "border-primary bg-primary/5" : "border-border"}`}
-                >
-                  <RadioGroupItem value="folder" className="mt-0.5" />
-                  <span className="min-w-0 flex-1 space-y-2">
-                    <span className="block text-sm font-bold">
-                      새 폴더에{" "}
-                      <span className="font-normal text-muted-foreground">
-                        — 기존 사이트는 그대로
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <span className="truncate">{siteUrl}/</span>
-                      <Input
-                        aria-label="폴더 이름"
-                        value={folder}
-                        onChange={(event) => {
-                          setFolder(event.target.value);
-                          setMode("folder");
-                        }}
-                        className="h-9 min-w-0 flex-1 px-2 text-foreground"
-                      />
-                      <span>/</span>
+            {siteCode ? (
+              <div className="space-y-2">
+                <p className="text-sm font-bold">어디에 적용할까요?</p>
+                <div className="space-y-1 border-2 border-primary bg-primary/5 p-4">
+                  <span className="block text-sm font-bold">
+                    사이트 전체 (/){" "}
+                    <span className="font-normal text-muted-foreground">
+                      — 홈페이지가 이 템플릿으로 바뀌어요
                     </span>
                   </span>
-                </label>
-                <label
-                  className={`flex cursor-pointer gap-3 border-2 p-4 ${mode === "root" ? "border-primary bg-primary/5" : "border-border"}`}
+                  <span className="block text-xs text-muted-foreground">
+                    사이트 코드(_naru/)가 있는 템플릿은 사이트 맨 위에만
+                    설치돼요. 사이트 코드는 사이트에 하나만 둘 수 있어요.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <fieldset className="space-y-3">
+                <legend id="apply-mode" className="mb-2 text-sm font-bold">
+                  어디에 적용할까요?
+                </legend>
+                <RadioGroup
+                  aria-labelledby="apply-mode"
+                  value={mode}
+                  onValueChange={(value) => setMode(value as "folder" | "root")}
+                  className="gap-3"
                 >
-                  <RadioGroupItem value="root" className="mt-0.5" />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-bold">
-                      사이트 전체 (/){" "}
-                      <span className="font-normal text-muted-foreground">
-                        — 홈페이지가 이 템플릿으로 바뀌어요
+                  <label
+                    className={`flex cursor-pointer gap-3 border-2 p-4 ${mode === "folder" ? "border-primary bg-primary/5" : "border-border"}`}
+                  >
+                    <RadioGroupItem value="folder" className="mt-0.5" />
+                    <span className="min-w-0 flex-1 space-y-2">
+                      <span className="block text-sm font-bold">
+                        새 폴더에{" "}
+                        <span className="font-normal text-muted-foreground">
+                          — 기존 사이트는 그대로
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span className="truncate">{siteUrl}/</span>
+                        <Input
+                          aria-label="폴더 이름"
+                          value={folder}
+                          onChange={(event) => {
+                            setFolder(event.target.value);
+                            setMode("folder");
+                          }}
+                          className="h-9 min-w-0 flex-1 px-2 text-foreground"
+                        />
+                        <span>/</span>
                       </span>
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      겹치는 파일만 덮어쓰고, 나머지 파일은 건드리지 않아요.
+                  </label>
+                  <label
+                    className={`flex cursor-pointer gap-3 border-2 p-4 ${mode === "root" ? "border-primary bg-primary/5" : "border-border"}`}
+                  >
+                    <RadioGroupItem value="root" className="mt-0.5" />
+                    <span className="space-y-1">
+                      <span className="block text-sm font-bold">
+                        사이트 전체 (/){" "}
+                        <span className="font-normal text-muted-foreground">
+                          — 홈페이지가 이 템플릿으로 바뀌어요
+                        </span>
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        겹치는 파일만 덮어쓰고, 나머지 파일은 건드리지 않아요.
+                      </span>
                     </span>
-                  </span>
-                </label>
-              </RadioGroup>
-            </fieldset>
+                  </label>
+                </RadioGroup>
+              </fieldset>
+            )}
             <p className="break-all border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               예: <code className="text-foreground">{samplePath}</code> →{" "}
               <code className="text-foreground">
@@ -245,6 +269,25 @@ export function ApplyTemplateDialog({
 
         {step.name === "review" && (
           <div className="space-y-5">
+            {step.plan.blockers.length > 0 && (
+              <div
+                role="alert"
+                className="space-y-1 border-2 border-destructive p-3 text-sm"
+              >
+                {step.plan.blockers.map((blocker) => (
+                  <p key={blocker}>{blocker}</p>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  <Link href="/templates" className="underline">
+                    설치한 템플릿
+                  </Link>
+                  {" · "}
+                  <Link href="/supporter" className="underline">
+                    서포터 플랜
+                  </Link>
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <h3 className="text-sm font-bold">바뀌는 파일</h3>
               <div className="max-h-72 overflow-y-auto border border-border">
@@ -277,7 +320,18 @@ export function ApplyTemplateDialog({
               </div>
             </div>
 
-            {overwrites.length > 0 && (
+            {step.plan.siteCode && (
+              <p className="border border-border p-3 text-sm">
+                <span className="block font-bold">사이트 코드 적용</span>
+                <span className="block text-xs text-muted-foreground">
+                  파일을 쓴 뒤 사이트 코드를 적용해요. 마이그레이션이 있으면 그
+                  전에 데이터베이스의 복원 지점을 남겨요. 나루가 사이트 코드를
+                  거절하면 설치를 되돌려서, 사이트는 원래대로예요.
+                </span>
+              </p>
+            )}
+
+            {overwrites.length > 0 && !step.plan.siteCode && (
               <label className="flex cursor-pointer gap-3 border border-border p-3 text-sm">
                 <Checkbox
                   checked={backup}
@@ -344,6 +398,47 @@ export function ApplyTemplateDialog({
               </div>
             )}
 
+            <fieldset className="space-y-2">
+              <legend id="apply-updates" className="mb-2 text-sm font-bold">
+                새 버전이 나오면
+              </legend>
+              <RadioGroup
+                aria-labelledby="apply-updates"
+                value={updates}
+                onValueChange={(value) => setUpdates(value as UpdatePreference)}
+                className="gap-2"
+              >
+                {(
+                  [
+                    [
+                      "notify",
+                      "알려 주기",
+                      "바뀌는 내용을 보고 직접 업데이트해요",
+                    ],
+                    [
+                      "auto",
+                      "자동으로 업데이트",
+                      "마이그레이션이 있는 버전은 직접 업데이트해요",
+                    ],
+                    ["never", "받지 않기", ""],
+                  ] as const
+                ).map(([value, label, hint]) => (
+                  <label
+                    key={value}
+                    className="flex cursor-pointer items-center gap-2 text-sm"
+                  >
+                    <RadioGroupItem value={value} />
+                    <span>
+                      {label}
+                      {hint && (
+                        <span className="text-muted-foreground"> — {hint}</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </RadioGroup>
+            </fieldset>
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">
                 새 파일 {step.plan.files.length - overwrites.length} · 덮어씀{" "}
@@ -357,7 +452,10 @@ export function ApplyTemplateDialog({
                 >
                   이전
                 </Button>
-                <Button onClick={apply} disabled={busy}>
+                <Button
+                  onClick={apply}
+                  disabled={busy || step.plan.blockers.length > 0}
+                >
                   {busy ? "적용하는 중…" : "적용하기"}
                 </Button>
               </div>
@@ -414,8 +512,12 @@ export function ApplyTemplateDialog({
               </DialogClose>
             </div>
             <p className="text-xs text-muted-foreground">
-              원작자가 템플릿을 고쳐도 내 사이트는 바뀌지 않아요. 새 버전이
-              나오면 다시 적용하면 돼요.
+              새 버전이 나오면{" "}
+              <Link href="/templates" className="underline">
+                설치한 템플릿
+              </Link>
+              에서 업데이트할 수 있어요. 직접 고친 파일은 업데이트할 때 보관해
+              둬요.
             </p>
           </div>
         )}

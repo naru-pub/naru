@@ -6,6 +6,10 @@ import {
   verifyGitHubActionsToken,
 } from "@/lib/deploy/githubOidc";
 import { finalizeGitHubDeployment } from "@/lib/deploy/siteDeploy";
+import {
+  finalizeTemplateUpload,
+  isTemplateUpload,
+} from "@/lib/board/template-uploads";
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +31,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (await isTemplateUpload(deploymentId)) {
+      const result = await finalizeTemplateUpload({ claims, deploymentId });
+      return NextResponse.json({ success: true, ...result });
+    }
     const result = await finalizeGitHubDeployment({ claims, deploymentId });
     revalidatePath("/files", "layout");
 

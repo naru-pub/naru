@@ -268,8 +268,21 @@ async function waitForFunctions(endpoint, audience, deploymentId) {
   }
 }
 
+// The pushed commit's message, for a template version's changelog.
+async function commitMessage() {
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath) return null;
+  try {
+    const event = JSON.parse(await fs.readFile(eventPath, "utf8"));
+    return event.head_commit?.message ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  const site = getInput("site", { required: true });
+  const template = getInput("template");
+  const site = template ? "" : getInput("site", { required: true });
   const dir = getInput("dir", { required: true });
   const targetPrefix = getInput("target", { defaultValue: "/" });
   const endpoint = normalizeEndpoint(
@@ -290,19 +303,24 @@ async function main() {
   }
 
   const files = await collectFiles(rootDir);
-  if (!files.some((file) => file.path === "index.html")) {
+  if (!template && !files.some((file) => file.path === "index.html")) {
     throw new Error("Deploy directory must include index.html");
   }
 
-  info(`Planning Naru deploy for ${site} with ${files.length} file(s)`);
+  info(
+    template
+      ? `Planning template ${template}'s next version with ${files.length} file(s)`
+      : `Planning Naru deploy for ${site} with ${files.length} file(s)`,
+  );
 
   const token = await getOidcToken(audience);
   const plan = await postJson(
     apiUrl(endpoint, "/api/deploy/github/plan"),
     token,
     {
-      site,
-      targetPrefix,
+      ...(template
+        ? { template, changelog: await commitMessage() }
+        : { site, targetPrefix }),
       manifest: {
         files: files.map(({ absolutePath, ...file }) => file),
       },
@@ -333,6 +351,24 @@ async function main() {
   if (finalize.functions?.status === "activating") {
     info("Activating the site's code");
     await waitForFunctions(endpoint, audience, plan.deploymentId);
+  }
+
+  if (template) {
+    await setOutput("deployed-files", finalize.deployedFiles ?? "");
+    await setOutput("uploaded-files", finalize.uploadedFiles ?? "");
+    await appendStepSummary(`## Naru template version published
+
+| | |
+| --- | --- |
+| Template | \`${template}\` |
+| Version | v${finalize.version} |
+| Commit | \`${process.env.GITHUB_SHA || "unknown"}\` |
+| Files | ${finalize.deployedFiles ?? 0} (${finalize.uploadedFiles ?? 0} uploaded) |
+`);
+    info(
+      `Published v${finalize.version}: ${finalize.deployedFiles} file(s), ${finalize.uploadedFiles} uploaded`,
+    );
+    return;
   }
 
   await setOutput("deployed-files", finalize.deployedFiles ?? "");

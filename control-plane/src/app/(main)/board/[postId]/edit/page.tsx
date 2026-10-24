@@ -7,6 +7,7 @@ import { filesStillPresent, getTemplateForPost } from "@/lib/board/templates";
 import { listCollections } from "@/lib/site-data/service";
 import { EditPostForm } from "./EditPostForm";
 import { NewVersionForm } from "./NewVersionForm";
+import { SourceForm } from "./SourceForm";
 
 export const metadata: Metadata = { title: "글 고치기 · 나루 게시판" };
 
@@ -53,14 +54,33 @@ export default async function EditPostPage({
           <h1 className="text-2xl font-bold">글 고치기</h1>
         </div>
         <EditPostForm postId={post.id} title={post.title} body={post.body} />
-        {template && latest && (
+        {template && (
+          <section className="space-y-4 border-2 border-line p-4">
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold">새 버전을 올리는 곳</h2>
+              <p className="text-sm text-muted-foreground">
+                새 버전이 나오면 이 템플릿을 설치한 사이트에 알려요. 설치한
+                사람이 업데이트하면 템플릿이 설치한 파일만 바뀌어요.
+              </p>
+            </div>
+            <SourceForm
+              templateId={template.id}
+              source={template.source}
+              repository={template.github?.repository ?? ""}
+              branch={template.github?.ref.replace(/^refs\/heads\//, "") ?? ""}
+            />
+          </section>
+        )}
+        {template && template.source === "site" && (
           <section className="space-y-4 border-2 border-line p-4">
             <div className="space-y-1">
               <h2 className="text-lg font-bold">새 버전 올리기</h2>
               <p className="text-sm text-muted-foreground">
-                지금은 v{latest.version}이에요. 체크한 파일의 지금 내용으로 v
-                {latest.version + 1}을(를) 만들어요. 이미 적용한 사람의 사이트는
-                바뀌지 않아요.
+                {latest
+                  ? `지금은 v${latest.version}이에요. 체크한 파일의 지금 내용으로 v${latest.version + 1}을(를) 만들어요.`
+                  : "체크한 파일의 지금 내용으로 첫 버전을 만들어요."}{" "}
+                설치한 사이트는 직접 업데이트하거나, 자동 업데이트를 켜 둔 경우
+                바로 바뀌어요.
               </p>
             </div>
             <NewVersionForm
@@ -71,7 +91,7 @@ export default async function EditPostPage({
                 (path) => !presentFiles.includes(path),
               )}
               collections={collections.map((c) => c.name)}
-              initialCollections={latest.collections.map((c) => c.name)}
+              initialCollections={latest?.collections.map((c) => c.name) ?? []}
             />
           </section>
         )}

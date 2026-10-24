@@ -4,8 +4,14 @@ author: naru-pub
 
 inputs:
   site:
-    description: Naru login name for the site to deploy.
-    required: true
+    description: Naru login name for the site to deploy. Leave out with `template`.
+    required: false
+  template:
+    description: >-
+      A Naru template's ID, from its edit page: publishes `dir` as the
+      template's next version instead of deploying a site. The commit message
+      becomes the version's changelog.
+    required: false
   dir:
     description: Directory containing the built static site.
     required: true

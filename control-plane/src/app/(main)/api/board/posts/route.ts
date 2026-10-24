@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
       licenseAccepted: body.licenseAccepted,
       files: body.files,
       collections: body.collections,
+      source: body.source,
+      githubRepository: body.githubRepository,
+      githubRef: body.githubRef,
     });
     // The post is up whether or not the fediverse hears about it.
     try {

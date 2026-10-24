@@ -5,6 +5,10 @@ import {
   verifyGitHubActionsToken,
 } from "@/lib/deploy/githubOidc";
 import { githubDeploymentStatus } from "@/lib/deploy/siteDeploy";
+import {
+  isTemplateUpload,
+  templateUploadStatus,
+} from "@/lib/board/template-uploads";
 
 // After finalize answers `functions: { status: "activating" }`, the workflow
 // polls here until the site's code is active, or refused.
@@ -28,7 +32,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await githubDeploymentStatus({ claims, deploymentId });
+    const result = (await isTemplateUpload(deploymentId))
+      ? await templateUploadStatus({ claims, deploymentId })
+      : await githubDeploymentStatus({ claims, deploymentId });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     Sentry.captureException(error);

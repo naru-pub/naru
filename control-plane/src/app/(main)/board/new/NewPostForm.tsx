@@ -50,6 +50,10 @@ export function NewPostForm({
   const [license, setLicense] = useState<License>("cc0-1.0");
   const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [chosenCollections, setChosenCollections] = useState<string[]>([]);
+  // Where the template's versions come from.
+  const [source, setSource] = useState<"site" | "github">("site");
+  const [repository, setRepository] = useState("");
+  const [branch, setBranch] = useState("main");
   const [busy, setBusy] = useState(false);
 
   // Filled in from the checked files' top folder until the person edits it.
@@ -70,8 +74,11 @@ export function NewPostForm({
               slug: effectiveSlug,
               license,
               licenseAccepted,
-              files: selection,
-              collections: chosenCollections,
+              files: source === "site" ? selection : [],
+              collections: source === "site" ? chosenCollections : [],
+              source,
+              githubRepository: repository,
+              githubRef: branch,
             }
           : { kind, title, body };
       const { postId } = await boardRequest<{ postId: string }>(
@@ -132,11 +139,70 @@ export function NewPostForm({
 
       {kind === "template" && (
         <div className="space-y-6 border-2 border-line p-4">
-          <FolderPicker value={selection} onChange={setSelection} />
-          <p className="text-xs text-muted-foreground">
-            게시하는 순간의 파일이 공유돼요. 나중에 원본을 고쳐도 게시한
-            템플릿은 바뀌지 않고, 「새 버전 올리기」로 갱신할 수 있어요.
-          </p>
+          <fieldset className="space-y-2">
+            <legend className="mb-2 text-sm font-bold">버전을 올리는 곳</legend>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="template-source"
+                  checked={source === "site"}
+                  onChange={() => setSource("site")}
+                />
+                내 사이트 폴더
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="template-source"
+                  checked={source === "github"}
+                  onChange={() => setSource("github")}
+                />
+                GitHub Actions (서포터)
+              </label>
+            </div>
+          </fieldset>
+          {source === "site" ? (
+            <>
+              <FolderPicker value={selection} onChange={setSelection} />
+              <p className="text-xs text-muted-foreground">
+                게시하는 순간의 파일이 공유돼요. 나중에 원본을 고쳐도 게시한
+                템플릿은 바뀌지 않고, 「새 버전 올리기」로 갱신할 수 있어요.
+              </p>
+            </>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label htmlFor="template-repo" className="text-xs">
+                  저장소
+                </label>
+                <Input
+                  id="template-repo"
+                  value={repository}
+                  onChange={(event) => setRepository(event.target.value)}
+                  placeholder="owner/name"
+                  required
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="template-branch" className="text-xs">
+                  브랜치
+                </label>
+                <Input
+                  id="template-branch"
+                  value={branch}
+                  onChange={(event) => setBranch(event.target.value)}
+                  required
+                  className="font-mono"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                글을 올린 뒤 고치기 화면에 나오는 한 줄을 워크플로에 넣으면,
+                워크플로가 실행될 때마다 새 버전이 올라가요.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <label htmlFor="template-slug" className="text-sm font-bold">
@@ -223,7 +289,7 @@ export function NewPostForm({
             </label>
           </div>
 
-          {collections.length > 0 && (
+          {source === "site" && collections.length > 0 && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-bold">
                 함께 쓸 데이터베이스 컬렉션

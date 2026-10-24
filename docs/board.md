@@ -68,15 +68,34 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   Later edits to the author's site don't change the template. "새 버전
   올리기" (publish a new version) on the edit page takes another snapshot,
   starting with the previous version's files checked.
-- **Licenses**: new templates require explicit CC0 1.0 consent; the server
-  always stores CC0. Authors dedicate their own contributions and retain
-  applicable third-party license notices. Existing templates keep their
-  original license, including when publishing new versions.
+- **Licenses**: the author picks one of `LICENSES` (CC0, permissive or
+  copyleft, AGPL among them) and consents to it explicitly. Authors dedicate
+  or license their own contributions and retain applicable third-party
+  notices. A template keeps its license across versions.
 - **Collections**: an author can attach some of their own site-data
   collections. Only each collection's name and permissions travel with the
   template, never its documents. Applying creates them empty, but only for
   someone with the database feature. A name the person already uses is left
   alone.
+- **Where versions come from** (`board_templates.source`): `site`, a
+  snapshot of the author's checked files ("새 버전 올리기"), or `github`, a
+  GitHub Actions workflow on the template's repository and ref
+  (`lib/board/template-uploads.ts`). A workflow publishes through the deploy
+  endpoints with `template` in place of `site`
+  (`naru-pub/naru/actions/deploy` with `template:`): plan answers upload URLs
+  for the files whose sha256 the previous version lacked, finalize checks
+  them, refuses site code that does not parse (`_naru/**/*.js`,
+  `routes.json`), and publishes the version with the commit's sha and
+  message. A `github` template starts with no versions. Its uploads are
+  staged in `board_template_uploads` and expire with the deploys' cleanup.
+  Limits: 500 files and 50 MiB (a built site with its own code), against
+  200 and 20 MiB for snapshots.
+- **Site code**: a version whose files include `_naru/` (`site_code`)
+  installs at the site's root only (a site has one `_naru/`), needs the
+  database feature, and is refused while another template's site code is
+  installed there. Applying it publishes the site's code (the purge after
+  copying does); if Naru refuses it, the files go back and nothing is
+  recorded.
 - **Applying** is two calls:
   1. `apply/plan` reports which files would be created or overwritten, and
      writes nothing.
@@ -102,6 +121,22 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   account also removes that user's `_templates/` objects and their site
   screenshot.
 
+- **Installs and updates** (`lib/board/updates.ts`): applying records an
+  install (`board_template_installs`: the folder, the version, every file it
+  wrote with its ETag then, and `updates`: `notify`, `auto` or `never`).
+  `/templates` lists a person's installs and offers newer versions. An update
+  works out each file: the template's own files (ETag unchanged since
+  install) are replaced or deleted, files the owner changed are backed up and
+  replaced (or kept, where the new version drops them), the owner's own files
+  at a path the new version uses are backed up and replaced, unchanged ones
+  are left. Everything it replaces or deletes goes to `/.backup/<stamp>/`
+  first; if Naru refuses the new site code, it all goes back and the install
+  stays on its version. Publishing a version queues an update
+  (`template-update-v1`, the maintenance worker) for each `auto` install,
+  which skips a version that adds migrations. Disconnecting an install
+  forgets it; its files stay. Applications from before installs existed
+  (migration `1792850254347`) have none and are not updated.
+
 ## Routes
 
 | page                                | what                                                     |
@@ -122,6 +157,9 @@ requests (`readJson`):
 - `PATCH`/`DELETE /api/board/replies/[id]`, `PUT`/`DELETE …/like`
 - `POST /api/board/templates/[id]/versions`
 - `POST /api/board/template-versions/[id]/apply/plan`, `POST …/apply`
+- `PUT /api/board/templates/[id]/source`
+- `GET /api/board/installs`, `PATCH`/`DELETE /api/board/installs/[id]`,
+  `POST …/update/plan`, `POST …/update`
 - `POST /api/board/notifications/read`
 
 ## Tests

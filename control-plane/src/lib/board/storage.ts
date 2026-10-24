@@ -16,6 +16,8 @@ function bucket() {
 export interface StoredObject {
   key: string;
   size: number;
+  // What storage says of the content, to tell when it changed.
+  etag?: string;
 }
 
 export async function listObjects(
@@ -33,7 +35,12 @@ export async function listObjects(
       }),
     );
     for (const object of response.Contents ?? []) {
-      if (object.Key) objects.push({ key: object.Key, size: object.Size ?? 0 });
+      if (object.Key)
+        objects.push({
+          key: object.Key,
+          size: object.Size ?? 0,
+          etag: object.ETag,
+        });
     }
     continuationToken = response.NextContinuationToken;
   } while (continuationToken);

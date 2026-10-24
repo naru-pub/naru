@@ -136,6 +136,33 @@ export const MAX_TEMPLATE_SLUG_LENGTH = 64;
 // Small enough that publishing and applying stay one request of R2 copies.
 export const TEMPLATE_MAX_FILES = 200;
 export const TEMPLATE_MAX_BYTES = 20 * 1024 * 1024;
+// A workflow publishes a built site, its own code included, which takes more
+// files; its uploads skip the files the previous version already had.
+export const TEMPLATE_GITHUB_MAX_FILES = 500;
+export const TEMPLATE_GITHUB_MAX_BYTES = 50 * 1024 * 1024;
+
+// Where a template's versions come from.
+export const TEMPLATE_SOURCES = ["site", "github"] as const;
+export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];
+export const GITHUB_REPOSITORY_REGEX =
+  /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+export const GITHUB_REF_REGEX = /^refs\/(heads|tags)\/[^\s~^:?*[\\]{1,250}$/;
+
+// What a site does when a template it installed publishes a new version.
+export const UPDATE_PREFERENCES = ["notify", "auto", "never"] as const;
+export type UpdatePreference = (typeof UPDATE_PREFERENCES)[number];
+export function isUpdatePreference(value: unknown): value is UpdatePreference {
+  return (
+    typeof value === "string" &&
+    (UPDATE_PREFERENCES as readonly string[]).includes(value)
+  );
+}
+
+// A template with its own site code (_naru/) installs at the site's root:
+// a site has one _naru/.
+export const SITE_CODE_PREFIX = "_naru/";
+export const hasSiteCode = (paths: readonly string[]) =>
+  paths.some((path) => path.startsWith(SITE_CODE_PREFIX));
 
 // Per user, per rolling hour.
 export const POSTS_PER_HOUR = 10;
