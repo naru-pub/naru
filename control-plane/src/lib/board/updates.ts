@@ -17,7 +17,7 @@ import {
   type License,
   type UpdatePreference,
 } from "./constants";
-import { BoardError } from "./errors";
+import { BoardError } from "./board-error";
 import {
   BACKUP_DIRECTORY,
   backUp,

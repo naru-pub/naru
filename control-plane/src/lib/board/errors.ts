@@ -4,15 +4,9 @@ import { assertJsonContentType } from "@/lib/utils";
 import type { NextRequest } from "next/server";
 import { parseUuid } from "@/lib/uuid";
 
-// A failure the person can act on. Its message is shown as is.
-export class BoardError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import { BoardError } from "./board-error";
+
+export { BoardError };
 
 export function boardErrorResponse(error: unknown) {
   if (error instanceof BoardError) {
