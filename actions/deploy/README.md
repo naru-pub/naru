@@ -71,3 +71,19 @@ that installed it are told (or updated, if they chose automatic updates).
 ```
 
 Only files that changed since the previous version are uploaded.
+
+A run whose files are the same as the latest version's makes no new version.
+So one repository can keep several templates, one folder each, bound to the
+same repository and branch, and publish them all on every push; only the ones
+that changed get a version:
+
+```yaml
+- uses: naru-pub/naru/actions/deploy@main
+  with:
+    dir: templates/guestbook
+    template: <guestbook template ID>
+- uses: naru-pub/naru/actions/deploy@main
+  with:
+    dir: templates/link-tree
+    template: <link-tree template ID>
+```

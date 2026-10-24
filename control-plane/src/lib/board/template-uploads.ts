@@ -307,6 +307,42 @@ export async function finalizeTemplateUpload(params: {
     );
     await assertSiteCodeParses(manifest, sourceKey);
 
+    // The same files as the latest version (nothing uploaded, nothing
+    // dropped): no new version, so installed sites are not offered an empty
+    // update. A repository publishing several folders as templates runs
+    // every one of them on each push.
+    const latest = template.latest_version_id
+      ? await db
+          .selectFrom("board_template_versions")
+          .select(["id", "version", "file_count"])
+          .where("id", "=", template.latest_version_id)
+          .executeTakeFirst()
+      : undefined;
+    if (
+      latest &&
+      uploaded.size === 0 &&
+      latest.file_count === manifest.files.length
+    ) {
+      await db
+        .updateTable("board_template_uploads")
+        .set({
+          status: "finalized",
+          version_id: latest.id,
+          finalized_at: new Date(),
+        })
+        .where("id", "=", upload.id)
+        .execute();
+      return {
+        version: latest.version,
+        versionId: latest.id,
+        unchanged: true,
+        deployedFiles: manifest.files.length,
+        uploadedFiles: 0,
+        deletedFiles: 0,
+        functions: null,
+      };
+    }
+
     const result = await db.transaction().execute(async (tx) => {
       // Serialises two publishes of the same template.
       await tx
@@ -385,7 +421,11 @@ export async function finalizeTemplateUpload(params: {
         .execute();
       await enqueueTemplatePreview(tx, version.id);
       await enqueueTemplateUpdates(tx, template.id, version.id);
-      return { version: versionNumber, versionId: version.id };
+      return {
+        version: versionNumber,
+        versionId: version.id,
+        unchanged: false,
+      };
     });
 
     await deleteObjects([...uploaded].map(stagedKey));

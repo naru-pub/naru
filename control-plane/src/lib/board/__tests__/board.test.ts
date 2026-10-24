@@ -1176,6 +1176,17 @@ integration("board", () => {
       });
       expect(bucket.has(`_templates/${templateId}/v2/index.html`)).toBe(true);
 
+      // The same files again make no new version.
+      const same = await upload(v2Files, "e".repeat(40), "그대로");
+      expect(same.uploads).toEqual([]);
+      expect(
+        await finalizeTemplateUpload({
+          claims: { ...claims, sha: "e".repeat(40) },
+          deploymentId: same.deploymentId,
+        }),
+      ).toMatchObject({ version: 2, unchanged: true });
+      expect((await latestVersion(postId)).version).toBe(2);
+
       // Site code that does not parse is never published.
       const broken = await upload(
         [v1Files[0], file("_naru/queries/posts.js", "export const = ;")],

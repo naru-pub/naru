@@ -361,12 +361,14 @@ async function main() {
 | | |
 | --- | --- |
 | Template | \`${template}\` |
-| Version | v${finalize.version} |
+| Version | v${finalize.version}${finalize.unchanged ? " (unchanged, no new version)" : ""} |
 | Commit | \`${process.env.GITHUB_SHA || "unknown"}\` |
 | Files | ${finalize.deployedFiles ?? 0} (${finalize.uploadedFiles ?? 0} uploaded) |
 `);
     info(
-      `Published v${finalize.version}: ${finalize.deployedFiles} file(s), ${finalize.uploadedFiles} uploaded`,
+      finalize.unchanged
+        ? `Unchanged since v${finalize.version}: no new version`
+        : `Published v${finalize.version}: ${finalize.deployedFiles} file(s), ${finalize.uploadedFiles} uploaded`,
     );
     return;
   }

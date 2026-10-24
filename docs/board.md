@@ -86,7 +86,10 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   for the files whose sha256 the previous version lacked, finalize checks
   them, refuses site code that does not parse (`_naru/**/*.js`,
   `routes.json`), and publishes the version with the commit's sha and
-  message. A `github` template starts with no versions. Its uploads are
+  message; an upload with exactly the latest version's files makes none,
+  so several templates can share one repository and branch, each published
+  from its own folder (the action's `dir`) on every push. A `github`
+  template starts with no versions. Its uploads are
   staged in `board_template_uploads` and expire with the deploys' cleanup.
   Limits: 500 files and 50 MiB (a built site with its own code), against
   200 and 20 MiB for snapshots.
