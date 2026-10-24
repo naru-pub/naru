@@ -15,6 +15,21 @@ minimumReleaseAgeExclude:
   - '@fedify/vocab-tools@2.4.0'
   - '@fedify/vocab@2.4.0'
   - '@fedify/webfinger@2.4.0'
+  # Next 16.4.3, taken before the release age: 16.4.0 has unauthenticated
+  # RCEs (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr) and a DoS
+  # (GHSA-p3m5-59mp-jv5r), patched from 16.4.1.
+  - '@next/env@16.4.3'
+  - '@next/swc-darwin-arm64@16.4.3'
+  - '@next/swc-darwin-x64@16.4.3'
+  - '@next/swc-linux-arm64-gnu@16.4.3'
+  - '@next/swc-linux-arm64-musl@16.4.3'
+  - '@next/swc-linux-x64-gnu@16.4.3'
+  - '@next/swc-linux-x64-musl@16.4.3'
+  - '@next/swc-win32-arm64-msvc@16.4.3'
+  - '@next/swc-win32-x64-msvc@16.4.3'
+  - next@16.4.3
+  - '@next/eslint-plugin-next@16.4.3'
+  - eslint-config-next@16.4.3
 onlyBuiltDependencies:
   - "@sentry/cli"
   - esbuild
