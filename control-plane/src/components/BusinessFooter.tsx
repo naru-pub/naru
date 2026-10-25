@@ -4,7 +4,7 @@ import Link from "next/link";
 const LINKS = [
   { href: "/board", label: "게시판" },
   { href: "/developers", label: "개발자" },
-  { href: "/supporter", label: "결제" },
+  { href: "/supporter", label: "서포터" },
   { href: "/open", label: "지표" },
   { href: "/design", label: "디자인" },
   { href: "/policy", label: "커뮤니티 가이드라인" },
