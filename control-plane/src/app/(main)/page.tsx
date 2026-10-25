@@ -404,15 +404,22 @@ export default async function Home() {
                   className="underline underline-offset-4"
                 >
                   hello@naru.pub
-                </a>{" "}
-                또는{" "}
+                </a>
+                ,{" "}
                 <Link
                   href="https://x.com/naru_pub"
                   className="underline underline-offset-4"
                 >
                   @naru_pub
                 </Link>{" "}
-                으로 부탁드려요.
+                또는{" "}
+                <Link
+                  href="https://discord.gg/M35rkv2PHJ"
+                  className="underline underline-offset-4"
+                >
+                  디스코드
+                </Link>
+                로 부탁드려요.
               </dd>
             </div>
           </dl>
