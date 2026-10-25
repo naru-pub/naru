@@ -123,7 +123,9 @@ export default function SupportCard({
   const [pending, setPending] = useState(false);
   const [resending, setResending] = useState(false);
   const untilLabel = supporterUntil
-    ? new Date(supporterUntil).toLocaleDateString("ko-KR")
+    ? new Date(supporterUntil).toLocaleDateString("ko-KR", {
+        timeZone: "Asia/Seoul",
+      })
     : null;
   const isActive = subscription?.status === "active";
   const isScheduled = subscription?.status === "scheduled";

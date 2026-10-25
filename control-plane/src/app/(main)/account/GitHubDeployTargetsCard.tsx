@@ -203,7 +203,9 @@ export default function GitHubDeployTargetsCard({
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                           <CheckCircle2 size={14} />
                           마지막 배포:{" "}
-                          {new Date(target.lastDeployedAt).toLocaleString()}
+                          {new Date(target.lastDeployedAt).toLocaleString("ko-KR", {
+                            timeZone: "Asia/Seoul",
+                          })}
                         </p>
                       ) : (
                         <p className="text-sm text-muted-foreground">

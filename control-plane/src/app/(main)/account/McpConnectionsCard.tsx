@@ -18,7 +18,10 @@ export interface McpConnection {
 }
 
 const day = (iso: string) =>
-  new Date(iso).toLocaleDateString("ko-KR", { dateStyle: "medium" });
+  new Date(iso).toLocaleDateString("ko-KR", {
+    dateStyle: "medium",
+    timeZone: "Asia/Seoul",
+  });
 
 // The apps connected to the site through Naru MCP (lib/mcp/oauth.ts), each
 // with 연결 끊기, which ends its tokens at once.

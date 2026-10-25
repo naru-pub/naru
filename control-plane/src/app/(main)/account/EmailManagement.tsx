@@ -112,7 +112,9 @@ export default function EmailManagement({ currentEmail, emailVerifiedAt }: Email
                       인증됨
                     </span>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(emailVerifiedAt).toLocaleDateString('ko-KR')}
+                      {new Date(emailVerifiedAt).toLocaleDateString('ko-KR', {
+                        timeZone: 'Asia/Seoul',
+                      })}
                     </p>
                   </div>
                 ) : (
