@@ -46,6 +46,16 @@ import {
 } from "./installs";
 import { normalizeGitHubPath } from "./github-source";
 import { assertUnderHourlyLimit } from "./limits";
+import {
+  MIGRATIONS_PREFIX,
+  appliedMigrations,
+  eraseDatabase,
+  isMigration,
+  migrationConflicts,
+  restoreDatabase,
+  saveDatabase,
+  siteTableNames,
+} from "./site-code";
 import { withSiteLock } from "./site-lock";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
 import {
@@ -860,13 +870,21 @@ export interface ApplicationPlan {
   totalBytes: number;
   // Another template's site code is installed (a site has one): applying
   // this one with `replace` removes that template's files still as it wrote
-  // them, keeps those the owner changed, and forgets its install.
+  // them, keeps those the owner changed, and forgets its install. Its
+  // `migrations` have run, so they stay, unless the database is reset.
   replaces: {
     installId: string;
     slug: string;
     remove: string[];
     keep: string[];
+    migrations: string[];
   } | null;
+  // Why this version's migrations cannot run on the site's database as it
+  // is (site-code.ts). Applying with `resetDatabase` empties it first.
+  migrationConflicts: string[];
+  // Whether the site's database may be reset for this: site code, and the
+  // database feature.
+  canResetDatabase: boolean;
 }
 
 function normalizeTarget(value: unknown): string {
@@ -944,13 +962,33 @@ export async function planApplication(
       // What this template writes is overwritten (and backed up) anyway.
       const writes = new Set(files.map((file) => `${targetPath}${file.path}`));
       const states = await installFileStates(user.loginName, other);
+      const untouched = states.untouched.filter((path) => !writes.has(path));
       replaces = {
         installId: other.id,
         slug: other.slug,
-        remove: states.untouched.filter((path) => !writes.has(path)),
+        remove: untouched.filter((path) => !isMigration(path)),
         keep: states.changed.filter((path) => !writes.has(path)),
+        migrations: untouched.filter(isMigration),
       };
     }
+  }
+  let conflicts: string[] = [];
+  if (version.site_code && hasDatabase) {
+    const migrations = files.filter((file) => isMigration(file.path));
+    const [applied, tables, sources] = await Promise.all([
+      appliedMigrations(user.loginName),
+      siteTableNames(user.loginName),
+      Promise.all(
+        migrations.map(async (file) => ({
+          name: file.path.slice(MIGRATIONS_PREFIX.length),
+          sql:
+            (await storage.getText(
+              templateFileKey(version.template_id, version.version, file.path),
+            )) ?? "",
+        })),
+      ),
+    ]);
+    conflicts = migrationConflicts(applied, tables, sources);
   }
 
   const planned = files.map((file) => {
@@ -976,6 +1014,8 @@ export async function planApplication(
     })),
     totalBytes: planned.reduce((sum, file) => sum + file.sizeBytes, 0),
     replaces,
+    migrationConflicts: conflicts,
+    canResetDatabase: version.site_code && hasDatabase,
   };
 }
 
@@ -992,6 +1032,8 @@ export interface ApplicationResult {
   unavailableCollections: string[];
   // The template whose site code this one replaced, and what of its files.
   replaced: { slug: string; removed: number; kept: number } | null;
+  // The restore point kept before the site's database was reset, if it was.
+  restorePoint: string | null;
 }
 
 /** Why the site's code was refused, for a person to read. */
@@ -1001,12 +1043,12 @@ function refusalMessage(error: unknown): string {
 }
 
 /**
- * How far an application has got, for the page to show: backing up the files
- * it overwrites, copying the template's files in, publishing the site's code,
+ * How far an application has got, for the page to show: keeping the site's
+ * database before resetting it, backing up the files it overwrites, copying the template's files in, publishing the site's code,
  * and creating collections.
  */
 export type ApplyProgress = {
-  phase: "backup" | "copy" | "code" | "collections";
+  phase: "database" | "backup" | "copy" | "code" | "collections";
   done: number;
   total: number;
 };
@@ -1028,6 +1070,9 @@ export async function applyTemplate(
     // Replaces another template's installed site code (the plan's
     // `replaces`); without it, that is refused.
     replace?: unknown;
+    // The site's name, to empty its database first (a restore point is kept
+    // before): for migrations that cannot run on it as it is.
+    resetDatabase?: unknown;
     onProgress?: (progress: ApplyProgress) => void;
   },
 ): Promise<ApplicationResult> {
@@ -1063,7 +1108,25 @@ async function applyLocked(
       409,
       `다른 템플릿(${replaces.slug})의 사이트 코드가 설치되어 있어요. 이 템플릿으로 바꾸려면 바꾸기를 골라 주세요.`,
     );
-  const removed = replaces?.remove ?? [];
+  const reset =
+    input.resetDatabase !== undefined &&
+    input.resetDatabase !== null &&
+    input.resetDatabase !== false;
+  if (
+    reset &&
+    (!plan.canResetDatabase || input.resetDatabase !== user.loginName)
+  )
+    throw new BoardError(
+      400,
+      "데이터베이스를 초기화하려면 사이트 이름을 정확히 입력해 주세요.",
+    );
+  if (plan.migrationConflicts.length > 0 && !reset)
+    throw new BoardError(409, plan.migrationConflicts[0]);
+  // With the database reset, the replaced template's migrations are history
+  // no more, and go with its other files.
+  const removed = replaces
+    ? [...replaces.remove, ...(reset ? replaces.migrations : [])]
+    : [];
   // Site code is put back on failure, so its backups are always kept.
   const keepBackup = plan.siteCode || input.backup !== false;
   const overwritten = plan.files
@@ -1083,6 +1146,13 @@ async function applyLocked(
         ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
         : `${BACKUP_DIRECTORY}/.applying-${uuidv7()}/`;
 
+  // The database is kept before anything changes, to come back to.
+  let restorePoint: string | null = null;
+  if (reset) {
+    report({ phase: "database", done: 0, total: 1 });
+    restorePoint = await saveDatabase(user.id);
+  }
+
   // Backups first: if anything after this fails, the originals are safe.
   if (backupPath) {
     let done = 0;
@@ -1099,6 +1169,7 @@ async function applyLocked(
     .where("version_id", "=", version.id)
     .execute();
   try {
+    if (reset) await eraseDatabase(user.loginName, user.id);
     // The replaced template's files go first; they come back on a failure.
     if (removed.length > 0)
       await storage.deleteObjects(
@@ -1126,6 +1197,14 @@ async function applyLocked(
         console.error("Purge after applying a template", error);
       });
   } catch (error) {
+    // The database first, so the old code, published again below, finds
+    // its tables and migrations.
+    let databaseBack = true;
+    if (restorePoint)
+      await restoreDatabase(user.id, restorePoint).catch((cause) => {
+        databaseBack = false;
+        console.error("Restoring the database after a template", cause);
+      });
     await putBack(user.loginName, {
       backupPath,
       backedUp: backupPath ? backedUp : [],
@@ -1135,10 +1214,15 @@ async function applyLocked(
       .purgeSiteFiles(user.loginName, [...written, ...removed])
       .catch((cause) => console.error("Purge after putting back", cause));
     if (backupPath && !keepBackup) await removeBackup(user, backupPath);
+    const database = !restorePoint
+      ? ""
+      : databaseBack
+        ? " 데이터베이스도 되돌렸어요."
+        : ` 데이터베이스는 되돌리지 못했어요. 데이터베이스 관리에서 복원 지점 ${restorePoint}로 되돌려 주세요.`;
     throw new BoardError(
       422,
       plan.siteCode
-        ? `사이트 코드를 적용하지 못해서 설치를 되돌렸어요: ${refusalMessage(error)}`
+        ? `사이트 코드를 적용하지 못해서 설치를 되돌렸어요: ${refusalMessage(error)}${database}`
         : "템플릿 파일을 복사하지 못해서 적용을 되돌렸어요. 잠시 뒤에 다시 해 주세요.",
     );
   }
@@ -1242,6 +1326,7 @@ async function applyLocked(
           kept: replaces.keep.length,
         }
       : null,
+    restorePoint,
   };
 }
 

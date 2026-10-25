@@ -117,6 +117,18 @@ export async function downloadRestorePoint(ownerId: string, name: unknown) {
 }
 
 /**
+ * Empties `site`'s database, leaving its code as it is: every collection,
+ * table, applied migration, member role and record of uploads goes, then
+ * its paid status and uploads are given back to it. The caller keeps a
+ * restore point first and releases code after.
+ */
+export async function eraseSiteDatabase(site: string, ownerId: string) {
+  await callSiteObject(site, "erase", {});
+  await configureEdge(site, ownerId);
+  await recordAllUploads(site, ownerId);
+}
+
+/**
  * Empties the site's database, as the owner asks by typing the site's name:
  * a restore point of all of it is kept first (one to undo this with), then
  * every collection, table, applied migration, member role and record of
@@ -144,9 +156,7 @@ export async function resetSiteDatabase(
     undefined,
     SAVE_TIMEOUT_MS,
   );
-  await callSiteObject(site, "erase", {});
-  await configureEdge(site, ownerId);
-  await recordAllUploads(site, ownerId);
+  await eraseSiteDatabase(site, ownerId);
   let revision: string | null = null;
   let releaseError: string | null = null;
   try {

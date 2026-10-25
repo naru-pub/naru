@@ -248,6 +248,7 @@ export default async function PostPage({
                       siteCode: v.siteCode,
                     }))}
                     siteUrl={user ? getHomepageUrl(user.loginName) : null}
+                    siteName={user?.loginName ?? null}
                   />
                   <div className="border border-border bg-background p-3">
                     <div className="text-xl font-bold text-primary">

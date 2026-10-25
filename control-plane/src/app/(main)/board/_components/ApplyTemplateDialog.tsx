@@ -35,6 +35,7 @@ type Step =
   | { name: "done"; result: ApplicationResult };
 
 const PHASE_LABELS: Record<ApplyProgress["phase"], string> = {
+  database: "데이터베이스 복원 지점을 남기는 중",
   backup: "원래 파일을 보관하는 중",
   copy: "파일을 복사하는 중",
   code: "사이트 코드를 적용하는 중",
@@ -87,6 +88,7 @@ export function ApplyTemplateDialog({
   versions,
   samplePath,
   siteUrl,
+  siteName,
 }: {
   title: string;
   slug: string;
@@ -97,6 +99,8 @@ export function ApplyTemplateDialog({
   samplePath: string;
   // The viewer's site, or null when nobody is signed in.
   siteUrl: string | null;
+  // Its name, typed to confirm resetting its database.
+  siteName: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -109,6 +113,9 @@ export function ApplyTemplateDialog({
   const [notify, setNotify] = useState(true);
   // Confirms replacing another template's site code, when the plan says so.
   const [replace, setReplace] = useState(false);
+  // Empties the site's database first: confirmed by typing the site's name.
+  const [reset, setReset] = useState(false);
+  const [resetName, setResetName] = useState("");
   const [busy, setBusy] = useState(false);
   // Set while applying: null until the first progress line arrives.
   const [applying, setApplying] = useState<{
@@ -137,6 +144,8 @@ export function ApplyTemplateDialog({
         { targetPath },
       );
       setReplace(false);
+      setReset(false);
+      setResetName("");
       setStep({ name: "review", plan });
     } catch (error: any) {
       toast.error(error.message);
@@ -151,7 +160,14 @@ export function ApplyTemplateDialog({
     try {
       const result = await boardStream<ApplicationResult, ApplyProgress>(
         `/api/board/template-versions/${versionId}/apply`,
-        { targetPath, backup, createCollections, notify, replace },
+        {
+          targetPath,
+          backup,
+          createCollections,
+          notify,
+          replace,
+          ...(reset ? { resetDatabase: resetName.trim() } : {}),
+        },
         (progress) => setApplying({ progress }),
       );
       setStep({ name: "done", result });
@@ -365,13 +381,78 @@ export function ApplyTemplateDialog({
                     {step.plan.replaces.remove.length}개를 /.backup/에 보관하고
                     지워요.
                     {step.plan.replaces.keep.length > 0 &&
-                      ` 직접 고친 파일 ${step.plan.replaces.keep.length}개는 남겨 둬요.`}{" "}
+                      ` 직접 고친 파일 ${step.plan.replaces.keep.length}개는 남겨 둬요.`}
+                    {step.plan.replaces.migrations.length > 0 &&
+                      ` 이미 적용된 마이그레이션 ${step.plan.replaces.migrations.length}개는 데이터베이스의 기록이라 남겨요(데이터베이스를 초기화하면 함께 지워요).`}{" "}
                     데이터베이스의 테이블과 데이터는 그대로예요. 실패하면 두
                     템플릿 모두 원래대로 되돌려요.
                   </span>
                 </span>
               </label>
             )}
+
+            {step.plan.migrationConflicts.length > 0 && (
+              <div
+                role="alert"
+                className="space-y-1 border-2 border-destructive p-3 text-sm"
+              >
+                <p className="font-bold">
+                  사이트 데이터베이스에 이 템플릿의 마이그레이션을 적용할 수
+                  없어요
+                </p>
+                {step.plan.migrationConflicts.map((conflict) => (
+                  <p key={conflict} className="text-xs text-muted-foreground">
+                    {conflict}
+                  </p>
+                ))}
+                {!step.plan.canResetDatabase && (
+                  <p className="text-xs">
+                    데이터베이스를 정리한 뒤에 다시 해 주세요.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {step.plan.canResetDatabase &&
+              (step.plan.migrationConflicts.length > 0 ||
+                step.plan.replaces) && (
+                <div className="space-y-2 border-2 border-destructive/60 p-3 text-sm">
+                  <label className="flex cursor-pointer gap-3">
+                    <Checkbox
+                      checked={reset}
+                      onCheckedChange={(checked) => setReset(checked === true)}
+                      className="mt-0.5"
+                    />
+                    <span className="space-y-1">
+                      <span className="block font-bold">
+                        데이터베이스를 초기화하고 적용하기
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        사이트 데이터베이스의 테이블과 데이터, 적용된
+                        마이그레이션, 컬렉션, 회원 역할을 모두 지우고 이
+                        템플릿의 마이그레이션을 처음부터 적용해요. 지우기 전에
+                        복원 지점을 남기고, 적용에 실패하면 그 지점으로
+                        되돌려요. 파일과 업로드, 회원 가입은 그대로예요.
+                      </span>
+                    </span>
+                  </label>
+                  {reset && (
+                    <label className="block space-y-1 text-xs">
+                      <span className="text-muted-foreground">
+                        확인을 위해 사이트 이름(
+                        <code className="text-foreground">{siteName}</code>)을
+                        입력해 주세요.
+                      </span>
+                      <Input
+                        value={resetName}
+                        onChange={(event) => setResetName(event.target.value)}
+                        aria-label="사이트 이름"
+                        className="h-9"
+                      />
+                    </label>
+                  )}
+                </div>
+              )}
 
             <div className="space-y-2">
               <h3 className="text-sm font-bold">바뀌는 파일</h3>
@@ -520,7 +601,9 @@ export function ApplyTemplateDialog({
                   disabled={
                     busy ||
                     step.plan.blockers.length > 0 ||
-                    (step.plan.replaces !== null && !replace)
+                    (step.plan.replaces !== null && !replace) ||
+                    (step.plan.migrationConflicts.length > 0 && !reset) ||
+                    (reset && resetName.trim() !== siteName)
                   }
                 >
                   {busy ? "적용하는 중…" : "적용하기"}
@@ -535,6 +618,12 @@ export function ApplyTemplateDialog({
             <p className="text-base font-bold">적용했어요!</p>
             <ul className="space-y-1 text-sm text-muted-foreground">
               <li>파일 {step.result.written}개를 썼어요.</li>
+              {step.result.restorePoint && (
+                <li>
+                  데이터베이스를 초기화했어요. 전의 데이터는 복원 지점{" "}
+                  {step.result.restorePoint}에 남겨 뒀어요.
+                </li>
+              )}
               {step.result.replaced && (
                 <li>
                   {step.result.replaced.slug}의 파일{" "}

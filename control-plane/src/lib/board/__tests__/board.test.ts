@@ -55,7 +55,25 @@ jest.mock("../storage", () => ({
       if (key.startsWith(prefix)) bucket.delete(key);
     }
   }),
+  getText: jest.fn(async (key: string) => {
+    const object = bucket.get(key);
+    return object ? (object.body?.toString() ?? "") : null;
+  }),
   purgeSiteFiles: jest.fn(async () => {}),
+}));
+// What a site's database holds, and keeping, emptying and restoring it, are
+// the site's object's and the private bucket's: given here.
+const mockSiteCode = {
+  applied: new Map<string, string>(),
+  tables: new Set<string>(),
+};
+jest.mock("../site-code", () => ({
+  ...(jest.requireActual("../site-code") as object),
+  appliedMigrations: jest.fn(async () => mockSiteCode.applied),
+  siteTableNames: jest.fn(async () => mockSiteCode.tables),
+  saveDatabase: jest.fn(async () => "manual-1"),
+  eraseDatabase: jest.fn(async () => {}),
+  restoreDatabase: jest.fn(async () => {}),
 }));
 // Hourly limits would trip over this many posts from one person.
 jest.mock("../limits", () => ({
@@ -170,6 +188,11 @@ const storageMock = require("../storage") as {
   >;
 };
 type ApplyProgress = import("../templates").ApplyProgress;
+const siteCodeMock = require("../site-code") as {
+  saveDatabase: jest.Mock<(ownerId: string) => Promise<string>>;
+  eraseDatabase: jest.Mock<(site: string, ownerId: string) => Promise<void>>;
+  restoreDatabase: jest.Mock<(ownerId: string, name: string) => Promise<void>>;
+};
 const { userHasFeature } = require("@/lib/entitlements") as {
   userHasFeature: jest.Mock<typeof import("@/lib/entitlements").userHasFeature>;
 };
@@ -969,11 +992,13 @@ integration("board", () => {
       const otherVersion = await latestVersion(other.postId);
       const plan = await planApplication(site, otherVersion.id, "");
       expect(plan.blockers).toEqual([]);
-      // index.html the second writes over, so it is not in `remove`.
+      // index.html the second writes over, so it is not in `remove`; the
+      // migration has run, so it stays.
       expect(plan.replaces).toMatchObject({
         installId: result.installId,
-        remove: ["_naru/migrations/0001_core.sql", "_naru/queries/posts.js"],
+        remove: ["_naru/queries/posts.js"],
         keep: [],
+        migrations: ["_naru/migrations/0001_core.sql"],
       });
       const replacing = {
         targetPath: "",
@@ -1001,22 +1026,79 @@ integration("board", () => {
       ]);
 
       const replaced = await applyTemplate(site, otherVersion.id, replacing);
-      expect(replaced.replaced).toMatchObject({ removed: 1, kept: 1 });
+      expect(replaced.replaced).toMatchObject({ removed: 0, kept: 1 });
       expect(Object.keys(siteOf(site.loginName)).sort()).toEqual([
+        "_naru/migrations/0001_core.sql",
         "_naru/queries/posts.js",
         "_naru/queries/x.js",
         "index.html",
       ]);
-      expect(
-        [...bucket.keys()].some(
-          (key) =>
-            key.startsWith(`${site.loginName}/.backup/`) &&
-            key.endsWith("/_naru/migrations/0001_core.sql"),
-        ),
-      ).toBe(true);
       expect((await listInstalls(site)).map((i) => i.id)).toEqual([
         replaced.installId,
       ]);
+    });
+
+    test("migrations that cannot run on the site's database need it reset, kept first", async () => {
+      const author = await member();
+      const { postId } = await template(author, "m/", [
+        "index.html",
+        "_naru/migrations/0001_core.sql",
+      ]);
+      const version = await latestVersion(postId);
+      const site = await member();
+      // The site ran a 0001_core.sql of its own, with other SQL.
+      mockSiteCode.applied = new Map([["0001_core.sql", "another digest"]]);
+      try {
+        const plan = await planApplication(site, version.id, "");
+        expect(plan.migrationConflicts).toEqual([
+          expect.stringContaining("0001_core.sql: 같은 이름"),
+        ]);
+        expect(plan.canResetDatabase).toBe(true);
+        const input = { targetPath: "", backup: true, createCollections: true };
+        await expect(
+          applyTemplate(site, version.id, input),
+        ).rejects.toMatchObject({ status: 409 });
+        await expect(
+          applyTemplate(site, version.id, { ...input, resetDatabase: "nope" }),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(siteCodeMock.saveDatabase).not.toHaveBeenCalled();
+
+        // Refused after the reset: the database and the files come back.
+        put(`${site.loginName}/index.html`, "text/html", 3);
+        const before = siteOf(site.loginName);
+        storageMock.purgeSiteFiles.mockImplementationOnce(async () => {
+          throw new DataError(422, "migration failed", "INVALID_REQUEST");
+        });
+        await expect(
+          applyTemplate(site, version.id, {
+            ...input,
+            resetDatabase: site.loginName,
+          }),
+        ).rejects.toMatchObject({
+          status: 422,
+          message: expect.stringContaining("데이터베이스도 되돌렸어요"),
+        });
+        expect(siteCodeMock.eraseDatabase).toHaveBeenCalledWith(
+          site.loginName,
+          site.id,
+        );
+        expect(siteCodeMock.restoreDatabase).toHaveBeenCalledWith(
+          site.id,
+          "manual-1",
+        );
+        expect(siteOf(site.loginName)).toEqual(before);
+        expect(await listInstalls(site)).toEqual([]);
+
+        const applied = await applyTemplate(site, version.id, {
+          ...input,
+          resetDatabase: site.loginName,
+        });
+        expect(applied.restorePoint).toBe("manual-1");
+        expect(siteCodeMock.saveDatabase).toHaveBeenCalledTimes(2);
+        expect(siteCodeMock.restoreDatabase).toHaveBeenCalledTimes(1);
+      } finally {
+        mockSiteCode.applied = new Map();
+      }
     });
 
     test("disconnecting can remove the template's files, keeping the owner's", async () => {

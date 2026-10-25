@@ -1,6 +1,7 @@
 import {
   CopyObjectCommand,
   DeleteObjectsCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -46,6 +47,19 @@ export async function listObjects(
     continuationToken = response.NextContinuationToken;
   } while (continuationToken);
   return objects;
+}
+
+/** An object's contents as text, or null when there is none. */
+export async function getText(key: string): Promise<string | null> {
+  try {
+    const object = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucket(), Key: key }),
+    );
+    return await object.Body!.transformToString();
+  } catch (error: any) {
+    if (error?.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
 }
 
 export async function objectExists(key: string): Promise<boolean> {

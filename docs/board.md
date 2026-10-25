@@ -106,8 +106,20 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   there only when asked (`replace`; the plan's `replaces` says what it
   does): the other template's files still exactly as it wrote them are
   backed up and removed, those the owner changed stay, and its install is
-  forgotten, all in the same all-or-nothing application. The site's database
-  (tables, data, migrations already run) is left as it is. Applying it
+  forgotten, all in the same all-or-nothing application. Its migrations
+  stay too: a site's applied migrations are its database's history, and
+  Naru refuses a release that removes or changes one, or adds one that sorts
+  before the last (`pendingMigrations`, edge/src/site.ts). So the plan
+  checks the version's migrations against the active release's
+  (`migrationConflicts`, `lib/board/migrations.ts`): one with an applied
+  name but other SQL, one that sorts before the last applied, or one that
+  creates a table the site has, and refuses those unless `resetDatabase` is
+  the site's name. Then a restore point is kept first (`saveRestorePoint`),
+  the database is emptied (`eraseSiteDatabase`, as the control panel's
+  reset), the replaced template's migrations go with its other files, and
+  the new template's run from nothing; if anything fails, the database is
+  returned to the restore point before the files go back. Otherwise the
+  site's database (tables, data) is left as it is. Applying it
   publishes the site's code (the purge after copying does); if Naru refuses
   it, the files of both templates go back and nothing is recorded.
 - **Applying** is two calls:
@@ -185,7 +197,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   turned back on. Disconnecting an install forgets it and its files stay,
   now the owner's own; or, with `removeFiles` ("템플릿 파일 지우고 연결
   끊기"), the files still exactly as it wrote them (by the ETags it
-  recorded) are backed up and removed and those the owner changed stay. If
+  recorded) are backed up and removed, and those the owner changed and its
+  migrations stay. If
   Naru then refuses the site's code, they all go back and the install
   stays. The database is left as it is. Applications from before installs existed
   (migration `1792850254347`) have none and are not updated.

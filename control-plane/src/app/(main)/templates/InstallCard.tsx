@@ -82,7 +82,7 @@ export function InstallCard({ install }: { install: InstallSummary }) {
         ? {
             title: "템플릿 파일 지우고 연결 끊기",
             description:
-              "템플릿이 설치한 그대로인 파일을 /.backup/에 보관하고 지워요. 직접 고친 파일은 남겨 둬요. 데이터베이스의 테이블과 데이터는 그대로예요.",
+              "템플릿이 설치한 그대로인 파일을 /.backup/에 보관하고 지워요. 직접 고친 파일과 이미 적용된 마이그레이션은 남겨 둬요. 데이터베이스의 테이블과 데이터는 그대로예요.",
             confirmText: "지우고 연결 끊기",
             destructive: true,
           }
@@ -97,11 +97,16 @@ export function InstallCard({ install }: { install: InstallSummary }) {
     if (!ok) return;
     await run(async () => {
       const { result } = await boardRequest<{
-        result: { removed: number; kept: number; backupPath: string | null };
+        result: {
+          removed: number;
+          kept: number;
+          migrations: number;
+          backupPath: string | null;
+        };
       }>(base, "DELETE", { removeFiles });
       if (removeFiles)
         toast.success(
-          `파일 ${result.removed}개를 지웠어요${result.kept > 0 ? `, 직접 고친 파일 ${result.kept}개는 남겨 뒀어요` : ""}.`,
+          `파일 ${result.removed}개를 지웠어요${result.kept > 0 ? `, 직접 고친 파일 ${result.kept}개는 남겨 뒀어요` : ""}${result.migrations > 0 ? `, 적용된 마이그레이션 ${result.migrations}개는 남겨 뒀어요` : ""}.`,
         );
       router.refresh();
     });

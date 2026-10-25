@@ -26,6 +26,7 @@ import {
   type InstalledFile,
 } from "./installs";
 import { templateFileKey } from "./preview";
+import { isMigration } from "./site-code";
 import { withSiteLock } from "./site-lock";
 import * as storage from "./storage";
 
@@ -453,13 +454,17 @@ export interface DisconnectResult {
   backupPath: string | null;
   // Files the owner changed, left in place.
   kept: number;
+  // Its site code migrations, left in place: they have run, and a site's
+  // migrations are its database's history.
+  migrations: number;
 }
 
 /**
  * Forgets an install, so it is no longer told of new versions (and another
  * template's site code may then be installed). Its files stay, now the
  * owner's own, unless `removeFiles`: then the files still exactly as the
- * template wrote them go, backed up first, and those the owner changed stay.
+ * template wrote them go, backed up first, and those the owner changed stay,
+ * as do its migrations (Naru refuses a release without one that has run).
  * If Naru refuses the site's code without them, they all go back and the
  * install stays. The site's database is left as it is.
  */
@@ -470,16 +475,16 @@ export async function disconnectInstall(
 ): Promise<DisconnectResult> {
   if (!removeFiles) {
     await forgetInstall(user, installId);
-    return { removed: 0, backupPath: null, kept: 0 };
+    return { removed: 0, backupPath: null, kept: 0, migrations: 0 };
   }
   if (await siteSuspended(user.id))
     throw new BoardError(403, SUSPENDED_MESSAGE);
   return await withSiteLock(user.id, async () => {
     const install = await loadInstall(user, installId);
-    const { untouched, changed } = await installFileStates(
-      user.loginName,
-      install,
-    );
+    const states = await installFileStates(user.loginName, install);
+    const untouched = states.untouched.filter((path) => !isMigration(path));
+    const migrations = states.untouched.length - untouched.length;
+    const changed = states.changed;
     const backupPath =
       untouched.length > 0
         ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
@@ -511,7 +516,12 @@ export async function disconnectInstall(
     }
     await forgetInstall(user, installId);
     await recordSiteEdit(user.id);
-    return { removed: untouched.length, backupPath, kept: changed.length };
+    return {
+      removed: untouched.length,
+      backupPath,
+      kept: changed.length,
+      migrations,
+    };
   });
 }
 

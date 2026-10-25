@@ -30,6 +30,7 @@ export async function POST(
       createCollections: body.createCollections,
       notify: body.notify,
       replace: body.replace,
+      resetDatabase: body.resetDatabase,
     };
     if (!request.headers.get("accept")?.includes("application/x-ndjson")) {
       const result = await applyTemplate(user, versionId, input);
