@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/policy", label: "커뮤니티 가이드라인" },
   { href: "/privacy", label: "개인정보 처리방침", strong: true },
   { href: "https://x.com/naru_pub", label: "X" },
+  { href: "https://discord.gg/M35rkv2PHJ", label: "디스코드" },
 ];
 
 const BUSINESS = [
