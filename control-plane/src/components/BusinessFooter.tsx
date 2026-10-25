@@ -1,16 +1,23 @@
 import Image from "next/image";
 import Link from "next/link";
 
-const LINKS = [
-  { href: "/board", label: "게시판" },
-  { href: "/developers", label: "개발자" },
-  { href: "/supporter", label: "서포터" },
-  { href: "/open", label: "지표" },
-  { href: "/design", label: "디자인" },
-  { href: "/policy", label: "커뮤니티 가이드라인" },
-  { href: "/privacy", label: "개인정보 처리방침", strong: true },
-  { href: "https://x.com/naru_pub", label: "X" },
-  { href: "https://discord.gg/M35rkv2PHJ", label: "디스코드" },
+// Each row starts on its own line.
+const LINK_ROWS: { href: string; label: string; strong?: boolean }[][] = [
+  [
+    { href: "/board", label: "게시판" },
+    { href: "/developers", label: "개발자" },
+    { href: "/supporter", label: "서포터" },
+    { href: "/open", label: "지표" },
+    { href: "/design", label: "디자인" },
+  ],
+  [
+    { href: "/policy", label: "커뮤니티 가이드라인" },
+    { href: "/privacy", label: "개인정보 처리방침", strong: true },
+  ],
+  [
+    { href: "https://x.com/naru_pub", label: "X" },
+    { href: "https://discord.gg/M35rkv2PHJ", label: "디스코드" },
+  ],
 ];
 
 const BUSINESS = [
@@ -41,20 +48,21 @@ export function BusinessFooter() {
           <p className="text-sm text-muted-foreground">
             당신의 공간을 나루에 띄워 보세요.
           </p>
-          <nav
-            aria-label="바닥글"
-            className="flex flex-wrap gap-x-4 gap-y-1 text-sm"
-          >
-            {LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`text-link underline-offset-4 hover:underline${
-                  link.strong ? " font-bold" : ""
-                }`}
-              >
-                {link.label}
-              </Link>
+          <nav aria-label="바닥글" className="flex flex-col gap-1 text-sm">
+            {LINK_ROWS.map((row) => (
+              <div key={row[0].href} className="flex flex-wrap gap-x-4 gap-y-1">
+                {row.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`text-link underline-offset-4 hover:underline${
+                      link.strong ? " font-bold" : ""
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
             ))}
           </nav>
         </div>
