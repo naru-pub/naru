@@ -1,3 +1,5 @@
+/** @jest-environment node */
+import { describe, expect, test } from "@jest/globals";
 import { forEachConcurrently } from "@/lib/board/concurrency";
 
 describe("forEachConcurrently", () => {
