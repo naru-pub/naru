@@ -363,36 +363,50 @@ export default async function PostPage({
 
                 {(latest.collections.length > 0 ||
                   (latest.tables?.length ?? 0) > 0) && (
-                  <section className="space-y-2 border-2 border-line bg-card p-4 text-xs leading-relaxed">
-                    <h2 className="text-sm font-bold">필요한 기능</h2>
-                    {latest.collections.length > 0 && (
-                      <p className="text-muted-foreground">
-                        데이터베이스 — 적용할 때 빈 컬렉션{" "}
-                        {latest.collections.map((c, index) => (
-                          <span key={c.name}>
-                            {index > 0 && ", "}
-                            <code className="bg-secondary px-1 text-foreground">
-                              <CollectionName name={c.name} />
-                            </code>
-                          </span>
-                        ))}
-                        을(를) 만들어요.
+                  <section className="border-2 border-line bg-card">
+                    <h2 className="border-b-2 border-line bg-secondary px-4 py-3 font-bold">
+                      데이터베이스
+                    </h2>
+                    <div className="space-y-4 p-4 text-xs leading-6">
+                      <p className="leading-relaxed text-muted-foreground">
+                        적용할 때 사이트 데이터베이스에 빈 채로 만들어요.
+                        원작자의 데이터는 복사되지 않아요.
                       </p>
-                    )}
-                    {latest.tables && latest.tables.length > 0 && (
-                      <p className="text-muted-foreground">
-                        데이터베이스 — 적용할 때 사이트 데이터베이스에 빈 테이블{" "}
-                        {latest.tables.map((table, index) => (
-                          <span key={table}>
-                            {index > 0 && ", "}
-                            <code className="bg-secondary px-1 text-foreground">
-                              {table}
-                            </code>
-                          </span>
-                        ))}
-                        을(를) 만들어요.
-                      </p>
-                    )}
+                      {latest.tables && latest.tables.length > 0 && (
+                        <div className="space-y-1">
+                          <h3 className="font-bold">
+                            테이블{" "}
+                            <span className="font-normal text-muted-foreground">
+                              {latest.tables.length}개
+                            </span>
+                          </h3>
+                          <ul className="max-h-60 overflow-y-auto border border-border px-3 py-1 font-mono">
+                            {latest.tables.map((table) => (
+                              <li key={table} className="break-all">
+                                {table}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {latest.collections.length > 0 && (
+                        <div className="space-y-1">
+                          <h3 className="font-bold">
+                            컬렉션{" "}
+                            <span className="font-normal text-muted-foreground">
+                              {latest.collections.length}개
+                            </span>
+                          </h3>
+                          <ul className="max-h-60 overflow-y-auto border border-border px-3 py-1 font-mono">
+                            {latest.collections.map((c) => (
+                              <li key={c.name} className="break-all">
+                                <CollectionName name={c.name} />
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   </section>
                 )}
 
