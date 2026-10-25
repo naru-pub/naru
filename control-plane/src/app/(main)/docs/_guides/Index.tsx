@@ -68,6 +68,7 @@ export default function DocsIndex({
           <Link href="/board?kind=template&database=1">
             데이터베이스 템플릿 둘러보기 →
           </Link>
+          <Link href="/developers">개발자 포털: 도구와 내 작업 →</Link>
         </div>
       </div>
     </div>
