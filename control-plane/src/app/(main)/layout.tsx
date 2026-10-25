@@ -101,7 +101,9 @@ export default async function RootLayout({
                       </span>
                     </Link>
 
-                    <div className="order-last -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] md:order-none md:mx-0 md:w-auto md:flex-1 md:justify-end [&::-webkit-scrollbar]:hidden">
+                    {/* The scroller clips, so its padding (offset by the
+                      negative margin) leaves room for the focus outline. */}
+                    <div className="order-last -mx-3 flex w-[calc(100%+1.5rem)] items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] md:order-none md:-mx-1 md:w-auto md:flex-1 md:justify-end [&::-webkit-scrollbar]:hidden">
                       <NavLink href="/board">게시판</NavLink>
                       {user && <NavLink href="/files">파일</NavLink>}
                       {installs && installs.installed > 0 && (
