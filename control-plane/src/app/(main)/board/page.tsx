@@ -186,11 +186,21 @@ export default async function BoardPage({
                   href="/board/notifications"
                   className="block font-bold text-primary hover:underline"
                 >
-                  새 답글 {unread.count}개 →
+                  {unread.versions === 0
+                    ? `새 답글 ${unread.count}개`
+                    : `새 알림 ${unread.count}개`}{" "}
+                  →
                 </Link>
-                <p className="text-xs text-muted-foreground">
-                  {unread.from.join(", ")} 님이 답글을 달았어요
-                </p>
+                {unread.replies > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {unread.from.join(", ")} 님이 답글을 달았어요
+                  </p>
+                )}
+                {unread.versions > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    설치한 템플릿의 새 버전이 {unread.versions}개 나왔어요
+                  </p>
+                )}
               </section>
             )}
 

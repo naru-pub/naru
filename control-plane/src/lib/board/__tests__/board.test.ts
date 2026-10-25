@@ -1199,7 +1199,12 @@ integration("board", () => {
       expect(await versionNotices(told)).toMatchObject([
         { version: 2, read: false, fromLoginName: author.loginName, postId },
       ]);
-      expect((await countUnreadNotifications(told.id)).count).toBe(1);
+      expect(await countUnreadNotifications(told.id)).toEqual({
+        count: 1,
+        replies: 0,
+        from: [],
+        versions: 1,
+      });
       for (const other of [quiet, automatic, author])
         expect(await versionNotices(other)).toEqual([]);
 

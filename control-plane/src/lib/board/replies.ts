@@ -426,9 +426,15 @@ function templateVersionNotifications(userId: string) {
     .where("p.deleted_at", "is", null);
 }
 
+/**
+ * The person's unread notifications: how many in all, of replies (and who
+ * wrote the newest) and of template versions.
+ */
 export async function countUnreadNotifications(userId: string): Promise<{
   count: number;
+  replies: number;
   from: string[];
+  versions: number;
 }> {
   const [replies, versions] = await Promise.all([
     db
@@ -450,12 +456,11 @@ export async function countUnreadNotifications(userId: string): Promise<{
       .limit(100)
       .execute(),
   ]);
-  const rows = [...replies, ...versions]
-    .sort((x, y) => y.created_at.getTime() - x.created_at.getTime())
-    .slice(0, 100);
   return {
-    count: rows.length,
-    from: [...new Set(rows.map((row) => row.login_name))].slice(0, 3),
+    count: Math.min(replies.length + versions.length, 100),
+    replies: replies.length,
+    from: [...new Set(replies.map((row) => row.login_name))].slice(0, 3),
+    versions: versions.length,
   };
 }
 
