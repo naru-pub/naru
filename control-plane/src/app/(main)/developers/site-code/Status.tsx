@@ -84,7 +84,7 @@ export function Problems({
       .catch(() => {
         if (!active) return;
         setTrips([]);
-        setError("멈춘 문장을 불러오지 못했어요.");
+        setError("중지된 쿼리를 불러오지 못했어요.");
       });
     return () => {
       active = false;
@@ -119,7 +119,7 @@ export function Problems({
       where: `${trip.file}:${trip.name}`,
       what: (
         <>
-          <span className="font-bold text-destructive">멈춘 문장</span> —{" "}
+          <span className="font-bold text-destructive">중지된 쿼리</span> —{" "}
           {KIND[trip.kind] ?? trip.kind}의{" "}
           {trip.text === null ? "함수 전체" : "한 문장"}가 3초를 넘어{" "}
           {trip.pausedUntil !== null
@@ -169,7 +169,7 @@ export function Problems({
           )}
         </h2>
         <span className="text-sm text-muted-foreground">
-          멈춘 문장과 GitHub에서 거절된 릴리스를 {days}일 동안 보여 줘요
+          중지된 쿼리와 GitHub에서 거절된 릴리스를 {days}일 동안 보여 줘요
         </span>
       </div>
       {error && (
@@ -202,7 +202,7 @@ export function Problems({
       )}
       {trips !== null && trips.length > 0 && (
         <p className="border-t border-border px-5 py-3 text-sm text-muted-foreground">
-          문장 전체는{" "}
+          SQL 전체는{" "}
           <Link href="/database" className={LINK}>
             데이터베이스
           </Link>

@@ -130,7 +130,7 @@ test("문제 says so when there is nothing, and when it can't read", async () =>
   );
   render(<Problems days={7} refused={[]} />);
   expect(
-    await screen.findByText("멈춘 문장을 불러오지 못했어요."),
+    await screen.findByText("중지된 쿼리를 불러오지 못했어요."),
   ).toBeInTheDocument();
   expect(screen.queryByText("지금은 문제가 없어요.")).toBeNull();
 });
