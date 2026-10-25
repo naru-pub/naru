@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loader, type Monaco } from "@monaco-editor/react";
+import type { Monaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { toast } from "sonner";
 import { EDITABLE_FILE_EXTENSION_MAP } from "@/lib/const";
 import { loadingFetch } from "@/lib/loading-bar";
 import { extensionOf, isEditable, isWithin } from "./file-tree";
+import { loadMonaco } from "./monaco";
 
 // The file manager's open files: its tabs, and for each text file a Monaco
 // model the one editor switches between, so undo history, the cursor and
@@ -14,10 +15,6 @@ import { extensionOf, isEditable, isWithin } from "./file-tree";
 // version differs from the one last loaded or saved; undoing back to it
 // makes it clean again. Saves send the ETag the file was loaded with, so one
 // made over a newer version (from MCP, the apps, another tab) is refused.
-
-// Monaco from naru.pub itself (scripts/copy-monaco.mjs), not the loader's
-// default CDN, which failed to load it or its workers for some visitors.
-loader.config({ paths: { vs: "/monaco-editor/vs" } });
 
 type Model = editor.ITextModel;
 
@@ -89,8 +86,7 @@ export function useOpenFiles() {
 
   useEffect(() => {
     let mounted = true;
-    loader
-      .init()
+    loadMonaco()
       .then((instance) => {
         monacoRef.current = instance;
         if (mounted) setMonaco(instance);
@@ -178,7 +174,7 @@ export function useOpenFiles() {
         try {
           const [{ text, etag }] = await Promise.all([
             fetchContent(path),
-            loader.init().then((instance) => {
+            loadMonaco().then((instance) => {
               monacoRef.current = instance;
             }),
           ]);
