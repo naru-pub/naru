@@ -6,7 +6,7 @@ import MonacoEditor, {
   type Monaco,
   type OnMount,
 } from "@monaco-editor/react";
-import type { editor } from "monaco-editor";
+import type { editor, languages } from "monaco-editor";
 import { emmetCSS, emmetHTML } from "emmet-monaco-es";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -29,8 +29,8 @@ function prepare(monaco: Monaco) {
   prepared.add(monaco);
 
   // Emmet abbreviations (ul>li*3, .card, m10) expand from the suggestions.
-  emmetHTML(monaco, ["html"]);
-  emmetCSS(monaco, ["css"]);
+  emmetHTML(withTokenizedLines(monaco), ["html"]);
+  emmetCSS(withTokenizedLines(monaco), ["css"]);
 
   // Prettier as Monaco's formatter, so Format Document (Shift+Alt+F, the
   // context menu) formats as the toolbar's button does. Monaco's own HTML,
@@ -82,6 +82,46 @@ function prepare(monaco: Monaco) {
       },
     });
   }
+}
+
+// emmet-monaco-es decides whether the cursor may start an abbreviation by
+// re-tokenizing its line from the tokenizer state Monaco stored for the line
+// before, and throws when there is none: Monaco tokenizes a long file in the
+// background, and a line scrolled to before that reaches it has no stored
+// state. Its completion providers get the lines up to the cursor tokenized
+// first. The state is read from Monaco's internals, so should they still not
+// hold, the provider offers no abbreviations instead of throwing.
+function withTokenizedLines(monaco: Monaco): Monaco {
+  type Tokenized = { tokenization: { forceTokenization(line: number): void } };
+  return {
+    ...monaco,
+    languages: {
+      ...monaco.languages,
+      registerCompletionItemProvider(
+        language: languages.LanguageSelector,
+        provider: languages.CompletionItemProvider,
+      ) {
+        return monaco.languages.registerCompletionItemProvider(language, {
+          ...provider,
+          provideCompletionItems(
+            ...args: Parameters<
+              languages.CompletionItemProvider["provideCompletionItems"]
+            >
+          ) {
+            try {
+              const [model, position] = args;
+              (model as unknown as Tokenized).tokenization.forceTokenization(
+                position.lineNumber,
+              );
+              return provider.provideCompletionItems(...args);
+            } catch {
+              return undefined;
+            }
+          },
+        });
+      },
+    },
+  };
 }
 
 /**
