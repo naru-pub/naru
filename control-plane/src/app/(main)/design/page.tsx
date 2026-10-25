@@ -417,7 +417,7 @@ export default function DesignPage() {
               <Badge variant="outline">광고</Badge>
               <Badge variant="link">link</Badge>
               <Badge variant="sun">sun</Badge>
-              <Badge variant="success">해결됨</Badge>
+              <Badge variant="success">완료</Badge>
               <Badge variant="warning">만료 예정</Badge>
               <Badge variant="destructive">오류</Badge>
               <Badge variant="secondary">secondary</Badge>
@@ -425,8 +425,6 @@ export default function DesignPage() {
             <div className="flex flex-wrap items-center gap-2">
               <KindBadge kind="template" />
               <KindBadge kind="site" />
-              <KindBadge kind="question" />
-              <KindBadge kind="chat" />
             </div>
           </ComponentRow>
 

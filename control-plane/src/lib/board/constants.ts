@@ -1,14 +1,12 @@
 // Shared by the board's server code and its client components, so nothing
 // here may import server-only modules.
 
-export const POST_KINDS = ["site", "template", "question", "chat"] as const;
+export const POST_KINDS = ["site", "template"] as const;
 export type PostKind = (typeof POST_KINDS)[number];
 
 export const POST_KIND_LABELS: Record<PostKind, string> = {
   site: "사이트 자랑",
   template: "템플릿",
-  question: "질문",
-  chat: "잡담",
 };
 
 export function isPostKind(value: unknown): value is PostKind {

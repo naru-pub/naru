@@ -131,11 +131,6 @@ export default async function PostPage({
             <header className="space-y-3 border-b border-border p-5">
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <KindBadge kind={post.kind} />
-                {post.solvedReplyId && (
-                  <span className="bg-success/10 px-2 py-0.5 text-success">
-                    해결됨
-                  </span>
-                )}
                 <span>{formatRelative(post.createdAt)}</span>
                 {post.editedAt && <span>(고침)</span>}
               </div>
@@ -494,8 +489,6 @@ export default async function PostPage({
             postAuthorId={post.userId}
             replies={threadReplies}
             viewer={viewer}
-            isQuestion={post.kind === "question"}
-            solvedReplyId={post.solvedReplyId}
           />
           {truncated && (
             <p className="text-sm text-muted-foreground">

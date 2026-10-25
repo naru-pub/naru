@@ -3,10 +3,8 @@
 A message board with threaded replies at `/board`, where people share their
 sites and templates. A template is a snapshot of a folder from someone's site
 that anyone can apply to their own site in one step. The home page (`/`) has
-a board card with three pills: 템플릿 / 사이트 자랑 (selected to start),
-questions, and chat. Each shows its six newest posts, with templates and
-showcased sites combined as pictures, and questions and chat as a list.
-Below them come the ads, the usage notice, and 최근 업데이트된, which shows
+a board card, 템플릿 / 사이트 자랑, showing the six newest templates and
+showcased sites as pictures. Below them come the ads, the usage notice, and 최근 업데이트된, which shows
 the 24 most recently updated sites. `/sites` lists all of them, 48 per page.
 
 Every board row is keyed by a UUIDv7 (`uuid_v7()`), so `/board/<id>` and reply
@@ -22,8 +20,9 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 
 ## Behaviour
 
-- **Four kinds of post**: `site` (사이트 자랑), `template`, `question`, `chat`
-  (잡담). A `site` post shows the author's current site screenshot; the
+- **Two kinds of post**: `site` (사이트 자랑) and `template`. Question (질문)
+  and chat (잡담) posts were removed, and deleted, by migration
+  `1792928226993`. A `site` post shows the author's current site screenshot; the
   screenshot run renders a site with a live `site` post even when it isn't
   discoverable. A
   `template` post carries files.
@@ -230,7 +229,7 @@ requests (`readJson`):
 
 - `POST /api/board/posts`
 - `PATCH`/`DELETE /api/board/posts/[id]`
-- `POST /api/board/posts/[id]/replies`, `PUT`/`DELETE …/like`, `POST …/solve`
+- `POST /api/board/posts/[id]/replies`, `PUT`/`DELETE …/like`
 - `PATCH`/`DELETE /api/board/replies/[id]`, `PUT`/`DELETE …/like`
 - `POST /api/board/templates/[id]/versions`
 - `POST /api/board/template-versions/[id]/apply/plan`, `POST …/apply`

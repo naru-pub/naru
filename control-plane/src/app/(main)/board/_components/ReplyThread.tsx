@@ -41,16 +41,12 @@ export function ReplyThread({
   postAuthorId,
   replies,
   viewer,
-  isQuestion,
-  solvedReplyId,
   depthOffset = 0,
 }: {
   postId: string;
   postAuthorId: string;
   replies: ThreadReply[];
   viewer: ThreadViewer | null;
-  isQuestion: boolean;
-  solvedReplyId: string | null;
   depthOffset?: number;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -125,9 +121,6 @@ export function ReplyThread({
                 reply={reply}
                 viewer={viewer}
                 isPostAuthor={reply.userId === postAuthorId}
-                isQuestion={isQuestion}
-                viewerIsQuestionAuthor={!!viewer && viewer.id === postAuthorId}
-                solved={solvedReplyId === reply.id}
                 collapsed={isCollapsed}
                 descendants={descendants}
                 onToggle={() => toggle(reply.id)}
@@ -186,9 +179,6 @@ function ReplyItemView({
   reply,
   viewer,
   isPostAuthor,
-  isQuestion,
-  viewerIsQuestionAuthor,
-  solved,
   collapsed,
   descendants,
   onToggle,
@@ -201,9 +191,6 @@ function ReplyItemView({
   reply: ThreadReply;
   viewer: ThreadViewer | null;
   isPostAuthor: boolean;
-  isQuestion: boolean;
-  viewerIsQuestionAuthor: boolean;
-  solved: boolean;
   collapsed: boolean;
   descendants: number;
   onToggle: () => void;
@@ -263,7 +250,6 @@ function ReplyItemView({
               v{reply.appliedVersion} 적용함
             </Badge>
           )}
-          {solved && <Badge variant="success">해결한 답글</Badge>}
           <Link
             href={`/board/${postId}/replies/${reply.id}`}
             className="hover:underline"
@@ -384,23 +370,6 @@ function ReplyItemView({
                   className={`${quietAction} hover:text-destructive`}
                 >
                   지우기
-                </Button>
-              )}
-              {isQuestion && viewerIsQuestionAuthor && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() =>
-                    run(() =>
-                      boardRequest(`/api/board/posts/${postId}/solve`, "POST", {
-                        replyId: solved ? null : reply.id,
-                      }),
-                    )
-                  }
-                  className={quietAction}
-                >
-                  {solved ? "해결 표시 취소" : "이 답글로 해결"}
                 </Button>
               )}
             </div>

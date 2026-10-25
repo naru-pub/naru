@@ -48,7 +48,6 @@ export function TabsDemo() {
         <TabsTrigger value="all">전체</TabsTrigger>
         <TabsTrigger value="site">사이트 자랑</TabsTrigger>
         <TabsTrigger value="template">템플릿</TabsTrigger>
-        <TabsTrigger value="question">질문</TabsTrigger>
       </TabsList>
       <TabsContent value="all" className="pt-3 text-sm text-muted-foreground">
         탭을 눌러 보세요.
@@ -61,12 +60,6 @@ export function TabsDemo() {
         className="pt-3 text-sm text-muted-foreground"
       >
         템플릿 글
-      </TabsContent>
-      <TabsContent
-        value="question"
-        className="pt-3 text-sm text-muted-foreground"
-      >
-        질문 글
       </TabsContent>
     </Tabs>
   );

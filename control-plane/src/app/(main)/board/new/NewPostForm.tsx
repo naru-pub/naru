@@ -111,7 +111,7 @@ export function NewPostForm({
     <form onSubmit={submit} className="space-y-6">
       <fieldset>
         <legend className="mb-2 text-sm font-bold">종류</legend>
-        <div className="grid grid-cols-2 border-2 border-line sm:grid-cols-4">
+        <div className="grid grid-cols-2 border-2 border-line">
           {POST_KINDS.map((value) => (
             <label
               key={value}
@@ -372,7 +372,6 @@ export function NewPostForm({
           value={body}
           onChange={(event) => setBody(event.target.value)}
           maxLength={MAX_POST_BODY_LENGTH}
-          required={kind === "question" || kind === "chat"}
           rows={8}
         />
         <p className="text-xs text-muted-foreground">

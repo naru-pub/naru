@@ -278,12 +278,11 @@ export interface BoardPosts {
   edited_at: Timestamp | null;
   federated_note_iri: string | null;
   id: Generated<string>;
-  kind: "site" | "template" | "question" | "chat";
+  kind: "site" | "template";
   last_reply_at: Timestamp | null;
   last_reply_user_id: string | null;
   like_count: Generated<number>;
   reply_count: Generated<number>;
-  solved_reply_id: string | null;
   title: string;
   user_id: string;
 }

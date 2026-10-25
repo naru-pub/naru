@@ -24,9 +24,6 @@ export function PostRow({ post }: { post: PostSummary }) {
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <KindBadge kind={post.kind} />
-          {post.solved && (
-            <Badge variant="success">해결됨</Badge>
-          )}
           {post.template?.usesDatabase && (
             <Badge variant="link">데이터베이스</Badge>
           )}

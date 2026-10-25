@@ -257,7 +257,6 @@ export async function deleteReply(user: User, id: string): Promise<string> {
       .updateTable("board_posts")
       .set({
         reply_count: sql`greatest(reply_count - 1, 0)`,
-        solved_reply_id: sql`case when solved_reply_id = ${id}::uuid then null else solved_reply_id end`,
       })
       .where("id", "=", reply.post_id)
       .execute();

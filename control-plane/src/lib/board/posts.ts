@@ -26,7 +26,6 @@ export interface PostSummary {
   likeCount: number;
   lastReplyAt: Date | null;
   lastReplyLoginName: string | null;
-  solved: boolean;
   template: {
     id: string;
     applyCount: number;
@@ -71,7 +70,6 @@ function summaryQuery() {
       "p.like_count",
       "p.last_reply_at",
       "lr.login_name as last_reply_login_name",
-      "p.solved_reply_id",
       "t.id as template_id",
       "t.apply_count",
       "v.version",
@@ -100,7 +98,6 @@ function toSummary(row: SummaryRow): PostSummary {
     likeCount: row.like_count,
     lastReplyAt: row.last_reply_at,
     lastReplyLoginName: row.last_reply_login_name,
-    solved: row.solved_reply_id !== null,
     template: row.template_id
       ? {
           id: row.template_id,
@@ -185,7 +182,6 @@ export interface PostDetail {
   replyCount: number;
   likeCount: number;
   likedByViewer: boolean;
-  solvedReplyId: string | null;
 }
 
 export async function getPost(
@@ -207,7 +203,6 @@ export async function getPost(
       "p.edited_at",
       "p.reply_count",
       "p.like_count",
-      "p.solved_reply_id",
     ])
     .where("p.id", "=", id)
     .where("p.deleted_at", "is", null)
@@ -236,7 +231,6 @@ export async function getPost(
     replyCount: row.reply_count,
     likeCount: row.like_count,
     likedByViewer: !!liked,
-    solvedReplyId: row.solved_reply_id,
   };
 }
 
@@ -271,9 +265,6 @@ export async function createPost(
 ): Promise<string> {
   const title = validateTitle(input.title);
   const body = validatePostBody(input.body);
-  if (input.kind !== "site" && !body) {
-    throw new BoardError(400, "본문을 입력해 주세요.");
-  }
   await assertCanPost(user.id);
 
   const row = await db
@@ -307,9 +298,6 @@ export async function editPost(
   }
   const title = validateTitle(input.title);
   const body = validatePostBody(input.body);
-  if (post.kind !== "site" && post.kind !== "template" && !body) {
-    throw new BoardError(400, "본문을 입력해 주세요.");
-  }
   await db
     .updateTable("board_posts")
     .set({ title, body, edited_at: new Date() })
@@ -382,35 +370,4 @@ export async function setPostLike(
       .executeTakeFirstOrThrow();
     return row.like_count;
   });
-}
-
-// A question's author marks the reply that answered it, or clears the mark
-// with null.
-export async function setSolvedReply(
-  user: User,
-  postId: string,
-  replyId: string | null,
-): Promise<void> {
-  const post = await findLivePost(postId);
-  if (post.kind !== "question") {
-    throw new BoardError(400, "질문 글에만 해결 표시를 할 수 있어요.");
-  }
-  if (post.user_id !== user.id) {
-    throw new BoardError(403, "질문한 사람만 해결 표시를 할 수 있어요.");
-  }
-  if (replyId) {
-    const reply = await db
-      .selectFrom("board_replies")
-      .select("id")
-      .where("id", "=", replyId)
-      .where("post_id", "=", postId)
-      .where("deleted_at", "is", null)
-      .executeTakeFirst();
-    if (!reply) throw new BoardError(404, "답글을 찾을 수 없습니다.");
-  }
-  await db
-    .updateTable("board_posts")
-    .set({ solved_reply_id: replyId })
-    .where("id", "=", postId)
-    .execute();
 }

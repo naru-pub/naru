@@ -141,7 +141,6 @@ const {
   listLatestPosts,
   listPosts,
   setPostLike,
-  setSolvedReply,
 } = require("../posts") as typeof import("../posts");
 const {
   countUnreadNotifications,
@@ -268,13 +267,13 @@ integration("board", () => {
   describe("posts", () => {
     test("lists by activity, filters by kind, and hides deleted posts", async () => {
       const first = await createPost(alice, {
-        kind: "chat",
+        kind: "site",
         title: "첫 글",
         body: "안녕하세요",
       });
       const second = await createPost(bob, {
-        kind: "question",
-        title: "질문",
+        kind: "site",
+        title: "둘째 글",
         body: "도메인이 안 돼요",
       });
       expect(first).toMatch(
@@ -286,12 +285,16 @@ integration("board", () => {
       expect(all.posts.map((p) => p.id).slice(0, 2)).toEqual([first, second]);
       expect(all.posts[0].lastReplyLoginName).toBe("carol");
 
-      const questions = await listPosts({
-        kind: "question",
+      const sites = await listPosts({ kind: "site", sort: "new", page: 1 });
+      expect(sites.posts.map((p) => p.id)).toEqual(
+        expect.arrayContaining([first, second]),
+      );
+      const templates = await listPosts({
+        kind: "template",
         sort: "new",
         page: 1,
       });
-      expect(questions.posts.map((p) => p.id)).toEqual([second]);
+      expect(templates.posts.map((p) => p.id)).not.toContain(second);
 
       await deletePost(bob, second);
       expect(await getPost(second, null)).toBeNull();
@@ -301,7 +304,7 @@ integration("board", () => {
 
     test("only the author or an admin deletes a post", async () => {
       const id = await createPost(alice, {
-        kind: "chat",
+        kind: "site",
         title: "지우지 마세요",
         body: "본문",
       });
@@ -323,20 +326,17 @@ integration("board", () => {
       expect((await getPost(id, carol))?.likedByViewer).toBe(true);
     });
 
-    test("validates titles and required bodies", async () => {
+    test("validates titles", async () => {
       await expect(
-        createPost(alice, { kind: "chat", title: "  ", body: "x" }),
+        createPost(alice, { kind: "site", title: "  ", body: "x" }),
       ).rejects.toBeInstanceOf(BoardError);
-      await expect(
-        createPost(alice, { kind: "question", title: "제목", body: "" }),
-      ).rejects.toMatchObject({ status: 400 });
     });
   });
 
   describe("replies", () => {
     test("returns the tree in display order with depth", async () => {
       const post = await createPost(alice, {
-        kind: "chat",
+        kind: "site",
         title: "스레드",
         body: "본문",
       });
@@ -364,7 +364,7 @@ integration("board", () => {
 
     test("replies past the deepest level join their parent's siblings", async () => {
       const post = await createPost(alice, {
-        kind: "chat",
+        kind: "site",
         title: "깊은 스레드",
         body: "본문",
       });
@@ -393,7 +393,7 @@ integration("board", () => {
     test("notifies the post author and the parent's author once each", async () => {
       await sql`delete from board_notifications`.execute(db);
       const post = await createPost(alice, {
-        kind: "chat",
+        kind: "site",
         title: "알림",
         body: "본문",
       });
@@ -413,8 +413,8 @@ integration("board", () => {
 
     test("a deleted reply stays as a placeholder only while it has replies", async () => {
       const post = await createPost(alice, {
-        kind: "question",
-        title: "해결",
+        kind: "site",
+        title: "답글 지우기",
         body: "본문",
       });
       const parent = await createReply(bob, post, {
@@ -429,8 +429,6 @@ integration("board", () => {
         parentId: null,
         body: "l",
       });
-      await setSolvedReply(alice, post, child);
-
       await deleteReply(bob, parent);
       await deleteReply(carol, lone);
       await expect(deleteReply(bob, child)).rejects.toMatchObject({
@@ -443,9 +441,6 @@ integration("board", () => {
         [child, "c"],
       ]);
       expect((await getPost(post, null))?.replyCount).toBe(1);
-
-      await deleteReply(carol, child);
-      expect((await getPost(post, null))?.solvedReplyId).toBeNull();
     });
   });
 
@@ -456,7 +451,7 @@ integration("board", () => {
       const admin = { ...yang, loginName: "yang" };
 
       const post = await createPost(alice, {
-        kind: "chat",
+        kind: "site",
         title: "지울 글",
         body: "본문",
       });

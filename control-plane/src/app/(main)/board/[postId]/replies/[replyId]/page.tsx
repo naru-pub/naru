@@ -92,8 +92,6 @@ export default async function ReplyPage({
                 }
               : null
           }
-          isQuestion={post.kind === "question"}
-          solvedReplyId={post.solvedReplyId}
           depthOffset={replies[0].depth}
         />
       </main>

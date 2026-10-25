@@ -8,11 +8,10 @@ import { PixelWave } from "@/components/PixelWave";
 import { SiteGrid } from "@/components/SiteGrid";
 import { getHomepageUrl, getRenderedSiteUrl } from "@/lib/site-urls";
 import { validateRequest } from "@/lib/auth";
-import { POST_KINDS, type PostKind } from "@/lib/board/constants";
+import { POST_KINDS } from "@/lib/board/constants";
 import { listLatestPosts, type PostSummary } from "@/lib/board/posts";
 import { postThumbnailUrl } from "./board/_components/Thumbnail";
 import { HomeBoard, type HomePost } from "./board/_components/HomeBoard";
-import { formatRelative } from "./board/_components/format";
 
 // A sparkline is drawn server-side as plain SVG. The charts on /open pull in
 // recharts behind "use client", which is far too much JavaScript to put on the
@@ -138,27 +137,20 @@ export default async function Home() {
       validateRequest(),
     ]);
 
-  // Plain data for the client card, times already formatted.
+  // Plain data for the board card.
   const toHomePost = (post: PostSummary): HomePost => ({
     id: post.id,
     title: post.title,
-    excerpt: post.excerpt,
     authorLoginName: post.authorLoginName,
-    time: formatRelative(post.createdAt),
     replyCount: post.replyCount,
     applyCount: post.template ? post.template.applyCount : null,
     thumbnailUrl: postThumbnailUrl(post),
   });
-  const latestForKind = (kind: PostKind) =>
-    latestByKind[POST_KINDS.indexOf(kind)];
-  const boardPosts = {
-    template: [...latestForKind("template"), ...latestForKind("site")]
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, 6)
-      .map(toHomePost),
-    question: latestForKind("question").map(toHomePost),
-    chat: latestForKind("chat").map(toHomePost),
-  };
+  const boardPosts = latestByKind
+    .flat()
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 6)
+    .map(toHomePost);
   const heroSites = recentlyRenderedUsers.slice(0, 3);
   const statTiles = [
     {

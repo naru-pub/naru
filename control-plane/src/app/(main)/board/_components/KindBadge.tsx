@@ -5,8 +5,6 @@ import { POST_KIND_LABELS, type PostKind } from "@/lib/board/constants";
 const KIND_VARIANTS: Record<PostKind, BadgeProps["variant"]> = {
   template: "sun",
   site: "link",
-  question: "warning",
-  chat: "outline",
 };
 
 export function KindBadge({ kind }: { kind: PostKind }) {
