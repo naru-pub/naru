@@ -19,11 +19,6 @@ import {
 } from "./jobs";
 import { runSiteQuarantine } from "@/lib/site-quarantine";
 import {
-  TEMPLATE_UPDATE_TASK,
-  type TemplateUpdate,
-} from "@/lib/board/installs";
-import { runTemplateUpdate } from "@/lib/board/updates";
-import {
   SITE_QUARANTINE_TASK,
   type SiteQuarantine,
 } from "@/lib/site-suspension";
@@ -202,10 +197,6 @@ export async function runMaintenanceWorker(signal: AbortSignal): Promise<void> {
   workflows.registerTask<SiteQuarantine>(
     { name: SITE_QUARANTINE_TASK },
     runSiteQuarantine,
-  );
-  workflows.registerTask<TemplateUpdate>(
-    { name: TEMPLATE_UPDATE_TASK },
-    runTemplateUpdate,
   );
   const worker = await workflows.startWorker({
     workerId: `maintenance:${process.pid}`,

@@ -159,7 +159,7 @@ const {
   installCounts,
   listInstalls,
   planUpdate,
-  setUpdatePreference,
+  setInstallNotify,
 } = require("../updates") as typeof import("../updates");
 const { finalizeTemplateUpload, planTemplateUpload, templateUploadStatus } =
   require("../template-uploads") as typeof import("../template-uploads");
@@ -945,7 +945,7 @@ integration("board", () => {
         targetPath: "",
         backup: false,
         createCollections: true,
-        updates: "auto",
+        notify: false,
       });
       expect(Object.keys(siteOf(site.loginName)).sort()).toEqual([
         "_naru/migrations/0001_core.sql",
@@ -956,7 +956,7 @@ integration("board", () => {
       expect(install).toMatchObject({
         id: result.installId,
         targetPath: "",
-        updates: "auto",
+        notify: false,
         latest: null,
         version: { siteCode: true },
       });
@@ -1123,7 +1123,7 @@ integration("board", () => {
       expect(await listInstalls(fresh)).toEqual([]);
     });
 
-    test("automatic updates are queued when a version is published", async () => {
+    test("an install's notices can be turned off and on, and nothing updates it by itself", async () => {
       const author = await member();
       const { postId, templateId } = await template(author, "q/", [
         "index.html",
@@ -1135,54 +1135,66 @@ integration("board", () => {
         { targetPath: "q", backup: true, createCollections: true },
       );
       await expect(
-        setUpdatePreference(site, installId, "sometimes"),
+        setInstallNotify(site, installId, "auto"),
       ).rejects.toMatchObject({ status: 400 });
-      await setUpdatePreference(site, installId, "auto");
       await publishTemplateVersion(author, templateId, {
         files: ["q/index.html"],
         changelog: null,
         collections: [],
       });
-      const queued = await sql<{ params: { installId: string } }>`
-        select params from absurd.t_maintenance
+      const [install] = await listInstalls(site);
+      // Offered, not applied, and no update is queued.
+      expect(install).toMatchObject({
+        notify: true,
+        version: { version: 1 },
+        latest: { version: 2 },
+      });
+      const queued = await sql`
+        select 1 from absurd.t_maintenance
         where task_name = 'template-update-v1' and params->>'installId' = ${installId}`.execute(
         db,
       );
-      expect(queued.rows).toHaveLength(1);
+      expect(queued.rows).toEqual([]);
+
+      await setInstallNotify(site, installId, false);
+      expect((await listInstalls(site))[0]).toMatchObject({
+        notify: false,
+        latest: null,
+      });
+      await setInstallNotify(site, installId, true);
+      expect((await listInstalls(site))[0].latest?.version).toBe(2);
     });
 
-    test("a new version notifies 알려 주기 installs once, and 받지 않기 hides it", async () => {
+    test("a new version notifies the installs told of them, once, and hides from the others", async () => {
       const author = await member();
       const { postId, templateId } = await template(author, "n/", [
         "index.html",
       ]);
       const v1 = (await latestVersion(postId)).id;
-      const install = async (updates: string, folder = "n") => {
+      const install = async (notify: boolean) => {
         const site = await member();
         await applyTemplate(site, v1, {
-          targetPath: folder,
+          targetPath: "n",
           backup: true,
           createCollections: true,
-          updates,
+          notify,
         });
         return site;
       };
-      const told = await install("notify");
+      const told = await install(true);
       // Installed twice, told once.
       await applyTemplate(told, v1, {
         targetPath: "again",
         backup: true,
         createCollections: true,
-        updates: "notify",
+        notify: true,
       });
-      const quiet = await install("never");
-      const automatic = await install("auto");
+      const quiet = await install(false);
       // The author's own install hears nothing of their own version.
       await applyTemplate(author, v1, {
         targetPath: "mine",
         backup: true,
         createCollections: true,
-        updates: "notify",
       });
       const publish = () =>
         publishTemplateVersion(author, templateId, {
@@ -1205,14 +1217,14 @@ integration("board", () => {
         from: [],
         versions: 1,
       });
-      for (const other of [quiet, automatic, author])
+      for (const other of [quiet, author])
         expect(await versionNotices(other)).toEqual([]);
 
       // A later version replaces the unread notice of the one before.
       await publish();
       expect(await versionNotices(told)).toMatchObject([{ version: 3 }]);
 
-      // The badge counts installs with a version waiting; 받지 않기 has none.
+      // The badge counts installs with a version waiting; one told of none has none.
       expect(await installCounts(told.id)).toEqual({
         installed: 2,
         updatable: 2,

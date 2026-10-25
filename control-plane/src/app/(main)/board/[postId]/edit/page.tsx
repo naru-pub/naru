@@ -101,8 +101,7 @@ export default async function EditPostPage({
                 {latest
                   ? `지금은 v${latest.version}이에요. 체크한 파일의 지금 내용으로 v${latest.version + 1}을(를) 만들어요.`
                   : "체크한 파일의 지금 내용으로 첫 버전을 만들어요."}{" "}
-                설치한 사이트는 직접 업데이트하거나, 자동 업데이트를 켜 둔 경우
-                바로 바뀌어요.
+                설치한 사람은 알림을 받고, 설치한 템플릿에서 직접 업데이트해요.
               </p>
             </div>
             <NewVersionForm

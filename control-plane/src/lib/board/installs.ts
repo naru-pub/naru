@@ -1,13 +1,11 @@
 // What a site installed from a template, and the storage bookkeeping that
 // applying, installing and updating share: the ETags that tell a file the
-// owner changed, backups and putting them back, and queueing automatic
-// updates. templates.ts and updates.ts both use it; it uses neither.
+// owner changed, backups and putting them back, and telling installs of new
+// versions. templates.ts and updates.ts both use it; it uses neither.
 import { sql, type Kysely, type Transaction } from "kysely";
 import type { DB } from "@/lib/db";
-import { MAINTENANCE_QUEUE } from "@/lib/maintenance/jobs";
 import { getUserHomeDirectory, getUserObjectKey } from "@/lib/site-urls";
 import { forEachConcurrently } from "./concurrency";
-import type { UpdatePreference } from "./constants";
 import { templateFileKey } from "./preview";
 import * as storage from "./storage";
 
@@ -91,7 +89,8 @@ export async function recordInstall(
     templateId: string;
     versionId: string;
     targetPath: string;
-    updates: UpdatePreference;
+    // Told of new versions.
+    notify: boolean;
     files: InstalledFile[];
   },
 ): Promise<string> {
@@ -102,13 +101,13 @@ export async function recordInstall(
       template_id: install.templateId,
       version_id: install.versionId,
       target_path: install.targetPath,
-      updates: install.updates,
+      notify: install.notify,
       files: JSON.stringify(install.files),
     })
     .onConflict((oc) =>
       oc.columns(["user_id", "template_id", "target_path"]).doUpdateSet({
         version_id: install.versionId,
-        updates: install.updates,
+        notify: install.notify,
         files: JSON.stringify(install.files),
         updated_at: sql`now()`,
       }),
@@ -162,8 +161,8 @@ export async function putBack(
 }
 
 /**
- * Tells everyone who installed the template and asked to be told (updates =
- * 'notify') of `versionId`, in the transaction that published it: a board
+ * Tells everyone who installed the template and asked to be told (notify)
+ * of `versionId`, in the transaction that published it: a board
  * notification each, once however many folders they installed it in. One
  * they have not read yet for an earlier version goes, as this one says more.
  * The author is not told of their own version.
@@ -179,7 +178,7 @@ export async function notifyTemplateVersion(
     .select("i.user_id")
     .distinct()
     .where("i.template_id", "=", templateId)
-    .where("i.updates", "=", "notify")
+    .where("i.notify", "=", true)
     .where("i.version_id", "<>", versionId)
     .whereRef("i.user_id", "<>", "t.user_id");
   await executor
@@ -211,32 +210,4 @@ export async function notifyTemplateVersion(
         .doNothing(),
     )
     .execute();
-}
-
-export const TEMPLATE_UPDATE_TASK = "template-update-v1";
-export type TemplateUpdate = { installId: string; versionId: string };
-
-/**
- * Queues an update to `versionId` for every install of the template that
- * updates automatically, in the transaction that published the version.
- */
-export async function enqueueTemplateUpdates(
-  executor: Kysely<DB> | Transaction<DB>,
-  templateId: string,
-  versionId: string,
-): Promise<void> {
-  const installs = await executor
-    .selectFrom("board_template_installs")
-    .select("id")
-    .where("template_id", "=", templateId)
-    .where("updates", "=", "auto")
-    .where("version_id", "<>", versionId)
-    .execute();
-  for (const install of installs) {
-    const update: TemplateUpdate = { installId: install.id, versionId };
-    await sql`select absurd.spawn_task(${MAINTENANCE_QUEUE}, ${TEMPLATE_UPDATE_TASK}, ${JSON.stringify(update)}::jsonb,
-      ${JSON.stringify({ idempotency_key: `template-update:${install.id}:${versionId}`, max_attempts: 3 })}::jsonb)`.execute(
-      executor,
-    );
-  }
 }

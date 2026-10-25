@@ -121,8 +121,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
      result; the dialog shows it as a bar.
 - **One at a time per site.** Applying and updating take a PostgreSQL
   session advisory lock on the site (`site-lock.ts`) for the whole
-  operation, so a second one at once (a double click, another tab, an
-  automatic update) is refused with 409 rather than interleaved; the
+  operation, so a second one at once (a double click, another tab) is
+  refused with 409 rather than interleaved; the
   hourly limit is counted inside it. R2 copies run 16 at a time
   (`concurrency.ts`), and a failure waits for the copies in flight before
   anything is put back.
@@ -156,7 +156,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 
 - **Installs and updates** (`lib/board/updates.ts`): applying records an
   install (`board_template_installs`: the folder, the version, every file it
-  wrote with its ETag then, and `updates`: `notify`, `auto` or `never`).
+  wrote with its ETag then, and `notify`: whether it is told of new
+  versions).
   `/templates` lists a person's installs and offers newer versions. An update
   works out each file: the template's own files (ETag unchanged since
   install) are replaced or deleted, files the owner changed are backed up and
@@ -164,18 +165,20 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   at a path the new version uses are backed up and replaced, unchanged ones
   are left. Everything it replaces or deletes goes to `/.backup/<stamp>/`
   first; if Naru refuses the new site code, it all goes back and the install
-  stays on its version. Publishing a version queues an update
-  (`template-update-v1`, the maintenance worker) for each `auto` install,
-  which skips a version that adds migrations, and tells each person with a
-  `notify` install (알려 주기) through a board notification
+  stays on its version. Nothing updates an install by itself: the owner
+  does, from `/templates`. (Automatic updates were removed, and their queued
+  tasks cancelled, by migration `1792915929515`.) Publishing a version tells
+  each person with an install that has `notify` on ("새 버전이 나오면 알려
+  주기", a checkbox when applying and on `/templates`) through a board
+  notification
   (`board_notifications.reason = 'template_version'`, migration
   `1792911506464`): one per person and version, replacing their unread one of
   an earlier version, never the author's own. `/board/notifications` lists
   them beside replies, linking to `/templates`, and opening `/templates`
   reads them. The 템플릿 link in the navigation counts the installs with a
-  newer version waiting (`installCounts`). A `never` install (받지 않기) is
-  never told and `/templates` does not offer it new versions until its
-  setting changes. Disconnecting an install
+  newer version waiting (`installCounts`). An install with `notify` off is
+  never told, and `/templates` does not offer it new versions until it is
+  turned back on. Disconnecting an install
   forgets it; its files stay. Applications from before installs existed
   (migration `1792850254347`) have none and are not updated.
 

@@ -7,16 +7,11 @@
 // and kept where the new version drops it; the site's other files are never
 // touched. If Naru refuses the new site code, every file goes back.
 import { sql } from "kysely";
-import type { TaskContext } from "absurd-sdk";
 import type { User } from "@/lib/auth";
 import { db, recordSiteEdit } from "@/lib/database";
 import { getUserObjectKey } from "@/lib/site-urls";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
-import {
-  isUpdatePreference,
-  type License,
-  type UpdatePreference,
-} from "./constants";
+import type { License } from "./constants";
 import { BoardError } from "./board-error";
 import { forEachConcurrently } from "./concurrency";
 import {
@@ -28,7 +23,6 @@ import {
   recordInstall,
   siteFiles,
   type InstalledFile,
-  type TemplateUpdate,
 } from "./installs";
 import { templateFileKey } from "./preview";
 import { withSiteLock } from "./site-lock";
@@ -43,10 +37,11 @@ export interface InstallSummary {
   author: string;
   license: License;
   targetPath: string;
-  updates: UpdatePreference;
+  // Told of new versions; when not, they are not offered here either.
+  notify: boolean;
   version: { id: string; version: number; siteCode: boolean };
   // The newest version, when it is newer than the installed one and the
-  // install takes new versions (not 'never').
+  // install is told of new versions.
   latest: {
     id: string;
     version: number;
@@ -74,7 +69,7 @@ export async function listInstalls(user: User): Promise<InstallSummary[]> {
       "i.id",
       "i.template_id",
       "i.target_path",
-      "i.updates",
+      "i.notify",
       "i.updated_at",
       "t.post_id",
       "t.slug",
@@ -102,7 +97,7 @@ export async function listInstalls(user: User): Promise<InstallSummary[]> {
     author: row.author,
     license: row.license,
     targetPath: row.target_path,
-    updates: row.updates,
+    notify: row.notify,
     version: {
       id: row.version_id,
       version: row.version,
@@ -112,7 +107,7 @@ export async function listInstalls(user: User): Promise<InstallSummary[]> {
       row.latest_id &&
       row.latest_version !== null &&
       row.latest_version > row.version &&
-      row.updates !== "never" &&
+      row.notify &&
       !row.deleted_at
         ? {
             id: row.latest_id,
@@ -128,7 +123,7 @@ export async function listInstalls(user: User): Promise<InstallSummary[]> {
 
 /**
  * For the navigation: whether `userId` installed any template, and how many of
- * their installs have a newer version waiting (those that take new versions).
+ * their installs have a newer version waiting (those told of new versions).
  */
 export async function installCounts(
   userId: string,
@@ -145,7 +140,7 @@ export async function installCounts(
     )
     .select([
       sql<number>`count(*)::int`.as("installed"),
-      sql<number>`(count(*) filter (where latest.version > v.version and i.updates <> 'never' and p.deleted_at is null))::int`.as(
+      sql<number>`(count(*) filter (where latest.version > v.version and i.notify and p.deleted_at is null))::int`.as(
         "updatable",
       ),
     ])
@@ -169,7 +164,7 @@ async function loadInstall(user: User, installId: string) {
       "i.id",
       "i.template_id",
       "i.target_path",
-      "i.updates",
+      "i.notify",
       "i.files",
       "i.version_id",
       "v.version",
@@ -417,7 +412,7 @@ async function updateLocked(
       templateId: install.template_id,
       versionId: plan.to.id,
       targetPath: install.target_path,
-      updates: install.updates,
+      notify: install.notify,
       files,
     });
   });
@@ -431,18 +426,18 @@ async function updateLocked(
   };
 }
 
-/** How `installId` takes new versions. */
-export async function setUpdatePreference(
+/** Whether `installId` is told of new versions. */
+export async function setInstallNotify(
   user: User,
   installId: string,
   value: unknown,
 ): Promise<void> {
-  if (!isUpdatePreference(value)) {
-    throw new BoardError(400, "업데이트 방식이 올바르지 않습니다.");
+  if (typeof value !== "boolean") {
+    throw new BoardError(400, "새 버전 알림 설정이 올바르지 않습니다.");
   }
   const result = await db
     .updateTable("board_template_installs")
-    .set({ updates: value, updated_at: sql`now()` })
+    .set({ notify: value, updated_at: sql`now()` })
     .where("id", "=", installId)
     .where("user_id", "=", user.id)
     .executeTakeFirst();
@@ -467,51 +462,4 @@ export async function disconnectInstall(
   if (!result.numDeletedRows) {
     throw new BoardError(404, "설치한 템플릿을 찾을 수 없어요.");
   }
-}
-
-/**
- * An automatic update (installs.ts queues one per install when a version
- * is published). A version that adds migrations waits for its owner, as
- * does one that cannot be applied; a later version is queued on its own.
- */
-export async function runTemplateUpdate(
-  update: TemplateUpdate,
-  ctx: Pick<TaskContext, "step">,
-): Promise<void> {
-  await ctx.step("update", async () => {
-    const row = await db
-      .selectFrom("board_template_installs as i")
-      .innerJoin("users as u", "u.id", "i.user_id")
-      .select([
-        "i.updates",
-        "u.id",
-        "u.login_name",
-        "u.created_at",
-        "u.email",
-        "u.email_verified_at",
-        "u.discoverable",
-      ])
-      .where("i.id", "=", update.installId)
-      .where("u.deleted_at", "is", null)
-      .executeTakeFirst();
-    if (!row || row.updates !== "auto") return null;
-    const user: User = {
-      id: row.id,
-      loginName: row.login_name,
-      createdAt: row.created_at,
-      email: row.email,
-      emailVerifiedAt: row.email_verified_at,
-      discoverable: row.discoverable,
-    };
-    try {
-      const plan = await planUpdate(user, update.installId, update.versionId);
-      if (plan.migrations.length > 0) return null;
-      await applyUpdate(user, update.installId, update.versionId);
-    } catch (error) {
-      // Already updated, or refused and put back: the owner sees it.
-      if (error instanceof BoardError) return null;
-      throw error;
-    }
-    return null;
-  });
 }

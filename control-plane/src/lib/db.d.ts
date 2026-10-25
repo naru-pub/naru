@@ -328,10 +328,10 @@ export interface BoardTemplateInstalls {
   created_at: Generated<Timestamp>;
   files: ColumnType<import("./board/installs").InstalledFile[], string | undefined, string>;
   id: Generated<string>;
+  notify: Generated<boolean>;
   target_path: string;
   template_id: string;
   updated_at: Generated<Timestamp>;
-  updates: ColumnType<"notify" | "auto" | "never", "notify" | "auto" | "never" | undefined>;
   user_id: string;
   version_id: string;
 }

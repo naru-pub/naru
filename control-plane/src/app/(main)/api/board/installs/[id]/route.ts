@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/board/access";
 import { boardErrorResponse, parseId, readJson } from "@/lib/board/errors";
-import { disconnectInstall, setUpdatePreference } from "@/lib/board/updates";
+import { disconnectInstall, setInstallNotify } from "@/lib/board/updates";
 
-// How the install takes new versions: { updates: notify | auto | never }.
+// Whether the install is told of new versions: { notify: boolean }.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -12,7 +12,7 @@ export async function PATCH(
     const installId = parseId((await params).id);
     const body = await readJson(request);
     const user = await requireUser();
-    await setUpdatePreference(user, installId, body.updates);
+    await setInstallNotify(user, installId, body.notify);
     return NextResponse.json({ success: true });
   } catch (error) {
     return boardErrorResponse(error);

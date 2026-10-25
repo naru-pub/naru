@@ -157,16 +157,6 @@ export const GITHUB_REPOSITORY_REGEX =
   /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
 export const GITHUB_REF_REGEX = /^refs\/(heads|tags)\/[^\s~^:?*[\\]{1,250}$/;
 
-// What a site does when a template it installed publishes a new version.
-export const UPDATE_PREFERENCES = ["notify", "auto", "never"] as const;
-export type UpdatePreference = (typeof UPDATE_PREFERENCES)[number];
-export function isUpdatePreference(value: unknown): value is UpdatePreference {
-  return (
-    typeof value === "string" &&
-    (UPDATE_PREFERENCES as readonly string[]).includes(value)
-  );
-}
-
 // A template with its own site code (_naru/) installs at the site's root:
 // a site has one _naru/.
 export const SITE_CODE_PREFIX = "_naru/";

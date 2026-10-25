@@ -252,7 +252,7 @@ integration("updatable templates migration", () => {
     expect(install).toMatchObject({
       id: applied.installId,
       targetPath: "copy/",
-      updates: "notify",
+      notify: true,
       version: { id: plainId, version: 1 },
       latest: { id: codeId, version: 2 },
     });

@@ -7,8 +7,8 @@
 //    the rest get signed upload URLs to a staging prefix.
 // 2. finalize: the staged files are checked against the manifest, the site
 //    code in them must parse, and the version is published: copied under
-//    _templates/<id>/v<n>/, with each file's sha256 and ETag, a preview and
-//    automatic updates queued.
+//    _templates/<id>/v<n>/, with each file's sha256 and ETag, a preview
+//    queued, and its installs told.
 //
 // A workflow may name a preview image beside the files: staged the same way
 // (unless it is the one the template already shows), and set as the
@@ -51,11 +51,7 @@ import {
   formatBytes,
 } from "./constants";
 import { normalizeGitHubPath } from "./github-source";
-import {
-  enqueueTemplateUpdates,
-  notifyTemplateVersion,
-  recordVersionEtags,
-} from "./installs";
+import { notifyTemplateVersion, recordVersionEtags } from "./installs";
 import { templateFileKey } from "./preview";
 import {
   assertPreviewSize,
@@ -579,7 +575,6 @@ export async function finalizeTemplateUpload(params: {
         .where("id", "=", upload.id)
         .execute();
       await enqueueTemplatePreview(tx, version.id);
-      await enqueueTemplateUpdates(tx, template.id, version.id);
       await notifyTemplateVersion(tx, template.id, version.id);
       return {
         version: versionNumber,

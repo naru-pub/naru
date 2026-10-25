@@ -28,10 +28,8 @@ import {
   formatBytes,
   hasSiteCode,
   isLicense,
-  isUpdatePreference,
   type License,
   type TemplateSource,
-  type UpdatePreference,
 } from "./constants";
 import { forEachConcurrently } from "./concurrency";
 import { BoardError } from "./errors";
@@ -39,7 +37,6 @@ import {
   BACKUP_DIRECTORY,
   backUp,
   backupStamp,
-  enqueueTemplateUpdates,
   notifyTemplateVersion,
   installedFiles,
   putBack,
@@ -594,7 +591,6 @@ export async function publishTemplateVersion(
     await copyIntoTemplate(templateId, versionNumber, files);
     await recordVersionEtags(tx, templateId, versionNumber, version.id);
     await enqueueTemplatePreview(tx, version.id);
-    await enqueueTemplateUpdates(tx, templateId, version.id);
     await notifyTemplateVersion(tx, templateId, version.id);
     return versionNumber;
   });
@@ -1007,7 +1003,8 @@ export async function applyTemplate(
     targetPath: unknown;
     backup: unknown;
     createCollections: unknown;
-    updates?: unknown;
+    // Told of new versions; true unless false.
+    notify?: unknown;
     onProgress?: (progress: ApplyProgress) => void;
   },
 ): Promise<ApplicationResult> {
@@ -1027,14 +1024,13 @@ async function applyLocked(
     user.id,
     APPLICATIONS_PER_HOUR,
   );
-  const updates: UpdatePreference =
-    input.updates === undefined || input.updates === null
-      ? "notify"
-      : isUpdatePreference(input.updates)
-        ? input.updates
-        : (() => {
-            throw new BoardError(400, "업데이트 방식이 올바르지 않습니다.");
-          })();
+  if (
+    input.notify !== undefined &&
+    input.notify !== null &&
+    typeof input.notify !== "boolean"
+  )
+    throw new BoardError(400, "새 버전 알림 설정이 올바르지 않습니다.");
+  const notify = input.notify !== false;
   const version = await findApplicableVersion(versionId);
   const plan = await planApplication(user, versionId, input.targetPath);
   if (plan.blockers.length > 0) throw new BoardError(409, plan.blockers[0]);
@@ -1158,7 +1154,7 @@ async function applyLocked(
         templateId: version.template_id,
         versionId: version.id,
         targetPath: plan.targetPath,
-        updates,
+        notify,
         files,
       });
       return { application: row, installId };

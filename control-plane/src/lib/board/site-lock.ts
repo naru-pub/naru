@@ -5,8 +5,8 @@ import { BoardError } from "./board-error";
 // Applying or updating a template changes a site's files in several steps
 // (back up, copy, publish the site's code, record the install), and putting
 // them back after a failure assumes nothing else changed them meanwhile. So
-// one runs at a time per site: a second, from a double click or another tab
-// or an automatic update, is refused rather than interleaved.
+// one runs at a time per site: a second, from a double click or another
+// tab, is refused rather than interleaved.
 //
 // The lock is a PostgreSQL session advisory lock on a connection held for
 // the operation, which keeps using `db` for its own queries. A process that

@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select } from "@/components/ui/select";
-import { formatBytes, type UpdatePreference } from "@/lib/board/constants";
+import { formatBytes } from "@/lib/board/constants";
 import type {
   ApplicationPlan,
   ApplicationResult,
@@ -106,7 +106,7 @@ export function ApplyTemplateDialog({
   const [folder, setFolder] = useState(slug);
   const [backup, setBackup] = useState(true);
   const [createCollections, setCreateCollections] = useState(true);
-  const [updates, setUpdates] = useState<UpdatePreference>("notify");
+  const [notify, setNotify] = useState(true);
   const [busy, setBusy] = useState(false);
   // Set while applying: null until the first progress line arrives.
   const [applying, setApplying] = useState<{
@@ -148,7 +148,7 @@ export function ApplyTemplateDialog({
     try {
       const result = await boardStream<ApplicationResult, ApplyProgress>(
         `/api/board/template-versions/${versionId}/apply`,
-        { targetPath, backup, createCollections, updates },
+        { targetPath, backup, createCollections, notify },
         (progress) => setApplying({ progress }),
       );
       setStep({ name: "done", result });
@@ -454,46 +454,22 @@ export function ApplyTemplateDialog({
               </div>
             )}
 
-            <fieldset className="space-y-2">
-              <legend id="apply-updates" className="mb-2 text-sm font-bold">
-                새 버전이 나오면
-              </legend>
-              <RadioGroup
-                aria-labelledby="apply-updates"
-                value={updates}
-                onValueChange={(value) => setUpdates(value as UpdatePreference)}
-                className="gap-2"
-              >
-                {(
-                  [
-                    [
-                      "notify",
-                      "알려 주기",
-                      "바뀌는 내용을 보고 직접 업데이트해요",
-                    ],
-                    [
-                      "auto",
-                      "자동으로 업데이트",
-                      "마이그레이션이 있는 버전은 직접 업데이트해요",
-                    ],
-                    ["never", "받지 않기", ""],
-                  ] as const
-                ).map(([value, label, hint]) => (
-                  <label
-                    key={value}
-                    className="flex cursor-pointer items-center gap-2 text-sm"
-                  >
-                    <RadioGroupItem value={value} />
-                    <span>
-                      {label}
-                      {hint && (
-                        <span className="text-muted-foreground"> — {hint}</span>
-                      )}
-                    </span>
-                  </label>
-                ))}
-              </RadioGroup>
-            </fieldset>
+            <label className="flex cursor-pointer gap-3 border border-border p-3 text-sm">
+              <Checkbox
+                checked={notify}
+                onCheckedChange={(checked) => setNotify(checked === true)}
+                className="mt-0.5"
+              />
+              <span className="space-y-1">
+                <span className="block font-bold">
+                  새 버전이 나오면 알려 주기
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  알림을 받고, 바뀌는 내용을 본 뒤 설치한 템플릿에서 직접
+                  업데이트해요.
+                </span>
+              </span>
+            </label>
 
             {applying && <ApplyProgressBar progress={applying.progress} />}
 

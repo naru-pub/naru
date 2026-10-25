@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { LICENSES, type UpdatePreference } from "@/lib/board/constants";
+import { Checkbox } from "@/components/ui/checkbox";
+import { LICENSES } from "@/lib/board/constants";
 import type {
   InstallSummary,
   UpdateAction,
@@ -25,18 +25,12 @@ const ACTIONS: Record<UpdateAction, { label: string; className: string }> = {
   keep: { label: "= 직접 고쳐서 남겨 둠", className: "text-muted-foreground" },
 };
 
-const PREFERENCES: [UpdatePreference, string][] = [
-  ["notify", "알려 주기"],
-  ["auto", "자동으로 업데이트 (마이그레이션이 있는 버전은 직접)"],
-  ["never", "받지 않기"],
-];
-
 export function InstallCard({ install }: { install: InstallSummary }) {
   const router = useRouter();
   const confirm = useConfirm();
   const [plan, setPlan] = useState<UpdatePlan | null>(null);
   const [result, setResult] = useState<UpdateResult | null>(null);
-  const [updates, setUpdates] = useState(install.updates);
+  const [notify, setNotify] = useState(install.notify);
   const [busy, setBusy] = useState(false);
   const base = `/api/board/installs/${install.id}`;
 
@@ -74,11 +68,11 @@ export function InstallCard({ install }: { install: InstallSummary }) {
       router.refresh();
     });
 
-  const choose = (value: UpdatePreference) =>
+  const choose = (value: boolean) =>
     run(async () => {
-      await boardRequest(base, "PATCH", { updates: value });
-      setUpdates(value);
-      // A version 받지 않기 hid shows, or one shown hides.
+      await boardRequest(base, "PATCH", { notify: value });
+      setNotify(value);
+      // A new version shows once notices are on, and hides once off.
       router.refresh();
     });
 
@@ -229,36 +223,20 @@ export function InstallCard({ install }: { install: InstallSummary }) {
 
         {!install.latest && !result && (
           <p className="text-sm text-muted-foreground">
-            {updates === "never"
-              ? "새 버전을 받지 않아요. 받으려면 아래에서 바꿔 주세요."
+            {!notify
+              ? "새 버전 알림을 껐어요. 켜면 새 버전을 여기서 받을 수 있어요."
               : "최신 버전이에요."}
           </p>
         )}
 
-        <fieldset className="space-y-2">
-          <legend
-            id={`updates-${install.id}`}
-            className="mb-2 text-sm font-bold"
-          >
-            새 버전이 나오면
-          </legend>
-          <RadioGroup
-            aria-labelledby={`updates-${install.id}`}
-            value={updates}
-            onValueChange={(value) => choose(value as UpdatePreference)}
-            className="gap-2"
-          >
-            {PREFERENCES.map(([value, label]) => (
-              <label
-                key={value}
-                className="flex cursor-pointer items-center gap-2 text-sm"
-              >
-                <RadioGroupItem value={value} disabled={busy} />
-                {label}
-              </label>
-            ))}
-          </RadioGroup>
-        </fieldset>
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <Checkbox
+            checked={notify}
+            onCheckedChange={(checked) => choose(checked === true)}
+            disabled={busy}
+          />
+          새 버전이 나오면 알려 주기
+        </label>
 
         <Button
           type="button"
