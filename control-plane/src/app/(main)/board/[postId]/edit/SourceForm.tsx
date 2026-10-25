@@ -149,7 +149,7 @@ export function SourceForm({
   id-token: write
 steps:
   - run: pnpm install --frozen-lockfile && pnpm build
-  - uses: naru-pub/naru/actions/deploy@main
+  - uses: naru-pub/actions/deploy@v1
     with:
       dir: ${folder || "."}
       template-owner: ${owner}`}
