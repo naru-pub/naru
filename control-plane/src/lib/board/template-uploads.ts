@@ -52,7 +52,7 @@ import {
 } from "./constants";
 import { normalizeGitHubPath } from "./github-source";
 import { notifyTemplateVersion, recordVersionEtags } from "./installs";
-import { recordVersionTables } from "./templates";
+import { recordVersionTables } from "./version-tables";
 import { templateFileKey } from "./preview";
 import {
   assertPreviewSize,

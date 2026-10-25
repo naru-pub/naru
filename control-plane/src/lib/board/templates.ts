@@ -15,7 +15,6 @@ import {
   getUserObjectKey,
 } from "@/lib/site-urls";
 import { createCollections, listCollections } from "@/lib/site-data/service";
-import { DataError } from "@/lib/site-data/validation";
 import {
   APPLICATIONS_PER_HOUR,
   MAX_CHANGELOG_LENGTH,
@@ -56,8 +55,8 @@ import {
   restoreDatabase,
   saveDatabase,
   siteTableNames,
-  trialTables,
 } from "./site-code";
+import { recordVersionTables } from "./version-tables";
 import { withSiteLock } from "./site-lock";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
 import {
@@ -611,57 +610,6 @@ export async function publishTemplateVersion(
   });
   await recordVersionTables(published.versionId);
   return published.versionNumber;
-}
-
-/**
- * Records the tables a site-code version's migrations make in an empty
- * database (site-code.ts, `trialTables`), for its post to say so. Best
- * effort: one the edge refuses makes none; one tried while the edge is
- * away keeps none yet, and is tried again when its post is next shown.
- */
-export async function recordVersionTables(
-  versionId: string,
-): Promise<string[] | null> {
-  const version = await db
-    .selectFrom("board_template_versions")
-    .select(["template_id", "version", "site_code"])
-    .where("id", "=", versionId)
-    .executeTakeFirst();
-  if (!version?.site_code) return null;
-  const files = await db
-    .selectFrom("board_template_files")
-    .select("path")
-    .where("version_id", "=", versionId)
-    .where("path", "like", "\\_naru/migrations/%")
-    .orderBy("path")
-    .execute();
-  let tables: string[];
-  try {
-    const migrations = await Promise.all(
-      files.map(async (file) => ({
-        name: file.path.slice(MIGRATIONS_PREFIX.length),
-        sql:
-          (await storage.getText(
-            templateFileKey(version.template_id, version.version, file.path),
-          )) ?? "",
-      })),
-    );
-    tables = migrations.length > 0 ? await trialTables(migrations) : [];
-  } catch (error) {
-    // Migrations a site would refuse (422) make nothing; anything else (the
-    // edge away, or one without trialMigrations yet) is tried again later.
-    if (!(error instanceof DataError) || error.status !== 422) {
-      console.error("Trying a template version's migrations", error);
-      return null;
-    }
-    tables = [];
-  }
-  await db
-    .updateTable("board_template_versions")
-    .set({ site_tables: JSON.stringify(tables) })
-    .where("id", "=", versionId)
-    .execute();
-  return tables;
 }
 
 async function ownLiveTemplate(user: User, templateId: string) {

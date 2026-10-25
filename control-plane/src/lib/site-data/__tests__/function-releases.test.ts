@@ -402,7 +402,7 @@ integration(
   "a template version's migrations are tried on the edge and leave nothing behind",
   async () => {
     const { trialTables } =
-      require("@/lib/board/site-code") as typeof import("@/lib/board/site-code");
+      require("@/lib/board/version-tables") as typeof import("@/lib/board/version-tables");
     const migrations = [
       {
         name: "0001_core.sql",
