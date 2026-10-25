@@ -337,6 +337,11 @@ export class FunctionRevisions {
     return source;
   }
 
+  /** The files of `revision` under `_naru/`, for its owner's dashboard. */
+  async filenames(revision: string): Promise<string[]> {
+    return Object.keys((await this.manifest(revision)).files).sort();
+  }
+
   /** The paths `revision` routes (`_naru/routes.json`); none without one. */
   async routes(revision: string): Promise<RouteRules> {
     const manifest = await this.manifest(revision);

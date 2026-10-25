@@ -164,7 +164,7 @@ export default async function DevelopersPage() {
               내 작업
             </h2>
             <Link
-              href={database ? "/database?tab=tables" : "/supporter"}
+              href={database ? "/developers/site-code" : "/supporter"}
               className={`${PANEL} flex flex-col gap-2.5 p-5 hover:bg-accent`}
             >
               <span className="flex items-baseline justify-between gap-3">
@@ -175,7 +175,7 @@ export default async function DevelopersPage() {
               </span>
               <span className="text-sm text-muted-foreground">
                 {database
-                  ? "사이트 테이블 · 멈춘 쿼리 · 복원 지점 · 회원"
+                  ? "릴리스 · 문제 · 데이터베이스 · 사용량"
                   : "데이터베이스와 사이트 코드는 서포터가 쓸 수 있어요."}
               </span>
             </Link>
