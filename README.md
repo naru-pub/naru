@@ -73,7 +73,7 @@
 ## 📚 문서
 
 - [사이트 데이터베이스](docs/database.md) — JSON 문서 저장소, 공개/관리자 권한, 웹 SDK
-- [Data SDK v1 API](docs/sdk-v1-api.md) — 사이트 개발자를 위한 SDK 레퍼런스(영문). 사용자용 안내는 https://naru.pub/docs
+- [Data SDK v1 API](docs/sdk-v1-api.md) — 사이트 개발자를 위한 SDK 레퍼런스(영문). 사용자용 안내는 https://naru.pub/developers
 - [@naru-pub/dev](naru-dev/README.md) — 사이트를 내 컴퓨터에서 실행하고 시험하는 npm 패키지(`npx @naru-pub/dev ./site`)
 
 - [개발 환경 설정](docs/development.md) — 설치, 환경 변수, 실행, 프로젝트 구조, 테스트, 스크립트

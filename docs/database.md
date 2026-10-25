@@ -556,7 +556,7 @@ failed collection creation is reported as skipped.
 
 ## Public guide and example
 
-The Korean guides are served publicly at `/docs` (index), `/docs/database` and `/docs/media`. The control panel links to it without adding a global header link.
+The Korean guides are served publicly at `/docs/database` and `/docs/media` (and per SDK version under `/docs/<version>/`), gathered with the SDK reference and tools at `/developers`. The control panel links to it without adding a global header link.
 
 ## Server-side sorting and pagination (SDK 1.0.0)
 

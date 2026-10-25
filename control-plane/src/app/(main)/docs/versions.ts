@@ -8,4 +8,4 @@ export const guidePath = (version: DocsVersion, topic: string) =>
     ? "/docs/mcp"
     : topic === "sdk"
       ? `/docs/sdk/${version}`
-      : `/docs/${version}${topic === "home" ? "" : `/${topic}`}`;
+      : `/docs/${version}/${topic}`;

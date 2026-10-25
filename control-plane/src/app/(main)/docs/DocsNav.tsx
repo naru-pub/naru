@@ -8,7 +8,7 @@ export default function DocsNav({
   version?: DocsVersion;
 }) {
   const links = [
-    [guidePath(version, "home"), "길잡이 홈", "home"],
+    ["/developers", "개발자", "developers"],
     [guidePath(version, "database"), "데이터베이스", "database"],
     [guidePath(version, "media"), "미디어", "media"],
     [guidePath(version, "sdk"), `SDK ${version}`, "sdk"],

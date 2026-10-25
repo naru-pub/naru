@@ -136,7 +136,7 @@ export default async function DevelopersPage() {
             </p>
             <p className="text-sm text-muted-foreground">
               SDK {SDK_VERSION}은 아직 만드는 중이라 바뀔 수 있어요. 안정 버전은{" "}
-              <Link href="/docs/1.0.0" className={LINK}>
+              <Link href="/docs/1.0.0/database" className={LINK}>
                 1.0.0
               </Link>
               이에요.

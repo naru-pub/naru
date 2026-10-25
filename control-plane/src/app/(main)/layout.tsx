@@ -103,7 +103,6 @@ export default async function RootLayout({
 
                     <div className="order-last -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] md:order-none md:mx-0 md:w-auto md:flex-1 md:justify-end [&::-webkit-scrollbar]:hidden">
                       <NavLink href="/board">게시판</NavLink>
-                      <NavLink href="/docs">길잡이</NavLink>
                       {user && <NavLink href="/files">파일</NavLink>}
                       {installs && installs.installed > 0 && (
                         <NavLink href="/templates">
