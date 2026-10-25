@@ -14,7 +14,10 @@ const FILE_EXTENSION_MIMETYPE_MAP = {
   css: "text/css",
   txt: "text/plain",
   js: "application/javascript",
+  mjs: "application/javascript",
   json: "application/json",
+  // Site code's migrations (_naru/migrations/*.sql).
+  sql: "application/sql",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
