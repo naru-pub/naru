@@ -65,6 +65,9 @@ COPY public/ public/
 COPY sdk/ sdk/
 COPY scripts/build-sdk.mjs scripts/
 
+# Monaco's browser build, copied into public/ by the build for the editor.
+COPY scripts/copy-monaco.mjs scripts/
+
 COPY src/ src/
 
 RUN pnpm run build

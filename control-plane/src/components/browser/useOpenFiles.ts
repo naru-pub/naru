@@ -15,6 +15,10 @@ import { extensionOf, isEditable, isWithin } from "./file-tree";
 // makes it clean again. Saves send the ETag the file was loaded with, so one
 // made over a newer version (from MCP, the apps, another tab) is refused.
 
+// Monaco from naru.pub itself (scripts/copy-monaco.mjs), not the loader's
+// default CDN, which failed to load it or its workers for some visitors.
+loader.config({ paths: { vs: "/monaco-editor/vs" } });
+
 type Model = editor.ITextModel;
 
 interface Loaded {

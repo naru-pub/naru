@@ -16,6 +16,9 @@
 # production
 /build
 
+# Monaco, copied from node_modules by scripts/copy-monaco.mjs
+/public/monaco-editor/
+
 # misc
 .DS_Store
 *.pem
