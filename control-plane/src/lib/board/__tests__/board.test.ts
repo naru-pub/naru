@@ -622,11 +622,17 @@ integration("board", () => {
       ]);
       const withData = await publish({ collections: ["guestbook"] });
       const plain = await publish();
+      // Site code keeps its tables in the database, with no collections.
+      put("alice/retro/_naru/queries/posts.js", "text/javascript");
+      const withCode = await publish({
+        files: ["retro/index.html", "retro/_naru/queries/posts.js"],
+      });
 
       const all = await listPosts({ kind: "template", sort: "new", page: 1 });
       const summary = (postId: string) =>
         all.posts.find((post) => post.id === postId)?.template;
       expect(summary(withData.postId)?.usesDatabase).toBe(true);
+      expect(summary(withCode.postId)?.usesDatabase).toBe(true);
       expect(summary(plain.postId)?.usesDatabase).toBe(false);
 
       const filtered = await listPosts({
@@ -637,6 +643,7 @@ integration("board", () => {
       });
       const ids = filtered.posts.map((post) => post.id);
       expect(ids).toContain(withData.postId);
+      expect(ids).toContain(withCode.postId);
       expect(ids).not.toContain(plain.postId);
     });
 

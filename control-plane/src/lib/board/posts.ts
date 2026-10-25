@@ -47,6 +47,10 @@ function excerpt(body: string): string {
     : flat;
 }
 
+// Whether the latest version (`v`) uses the database: it declares data
+// collections, or it carries site code (_naru/), whose tables live there.
+const usesDatabase = sql<boolean>`(jsonb_array_length(v.data_collections) > 0 or v.site_code)`;
+
 function summaryQuery() {
   return db
     .selectFrom("board_posts as p")
@@ -73,9 +77,7 @@ function summaryQuery() {
       "v.version",
       "v.preview_rendered_at",
       "t.preview_updated_at",
-      sql<boolean>`coalesce(jsonb_array_length(v.data_collections) > 0, false)`.as(
-        "uses_database",
-      ),
+      sql<boolean>`coalesce(${usesDatabase}, false)`.as("uses_database"),
     ])
     .where("p.deleted_at", "is", null);
 }
@@ -116,15 +118,13 @@ export async function listPosts(options: {
   kind: PostKind | null;
   sort: PostSort;
   page: number;
-  // Only templates whose latest version declares data collections.
+  // Only templates whose latest version uses the database.
   usesDatabase?: boolean;
 }): Promise<{ posts: PostSummary[]; hasMore: boolean }> {
   let query = summaryQuery();
   if (options.kind) query = query.where("p.kind", "=", options.kind);
   if (options.usesDatabase) {
-    query = query.where(
-      sql<boolean>`jsonb_array_length(v.data_collections) > 0`,
-    );
+    query = query.where(sql<boolean>`${usesDatabase}`);
   }
 
   if (options.sort === "applied" && options.kind === "template") {
