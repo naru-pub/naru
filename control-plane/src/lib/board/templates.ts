@@ -33,6 +33,7 @@ import {
   type TemplateSource,
   type UpdatePreference,
 } from "./constants";
+import { forEachConcurrently } from "./concurrency";
 import { BoardError } from "./errors";
 import {
   BACKUP_DIRECTORY,
@@ -46,6 +47,7 @@ import {
 } from "./installs";
 import { normalizeGitHubPath } from "./github-source";
 import { assertUnderHourlyLimit } from "./limits";
+import { withSiteLock } from "./site-lock";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
 import {
   getTemplatePreviewUrl,
@@ -56,6 +58,7 @@ import {
 import { clearTemplatePreview, storeTemplatePreview } from "./template-preview";
 import * as storage from "./storage";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
+import { uuidv7 } from "@/lib/uuid";
 
 export { BACKUP_DIRECTORY };
 
@@ -278,11 +281,11 @@ async function copyIntoTemplate(
 ): Promise<void> {
   const copied: string[] = [];
   try {
-    for (const file of files) {
+    await forEachConcurrently(files, async (file) => {
       const target = templateFileKey(templateId, version, file.path);
       await storage.copyObject(file.key, target, file.contentType);
       copied.push(target);
-    }
+    });
   } catch (error) {
     await storage.deleteObjects(copied).catch(() => {});
     throw error;
@@ -979,6 +982,22 @@ function refusalMessage(error: unknown): string {
   return message.length > 300 ? `${message.slice(0, 300)}…` : message;
 }
 
+/**
+ * How far an application has got, for the page to show: backing up the files
+ * it overwrites, copying the template's files in, publishing the site's code,
+ * and creating collections.
+ */
+export type ApplyProgress = {
+  phase: "backup" | "copy" | "code" | "collections";
+  done: number;
+  total: number;
+};
+
+/**
+ * Applies a version to the person's site, all or nothing: if a file cannot be
+ * copied, or Naru refuses the site's code, every file goes back as it was and
+ * nothing is recorded. One application or update runs at a time per site.
+ */
 export async function applyTemplate(
   user: User,
   versionId: string,
@@ -987,10 +1006,20 @@ export async function applyTemplate(
     backup: unknown;
     createCollections: unknown;
     updates?: unknown;
+    onProgress?: (progress: ApplyProgress) => void;
   },
 ): Promise<ApplicationResult> {
   if (await siteSuspended(user.id))
     throw new BoardError(403, SUSPENDED_MESSAGE);
+  return await withSiteLock(user.id, () => applyLocked(user, versionId, input));
+}
+
+async function applyLocked(
+  user: User,
+  versionId: string,
+  input: Parameters<typeof applyTemplate>[2],
+): Promise<ApplicationResult> {
+  const report = input.onProgress ?? (() => {});
   await assertUnderHourlyLimit(
     "board_template_applications",
     user.id,
@@ -1008,20 +1037,31 @@ export async function applyTemplate(
   const plan = await planApplication(user, versionId, input.targetPath);
   if (plan.blockers.length > 0) throw new BoardError(409, plan.blockers[0]);
   // Site code is put back on failure, so its backups are always kept.
-  const backup = plan.siteCode || input.backup !== false;
+  const keepBackup = plan.siteCode || input.backup !== false;
   const overwritten = plan.files
     .filter((file) => file.action === "overwrite")
     .map((file) => file.path);
   const created = plan.files
     .filter((file) => file.action === "create")
     .map((file) => file.path);
+  // Overwritten files are backed up even when the person asked for no
+  // backup, so a failure can put them back; that backup has a folder of its
+  // own and goes once the template is in.
   const backupPath =
-    backup && overwritten.length > 0
-      ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
-      : null;
+    overwritten.length === 0
+      ? null
+      : keepBackup
+        ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
+        : `${BACKUP_DIRECTORY}/.applying-${uuidv7()}/`;
 
   // Backups first: if anything after this fails, the originals are safe.
-  if (backupPath) await backUp(user.loginName, backupPath, overwritten);
+  if (backupPath) {
+    let done = 0;
+    report({ phase: "backup", done, total: overwritten.length });
+    await backUp(user.loginName, backupPath, overwritten, () =>
+      report({ phase: "backup", done: ++done, total: overwritten.length }),
+    );
+  }
 
   const written: string[] = [];
   const sources = await db
@@ -1029,22 +1069,27 @@ export async function applyTemplate(
     .select(["path", "content_type"])
     .where("version_id", "=", version.id)
     .execute();
-  for (const file of sources) {
-    const path = `${plan.targetPath}${file.path}`;
-    await storage.copyObject(
-      templateFileKey(version.template_id, version.version, file.path),
-      getUserObjectKey(user.loginName, path),
-      file.content_type,
-    );
-    written.push(path);
-  }
-
-  // Purging publishes the site's code when the files hold some, and Naru may
-  // refuse it (a migration that fails): then the site goes back as it was.
   try {
-    await storage.purgeSiteFiles(user.loginName, written);
+    report({ phase: "copy", done: 0, total: sources.length });
+    await forEachConcurrently(sources, async (file) => {
+      const path = `${plan.targetPath}${file.path}`;
+      await storage.copyObject(
+        templateFileKey(version.template_id, version.version, file.path),
+        getUserObjectKey(user.loginName, path),
+        file.content_type,
+      );
+      written.push(path);
+      report({ phase: "copy", done: written.length, total: sources.length });
+    });
+    if (plan.siteCode) report({ phase: "code", done: 0, total: 1 });
+    // Purging publishes the site's code when the files hold some, and Naru
+    // may refuse it (a migration that fails). For files alone it only
+    // refreshes caches, which expire anyway.
+    await storage.purgeSiteFiles(user.loginName, written).catch((error) => {
+      if (plan.siteCode) throw error;
+      console.error("Purge after applying a template", error);
+    });
   } catch (error) {
-    if (!plan.siteCode) throw error;
     await putBack(user.loginName, {
       backupPath,
       backedUp: backupPath ? overwritten : [],
@@ -1053,11 +1098,15 @@ export async function applyTemplate(
     await storage
       .purgeSiteFiles(user.loginName, written)
       .catch((cause) => console.error("Purge after putting back", cause));
+    if (backupPath && !keepBackup) await removeBackup(user, backupPath);
     throw new BoardError(
       422,
-      `사이트 코드를 적용하지 못해서 설치를 되돌렸어요: ${refusalMessage(error)}`,
+      plan.siteCode
+        ? `사이트 코드를 적용하지 못해서 설치를 되돌렸어요: ${refusalMessage(error)}`
+        : "템플릿 파일을 복사하지 못해서 적용을 되돌렸어요. 잠시 뒤에 다시 해 주세요.",
     );
   }
+  if (backupPath && !keepBackup) await removeBackup(user, backupPath);
 
   const createdCollections: string[] = [];
   const skippedCollections: string[] = [];
@@ -1117,6 +1166,7 @@ export async function applyTemplate(
   // Durable Object, outside this transaction. They are empty, so one that
   // fails is only reported as skipped; the files are in place either way.
   if (toCreate.length > 0) {
+    report({ phase: "collections", done: 0, total: toCreate.length });
     let createdNames: string[] | null = null;
     try {
       createdNames = await createCollections(user, toCreate);
@@ -1136,13 +1186,20 @@ export async function applyTemplate(
     applicationId: application.id,
     installId,
     targetPath: plan.targetPath,
-    backupPath,
+    backupPath: keepBackup ? backupPath : null,
     written: written.length,
     overwritten: overwritten.length,
     createdCollections,
     skippedCollections,
     unavailableCollections,
   };
+}
+
+/** A backup the person did not ask for, kept only while applying. */
+async function removeBackup(user: User, backupPath: string) {
+  await storage
+    .deletePrefix(getUserObjectKey(user.loginName, backupPath))
+    .catch((error) => console.error("Could not remove a backup", error));
 }
 
 // Removes a template's files and previews from R2. The rows stay (the post is

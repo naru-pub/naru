@@ -6,6 +6,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { DB } from "@/lib/db";
 import { MAINTENANCE_QUEUE } from "@/lib/maintenance/jobs";
 import { getUserHomeDirectory, getUserObjectKey } from "@/lib/site-urls";
+import { forEachConcurrently } from "./concurrency";
 import type { UpdatePreference } from "./constants";
 import { templateFileKey } from "./preview";
 import * as storage from "./storage";
@@ -117,18 +118,23 @@ export async function recordInstall(
   return row.id;
 }
 
-/** Copies each of `paths` into `backupPath`, keeping its place under it. */
+/**
+ * Copies each of `paths` into `backupPath`, keeping its place under it, and
+ * calls `copied` after each.
+ */
 export async function backUp(
   loginName: string,
   backupPath: string,
   paths: readonly string[],
+  copied: () => void = () => {},
 ): Promise<void> {
-  for (const path of paths) {
+  await forEachConcurrently(paths, async (path) => {
     await storage.copyObject(
       getUserObjectKey(loginName, path),
       getUserObjectKey(loginName, `${backupPath}${path}`),
     );
-  }
+    copied();
+  });
 }
 
 /**
@@ -140,14 +146,14 @@ export async function putBack(
   loginName: string,
   change: { backupPath: string | null; backedUp: string[]; created: string[] },
 ): Promise<void> {
-  for (const path of change.backedUp) {
-    await storage
+  await forEachConcurrently(change.backedUp, (path) =>
+    storage
       .copyObject(
         getUserObjectKey(loginName, `${change.backupPath}${path}`),
         getUserObjectKey(loginName, path),
       )
-      .catch((error) => console.error("Could not restore", path, error));
-  }
+      .catch((error) => console.error("Could not restore", path, error)),
+  );
   await storage
     .deleteObjects(
       change.created.map((path) => getUserObjectKey(loginName, path)),

@@ -21,14 +21,64 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select } from "@/components/ui/select";
 import { formatBytes, type UpdatePreference } from "@/lib/board/constants";
-import type { ApplicationPlan, ApplicationResult } from "@/lib/board/templates";
-import { boardRequest } from "./api";
+import type {
+  ApplicationPlan,
+  ApplicationResult,
+  ApplyProgress,
+} from "@/lib/board/templates";
+import { boardRequest, boardStream } from "./api";
 import CollectionName from "@/components/CollectionName";
 
 type Step =
   | { name: "where" }
   | { name: "review"; plan: ApplicationPlan }
   | { name: "done"; result: ApplicationResult };
+
+const PHASE_LABELS: Record<ApplyProgress["phase"], string> = {
+  backup: "원래 파일을 보관하는 중",
+  copy: "파일을 복사하는 중",
+  code: "사이트 코드를 적용하는 중",
+  collections: "컬렉션을 만드는 중",
+};
+
+/** Where an application has got, while it runs. */
+function ApplyProgressBar({ progress }: { progress: ApplyProgress | null }) {
+  const label = progress ? PHASE_LABELS[progress.phase] : "시작하는 중";
+  const counted = progress && progress.total > 1;
+  const percent =
+    progress && progress.total > 0
+      ? Math.round((progress.done / progress.total) * 100)
+      : 0;
+  return (
+    <div role="status" aria-live="polite" className="space-y-2">
+      <div className="flex justify-between gap-3 text-sm">
+        <span className="font-bold">{label}…</span>
+        {counted && (
+          <span className="text-muted-foreground">
+            {progress.done} / {progress.total}
+          </span>
+        )}
+      </div>
+      <div
+        className="h-2 w-full overflow-hidden bg-muted"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={counted ? percent : undefined}
+      >
+        <div
+          className={`h-full bg-primary transition-[width] ${counted ? "" : "animate-pulse"}`}
+          style={{ width: counted ? `${percent}%` : "100%" }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        페이지를 떠나도 적용은 끝까지 진행돼요. 중간에 실패하면 사이트를
+        원래대로 되돌려요.
+      </p>
+    </div>
+  );
+}
 
 export function ApplyTemplateDialog({
   title,
@@ -58,6 +108,10 @@ export function ApplyTemplateDialog({
   const [createCollections, setCreateCollections] = useState(true);
   const [updates, setUpdates] = useState<UpdatePreference>("notify");
   const [busy, setBusy] = useState(false);
+  // Set while applying: null until the first progress line arrives.
+  const [applying, setApplying] = useState<{
+    progress: ApplyProgress | null;
+  } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const siteCode =
@@ -90,11 +144,12 @@ export function ApplyTemplateDialog({
 
   async function apply() {
     setBusy(true);
+    setApplying({ progress: null });
     try {
-      const { result } = await boardRequest<{ result: ApplicationResult }>(
+      const result = await boardStream<ApplicationResult, ApplyProgress>(
         `/api/board/template-versions/${versionId}/apply`,
-        "POST",
         { targetPath, backup, createCollections, updates },
+        (progress) => setApplying({ progress }),
       );
       setStep({ name: "done", result });
       router.refresh();
@@ -102,6 +157,7 @@ export function ApplyTemplateDialog({
       toast.error(error.message);
     } finally {
       setBusy(false);
+      setApplying(null);
     }
   }
 
@@ -438,6 +494,8 @@ export function ApplyTemplateDialog({
                 ))}
               </RadioGroup>
             </fieldset>
+
+            {applying && <ApplyProgressBar progress={applying.progress} />}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">

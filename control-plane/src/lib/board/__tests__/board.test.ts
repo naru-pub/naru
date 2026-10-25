@@ -162,7 +162,11 @@ const { finalizeTemplateUpload, planTemplateUpload, templateUploadStatus } =
   require("../template-uploads") as typeof import("../template-uploads");
 const storageMock = require("../storage") as {
   purgeSiteFiles: jest.Mock<(login: string, paths: string[]) => Promise<void>>;
+  copyObject: jest.Mock<
+    (source: string, target: string, contentType?: string) => Promise<void>
+  >;
 };
+type ApplyProgress = import("../templates").ApplyProgress;
 const { userHasFeature } = require("@/lib/entitlements") as {
   userHasFeature: jest.Mock<typeof import("@/lib/entitlements").userHasFeature>;
 };
@@ -749,6 +753,85 @@ integration("board", () => {
       expect(
         [...bucket.keys()].some((key) => key.startsWith("carol/.backup/")),
       ).toBe(false);
+    });
+
+    // The site's files, to compare before and after.
+    const siteOf = (login: string) =>
+      new Map([...bucket].filter(([key]) => key.startsWith(`${login}/`)));
+    const real = () => storageMock.copyObject.getMockImplementation()!;
+
+    test("a copy that fails puts the site back, even without a backup", async () => {
+      put("alice/retro/index.html");
+      put("alice/retro/style.css", "text/css");
+      const { postId } = await publish();
+      const versionId = (await getTemplateForPost(postId))!.versions[0].id;
+      const site = await makeUser(`r${Date.now().toString(36)}`);
+      put(`${site.loginName}/index.html`, "text/html", 3);
+      const before = siteOf(site.loginName);
+      const copy = real();
+      storageMock.copyObject.mockImplementation(
+        async (source, target, contentType) => {
+          if (target === `${site.loginName}/style.css`)
+            throw new Error("R2 is down");
+          return copy(source, target, contentType);
+        },
+      );
+      try {
+        await expect(
+          applyTemplate(site, versionId, {
+            targetPath: "",
+            backup: false,
+            createCollections: true,
+          }),
+        ).rejects.toMatchObject({ status: 422 });
+      } finally {
+        storageMock.copyObject.mockImplementation(copy);
+      }
+      expect(siteOf(site.loginName)).toEqual(before);
+      expect(await listInstalls(site)).toEqual([]);
+    });
+
+    test("applying reports its progress, and refuses a second at once", async () => {
+      put("alice/retro/index.html");
+      put("alice/retro/style.css", "text/css");
+      const { postId } = await publish();
+      const versionId = (await getTemplateForPost(postId))!.versions[0].id;
+      const site = await makeUser(`p${Date.now().toString(36)}`);
+      put(`${site.loginName}/index.html`, "text/html", 3);
+
+      // The first application waits in its first copy (the backup).
+      let release!: () => void;
+      let entered!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const inside = new Promise<void>((resolve) => (entered = resolve));
+      const copy = real();
+      storageMock.copyObject.mockImplementationOnce(async (...args) => {
+        entered();
+        await gate;
+        return copy(...args);
+      });
+      const events: ApplyProgress[] = [];
+      const input = {
+        targetPath: "",
+        backup: true,
+        createCollections: true,
+        onProgress: (progress: ApplyProgress) => events.push(progress),
+      };
+      const first = applyTemplate(site, versionId, input);
+      await inside;
+      await expect(applyTemplate(site, versionId, input)).rejects.toMatchObject(
+        { status: 409 },
+      );
+      release();
+      const result = await first;
+
+      expect(result.written).toBe(2);
+      expect(events[0]).toEqual({ phase: "backup", done: 0, total: 1 });
+      expect(events).toContainEqual({ phase: "backup", done: 1, total: 1 });
+      expect(events).toContainEqual({ phase: "copy", done: 0, total: 2 });
+      expect(events.at(-1)).toEqual({ phase: "copy", done: 2, total: 2 });
+      // And once it is done, the site takes another.
+      await applyTemplate(site, versionId, { ...input, targetPath: "again" });
     });
 
     test("new versions snapshot again and keep the old files", async () => {

@@ -108,11 +108,23 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 - **Applying** is two calls:
   1. `apply/plan` reports which files would be created or overwritten, and
      writes nothing.
-  2. `apply` works the plan out again on the server. With backup on (the
-     default), it first copies each file it will overwrite into
-     `.backup/<Seoul time>/`. Then it copies the template's files in, creates
-     the collections, and records the application. Nothing undoes an
-     application; the backup folder is where the originals are.
+  2. `apply` works the plan out again on the server. It first copies each
+     file it will overwrite into `.backup/<Seoul time>/` (with backup off,
+     into a folder of its own that goes once the template is in). Then it
+     copies the template's files in, creates the collections, and records the
+     application. It is all or nothing: if a file cannot be copied, or Naru
+     refuses the site's code, every overwritten file goes back, the files it
+     created go, and nothing is recorded. A page that asks for
+     `application/x-ndjson` gets its progress as it goes (backing up,
+     copying, the site's code, collections), then a `done` line with the
+     result; the dialog shows it as a bar.
+- **One at a time per site.** Applying and updating take a PostgreSQL
+  session advisory lock on the site (`site-lock.ts`) for the whole
+  operation, so a second one at once (a double click, another tab, an
+  automatic update) is refused with 409 rather than interleaved; the
+  hourly limit is counted inside it. R2 copies run 16 at a time
+  (`concurrency.ts`), and a failure waits for the copies in flight before
+  anything is put back.
 - **`apply_count`** counts distinct people, not applications.
 - **Previews** show the snapshot, never the author's live site. Publishing
   sends a Postgres `NOTIFY` on `board_template_published`. The cron process,

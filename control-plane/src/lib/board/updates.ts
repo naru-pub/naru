@@ -18,6 +18,7 @@ import {
   type UpdatePreference,
 } from "./constants";
 import { BoardError } from "./board-error";
+import { forEachConcurrently } from "./concurrency";
 import {
   BACKUP_DIRECTORY,
   backUp,
@@ -30,6 +31,7 @@ import {
   type TemplateUpdate,
 } from "./installs";
 import { templateFileKey } from "./preview";
+import { withSiteLock } from "./site-lock";
 import * as storage from "./storage";
 
 export interface InstallSummary {
@@ -283,8 +285,9 @@ export interface UpdateResult {
 
 /**
  * Updates `installId` to `versionId`, all or nothing: every file it replaces
- * or deletes is backed up first, and if Naru refuses the new site code they
- * all go back and the files it created go.
+ * or deletes is backed up first, and if a file cannot be copied or Naru
+ * refuses the new site code they all go back and the files it created go.
+ * One application or update runs at a time per site.
  */
 export async function applyUpdate(
   user: User,
@@ -293,6 +296,16 @@ export async function applyUpdate(
 ): Promise<UpdateResult> {
   if (await siteSuspended(user.id))
     throw new BoardError(403, SUSPENDED_MESSAGE);
+  return await withSiteLock(user.id, () =>
+    updateLocked(user, installId, versionId),
+  );
+}
+
+async function updateLocked(
+  user: User,
+  installId: string,
+  versionId?: string,
+): Promise<UpdateResult> {
   const plan = await planUpdate(user, installId, versionId);
   const install = await loadInstall(user, installId);
   const replaced = plan.files
@@ -325,16 +338,20 @@ export async function applyUpdate(
   const written: string[] = [];
   const change = { backupPath, backedUp: replaced, created };
   try {
-    for (const file of sources) {
-      const path = `${install.target_path}${file.path}`;
-      if (!writing.has(path)) continue;
-      await storage.copyObject(
-        templateFileKey(install.template_id, plan.to.version, file.path),
-        getUserObjectKey(user.loginName, path),
-        file.content_type,
-      );
-      written.push(path);
-    }
+    await forEachConcurrently(
+      sources.filter((file) =>
+        writing.has(`${install.target_path}${file.path}`),
+      ),
+      async (file) => {
+        const path = `${install.target_path}${file.path}`;
+        await storage.copyObject(
+          templateFileKey(install.template_id, plan.to.version, file.path),
+          getUserObjectKey(user.loginName, path),
+          file.content_type,
+        );
+        written.push(path);
+      },
+    );
     await storage.deleteObjects(
       deleted.map((path) => getUserObjectKey(user.loginName, path)),
     );
