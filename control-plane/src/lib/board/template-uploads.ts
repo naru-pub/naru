@@ -9,7 +9,16 @@
 //    code in them must parse, and the version is published: copied under
 //    _templates/<id>/v<n>/, with each file's sha256 and ETag, a preview and
 //    automatic updates queued.
-import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+//
+// A workflow may name a preview image beside the files: staged the same way
+// (unless it is the one the template already shows), and set as the
+// template's own preview on finalize.
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { createHash } from "node:crypto";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { sql } from "kysely";
 import { db } from "@/lib/database";
@@ -38,11 +47,17 @@ import {
   SITE_CODE_PREFIX,
   TEMPLATE_GITHUB_MAX_BYTES,
   TEMPLATE_GITHUB_MAX_FILES,
+  TEMPLATE_PREVIEW_TYPES,
   formatBytes,
 } from "./constants";
 import { normalizeGitHubPath } from "./github-source";
 import { enqueueTemplateUpdates, recordVersionEtags } from "./installs";
 import { templateFileKey } from "./preview";
+import {
+  assertPreviewSize,
+  sniffPreviewType,
+  storeTemplatePreview,
+} from "./template-preview";
 import * as storage from "./storage";
 
 function bucket() {
@@ -62,6 +77,7 @@ async function findGitHubTemplate(templateId: string) {
       "t.github_ref",
       "t.github_repository_id",
       "t.latest_version_id",
+      "t.preview_sha256",
     ])
     .where("t.id", "=", templateId)
     .where("p.deleted_at", "is", null)
@@ -130,6 +146,43 @@ function validateTemplateManifest(input: unknown): DeployManifest {
   return manifest;
 }
 
+interface PreviewManifest {
+  size: number;
+  sha256: string;
+  contentType: string;
+}
+
+/** The preview image a workflow names: its size, SHA-256 and type. */
+function validatePreview(input: unknown): PreviewManifest | null {
+  if (input === undefined || input === null) return null;
+  const preview = input as Record<string, unknown>;
+  if (typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Invalid preview");
+  }
+  const size = Number(preview.size);
+  assertPreviewSize(size);
+  if (
+    typeof preview.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(preview.sha256)
+  ) {
+    throw new Error("Invalid preview sha256");
+  }
+  if (
+    !(TEMPLATE_PREVIEW_TYPES as readonly unknown[]).includes(
+      preview.contentType,
+    )
+  ) {
+    throw new Error("A preview is a PNG, JPEG or WebP image");
+  }
+  return {
+    size,
+    sha256: preview.sha256,
+    contentType: preview.contentType as string,
+  };
+}
+
+const PREVIEW_STAGING_NAME = ".naru-preview";
+
 function validateChangelog(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const changelog = value.trim();
@@ -162,6 +215,8 @@ export async function planTemplateUpload(params: {
   folder?: unknown;
   manifest: unknown;
   changelog?: unknown;
+  // An image to show for the template instead of its screenshots.
+  preview?: unknown;
 }) {
   const templateId =
     params.templateId ??
@@ -185,6 +240,12 @@ export async function planTemplateUpload(params: {
     github_ref: template.github_ref,
   });
   const manifest = validateTemplateManifest(params.manifest);
+  const requestedPreview = validatePreview(params.preview);
+  // The one the template shows already needs no upload.
+  const preview =
+    requestedPreview && requestedPreview.sha256 !== template.preview_sha256
+      ? requestedPreview
+      : null;
   // The repository's identity is bound on first use, as a deploy target's is.
   const bound = await db
     .updateTable("board_templates")
@@ -221,6 +282,9 @@ export async function planTemplateUpload(params: {
       manifest: JSON.stringify(manifest),
       uploaded_paths: JSON.stringify(uploadedPaths),
       changelog: validateChangelog(params.changelog),
+      preview_size: preview?.size ?? null,
+      preview_sha256: preview?.sha256 ?? null,
+      preview_content_type: preview?.contentType ?? null,
       expires_at: expiresAt,
     })
     .execute();
@@ -240,10 +304,25 @@ export async function planTemplateUpload(params: {
       headers: {},
     })),
   );
+  const previewUpload = preview
+    ? {
+        method: "PUT",
+        url: await getSignedUrl(
+          s3Client as any,
+          new PutObjectCommand({
+            Bucket: bucket(),
+            Key: `${uploadPrefix}/${PREVIEW_STAGING_NAME}`,
+          }) as any,
+          { expiresIn: UPLOAD_URL_TTL_SECONDS },
+        ),
+        headers: {},
+      }
+    : null;
   return {
     deploymentId: id,
     expiresAt: expiresAt.toISOString(),
     uploads,
+    previewUpload,
     deletedPaths: [] as string[],
   };
 }
@@ -293,6 +372,39 @@ async function assertSiteCodeParses(
       }
     }
   }
+}
+
+/**
+ * The preview image a workflow staged, checked against what its plan said;
+ * null when it named none, or the one the template shows already.
+ */
+async function stagedPreview(upload: {
+  upload_prefix: string;
+  preview_size: number | null;
+  preview_sha256: string | null;
+}): Promise<Uint8Array | null> {
+  if (upload.preview_sha256 === null) return null;
+  const key = `${upload.upload_prefix}/${PREVIEW_STAGING_NAME}`;
+  let bytes: Uint8Array;
+  try {
+    const object = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucket(), Key: key }),
+    );
+    bytes = await object.Body!.transformToByteArray();
+  } catch {
+    throw new Error("The preview image was not uploaded");
+  }
+  if (
+    bytes.byteLength !== upload.preview_size ||
+    createHash("sha256").update(bytes).digest("hex") !== upload.preview_sha256
+  ) {
+    throw new Error("Uploaded preview does not match the plan");
+  }
+  if (!sniffPreviewType(bytes)) {
+    throw new Error("A preview is a PNG, JPEG or WebP image");
+  }
+  await deleteObjects([key]);
+  return bytes;
 }
 
 export async function finalizeTemplateUpload(params: {
@@ -346,6 +458,7 @@ export async function finalizeTemplateUpload(params: {
       },
     );
     await assertSiteCodeParses(manifest, sourceKey);
+    const preview = await stagedPreview(upload);
 
     // The same files as the latest version (nothing uploaded, nothing
     // dropped): no new version, so installed sites are not offered an empty
@@ -363,6 +476,7 @@ export async function finalizeTemplateUpload(params: {
       uploaded.size === 0 &&
       latest.file_count === manifest.files.length
     ) {
+      if (preview) await storeTemplatePreview(template.id, preview);
       await db
         .updateTable("board_template_uploads")
         .set({
@@ -376,6 +490,7 @@ export async function finalizeTemplateUpload(params: {
         version: latest.version,
         versionId: latest.id,
         unchanged: true,
+        previewUpdated: preview !== null,
         deployedFiles: manifest.files.length,
         uploadedFiles: 0,
         deletedFiles: 0,
@@ -468,9 +583,12 @@ export async function finalizeTemplateUpload(params: {
       };
     });
 
+    // After the version, so a version that fails leaves the preview be.
+    if (preview) await storeTemplatePreview(template.id, preview);
     await deleteObjects([...uploaded].map(stagedKey));
     return {
       ...result,
+      previewUpdated: preview !== null,
       deployedFiles: manifest.files.length,
       uploadedFiles: uploaded.size,
       deletedFiles: 0,

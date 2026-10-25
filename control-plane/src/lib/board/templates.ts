@@ -51,7 +51,9 @@ import {
   getTemplatePreviewUrl,
   templateFileKey,
   templatePrefix,
+  templatePreviewUrl,
 } from "./preview";
+import { clearTemplatePreview, storeTemplatePreview } from "./template-preview";
 import * as storage from "./storage";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 
@@ -593,6 +595,36 @@ export async function publishTemplateVersion(
   });
 }
 
+async function ownLiveTemplate(user: User, templateId: string) {
+  const template = await findLiveTemplate(templateId);
+  if (template.user_id !== user.id) {
+    throw new BoardError(403, "내 템플릿의 미리보기만 바꿀 수 있어요.");
+  }
+  return template;
+}
+
+/**
+ * Sets the template's own preview image, shown in place of its versions'
+ * screenshots: for templates that show nothing without their site's data.
+ */
+export async function setTemplatePreview(
+  user: User,
+  templateId: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  await ownLiveTemplate(user, templateId);
+  await storeTemplatePreview(templateId, bytes);
+}
+
+/** Back to the screenshots of the template's versions. */
+export async function removeTemplatePreview(
+  user: User,
+  templateId: string,
+): Promise<void> {
+  await ownLiveTemplate(user, templateId);
+  await clearTemplatePreview(templateId);
+}
+
 /**
  * Where a template's new versions come from: its author's site (each "새 버전
  * 올리기"), or a GitHub Actions workflow on `repository` and `ref`.
@@ -653,6 +685,9 @@ export interface TemplateDetail {
   applyCount: number;
   source: TemplateSource;
   github: GitHubSource | null;
+  // The author's own preview image, else the latest version's screenshot.
+  previewUrl: string | null;
+  customPreview: boolean;
   versions: {
     id: string;
     version: number;
@@ -686,6 +721,7 @@ export async function getTemplateForPost(
       "t.github_repository",
       "t.github_ref",
       "t.github_path",
+      "t.preview_updated_at",
     ])
     .where("t.post_id", "=", postId)
     .executeTakeFirst();
@@ -731,6 +767,13 @@ export async function getTemplateForPost(
             path: template.github_path,
           }
         : null,
+    previewUrl: templatePreviewUrl({
+      id: template.id,
+      customPreviewAt: template.preview_updated_at,
+      version: versions[0]?.version ?? null,
+      renderedAt: versions[0]?.preview_rendered_at ?? null,
+    }),
+    customPreview: template.preview_updated_at !== null,
     versions: versions.map((version, index) => ({
       id: version.id,
       version: version.version,

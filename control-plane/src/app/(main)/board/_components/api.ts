@@ -19,3 +19,22 @@ export async function boardRequest<T = Record<string, unknown>>(
   }
   return data as T;
 }
+
+// A template's own preview image, sent as the request body.
+export async function uploadTemplatePreview(
+  templateId: string,
+  file: File,
+): Promise<void> {
+  const response = await fetch(`/api/board/templates/${templateId}/preview`, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  let data: any = null;
+  try {
+    data = await response.json();
+  } catch {}
+  if (!response.ok || !data?.success) {
+    throw new Error(data?.message ?? "미리보기 이미지를 올리지 못했습니다.");
+  }
+}

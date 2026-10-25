@@ -18,6 +18,13 @@ inputs:
       template's next version instead of deploying a site (`template-owner`
       needs no ID). The commit message becomes the version's changelog.
     required: false
+  preview:
+    description: >-
+      With `template-owner` or `template`: a PNG, JPEG or WebP image (up to
+      5 MB, shown at 4:3) the template's post and the board show instead of
+      a screenshot of its files. For templates that show nothing without
+      their site's data or a sign-in. Uploaded only when it changes.
+    required: false
   dir:
     description: Directory containing the built static site.
     required: true

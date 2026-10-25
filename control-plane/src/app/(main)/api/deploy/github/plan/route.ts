@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
             folder: body.folder,
             manifest: body.manifest,
             changelog: body.changelog,
+            preview: body.preview,
           })
         : await createGitHubDeploymentPlan({
             claims,

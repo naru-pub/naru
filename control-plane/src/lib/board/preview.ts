@@ -22,6 +22,11 @@ export function templatePreviewKey(templateId: string, version: number) {
   return `${templatePrefix(templateId)}v${version}.png`;
 }
 
+// The image the template's author set in place of the screenshots.
+export function templateCustomPreviewKey(templateId: string) {
+  return `${templatePrefix(templateId)}preview`;
+}
+
 export function getTemplatePreviewUrl(
   templateId: string,
   version: number,
@@ -30,4 +35,21 @@ export function getTemplatePreviewUrl(
   if (!renderedAt) return null;
   const stamp = new Date(renderedAt).getTime();
   return `${getSiteBucketUrl(templatePreviewKey(templateId, version))}?v=${stamp}`;
+}
+
+// What a template shows: its own preview image when its author set one,
+// else the latest version's screenshot.
+export function templatePreviewUrl(template: {
+  id: string;
+  customPreviewAt: Date | string | null;
+  version: number | null;
+  renderedAt: Date | string | null;
+}): string | null {
+  if (template.customPreviewAt) {
+    const stamp = new Date(template.customPreviewAt).getTime();
+    return `${getSiteBucketUrl(templateCustomPreviewKey(template.id))}?v=${stamp}`;
+  }
+  return template.version
+    ? getTemplatePreviewUrl(template.id, template.version, template.renderedAt)
+    : null;
 }

@@ -20,7 +20,8 @@ import {
   type LicenseKind,
   type PostKind,
 } from "@/lib/board/constants";
-import { boardRequest } from "../_components/api";
+import { boardRequest, uploadTemplatePreview } from "../_components/api";
+import { PreviewPicker } from "../_components/PreviewPicker";
 import { FolderPicker, commonFolder } from "../_components/FolderPicker";
 import CollectionName from "@/components/CollectionName";
 
@@ -55,6 +56,7 @@ export function NewPostForm({
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("main");
   const [folder, setFolder] = useState("dist");
+  const [preview, setPreview] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Filled in from the checked files' top folder until the person edits it.
@@ -83,11 +85,20 @@ export function NewPostForm({
               githubPath: folder,
             }
           : { kind, title, body };
-      const { postId } = await boardRequest<{ postId: string }>(
-        "/api/board/posts",
-        "POST",
-        payload,
-      );
+      const { postId, templateId } = await boardRequest<{
+        postId: string;
+        templateId?: string;
+      }>("/api/board/posts", "POST", payload);
+      if (kind === "template" && templateId && preview) {
+        try {
+          await uploadTemplatePreview(templateId, preview);
+        } catch (error: any) {
+          // The post is up; the preview can be set again from its edit page.
+          toast.error(
+            `글은 올렸지만 미리보기 이미지를 올리지 못했어요: ${error.message}`,
+          );
+        }
+      }
       router.push(`/board/${postId}`);
       router.refresh();
     } catch (error: any) {
@@ -218,6 +229,17 @@ export function NewPostForm({
               </p>
             </div>
           )}
+
+          <div className="space-y-2">
+            <p className="text-sm font-bold">
+              미리보기 이미지 (고르지 않아도 돼요)
+            </p>
+            <PreviewPicker value={preview} onChange={setPreview} />
+            <p className="text-xs text-muted-foreground">
+              고르지 않으면 버전마다 파일의 스크린샷을 찍어요. 사이트의 데이터나
+              로그인이 있어야 보이는 템플릿은 화면을 담은 이미지를 골라 주세요.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <label htmlFor="template-slug" className="text-sm font-bold">

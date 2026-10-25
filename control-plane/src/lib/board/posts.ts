@@ -32,6 +32,8 @@ export interface PostSummary {
     applyCount: number;
     version: number | null;
     previewRenderedAt: Date | null;
+    // Set when the author uploaded a preview of their own.
+    customPreviewAt: Date | null;
     usesDatabase: boolean;
   } | null;
 }
@@ -70,6 +72,7 @@ function summaryQuery() {
       "t.apply_count",
       "v.version",
       "v.preview_rendered_at",
+      "t.preview_updated_at",
       sql<boolean>`coalesce(jsonb_array_length(v.data_collections) > 0, false)`.as(
         "uses_database",
       ),
@@ -102,6 +105,7 @@ function toSummary(row: SummaryRow): PostSummary {
           applyCount: row.apply_count ?? 0,
           version: row.version,
           previewRenderedAt: row.preview_rendered_at,
+          customPreviewAt: row.preview_updated_at,
           usesDatabase: row.uses_database,
         }
       : null,

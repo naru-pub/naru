@@ -125,6 +125,17 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   screenshot run also picks up anything missed. A version that still has no
   preview after a day is no longer tried. `update-screenshots --templates --force` renders every live
   version again.
+- **Own preview images**: a template whose files show nothing on their own
+  (an app that needs its site's data or a sign-in, which the loopback server
+  can't give it) can show an image instead. The author picks one when posting
+  (the form uploads it after the post exists) or on the edit page at any
+  time, through `PUT /api/board/templates/<id>/preview` with the image as the
+  body (`DELETE` goes back to the screenshots); a workflow names one with the
+  action's `preview` input. PNG, JPEG or WebP up to 5 MB, typed by its bytes,
+  shown at 4:3 from the top. It is one image for the template, at
+  `_templates/<id>/preview`, recorded in `board_templates.preview_*`, and
+  stands in for every version's screenshot until removed. Screenshots are
+  still rendered, so removing it shows the latest one.
 - **Deletion**: deleting a template post removes its R2 files and previews.
   The database rows stay, so the record of who applied it is kept. Deleting an
   account also removes that user's `_templates/` objects and their site

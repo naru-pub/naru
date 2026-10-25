@@ -3,6 +3,7 @@ import {
   DeleteObjectsCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
 
@@ -76,6 +77,21 @@ export async function copyObject(
       ...(contentType
         ? { ContentType: contentType, MetadataDirective: "REPLACE" }
         : {}),
+    }),
+  );
+}
+
+export async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
     }),
   );
 }

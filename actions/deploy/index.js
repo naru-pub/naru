@@ -271,6 +271,37 @@ async function waitForFunctions(endpoint, audience, deploymentId) {
   }
 }
 
+const PREVIEW_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+};
+
+// The image a template shows instead of screenshots of its files: for
+// templates that show nothing without their site's data or a sign-in.
+async function readPreview(previewPath) {
+  const absolutePath = path.resolve(process.cwd(), previewPath);
+  let contents;
+  try {
+    contents = await fs.readFile(absolutePath);
+  } catch {
+    throw new Error(`Preview image does not exist: ${previewPath}`);
+  }
+  const extension = absolutePath.split(".").pop().toLowerCase();
+  const contentType = PREVIEW_TYPES[extension];
+  if (!contentType) {
+    throw new Error(`A preview is a PNG, JPEG or WebP image: ${previewPath}`);
+  }
+  return {
+    absolutePath,
+    path: previewPath,
+    sha256: crypto.createHash("sha256").update(contents).digest("hex"),
+    size: contents.byteLength,
+    contentType,
+  };
+}
+
 // `dir` as a folder of the repository, which a template's post names.
 function repositoryFolder(rootDir) {
   const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
@@ -301,6 +332,11 @@ async function main() {
   );
   const audience = getInput("audience", { defaultValue: endpoint.origin });
   const shouldFinalize = getBooleanInput("finalize", true);
+  const previewPath = getInput("preview");
+  if (previewPath && !template) {
+    throw new Error("`preview` is for templates: set `template-owner`");
+  }
+  const preview = previewPath ? await readPreview(previewPath) : null;
   const rootDir = path.resolve(process.cwd(), dir);
 
   let rootDirectory;
@@ -335,6 +371,15 @@ async function main() {
               ? { template: templateId }
               : { templateOwner, folder: repositoryFolder(rootDir) }),
             changelog: await commitMessage(),
+            ...(preview
+              ? {
+                  preview: {
+                    size: preview.size,
+                    sha256: preview.sha256,
+                    contentType: preview.contentType,
+                  },
+                }
+              : {}),
           }
         : { site, targetPrefix }),
       manifest: {
@@ -356,6 +401,11 @@ async function main() {
 
   const fileByPath = new Map(files.map((file) => [file.path, file]));
   await uploadFiles(plan.uploads, fileByPath);
+  // Absent when the template shows this image already.
+  if (plan.previewUpload) {
+    info(`Uploading the preview image ${preview.path}`);
+    await uploadFile(plan.previewUpload, preview);
+  }
 
   if (!shouldFinalize) {
     info(`Uploaded staged files for deployment ${plan.deploymentId}`);
@@ -388,12 +438,14 @@ async function main() {
 | Version | v${finalize.version}${finalize.unchanged ? " (unchanged, no new version)" : ""} |
 | Commit | \`${process.env.GITHUB_SHA || "unknown"}\` |
 | Files | ${finalize.deployedFiles ?? 0} (${finalize.uploadedFiles ?? 0} uploaded) |
-`);
+${preview ? `| Preview | \`${preview.path}\`${finalize.previewUpdated ? " (updated)" : " (unchanged)"} |\n` : ""}`);
     info(
       finalize.unchanged
         ? `Unchanged since v${finalize.version}: no new version`
         : `Published v${finalize.version}: ${finalize.deployedFiles} file(s), ${finalize.uploadedFiles} uploaded`,
     );
+    if (finalize.previewUpdated)
+      info(`Set the template's preview to ${preview.path}`);
     return;
   }
 

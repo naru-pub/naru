@@ -95,8 +95,8 @@ export default async function PostPage({
     ? `https://github.com/${template.github.repository}`
     : null;
   const siteUrl = getHomepageUrl(post.authorLoginName);
-  const heroImage = latest
-    ? latest.previewUrl
+  const heroImage = template
+    ? template.previewUrl
     : post.kind === "site" && post.authorSiteRenderedAt
       ? getRenderedSiteUrl(post.authorLoginName, post.authorSiteRenderedAt)
       : null;
@@ -187,9 +187,11 @@ export default async function PostPage({
             <figure className="border-2 border-line bg-card">
               <figcaption className="flex items-center justify-between gap-2 border-b-2 border-line bg-secondary px-3 py-2 text-xs text-muted-foreground">
                 <span className="truncate">
-                  {latest
-                    ? `미리보기 · v${latest.version}`
-                    : siteUrl.replace(/^https?:\/\//, "")}
+                  {template?.customPreview
+                    ? "미리보기"
+                    : latest
+                      ? `미리보기 · v${latest.version}`
+                      : siteUrl.replace(/^https?:\/\//, "")}
                 </span>
               </figcaption>
               <Thumbnail

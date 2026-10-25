@@ -48,6 +48,10 @@ If published from a multi-action repository, use:
 - `endpoint`: Naru control-plane endpoint. Defaults to `https://naru.pub`.
 - `audience`: GitHub OIDC audience. Defaults to the endpoint origin.
 - `finalize`: publish after upload. Defaults to `true`.
+- `template-owner` / `template`: publish `dir` as a board template's next
+  version instead (see below).
+- `preview`: with a template, an image to show for it instead of a
+  screenshot (see below).
 
 ## Outputs
 
@@ -91,3 +95,17 @@ one folder each, and publish them all on every push:
 
 `template: <id>` (the ID on the template's edit page) publishes to one
 template by ID instead.
+
+A template that shows nothing from its files alone (an app that needs its
+site's data or a sign-in) can name a `preview` image, which the board and its
+post show instead of a screenshot. PNG, JPEG or WebP up to 5 MB, shown at 4:3
+from the top (1280×960 fits); it is uploaded only when it changes, and can
+live outside `dir`:
+
+```yaml
+- uses: naru-pub/naru/actions/deploy@main
+  with:
+    dir: dist
+    template-owner: my-naru-login
+    preview: docs/preview.png
+```

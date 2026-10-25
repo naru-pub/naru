@@ -1,19 +1,18 @@
 import Image from "next/image";
 import { getRenderedSiteUrl } from "@/lib/site-urls";
-import { getTemplatePreviewUrl } from "@/lib/board/preview";
+import { templatePreviewUrl } from "@/lib/board/preview";
 import type { PostSummary } from "@/lib/board/posts";
 
 // The picture beside a post: a template's preview, or the current screenshot
 // of the author's site for a 사이트 자랑 post. Other kinds have none.
 export function postThumbnailUrl(post: PostSummary): string | null {
   if (post.template) {
-    return post.template.version
-      ? getTemplatePreviewUrl(
-          post.template.id,
-          post.template.version,
-          post.template.previewRenderedAt,
-        )
-      : null;
+    return templatePreviewUrl({
+      id: post.template.id,
+      customPreviewAt: post.template.customPreviewAt,
+      version: post.template.version,
+      renderedAt: post.template.previewRenderedAt,
+    });
   }
   if (post.kind === "site" && post.authorSiteRenderedAt) {
     return getRenderedSiteUrl(post.authorLoginName, post.authorSiteRenderedAt);

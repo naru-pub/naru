@@ -141,6 +141,15 @@ export const TEMPLATE_MAX_BYTES = 20 * 1024 * 1024;
 export const TEMPLATE_GITHUB_MAX_FILES = 500;
 export const TEMPLATE_GITHUB_MAX_BYTES = 50 * 1024 * 1024;
 
+// A template's own preview image, in place of the screenshot of its files.
+// Previews show at 4:3, cropped from the top.
+export const TEMPLATE_PREVIEW_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+export const TEMPLATE_PREVIEW_MAX_BYTES = 5 * 1024 * 1024;
+
 // Where a template's versions come from.
 export const TEMPLATE_SOURCES = ["site", "github"] as const;
 export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];

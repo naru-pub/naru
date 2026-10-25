@@ -94,5 +94,9 @@ token must name the template's repository and ref. Plan answers uploads only
 for files the previous version lacked by sha256; finalize copies the rest from
 that version, refuses site code that does not parse, publishes the next
 version and answers `{ version, functions: null }`: the code runs on the sites
-that install it, not here. Status answers the upload's state. See
+that install it, not here. A plan may also carry `preview: { size, sha256,
+contentType }`, an image to show for the template instead of its screenshots;
+unless the template shows that image already, plan answers a `previewUpload`
+URL beside the files, and finalize checks the staged image against the plan
+and sets it (`previewUpdated`), even when the files make no new version. Status answers the upload's state. See
 [board.md](board.md), "Where versions come from".

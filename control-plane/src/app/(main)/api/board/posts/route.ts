@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, postId });
     }
 
-    const { postId } = await publishTemplatePost(user, {
+    const { postId, templateId } = await publishTemplatePost(user, {
       title: body.title,
       body: body.body,
       slug: body.slug,
@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error("[board] federating template post failed", error);
     }
-    return NextResponse.json({ success: true, postId });
+    // The form then uploads the template's preview image, if it has one.
+    return NextResponse.json({ success: true, postId, templateId });
   } catch (error) {
     return boardErrorResponse(error);
   }

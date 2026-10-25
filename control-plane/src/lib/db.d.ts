@@ -345,6 +345,9 @@ export interface BoardTemplates {
   latest_version_id: string | null;
   license: "cc0-1.0" | "unlicense" | "0bsd" | "cc-by-4.0" | "mit" | "apache-2.0" | "bsd-2-clause" | "bsd-3-clause" | "isc" | "zlib" | "cc-by-sa-4.0" | "mpl-2.0" | "lgpl-3.0-or-later" | "gpl-2.0-or-later" | "gpl-3.0-or-later" | "agpl-3.0-or-later" | "eupl-1.2" | "ofl-1.1";
   post_id: string;
+  preview_content_type: string | null;
+  preview_sha256: string | null;
+  preview_updated_at: Timestamp | null;
   slug: string;
   source: ColumnType<"site" | "github", "site" | "github" | undefined>;
   user_id: string;
@@ -361,6 +364,9 @@ export interface BoardTemplateUploads {
   github_sha: string;
   id: string;
   manifest: ColumnType<import("./deploy/siteDeploy").DeployManifest, string, string>;
+  preview_content_type: string | null;
+  preview_sha256: string | null;
+  preview_size: number | null;
   status: ColumnType<"planned" | "finalized" | "failed" | "expired", "planned" | "finalized" | "failed" | "expired" | undefined>;
   template_id: string;
   upload_prefix: string;

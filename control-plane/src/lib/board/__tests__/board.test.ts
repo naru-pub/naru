@@ -37,6 +37,16 @@ jest.mock("../storage", () => ({
       });
     },
   ),
+  putObject: jest.fn(
+    async (key: string, body: Uint8Array, contentType: string) => {
+      bucket.set(key, {
+        size: body.byteLength,
+        contentType,
+        etag: `"${++etags}"`,
+        body: Buffer.from(body),
+      });
+    },
+  ),
   deleteObjects: jest.fn(async (keys: string[]) => {
     for (const key of keys) bucket.delete(key);
   }),
@@ -137,6 +147,8 @@ const {
   planApplication,
   publishTemplatePost,
   publishTemplateVersion,
+  removeTemplatePreview,
+  setTemplatePreview,
   setTemplateSource,
 } = require("../templates") as typeof import("../templates");
 const {
@@ -1301,6 +1313,206 @@ integration("board", () => {
           .where("id", "=", "skipped" in again ? "" : again.deploymentId)
           .executeTakeFirstOrThrow(),
       ).toEqual({ template_id: guestbook.templateId });
+    });
+
+    // The smallest files the preview's checks take for each type.
+    const png = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3,
+    ]);
+    const webp = Buffer.from("RIFF\0\0\0\0WEBPVP8 ", "latin1");
+    const sha256 = (bytes: Buffer) =>
+      require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+
+    test("an author sets their template's own preview, and can remove it", async () => {
+      const author = await member();
+      put(`${author.loginName}/app/index.html`);
+      const { postId, templateId } = await publishTemplatePost(author, {
+        title: "앱",
+        body: "",
+        slug: `app-${n}`,
+        license: "mit",
+        licenseAccepted: true,
+        files: ["app/index.html"],
+        collections: [],
+      });
+      // Until then, the version's screenshot (none yet).
+      expect(await getTemplateForPost(postId)).toMatchObject({
+        customPreview: false,
+        previewUrl: null,
+      });
+
+      const other = await member();
+      await expect(
+        setTemplatePreview(other, templateId, png),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        setTemplatePreview(author, templateId, Buffer.from("<svg/>")),
+      ).rejects.toMatchObject({ status: 400 });
+      await expect(
+        setTemplatePreview(
+          author,
+          templateId,
+          Buffer.concat([png, Buffer.alloc(5 * 1024 * 1024)]),
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+
+      await setTemplatePreview(author, templateId, png);
+      const key = `_templates/${templateId}/preview`;
+      expect(bucket.get(key)?.contentType).toBe("image/png");
+      const detail = await getTemplateForPost(postId);
+      expect(detail?.customPreview).toBe(true);
+      expect(detail?.previewUrl).toContain(
+        `_templates/${templateId}/preview?v=`,
+      );
+      const [summary] = (
+        await listPosts({ kind: "template", sort: "new", page: 1 })
+      ).posts.filter((post) => post.id === postId);
+      expect(summary.template?.customPreviewAt).toBeTruthy();
+
+      // Replaced in place, its type from its bytes.
+      await setTemplatePreview(author, templateId, webp);
+      expect(bucket.get(key)?.contentType).toBe("image/webp");
+
+      await expect(
+        removeTemplatePreview(other, templateId),
+      ).rejects.toMatchObject({ status: 403 });
+      await removeTemplatePreview(author, templateId);
+      expect(bucket.has(key)).toBe(false);
+      expect(await getTemplateForPost(postId)).toMatchObject({
+        customPreview: false,
+      });
+    });
+
+    test("a workflow publishes the template's preview beside its files", async () => {
+      const author = await member();
+      const { postId, templateId } = await publishTemplatePost(author, {
+        title: "커뮤",
+        body: "",
+        slug: `pv-${n}`,
+        license: "mit",
+        licenseAccepted: true,
+        files: [],
+        collections: [],
+        source: "github",
+        githubRepository: "naru-pub/preview",
+        githubRef: "main",
+      });
+      const claims = {
+        iss: "https://token.actions.githubusercontent.com",
+        aud: "https://naru.pub",
+        sub: "repo:naru-pub/preview:ref:refs/heads/main",
+        exp: 0,
+        repository: "naru-pub/preview",
+        repository_id: "91",
+        ref: "refs/heads/main",
+        sha: "a".repeat(40),
+      };
+      const text = "<title>커뮤</title>";
+      const manifest = {
+        files: [
+          {
+            path: "index.html",
+            size: Buffer.byteLength(text),
+            sha256: sha256(Buffer.from(text)),
+          },
+        ],
+      };
+      const stage = (url: string, body: Buffer) =>
+        bucket.set(url.slice("https://upload.test/".length), {
+          size: body.byteLength,
+          contentType: "application/octet-stream",
+          etag: `"${++etags}"`,
+          body,
+        });
+      const run = async (image: Buffer | null, sha: string) => {
+        const plan = await planTemplateUpload({
+          claims: { ...claims, sha },
+          templateId,
+          manifest,
+          preview: image
+            ? {
+                size: image.byteLength,
+                sha256: sha256(image),
+                contentType: "image/png",
+              }
+            : undefined,
+        });
+        if ("skipped" in plan) throw new Error(plan.message);
+        for (const target of plan.uploads) stage(target.url, Buffer.from(text));
+        if (plan.previewUpload && image) stage(plan.previewUpload.url, image);
+        return {
+          plan,
+          finalize: () =>
+            finalizeTemplateUpload({
+              claims: { ...claims, sha },
+              deploymentId: plan.deploymentId,
+            }),
+        };
+      };
+
+      await expect(
+        planTemplateUpload({
+          claims,
+          templateId,
+          manifest,
+          preview: { size: 10, sha256: "x", contentType: "image/png" },
+        }),
+      ).rejects.toThrow(/sha256/);
+
+      const first = await run(png, "b".repeat(40));
+      expect(first.plan.previewUpload).not.toBeNull();
+      expect(await first.finalize()).toMatchObject({
+        version: 1,
+        previewUpdated: true,
+      });
+      expect(bucket.get(`_templates/${templateId}/preview`)?.contentType).toBe(
+        "image/png",
+      );
+      expect((await getTemplateForPost(postId))?.customPreview).toBe(true);
+
+      // The same image again is not uploaded.
+      const again = await run(png, "c".repeat(40));
+      expect(again.plan.previewUpload).toBeNull();
+      expect(await again.finalize()).toMatchObject({
+        unchanged: true,
+        previewUpdated: false,
+      });
+
+      // A new image with the same files: no new version, a new preview.
+      const changed = Buffer.concat([png, Buffer.from([9])]);
+      const next = await run(changed, "d".repeat(40));
+      expect(await next.finalize()).toMatchObject({
+        version: 1,
+        unchanged: true,
+        previewUpdated: true,
+      });
+      expect(bucket.get(`_templates/${templateId}/preview`)?.size).toBe(
+        changed.byteLength,
+      );
+
+      // A preview that isn't the image the plan named is refused, and the
+      // template keeps the one it had.
+      const swapped = await planTemplateUpload({
+        claims: { ...claims, sha: "e".repeat(40) },
+        templateId,
+        manifest,
+        preview: {
+          size: png.byteLength,
+          sha256: sha256(png),
+          contentType: "image/png",
+        },
+      });
+      if ("skipped" in swapped) throw new Error(swapped.message);
+      stage(swapped.previewUpload!.url, Buffer.from("not the image"));
+      await expect(
+        finalizeTemplateUpload({
+          claims: { ...claims, sha: "e".repeat(40) },
+          deploymentId: swapped.deploymentId,
+        }),
+      ).rejects.toThrow(/preview/);
+      expect(bucket.get(`_templates/${templateId}/preview`)?.size).toBe(
+        changed.byteLength,
+      );
     });
   });
 });
