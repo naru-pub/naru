@@ -200,6 +200,21 @@ jobs:
           path: edge/naru-sdk-seoul-macos-arm64.tar.gz
           retention-days: 30
 
+  # @naru-pub/sdk (sdk/), as a project installs it: packed as npm would
+  # publish it, installed in an empty folder outside the checkout, imported
+  # there, and its files compared with the ones Naru serves for its version.
+  # publish-sdk.yml runs the same before publishing.
+  sdk-package:
+    permissions:
+      contents: read
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: sdk/scripts/check-package.sh "$RUNNER_TEMP/sdk"
+
   # @naru-pub/dev (naru-dev/), as a developer installs it: built and packed
   # as npm would publish it, the tarball installed in an empty folder outside
   # the checkout, and its smoke test run there (the command on a fixture

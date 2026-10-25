@@ -1,0 +1,5 @@
+node_modules/
+dist/
+# Copied from the repository's by the build, for the package.
+LICENSE
+*.tgz

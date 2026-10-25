@@ -1,0 +1,40 @@
+# Publishes @naru-pub/sdk (sdk/) to npm when a tag sdk-v<version> is pushed,
+# <version> being sdk/package.json's: the package is packed and checked as
+# main.yml's sdk-package job checks it, and that very tarball is published,
+# with provenance. A prerelease (1.1.0-dev.N, an SDK version still being
+# built) goes out under the dist-tag "dev", as npm requires of a prerelease.
+# Needs the NPM_TOKEN secret (sdk/README.md, "Publishing").
+name: publish-sdk
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      # npm provenance: the tarball is signed as built here, from this commit.
+      id-token: write
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: The tag names the package's version
+        run: |
+          version=$(node -p "require('./sdk/package.json').version")
+          if [[ "$GITHUB_REF_NAME" != "sdk-v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME, but sdk/package.json is $version: tag sdk-v$version." >&2
+            exit 1
+          fi
+      - run: sdk/scripts/check-package.sh "$RUNNER_TEMP/sdk"
+      - name: Publish the checked tarball
+        run: |
+          tag=latest
+          [[ "$GITHUB_REF_NAME" == *-* ]] && tag=dev
+          npm publish "$RUNNER_TEMP"/sdk/naru-pub-sdk-*.tgz --provenance --access public --tag "$tag"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

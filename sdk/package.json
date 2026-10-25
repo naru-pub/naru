@@ -1,0 +1,45 @@
+{
+  "name": "@naru-pub/sdk",
+  "version": "1.1.0-dev.1",
+  "description": "The Naru Data SDK: a Naru site's collections, queries, mutations, live queries and members, from its pages; and the types of its site code.",
+  "license": "AGPL-3.0-only",
+  "homepage": "https://naru.pub/docs/sdk/1.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naru-pub/naru.git",
+    "directory": "sdk"
+  },
+  "bugs": "https://github.com/naru-pub/naru/issues",
+  "keywords": [
+    "naru",
+    "naru.pub",
+    "sdk",
+    "database"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/naru.d.ts",
+      "default": "./dist/naru.js"
+    },
+    "./functions": {
+      "types": "./dist/functions.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/naru.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node test/smoke.mjs",
+    "prepack": "node scripts/build.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
