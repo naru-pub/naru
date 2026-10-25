@@ -42,7 +42,7 @@ function migrationSummary(paths: string[]): string | null {
   return `${names[0]} … ${names[names.length - 1]} (${names.length}개)`;
 }
 
-// The signed-in person's published templates: installs, the GitHub
+// The signed-in person's published templates: the GitHub
 // workflow's runs, and versions with the tables their site code makes.
 export default async function DeveloperTemplatesPage({
   searchParams,
@@ -76,7 +76,7 @@ export default async function DeveloperTemplatesPage({
             </p>
             <h1 className="text-3xl font-bold tracking-tight">내 템플릿</h1>
             <p className="text-muted-foreground">
-              공개한 템플릿의 설치, 워크플로, 버전을 봐요.
+              공개한 템플릿의 워크플로와 버전을 봐요.
             </p>
           </div>
           <Link
@@ -135,16 +135,11 @@ function Dashboard({
   const githubUrl = template.github
     ? `https://github.com/${template.github.repository}`
     : null;
-  const stats = [
-    { label: "설치한 곳", value: dashboard.installs },
-    { label: "최신 버전 사용", value: dashboard.onLatest },
-    { label: "새 버전 알림 켬", value: dashboard.notify },
-  ];
 
   return (
     <>
       <section aria-labelledby="template-h" className={PANEL}>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 border-b-2 border-line p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 p-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h2 id="template-h" className="text-2xl font-bold">
               {dashboard.title}
@@ -162,17 +157,6 @@ function Dashboard({
             게시글 보기 →
           </Link>
         </div>
-        <dl className="grid grid-cols-1 sm:grid-cols-3">
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              className="flex flex-col gap-1 border-b border-border px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
-            >
-              <dt className="text-sm text-muted-foreground">{stat.label}</dt>
-              <dd className="text-3xl font-bold tabular-nums">{stat.value}</dd>
-            </div>
-          ))}
-        </dl>
       </section>
 
       {template.source === "github" && (
@@ -234,22 +218,17 @@ function Dashboard({
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-background text-left text-muted-foreground">
-                  {[
-                    "버전",
-                    "언제",
-                    "커밋",
-                    "새 마이그레이션",
-                    "테이블",
-                    "쓰는 곳",
-                  ].map((heading) => (
-                    <th
-                      key={heading}
-                      scope="col"
-                      className="whitespace-nowrap border-b border-border px-5 py-2.5 font-semibold"
-                    >
-                      {heading}
-                    </th>
-                  ))}
+                  {["버전", "언제", "커밋", "새 마이그레이션", "테이블"].map(
+                    (heading) => (
+                      <th
+                        key={heading}
+                        scope="col"
+                        className="whitespace-nowrap border-b border-border px-5 py-2.5 font-semibold"
+                      >
+                        {heading}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -292,9 +271,6 @@ function Dashboard({
                           siteCode={version.siteCode}
                           tables={version.tables}
                         />
-                      </td>
-                      <td className={`${CELL} tabular-nums`}>
-                        {dashboard.installsOf.get(version.id) ?? 0}
                       </td>
                     </tr>
                   );

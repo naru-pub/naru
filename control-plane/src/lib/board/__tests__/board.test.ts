@@ -1429,10 +1429,8 @@ integration("board", () => {
       for (const other of [quiet, author])
         expect(await versionNotices(other)).toEqual([]);
 
-      // The author's dashboard counts every install, none on v2 yet.
-      const dashboard = await templateDashboard(author.id, postId);
-      expect(dashboard).toMatchObject({ installs: 4, onLatest: 0, notify: 3 });
-      expect(dashboard!.installsOf.get(v1)).toBe(4);
+      // The dashboard is the author's alone.
+      expect(await templateDashboard(author.id, postId)).not.toBeNull();
       expect(await templateDashboard(told.id, postId)).toBeNull();
 
       // A later version replaces the unread notice of the one before.

@@ -1,7 +1,6 @@
 // The developer portal's 내 템플릿 page: what Naru records of the templates
-// a person published, their installs and workflow runs, beside what the
-// template's post shows (getTemplateForPost).
-import { sql } from "kysely";
+// a person published and their workflow runs, beside what the template's
+// post shows (getTemplateForPost). Installs are not shown yet.
 import { db } from "@/lib/database";
 import { getTemplateForPost, type TemplateDetail } from "./templates";
 
@@ -23,12 +22,6 @@ export interface TemplateDashboard {
   postId: string;
   title: string;
   template: TemplateDetail;
-  installs: number;
-  // Of those, on the latest version, and told of new versions.
-  onLatest: number;
-  notify: number;
-  // Installs by version id.
-  installsOf: Map<string, number>;
   runs: WorkflowRun[];
 }
 
@@ -46,7 +39,7 @@ export async function publishedTemplates(
     .execute();
 }
 
-/** `userId`'s template posted as `postId`, with its installs and runs. */
+/** `userId`'s template posted as `postId`, with its workflow runs. */
 export async function templateDashboard(
   userId: string,
   postId: string,
@@ -61,14 +54,8 @@ export async function templateDashboard(
     .executeTakeFirst();
   if (!post) return null;
 
-  const [template, installs, runs] = await Promise.all([
+  const [template, runs] = await Promise.all([
     getTemplateForPost(postId),
-    db
-      .selectFrom("board_template_installs")
-      .select(["version_id", "notify", sql<number>`count(*)::int`.as("count")])
-      .where("template_id", "=", post.id)
-      .groupBy(["version_id", "notify"])
-      .execute(),
     db
       .selectFrom("board_template_uploads as u")
       .leftJoin("board_template_versions as v", "v.id", "u.version_id")
@@ -88,25 +75,10 @@ export async function templateDashboard(
   ]);
   if (!template) return null;
 
-  const installsOf = new Map<string, number>();
-  let notify = 0;
-  for (const row of installs) {
-    installsOf.set(
-      row.version_id,
-      (installsOf.get(row.version_id) ?? 0) + row.count,
-    );
-    if (row.notify) notify += row.count;
-  }
-  const latest = template.versions[0];
-
   return {
     postId,
     title: post.title,
     template,
-    installs: installs.reduce((sum, row) => sum + row.count, 0),
-    onLatest: latest ? (installsOf.get(latest.id) ?? 0) : 0,
-    notify,
-    installsOf,
     runs: runs.map((run) => ({
       id: run.id,
       createdAt: run.created_at,

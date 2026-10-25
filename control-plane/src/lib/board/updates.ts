@@ -153,28 +153,20 @@ export async function installCounts(
 
 /**
  * For the developer portal: the templates `userId` published, newest first,
- * with their latest version and how many sites have them installed.
+ * with their latest version.
  */
 export async function authoredTemplates(userId: string): Promise<
   {
     postId: string;
     title: string;
     version: number | null;
-    installs: number;
   }[]
 > {
   return db
     .selectFrom("board_templates as t")
     .innerJoin("board_posts as p", "p.id", "t.post_id")
     .leftJoin("board_template_versions as v", "v.id", "t.latest_version_id")
-    .select([
-      "p.id as postId",
-      "p.title",
-      "v.version",
-      sql<number>`(select count(*)::int from board_template_installs i where i.template_id = t.id)`.as(
-        "installs",
-      ),
-    ])
+    .select(["p.id as postId", "p.title", "v.version"])
     .where("t.user_id", "=", userId)
     .where("p.deleted_at", "is", null)
     .orderBy("p.created_at", "desc")

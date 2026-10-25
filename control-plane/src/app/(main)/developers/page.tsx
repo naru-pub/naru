@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { validateRequest } from "@/lib/auth";
 import { authoredTemplates } from "@/lib/board/updates";
-import { userHasFeature } from "@/lib/entitlements";
 import { mcpResource } from "@/lib/mcp/oauth";
-import { getHomepageUrl } from "@/lib/site-urls";
 
 export const metadata: Metadata = {
   title: "개발자 | 나루",
@@ -111,12 +109,7 @@ const BUTTON =
 
 export default async function DevelopersPage() {
   const { user } = await validateRequest();
-  const [templates, database] = user
-    ? await Promise.all([
-        authoredTemplates(user.id),
-        userHasFeature(user.id, "database"),
-      ])
-    : [[], false];
+  const templates = user ? await authoredTemplates(user.id) : [];
 
   return (
     <div className="min-h-screen">
@@ -130,9 +123,9 @@ export default async function DevelopersPage() {
               나루에서 만들기
             </h1>
             <p className="text-lg leading-relaxed text-muted-foreground">
-              사이트 코드(_naru/)와 Data SDK로 나루 사이트를 만들고, 템플릿으로
-              나누는 사람을 위한 곳이에요. 길잡이, 레퍼런스, 도구, 그리고 내
-              사이트와 템플릿으로 가는 길을 한곳에 모았어요.
+              사이트 코드(_naru/)와 Data SDK로 템플릿을 만들어 나누는 사람을
+              위한 곳이에요. 길잡이, 레퍼런스, 도구, 그리고 내 템플릿을 한곳에
+              모았어요.
             </p>
             <p className="text-sm text-muted-foreground">
               SDK {SDK_VERSION}은 아직 만드는 중이라 바뀔 수 있어요. 안정 버전은{" "}
@@ -159,26 +152,10 @@ export default async function DevelopersPage() {
         </section>
 
         {user && (
-          <section aria-labelledby="mine" className="grid gap-5 md:grid-cols-2">
-            <h2 id="mine" className="text-xl font-bold md:col-span-2">
+          <section aria-labelledby="mine" className="flex flex-col gap-5">
+            <h2 id="mine" className="text-xl font-bold">
               내 작업
             </h2>
-            <Link
-              href={database ? "/developers/site-code" : "/supporter"}
-              className={`${PANEL} flex flex-col gap-2.5 p-5 hover:bg-accent`}
-            >
-              <span className="flex items-baseline justify-between gap-3">
-                <span className="text-lg font-bold">내 사이트 코드</span>
-                <span className="font-mono text-sm text-muted-foreground">
-                  {new URL(getHomepageUrl(user.loginName)).host}
-                </span>
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {database
-                  ? "릴리스 · 문제 · 데이터베이스 · 사용량"
-                  : "데이터베이스와 사이트 코드는 서포터가 쓸 수 있어요."}
-              </span>
-            </Link>
             <div className={`${PANEL} flex flex-col gap-2.5 p-5`}>
               <span className="flex items-baseline justify-between gap-3">
                 <Link
@@ -209,8 +186,7 @@ export default async function DevelopersPage() {
                         {template.title}
                       </Link>
                       <span className="text-muted-foreground">
-                        {template.version !== null && `v${template.version} · `}
-                        설치 {template.installs}곳
+                        {template.version !== null && `v${template.version}`}
                       </span>
                     </li>
                   ))}
