@@ -570,48 +570,17 @@ test("a member's live queries reconnect with fresh tickets and stop when access 
   }
 });
 
-test("media deletion sends a member credential once, validates IDs, and honors aborts", async () => {
-  await browser(async ({ calls, respond, local }) => {
+test("pages upload media but never delete it, and sign-in asks for no deletion", async () => {
+  await browser(async ({ location, calls, local }) => {
     saveMember(local);
     const member = await createNaru().members.session();
-    const id = "0190f1a2-0000-7000-8000-000000000001";
-    respond(() => Response.json({ success: true }));
-    assert.equal(await member.media.delete(id), undefined);
-    assert.equal(calls[0].method, "DELETE");
-    assert.equal(calls[0].url.pathname, `/api/data/v1/alice/_files/${id}`);
-    assert.equal(calls[0].headers.Authorization, `Bearer ${TOKEN}`);
-    await assert.rejects(
-      member.media.delete("https://media.naru.pub/x"),
-      TypeError,
-    );
-    const controller = new AbortController();
-    controller.abort();
-    await assert.rejects(
-      member.media.delete(id, { signal: controller.signal }),
-      (e) => e.name === "AbortError",
-    );
-    const before = calls.length;
-    respond(() =>
-      Response.json(
-        { error: { code: "UNAVAILABLE", message: "storage offline" } },
-        { status: 503 },
-      ),
-    );
-    await assert.rejects(
-      member.media.delete(id),
-      (e) => e.code === "UNAVAILABLE",
-    );
-    assert.equal(calls.length, before + 1);
-  });
-});
-
-test("owners explicitly request media deletion at sign-in", async () => {
-  await browser(async ({ location, calls }) => {
+    // Deleting is the owner's, in the control panel's media library.
+    assert.deepEqual(Object.keys(member.media), ["upload"]);
     await createNaru().auth.signIn({
       collections: ["posts"],
       mediaDelete: true,
     });
-    assert.equal(new URL(location.href).searchParams.get("mediaDelete"), "1");
+    assert.equal(new URL(location.href).searchParams.has("mediaDelete"), false);
     assert.equal(calls.length, 0);
   });
 });

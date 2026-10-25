@@ -202,15 +202,14 @@ A member sign-in lasts across every page and tab of the site, in its
 `localStorage`, until the member signs out, signs out of Naru, or leaves it
 unused for seven days; it ends 30 days after signing in regardless. A
 member's handle has `id`, `query()`, `mutate()`, `subscribe()`,
-`media.upload()`, `media.delete()` and `signOut()`. It has no `collection()`:
+`media.upload()` and `signOut()`. It has no `collection()`:
 collections are the owner's and visitors', exactly as in 1.0.0, and a request
 with a member's token on a collection is refused with `ACCESS_DENIED`.
 `naru.collection()` stays anonymous after a member signs in, so a page still
 reads `world` collections as any visitor does.
 
 Members upload into the site's media, a limited number of files an hour
-each, and delete their own uploads by ID (`member.media.delete(id)`). They
-cannot batch, list media, or change collections. A member's mutations are
+each. They cannot delete or list media, batch, or change collections. A member's mutations are
 rate limited per member, and members' requests count against the site's
 monthly budget like visitors'.
 
@@ -324,7 +323,7 @@ passes `undefined`, so default parameters apply.
 
 **Who calls.** Anyone may call a query or mutation, and the code decides what
 each caller may see and do. `naru.query()` and `naru.mutate()` call as a
-visitor, signed in to nothing: `ctx.visitor` is true and `ctx.member` null.
+visitor, signed in to nothing: `ctx.member` is null and `ctx.owner` false.
 `member.query()` and `member.mutate()` call as that member: `ctx.member` is
 `{ id, roles }`. `admin.query()` and `admin.mutate()` call as the owner:
 `ctx.owner` is true and `ctx.member` null, whatever collections the owner's
@@ -366,9 +365,9 @@ do not include secrets. Unexpected exceptions still become `INVALID_REQUEST`.
 by hand beside the generated `naru.d.ts` (`Query`, `Mutation`, `QueryCtx`,
 `MutationCtx`, `CallingMember`, `SqlValue`, `SqlResult`, `ErrorCode`, `Json`).
 `ctx` has `member`, `owner`, `ownerName` (the site's owner's Naru login,
-whoever calls), `visitor`, `now` (milliseconds, fixed for the whole call),
-`fail()`, `media.types` (the types Naru Media stores; pages have them as the
-SDK's `MEDIA_TYPES`), and these methods, which return promises:
+whoever calls), `now` (milliseconds, fixed for the whole call), `fail()`,
+`media.types` (the types Naru Media stores; an upload of any other is
+refused), and these methods, which return promises:
 
 - `sql`, one statement against the site's own tables: as a tag,
   ``ctx.sql`... ${value}` `` binds every interpolated value as a parameter;
@@ -676,9 +675,9 @@ export default async function (ctx, { path }) {
 }
 ```
 
-A route runs as a visitor's query: it only reads, sees `ctx.visitor` true,
-and is limited and counted as a visitor's query is. It returns a string of
-HTML, or one of `{ html }`, `{ body, type }` (text such as a feed, as one of
+A route runs as a visitor's query: it only reads, sees `ctx.member` null and
+`ctx.owner` false, and is limited and counted as a visitor's query is. It
+returns a string of HTML, or one of `{ html }`, `{ body, type }` (text such as a feed, as one of
 `text/plain`, `text/css`, `text/calendar`, `text/xml`, `application/xml`,
 `application/rss+xml`, `application/atom+xml` or `application/json`),
 `{ file, head }` (one of the site's files, with `head` added to its
@@ -724,8 +723,8 @@ holds at most 1,000 connections at once.
 The owner's media library marks the uploads nothing names as unreferenced
 (참조 없음), and shows where the others are named. Nothing is deleted on
 Naru's judgement, since media may be linked from anywhere (site files, other
-sites); uploads are deleted by the owner, or by the member who made them
-(`media.delete(id)`); site code cannot delete them.
+sites); uploads are deleted by the owner, in the media library. Pages and
+site code cannot delete them.
 
 - **Collection documents.** Naru records which documents name each upload:
   any document whose JSON contains the upload's URL, in a plain field or

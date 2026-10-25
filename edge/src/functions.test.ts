@@ -174,7 +174,7 @@ describe("calling", () => {
     ).toEqual([true, null]);
   });
 
-  test("a visitor's call says so", () => {
+  test("a visitor's call has neither a member nor the owner", () => {
     const visit = (source: string) =>
       runFunction(
         module,
@@ -183,7 +183,6 @@ describe("calling", () => {
           name: "f",
           args: null,
           member: null,
-          visitor: true,
           now: 0,
           kind: "query",
           readonly: true,
@@ -192,13 +191,10 @@ describe("calling", () => {
       );
     expect(
       visit(
-        "export function f(ctx) { return [ctx.visitor, ctx.owner, ctx.member]; }",
+        "export function f(ctx) { return [ctx.owner, ctx.member]; }",
       ),
-    ).toEqual([true, false, null]);
-    expect(run("export function f(ctx) { return ctx.visitor; }", "f")).toBe(
-      false,
-    );
-    // Uploads are deleted by their owner or member, never by site code:
+    ).toEqual([false, null]);
+    // Uploads are deleted in the owner's media library, never by site code:
     // ctx.media reads them only.
     expect(
       visit("export function f(ctx) { return Object.keys(ctx.media); }"),
@@ -412,7 +408,6 @@ describe("calling", () => {
           name: "f",
           args: null,
           member: null,
-          visitor: true,
           now: 1_700_000_000_000,
           kind,
           readonly: kind !== "mutation",
@@ -426,7 +421,6 @@ describe("calling", () => {
         "member",
         "owner",
         "ownerName",
-        "visitor",
         "now",
         "fail",
         "sql",
@@ -441,7 +435,6 @@ describe("calling", () => {
       "member",
       "owner",
       "ownerName",
-      "visitor",
       "now",
       "fail",
       "sql",

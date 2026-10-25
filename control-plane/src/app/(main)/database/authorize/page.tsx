@@ -16,16 +16,6 @@ async function authorizationStep(userId: string, query: URLSearchParams) {
     ...Object.fromEntries(query),
     // "" asks for none: a page that manages the site by queries and mutations.
     collections: query.get("collections")?.split(",").filter(Boolean),
-    ...(query.has("mediaDelete")
-      ? {
-          mediaDelete:
-            query.get("mediaDelete") === "1"
-              ? true
-              : query.get("mediaDelete") === "0"
-                ? false
-                : query.get("mediaDelete"),
-        }
-      : {}),
   });
   // Setup the owner can finish here comes before consent, in its own step.
   const setup = await authorizationSetup(userId, input);
@@ -47,7 +37,6 @@ export default async function AuthorizePage({
     "challenge",
     "state",
     "collections",
-    "mediaDelete",
   ]) {
     if (typeof params[key] === "string") query.set(key, params[key]);
   }

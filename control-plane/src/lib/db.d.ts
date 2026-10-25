@@ -732,7 +732,6 @@ export interface SiteDataAccessTokens {
   hash: string;
   issued_at: Generated<Timestamp>;
   lifetime_seconds: Generated<number>;
-  media_delete: Generated<boolean>;
   session_id: string;
 }
 
@@ -742,7 +741,6 @@ export interface SiteDataAuthCodes {
   collection_ids: string[];
   expires_at: Timestamp;
   hash: string;
-  media_delete: Generated<boolean>;
   session_id: string;
   token_lifetime_seconds: Generated<number>;
 }

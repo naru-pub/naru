@@ -2086,7 +2086,6 @@ export class SiteData extends DurableObject<Env> {
               args: input.args,
               member: input.member,
               owner: input.member === null && !visitor,
-              visitor,
               now: Date.now(),
               readonly,
               kind,

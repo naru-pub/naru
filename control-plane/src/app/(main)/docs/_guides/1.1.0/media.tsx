@@ -141,37 +141,22 @@ await admin.collection("posts").set("spring", { title: "사진", image: image.ur
               <p>
                 <a href="/docs/1.1.0/database#members">회원</a>은{" "}
                 <code>member.media.upload()</code>로 파일을 올리고(한 시간에
-                30개까지), 받은 URL을 사이트의 뮤테이션에 넘겨 테이블에
-                저장합니다. 업로드 결과에는 파일 ID가 있습니다. 페이지에서
-                지우려면 URL과 함께 저장하고, 더 이상 쓰는 곳이 없을 때 ID로
-                삭제하세요. 회원은 자신이 올린 파일만 지울 수 있습니다. 사이트
-                코드(쿼리와 뮤테이션)는 파일을 지우지 않습니다.
+                30개까지), 받은 URL이나 ID를 사이트의 뮤테이션에 넘겨 테이블에
+                저장합니다. 페이지와 사이트 코드(쿼리와 뮤테이션)는 파일을
+                지우지 않습니다. 회원이 올린 파일도 사이트 소유자가 미디어
+                라이브러리에서 지웁니다.
               </p>
               <Code>{`const uploaded = await member.media.upload(file);
 await member.mutate("profile:setAvatar", {
   url: uploaded.url,
   fileId: uploaded.id,
-});
-// 다른 사진으로 바꾼 뒤, 예전 파일을:
-await member.media.delete(previousFileId);`}</Code>
-              <p>
-                사이트 소유자가 웹페이지에서 삭제하려면 로그인할 때 미디어 삭제
-                권한을 따로 요청해야 합니다. 기존 로그인에는 이 권한이 없습니다.
-              </p>
-              <Code>{`await naru.auth.signIn({ collections: ["posts"], mediaDelete: true });
-const admin = await naru.auth.session();
-await admin.media.delete(fileId);`}</Code>
-              <p>
-                삭제 실패는 나중에 다시 시도할 수 있습니다. 공유 파일은 마지막
-                참조가 없어질 때 지우고, 외부 이미지 URL에서 ID를 추측하지
-                마세요. 저장소 정리와 할당량 반영에는 시간이 걸릴 수 있으며,
-                공개 URL의 캐시가 즉시 사라지는 것은 아닙니다.
-              </p>
+});`}</Code>
               <p>
                 <a href="/media">미디어 라이브러리</a>에서 파일을 올리고,
-                사용량을 확인하고, URL을 복사하고, 지울 수 있습니다. 사이트를
-                이루는 HTML·CSS 파일은 <a href="/files">파일</a>에서 따로
-                관리합니다.
+                사용량을 확인하고, URL을 복사하고, 지울 수 있습니다. 지운 파일의
+                저장소 정리와 할당량 반영에는 시간이 걸릴 수 있으며, 공개 URL의
+                캐시가 즉시 사라지는 것은 아닙니다. 사이트를 이루는 HTML·CSS
+                파일은 <a href="/files">파일</a>에서 따로 관리합니다.
               </p>
             </Section>
           </article>

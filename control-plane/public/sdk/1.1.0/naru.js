@@ -179,25 +179,6 @@ function jsonValue(value, ancestors = new Set(), path = "data") {
 // waiting on the browser's own limit, which can be minutes.
 const REQUEST_TIMEOUT_MS = 15_000;
 
-/**
- * The types Naru Media stores (the server refuses others), for a page that
- * checks a file before uploading it. Site code reads them as ctx.media.types.
- */
-export const MEDIA_TYPES = Object.freeze([
-  "image/avif",
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "audio/mpeg",
-  "audio/ogg",
-  "audio/opus",
-  "audio/wav",
-  "application/pdf",
-  "application/zip",
-  "text/plain",
-]);
-
 async function request(
   url,
   { method = "GET", body, token, signal, touches, renew },
@@ -490,25 +471,6 @@ function put(url, headers, file, signal, uploading) {
 // handle sends them with.
 function media(root, send) {
   return Object.freeze({
-    async delete(id, { signal } = {}) {
-      if (signal?.aborted)
-        throw (
-          signal.reason ??
-          new DOMException("The deletion was aborted.", "AbortError")
-        );
-      if (
-        typeof id !== "string" ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          id,
-        )
-      )
-        throw new TypeError("media.delete() needs an uploaded file ID.");
-      await send(`${root}/_files/${id}`, {
-        method: "DELETE",
-        signal,
-        touches: [],
-      });
-    },
     async upload(source, { signal, onProgress } = {}) {
       if (onProgress !== undefined && typeof onProgress !== "function")
         throw new TypeError("onProgress must be a function.");
@@ -950,14 +912,11 @@ async function leave(context, place, path, query) {
  * back to this page. Register this page's URL as an administrator callback in
  * the control panel first; Naru says so on its own page if it is not.
  */
-async function signIn(context, collections, mediaDelete = false) {
-  if (typeof mediaDelete !== "boolean")
-    throw new TypeError("mediaDelete must be a boolean.");
+async function signIn(context, collections) {
   // Checked here so a bad name fails on this page, not on Naru's consent page.
   collections.forEach(segment);
   await leave(context, ownerPlace(context), "/database/authorize", {
     collections: collections.join(","),
-    ...(mediaDelete ? { mediaDelete: "1" } : {}),
   });
 }
 
@@ -1119,8 +1078,7 @@ export function createNaru(options) {
     mutate: siteCode(context.root, request, "_mutate"),
     auth: Object.freeze({
       session: () => adminSession(context),
-      signIn: ({ collections = [], mediaDelete } = {}) =>
-        signIn(context, collections, mediaDelete),
+      signIn: ({ collections = [] } = {}) => signIn(context, collections),
     }),
     members: Object.freeze({
       session: () => memberSession(context),

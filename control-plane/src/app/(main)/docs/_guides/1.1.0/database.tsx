@@ -224,9 +224,9 @@ export default function DatabaseDocs() {
                 방문자와 소유자는 컬렉션을 공개 범위에 따라 읽고 씁니다. 회원은
                 컬렉션에 따로 권한이 없고, 사이트 코드를 부릅니다. 셋 모두 같은{" "}
                 <code>query(이름, 인자)</code>와 <code>mutate(이름, 인자)</code>
-                를 부르고, 사이트 코드는 <code>ctx.member</code>·
-                <code>ctx.owner</code>·<code>ctx.visitor</code>로 누가 불렀는지
-                압니다.
+                를 부르고, 사이트 코드는 <code>ctx.member</code>와
+                <code>ctx.owner</code>로 누가 불렀는지 압니다. 둘 다 없으면
+                방문자입니다.
               </p>
               <h3 className="font-bold">지키는 곳</h3>
               <p>필요한 만큼만 쓰세요. 위에서부터 가장 단순합니다.</p>
@@ -734,9 +734,9 @@ input.oninput = async () => {
                 로그아웃하면 끝납니다. 페이지에서 끝내려면{" "}
                 <code>member.signOut()</code>을 부르세요. 회원은{" "}
                 <code>member.media.upload()</code>로 사이트의{" "}
-                <a href="/docs/1.1.0/media">미디어</a>에 파일을 올리고{" "}
-                <code>member.media.delete()</code>로 자기가 올린 파일을 지울 수
-                있습니다. 업로드는 회원마다 한 시간에 30개까지입니다.
+                <a href="/docs/1.1.0/media">미디어</a>에 파일을 올릴 수
+                있습니다. 업로드는 회원마다 한 시간에 30개까지이고, 올린 파일은
+                사이트 소유자가 미디어 라이브러리에서 지웁니다.
               </p>
               <h3 className="font-bold">가입과 승인</h3>
               <p>
@@ -961,25 +961,22 @@ try {
               </p>
               <h3 className="font-bold">누가 불렀나</h3>
               <Table
-                head={["페이지에서", "ctx.member", "ctx.owner", "ctx.visitor"]}
+                head={["페이지에서", "ctx.member", "ctx.owner"]}
                 rows={[
                   [
                     <code key="c">naru.query()·naru.mutate()</code>,
                     "null",
                     "false",
-                    "true",
                   ],
                   [
                     <code key="c">member.query()·member.mutate()</code>,
                     <code key="m">{"{ id, roles }"}</code>,
-                    "false",
                     "false",
                   ],
                   [
                     <code key="c">admin.query()·admin.mutate()</code>,
                     "null",
                     "true",
-                    "false",
                   ],
                 ]}
               />
@@ -993,7 +990,7 @@ try {
                 head={["", "뜻"]}
                 rows={[
                   [
-                    <code key="c">member · owner · visitor</code>,
+                    <code key="c">member · owner</code>,
                     "누가 불렀는지 (위 표)",
                   ],
                   [
@@ -1307,11 +1304,11 @@ export default async function (ctx, { path, query }) {
                 <code>https://alice.naru.pub</code>이나 연결한 도메인)이라
                 <code>og:url</code> 같은 절대 주소를 만들 때 씁니다.{" "}
                 <code>query</code>는 주소의 <code>?</code> 뒤 값입니다. 라우트는
-                로그인과 상관없이 방문자의 쿼리로 돌아, <code>ctx.visitor</code>
-                가 true이고 테이블을 읽기만 합니다. 회원에게만 보일 내용은
-                페이지의 스크립트에서 <code>member.query()</code>로 읽으세요.
-                HTML에 넣는 값은 위의 <code>escape</code>처럼 직접
-                이스케이프해야 합니다.
+                로그인과 상관없이 방문자의 쿼리로 돌아, <code>ctx.member</code>
+                가 null, <code>ctx.owner</code>가 false이고 테이블을 읽기만
+                합니다. 회원에게만 보일 내용은 페이지의 스크립트에서{" "}
+                <code>member.query()</code>로 읽으세요. HTML에 넣는 값은 위의{" "}
+                <code>escape</code>처럼 직접 이스케이프해야 합니다.
               </p>
               <Table
                 head={["돌려주는 값", "응답"]}

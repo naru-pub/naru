@@ -1,8 +1,9 @@
-# SDK 1.1.0 media IDs and deletion
+# Media IDs and deletion
 
-`member.media.upload()` and `admin.media.upload()` now return `id` alongside the
-existing URL/name/contentType/size fields. Keep that ID with the document's URL.
-SDK 1.0.0 bytes and upload results are unchanged.
+`member.media.upload()` and `admin.media.upload()` in SDK 1.1.0 return `id`
+alongside the existing URL/name/contentType/size fields. A site keeps it with
+the URL, for its own records and for `_naru_uploads`. SDK 1.0.0 bytes and
+upload results are unchanged.
 
 ```js
 const uploaded = await member.media.upload(file);
@@ -10,30 +11,22 @@ await member.mutate("posts:write", {
   image: uploaded.url,
   imageId: uploaded.id,
 });
-// After the post no longer references the image:
-await member.media.delete(uploaded.id, { signal });
 ```
 
-Deletion resolves with no value, accepts a UUID file ID (never a URL), and does
-not automatically retry. It is idempotent for an absent file within this site.
-Members can delete only rows with their own stored member ID. Another member's
-file, including owner uploads, returns ACCESS_DENIED. Normal token/site/origin
-and membership checks apply: pending or banned tokens cannot delete media.
-The control-panel owner retains full deletion authority.
+Pages never delete media: neither a member's handle nor an owner's website
+sign-in can, and site code cannot either. Website tokens, the owner's and
+members', may only upload (`/api/data/v1/<site>/_files`); any other method is
+refused with ACCESS_DENIED. Deleting is the owner's, in the control panel's
+media library (`/media`, which calls `/api/account/database/_files/<id>` with
+the owner's session), for every upload of the site, members' included.
+Account deletion removes the site's whole media prefix.
 
-Owner website handles require a new, explicit consent grant:
-
-```js
-await naru.auth.signIn({ collections: ["posts"], mediaDelete: true });
-const admin = await naru.auth.session();
-await admin.media.delete(id);
-```
-
-The Naru consent page states that this grant permits deletion of all site media,
-including member uploads. Authorization codes and tokens store this flag; existing
-and ordinary new owner tokens default to false. Changing token-exchange parameters
-cannot add the grant. Revoke/signout/expiry and callback registration revocation
-also revoke deletion authority. Listing files remains control-panel-only.
+Development builds of SDK 1.1.0 once had `media.delete(id)` on both handles and
+an owner sign-in option, `mediaDelete`, that asked the consent page for a
+deletion grant. No site used them (checked against every site's files on
+2026-10-25), so 1.1.0 ships without them. The grant's columns are dropped by
+migration `1792901572129`; a cached SDK that still sends `mediaDelete=1` gets an
+ordinary sign-in.
 
 A DELETE records a durable tombstone before deleting storage. Tombstones disappear
 from the media library and cannot be finalized again. Storage failure returns
@@ -54,19 +47,8 @@ that they are still pending; finalization checks the tombstone again after stora
 HEAD, so concurrent cleanup/delete cannot revive their metadata. Cleanup failures
 retain the work and quota rather than losing track of an undeleted object.
 
-The migration is additive. Apply it before rolling out the web application and
-background jobs. Do not enable deletion controls until all processes run the new
-version: old processes do not recognize tombstones or the new grant. Then release
-naru-sdk, which serves the new committed SDK files at `sdk.naru.pub`. No payment records or unfinished
-durable work are removed by the migration.
-
-Application integration is separate: save IDs on new uploads, replace/remove the
-referencing document first, and enqueue cleanup only when no retained reference
-uses the file. Preserve IDs for retry/recovery; a browser-only cleanup call can be
-lost when a tab closes before it is sent. Never infer IDs from external/legacy URLs.
-This change does not migrate neo-avocado's existing images or add app reference
-tracking. Moderators cannot delete another member's media through a member token;
-that requires an explicitly authorized owner or a later server cleanup API.
+If a site needs to delete its own uploads later, the place for it is site code
+(a mutation that knows nothing still names the file), not the browser SDK.
 
 Before deleting an upload by hand, the owner's media library shows whether
 anything names it: collection documents (recorded as they are written) and the

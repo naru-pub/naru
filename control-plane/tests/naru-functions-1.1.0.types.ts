@@ -35,6 +35,8 @@ export const write: Mutation<{ title: string }, number> = async (
   ctx,
   { title },
 ) => {
+  // @ts-expect-error A visitor is neither ctx.member nor ctx.owner.
+  void ctx.visitor;
   if (!ctx.member) return ctx.fail("AUTH_REQUIRED", "로그인해 주세요.");
   if (!ctx.member.roles.includes("writer"))
     await ctx.setRoles(ctx.member.id, [...ctx.member.roles, "writer"]);

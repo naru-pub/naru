@@ -72,12 +72,10 @@ export interface SqlResult<Row> {
 export interface QueryCtx {
   /** The signed-in member, or null for the owner and visitors. */
   readonly member: CallingMember | null;
-  /** The site's owner called. */
+  /** The site's owner called. A visitor, signed in to nothing, has neither. */
   readonly owner: boolean;
   /** The site's owner's Naru login, whoever calls: the site's own name. */
   readonly ownerName: string;
-  /** No one is signed in. */
-  readonly visitor: boolean;
   /** The call's time in milliseconds, fixed for the whole call. */
   readonly now: number;
   /**
@@ -127,7 +125,7 @@ export interface QueryCtx {
   ): Promise<SqlResult<Row>>;
   /** Members' roles, by ID: at most 100 IDs a call; a member without any has []. */
   rolesOf(members: string[]): Promise<Record<string, string[]>>;
-  /** The types Naru Media stores (the browser SDK's `MEDIA_TYPES`). */
+  /** The types Naru Media stores: an upload of any other is refused. */
   media: { readonly types: readonly string[] };
   /**
    * Guests' passwords, kept by the site as hashes. `verify` allows ten wrong

@@ -944,6 +944,14 @@ integration("site members", () => {
         body,
         bearer: { token, origin },
       }) as Promise<Record<string, any>>;
+    // Deleting is the control panel's (its media library), not a website's.
+    const remove = (id: string) =>
+      executeMedia({
+        site: "alice",
+        path: [id],
+        method: "DELETE",
+        adminUserId: owner,
+      }) as Promise<Record<string, any>>;
     beforeAll(() => {
       jest
         .spyOn(mediaDeletionStorage, "deleteObject")
@@ -1206,16 +1214,20 @@ integration("site members", () => {
         type: "image/png",
         size: 3,
       });
-      // Members cannot list files or delete another member's upload.
+      // Members cannot list files or delete any upload, their own included.
       await expect(media(bob.accessToken, "GET", [])).rejects.toMatchObject({
         status: 403,
       });
-      await expect(
-        media(carol.accessToken, "DELETE", [authorized.id]),
-      ).rejects.toMatchObject({ status: 403 });
-      await media(bob.accessToken, "DELETE", [authorized.id]);
+      for (const token of [carol.accessToken, bob.accessToken])
+        await expect(
+          media(token, "DELETE", [authorized.id]),
+        ).rejects.toMatchObject({ status: 403 });
+      expect(await uploadCall("get", { id: authorized.id })).toMatchObject({
+        id: authorized.id,
+      });
+      await remove(authorized.id);
       expect(await uploadCall("get", { id: authorized.id })).toBe(null);
-      await media(bob.accessToken, "DELETE", [authorized.id]);
+      await remove(authorized.id);
       await expect(
         media(bob.accessToken, "PUT", [authorized.id]),
       ).rejects.toMatchObject({ status: 404 });
@@ -1244,9 +1256,10 @@ integration("site members", () => {
       jest
         .mocked(mediaDeletionStorage.deleteObject)
         .mockRejectedValueOnce(new Error("storage offline"));
-      await expect(
-        media(bob.accessToken, "DELETE", [row.id]),
-      ).rejects.toMatchObject({ status: 503, code: "UNAVAILABLE" });
+      await expect(remove(row.id)).rejects.toMatchObject({
+        status: 503,
+        code: "UNAVAILABLE",
+      });
       const queued = await db
         .selectFrom("site_data_files")
         .selectAll()
@@ -1258,7 +1271,7 @@ integration("site members", () => {
       await expect(
         media(bob.accessToken, "PUT", [row.id]),
       ).rejects.toMatchObject({ status: 404 });
-      await media(bob.accessToken, "DELETE", [row.id]);
+      await remove(row.id);
       const completed = await db
         .selectFrom("site_data_files")
         .selectAll()
@@ -1295,17 +1308,17 @@ integration("site members", () => {
           .where("id", "=", row.id)
           .executeTakeFirst(),
       ).toBeUndefined();
-      await media(bob.accessToken, "DELETE", [row.id]);
-      await expect(
-        media(bob.accessToken, "DELETE", ["https://media.invalid/x.png"]),
-      ).rejects.toMatchObject({ status: 400 });
+      await remove(row.id);
+      await expect(remove("https://media.invalid/x.png")).rejects.toMatchObject(
+        { status: 400 },
+      );
     });
 
     test("a delete racing finalization prevents the finalized response from reviving the file", async () => {
       const bob = await signIn("bob");
       const upload = await media(bob.accessToken, "POST", [], file);
       jest.mocked(mediaStorage.headObject).mockImplementationOnce(async () => {
-        await media(bob.accessToken, "DELETE", [upload.id]);
+        await remove(upload.id);
         return { ContentLength: 3, ContentType: "image/png", $metadata: {} };
       });
       await expect(

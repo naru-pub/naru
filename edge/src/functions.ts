@@ -114,8 +114,6 @@ export type Invocation = {
   member: string | null;
   /** The site's owner called, rather than a member or the site itself. */
   owner?: boolean;
-  /** A visitor called, signed in to nothing. */
-  visitor?: boolean;
   now: number;
   /** Site SQL may only read: a query's or a route's. */
   readonly?: boolean;
@@ -314,7 +312,7 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, ownerName, mediaTypes) => {
+globalThis.__run = async (name, member, owner, now, args, kind, roles, ownerName, mediaTypes) => {
   const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
   const rolesOf = __operation("rolesOf");
   const setRoles = __operation("setRoles");
@@ -387,7 +385,6 @@ globalThis.__run = async (name, member, owner, visitor, now, args, kind, roles, 
     member: who,
     owner,
     ownerName,
-    visitor,
     now,
     fail: (...args) => __call("fail", ...args),
     sql,
@@ -626,7 +623,6 @@ export function runFunction(
         invocation.name,
         invocation.member,
         invocation.owner === true,
-        invocation.visitor === true,
         invocation.now,
         JSON.stringify(invocation.args ?? null),
         invocation.kind,

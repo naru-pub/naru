@@ -198,25 +198,18 @@ export async function recordAllUploads(site: string, ownerId: string) {
 
 export async function executeMedia(command: MediaCommand) {
   if (command.path.length > 1) throw new DataError(404, "Not found.");
-  const { owner, allowedIds, memberId } = await resolveSiteAccess({
-    ...command,
-    ownerMediaDelete: command.method === "DELETE",
-  });
+  const { owner, allowedIds, memberId } = await resolveSiteAccess(command);
   const admin = command.adminUserId === owner.id || allowedIds !== undefined;
   if (!admin && memberId === undefined)
     throw new DataError(403, "Uploading needs an owner or member sign-in.");
   if (command.adminUserId !== undefined && command.adminUserId !== owner.id)
     throw new DataError(403, "Permission denied.");
-  // Listing remains the control panel's. Deletion needs an explicit owner
-  // grant or the authenticated member's own upload.
+  // Listing and deleting remain the control panel's: a website, the owner's
+  // or a member's, only uploads.
   const uploading =
     (command.method === "POST" && command.path.length === 0) ||
     (command.method === "PUT" && command.path.length === 1);
-  if (
-    command.bearer !== undefined &&
-    !uploading &&
-    !(command.method === "DELETE" && command.path.length === 1)
-  )
+  if (command.bearer !== undefined && !uploading)
     throw new DataError(403, "Website tokens can only upload files.");
   const files = () =>
     db.selectFrom("site_data_files").where("user_id", "=", owner.id);
@@ -503,7 +496,7 @@ export async function executeMedia(command: MediaCommand) {
     return { file: output(ready) };
   }
   if (command.method === "DELETE" && id) {
-    await deleteMedia(owner.id, id, memberId);
+    await deleteMedia(owner.id, id);
     try {
       await callSiteObject(command.site, "forgetMedia", { ids: [id] });
     } catch (error) {

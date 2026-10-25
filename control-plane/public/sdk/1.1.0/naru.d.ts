@@ -148,8 +148,6 @@ export interface Member extends SiteCode, LiveQueries {
    */
   readonly id: string;
   media: {
-    /** Deletes one of this member's own uploads by ID. */
-    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
     /**
      * Stores a file publicly, in the site's media. Large photos may be shrunk
      * first. A HEIC photo this browser cannot convert throws a `TypeError`
@@ -185,7 +183,7 @@ export interface Member extends SiteCode, LiveQueries {
 /**
  * The site's queries and mutations: its own code over its own tables, which its `_naru/migrations/` create. Anyone may call them,
  * signed in or not; the code decides what each caller may see and do from
- * `ctx.member`, `ctx.owner` and `ctx.visitor`.
+ * `ctx.member` and `ctx.owner`.
  */
 export interface SiteCode {
   /**
@@ -245,15 +243,10 @@ export interface Admin extends SiteCode, LiveQueries {
   >;
   media: {
     /**
-     * Deletes any of the site's uploads by ID. Needs a sign-in that asked for
-     * it: `auth.signIn({ collections, mediaDelete: true })`.
-     */
-    delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;
-    /**
      * Stores a file publicly. Large photos may be shrunk first. A HEIC photo
      * this browser cannot convert throws a `TypeError` before anything is sent.
-     * Like every upload, it stays until deleted, since media may be linked
-     * from anywhere; Naru notes which of the site's documents name its URL
+     * Like every upload, it stays until the owner deletes it in the media
+     * library, since media may be linked from anywhere; Naru notes which of the site's documents name its URL
      * (in any field, HTML included), and the media library marks it when
      * none does.
      */
@@ -313,7 +306,7 @@ export interface LiveQueries {
 
 /**
  * A page's client. Its queries and mutations run as a visitor, signed in to
- * nothing: they see `ctx.visitor` true and `ctx.member` null, are limited per
+ * nothing: they see `ctx.member` null and `ctx.owner` false, are limited per
  * visitor address, and count against the site's budget.
  */
 export interface NaruClient extends SiteCode, LiveQueries {
@@ -333,8 +326,6 @@ export interface NaruClient extends SiteCode, LiveQueries {
        * manages the site through its queries and mutations as the owner.
        */
       collections?: readonly string[];
-      /** Request explicit permission to delete all of this site's media. */
-      mediaDelete?: boolean;
     }): Promise<void>;
   };
   members: {
@@ -352,12 +343,6 @@ export interface NaruClient extends SiteCode, LiveQueries {
     signIn(): Promise<void>;
   };
 }
-
-/**
- * The types Naru Media stores (the server refuses others), for a page that
- * checks a file before uploading it. Site code reads them as ctx.media.types.
- */
-export declare const MEDIA_TYPES: readonly string[];
 
 /** Creates a client bound to one site. */
 export declare function createNaru(options?: { site?: string }): NaruClient;

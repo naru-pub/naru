@@ -210,7 +210,7 @@ The wire protocol is versioned separately, in the path: `/api/data/v1/:site` and
 
 The 1.0.0 SDK is deliberately small. Its runtime exports are only `createNaru` and `NaruError`. A client has `collection()` and `auth`; a collection has `get()`, `list()`, `count()`, `pages()` and `add()` (plus `set()` and `delete()` for an admin); an admin client has `collection()`, `batch()`, `media.upload()` and `signOut()`. Media listing and deletion remain in the control panel. Features are added when a site needs them, not in advance.
 
-1.1.0 keeps 1.0.0's collections as they are and adds what a community site needed: `naru.members` with `session()` and `signIn()`; `query()`, `mutate()` and `subscribe()` on the client, a member and (but `subscribe()`) the owner, for the site's own code; a member client with `id`, `media.upload()`, `media.delete()` and `signOut()`; upload IDs and `media.delete()` for the owner with an explicit grant; and errors worded in Korean for visitors. It also finishes only the sign-in whose `state` this tab sent, leaving any other `?code=` on the page alone, and returns to the address a sign-in left from.
+1.1.0 keeps 1.0.0's collections as they are and adds what a community site needed: `naru.members` with `session()` and `signIn()`; `query()`, `mutate()` and `subscribe()` on the client, a member and (but `subscribe()`) the owner, for the site's own code; a member client with `id`, `media.upload()` and `signOut()`; upload IDs (deleting stays the control panel's); and errors worded in Korean for visitors. It also finishes only the sign-in whose `state` this tab sent, leaving any other `?code=` on the page alone, and returns to the address a sign-in left from.
 
 During 1.0.0 development the SDK dropped `createDatabase`, per-collection `parse`/`map`, `schemas`, `update` merge patches and `unset`, `count()`, `all()`, string `orderBy` with `direction`, `fresh`, `timeoutMs`, `createRequestChannel`, session events, application schema parsing and response validation, upload progress, image tuning options, and the file `get`, `update` and `usage` methods. The server removed the obsolete public endpoints and options. The SDK still validates JSON values and uses private transport parameters for cache bypass.
 
@@ -297,10 +297,10 @@ await admin.collection("posts").set("hello", {
 });
 ```
 
-A page that uses a file stores its URL. SDK 1.0.0 exposes upload only. SDK
-1.1.0 also returns a media ID and supports `media.delete(id)`: members delete
-their own uploads, and owner website sessions need explicit deletion consent.
-See [media deletion](media-deletion.md) for cleanup, quota and retry behavior.
+A page that uses a file stores its URL. Pages only upload: SDK 1.1.0 also
+returns a media ID, and deleting is the owner's, in the control panel's media
+library. See [media deletion](media-deletion.md) for cleanup, quota and retry
+behavior.
 Naru records which documents name each upload's URL and the media library
 marks those none does, but it never deletes one on that account; the app or
 owner must request deletion.

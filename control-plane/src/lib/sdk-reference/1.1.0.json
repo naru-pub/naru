@@ -66,7 +66,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -495,7 +495,7 @@
         {
           "name": "media",
           "optional": false,
-          "signature": "media: {\n  delete(id: string, options?: { signal?: AbortSignal }): Promise<void>;\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
           "summary": [],
           "throws": []
         },
@@ -531,19 +531,19 @@
             },
             {
               "type": "code",
-              "value": "ctx.visitor"
-            },
-            {
-              "type": "text",
-              "value": " true and "
-            },
-            {
-              "type": "code",
               "value": "ctx.member"
             },
             {
               "type": "text",
-              "value": " null, are limited per visitor address, and count against the site's budget."
+              "value": " null and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": " false, are limited per visitor address, and count against the site's budget."
             }
           ]
         }
@@ -558,7 +558,7 @@
         {
           "name": "auth",
           "optional": false,
-          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options?: {\n    collections?: readonly string[];\n    mediaDelete?: boolean;\n  }): Promise<void>;\n}",
+          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options?: { collections?: readonly string[] }): Promise<void>;\n}",
           "summary": [],
           "throws": []
         },
@@ -733,19 +733,11 @@
             },
             {
               "type": "text",
-              "value": ", "
-            },
-            {
-              "type": "code",
-              "value": "ctx.owner"
-            },
-            {
-              "type": "text",
               "value": " and "
             },
             {
               "type": "code",
-              "value": "ctx.visitor"
+              "value": "ctx.owner"
             },
             {
               "type": "text",
@@ -1072,23 +1064,6 @@
       ],
       "throws": [],
       "signature": "type WriteCondition = { revision: Revision } | { absent: true }"
-    },
-    {
-      "name": "MEDIA_TYPES",
-      "kind": "variable",
-      "summary": [
-        {
-          "type": "paragraph",
-          "spans": [
-            {
-              "type": "text",
-              "value": "The types Naru Media stores (the server refuses others), for a page that checks a file before uploading it. Site code reads them as ctx.media.types."
-            }
-          ]
-        }
-      ],
-      "throws": [],
-      "signature": "const MEDIA_TYPES: readonly string[]"
     }
   ]
 }

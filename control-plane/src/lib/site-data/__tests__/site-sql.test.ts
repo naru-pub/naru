@@ -195,7 +195,7 @@ integration("queries and mutations", () => {
       `export async function recent(ctx, { board }) {
          return (await ctx.sql\`SELECT id, title FROM posts WHERE board = \${board} ORDER BY id\`).rows;
        }
-       export async function whoami(ctx) { return { member: ctx.member, visitor: ctx.visitor }; }
+       export async function whoami(ctx) { return { member: ctx.member, owner: ctx.owner }; }
        export async function sneak(ctx) { await ctx.sql\`DELETE FROM posts\`; }`,
       false,
     );
@@ -210,7 +210,7 @@ integration("queries and mutations", () => {
     );
     expect(await code("query", "whoami", null)).toEqual({
       member: null,
-      visitor: true,
+      owner: false,
     });
     await expect(
       code("mutation", "write", { title: "몰래" }),
@@ -256,7 +256,7 @@ integration("queries and mutations", () => {
     const query = await atEdge("_query/board:whoami", null);
     expect(query.status).toBe(200);
     expect(await query.json()).toMatchObject({
-      result: { member: null, visitor: true },
+      result: { member: null, owner: false },
     });
     const mutation = await atEdge("_mutate/board:write", { title: "x" });
     expect(mutation.status).toBe(401);
@@ -505,7 +505,7 @@ integration("routes", () => {
          const id = Number(path.split("/")[2]);
          const [post] = (await ctx.sql\`SELECT title FROM posts WHERE id = \${id}\`).rows;
          if (!post) ctx.fail("NOT_FOUND", "그런 글은 없어요.");
-         return { html: \`<h1>\${post.title}</h1><p>\${origin ?? ""}\${path} \${query.tab ?? ""} \${ctx.visitor}</p>\`, cache: 30 };
+         return { html: \`<h1>\${post.title}</h1><p>\${origin ?? ""}\${path} \${query.tab ?? ""} \${ctx.owner}</p>\`, cache: 30 };
        }`,
     );
     const render = (id: string) =>
@@ -517,7 +517,7 @@ integration("routes", () => {
       });
     expect(await render("1")).toEqual({
       result: {
-        html: "<h1>첫 글</h1><p>https://sqlsite.naru.pub/posts/1 c true</p>",
+        html: "<h1>첫 글</h1><p>https://sqlsite.naru.pub/posts/1 c false</p>",
         cache: 30,
       },
     });

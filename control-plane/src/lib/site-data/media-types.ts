@@ -1,6 +1,5 @@
 // The types Naru Media stores: an upload of any other is refused
-// (media.ts), and site code reads the list as ctx.media.types, pages as the
-// browser SDK's MEDIA_TYPES.
+// (media.ts), and site code reads the list as ctx.media.types.
 export const MEDIA_TYPES = Object.freeze([
   "image/avif",
   "image/gif",

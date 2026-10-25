@@ -116,7 +116,7 @@ integration("website owner authorization", () => {
     if (ready) await teardownTestDatabase();
     await db.destroy();
   });
-  test("media deletion requires an explicit owner consent grant and remains origin-bound", async () => {
+  test("website owner tokens never delete media; the control panel does", async () => {
     const id = crypto.randomUUID();
     await db
       .insertInto("site_data_files")
@@ -133,34 +133,29 @@ integration("website owner authorization", () => {
     const deletion = jest
       .spyOn(mediaDeletionStorage, "deleteObject")
       .mockImplementation(async () => ({ $metadata: {} }));
-    const remove = (
-      accessToken: string,
-      requestOrigin: string | null = origin,
-    ) =>
-      executeMedia({
-        site: "alice",
-        path: [id],
-        method: "DELETE",
-        bearer: { token: accessToken, origin: requestOrigin },
-      });
     try {
-      const old = (await exchange(await issue(), { mediaDelete: true }))
-        .accessToken;
-      await expect(remove(old)).rejects.toMatchObject({
-        status: 403,
-        code: "ACCESS_DENIED",
-      });
-      expect(deletion).not.toHaveBeenCalled();
-      const allowed = (await exchange(await issue({ mediaDelete: true })))
+      // A sign-in asking for deletion, as SDK 1.1.0 once let a page, is
+      // an ordinary sign-in.
+      const token = (await exchange(await issue({ mediaDelete: true })))
         .accessToken;
       await expect(
-        remove(allowed, "https://evil.example"),
-      ).rejects.toMatchObject({ status: 401 });
-      await expect(remove(allowed)).resolves.toEqual({ success: true });
+        executeMedia({
+          site: "alice",
+          path: [id],
+          method: "DELETE",
+          bearer: { token, origin },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(deletion).not.toHaveBeenCalled();
+      await expect(
+        executeMedia({
+          site: "alice",
+          path: [id],
+          method: "DELETE",
+          adminUserId: owner,
+        }),
+      ).resolves.toEqual({ success: true });
       expect(deletion).toHaveBeenCalledWith(`${owner}/${id}.png`);
-      await revokeToken(allowed, origin);
-      await expect(remove(allowed)).rejects.toMatchObject({ status: 401 });
-      expect(() => authInput({ mediaDelete: "true" })).toThrow();
     } finally {
       deletion.mockRestore();
     }

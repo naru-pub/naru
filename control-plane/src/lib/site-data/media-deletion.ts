@@ -16,11 +16,7 @@ export const mediaDeletionStorage = {
 };
 
 /** Durable intent precedes object deletion, so a crashed request can be recovered. */
-export async function deleteMedia(
-  siteUserId: string,
-  id: string,
-  memberId?: string,
-) {
+export async function deleteMedia(siteUserId: string, id: string) {
   const file = await db.transaction().execute(async (tx) => {
     await requestDeadline(tx);
     const found = await tx
@@ -31,12 +27,6 @@ export async function deleteMedia(
       .forUpdate()
       .executeTakeFirst();
     if (!found) return;
-    if (memberId !== undefined && found.member_id !== memberId)
-      throw new DataError(
-        403,
-        "Members can delete only their own uploads.",
-        "ACCESS_DENIED",
-      );
     await tx
       .updateTable("site_data_files")
       .where("id", "=", id)

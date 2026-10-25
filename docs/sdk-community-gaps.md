@@ -11,7 +11,7 @@ is historical; the gaps it lists are now addressed this way:
   data lives in the site's own SQLite tables, created by `_naru/migrations/*.sql`
   and reached through its queries (`_naru/queries/`) and mutations
   (`_naru/mutations/`), which anyone may call and which decide what each caller
-  (`ctx.member`, `ctx.owner`, `ctx.visitor`) may see and do. Board permissions,
+  (`ctx.member`, `ctx.owner`; a visitor has neither) may see and do. Board permissions,
   secret posts, levels and moderators are code over those tables, with member
   roles (`ctx.member.roles`, `ctx.setRoles`) for levels and moderators.
 - Queries only read and are limited as reads (600 a minute); mutations write in
@@ -26,8 +26,8 @@ is historical; the gaps it lists are now addressed this way:
 - Realtime (#8): live queries (`subscribe()`) keep a query's answer current,
   re-run when a mutation writes a table it read, replacing polling.
 - Server-rendered pages: `_naru/routes/` for link previews and feeds.
-- SDK 1.1.0 uploads return IDs and media deletion supports explicit owner grants;
-  members delete their own uploads. Naru records which collection documents
+- SDK 1.1.0 uploads return IDs; the owner deletes uploads, members' included,
+  in the control panel's media library. Naru records which collection documents
   name an upload, and searches the site's tables for upload URLs and IDs when
   the owner opens the media library; it marks the uploads neither names, and
   shows the tables and columns that name the rest. Site code does not delete

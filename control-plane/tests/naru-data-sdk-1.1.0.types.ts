@@ -2,6 +2,8 @@
 // queries and mutations, live queries, and members.
 import {
   createNaru,
+  // @ts-expect-error The types Naru Media stores are site code's ctx.media.types.
+  MEDIA_TYPES,
   type Admin,
   type AdminCollection,
   type Live,
@@ -41,6 +43,8 @@ async function members() {
     onProgress: (progress) => progress.phase,
   });
   const url: string = file.url;
+  // @ts-expect-error Uploads are deleted in the owner's media library.
+  void member.media.delete;
   // @ts-expect-error Batches are the owner's.
   void member.batch;
   // @ts-expect-error Site functions and live messages are gone.
@@ -73,8 +77,12 @@ async function owner() {
   // @ts-expect-error Documents carry no author in 1.1.0's types, as in 1.0.0.
   void added.createdBy;
   await admin.mutate("community/posts:add", { title: "owner" });
+  // @ts-expect-error Pages never delete uploads, the owner's included.
+  void admin.media.delete;
+  // @ts-expect-error So no sign-in asks for it.
+  await naru.auth.signIn({ collections: ["posts"], mediaDelete: true });
   // Sign-in for members takes no collections.
   // @ts-expect-error
   await naru.members.signIn({ collections: ["posts"] });
 }
-void [members, visitors, owner];
+void [members, visitors, owner, MEDIA_TYPES];
