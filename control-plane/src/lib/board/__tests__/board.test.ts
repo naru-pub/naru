@@ -179,6 +179,8 @@ const {
   planUpdate,
   setInstallNotify,
 } = require("../updates") as typeof import("../updates");
+const { templateDashboard } =
+  require("../template-dashboard") as typeof import("../template-dashboard");
 const { finalizeTemplateUpload, planTemplateUpload, templateUploadStatus } =
   require("../template-uploads") as typeof import("../template-uploads");
 const storageMock = require("../storage") as {
@@ -1427,6 +1429,12 @@ integration("board", () => {
       for (const other of [quiet, author])
         expect(await versionNotices(other)).toEqual([]);
 
+      // The author's dashboard counts every install, none on v2 yet.
+      const dashboard = await templateDashboard(author.id, postId);
+      expect(dashboard).toMatchObject({ installs: 4, onLatest: 0, notify: 3 });
+      expect(dashboard!.installsOf.get(v1)).toBe(4);
+      expect(await templateDashboard(told.id, postId)).toBeNull();
+
       // A later version replaces the unread notice of the one before.
       await publish();
       expect(await versionNotices(told)).toMatchObject([{ version: 3 }]);
@@ -1603,6 +1611,20 @@ integration("board", () => {
         }),
       ).rejects.toThrow(/posts\.js/);
       expect((await latestVersion(postId)).version).toBe(2);
+
+      // The dashboard shows the workflow's runs, newest first.
+      expect(
+        (await templateDashboard(author.id, postId))!.runs.map((run) => ({
+          sha: run.sha[0],
+          outcome: run.outcome,
+          version: run.version,
+        })),
+      ).toEqual([
+        { sha: "d", outcome: "failed", version: null },
+        { sha: "e", outcome: "unchanged", version: 2 },
+        { sha: "c", outcome: "published", version: 2 },
+        { sha: "b", outcome: "published", version: 1 },
+      ]);
 
       // Switching to snapshots lets the author publish from their site.
       await setTemplateSource(author, templateId, { source: "site" });

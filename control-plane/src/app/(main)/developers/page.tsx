@@ -181,7 +181,12 @@ export default async function DevelopersPage() {
             </Link>
             <div className={`${PANEL} flex flex-col gap-2.5 p-5`}>
               <span className="flex items-baseline justify-between gap-3">
-                <span className="text-lg font-bold">내 템플릿</span>
+                <Link
+                  href="/developers/templates"
+                  className="text-lg font-bold underline-offset-4 hover:underline"
+                >
+                  내 템플릿 →
+                </Link>
                 <span className="font-mono text-sm text-muted-foreground">
                   {templates.length}개
                 </span>
