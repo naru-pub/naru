@@ -230,8 +230,13 @@ async function makeUser(loginName: string, verified = true): Promise<User> {
   };
 }
 
-function put(key: string, contentType = "text/html", size = 10) {
-  bucket.set(key, { size, contentType, etag: `"${++etags}"` });
+function put(key: string, contentType = "text/html", size = 10, body?: string) {
+  bucket.set(key, {
+    size,
+    contentType,
+    etag: `"${++etags}"`,
+    ...(body === undefined ? {} : { body: Buffer.from(body) }),
+  });
 }
 
 integration("board", () => {
@@ -1101,6 +1106,34 @@ integration("board", () => {
       }
     });
 
+    test("publishing site code records the tables its migrations make, tried on the edge", async () => {
+      const author = await member();
+      put(`${author.loginName}/tb/index.html`);
+      put(
+        `${author.loginName}/tb/_naru/migrations/0001_core.sql`,
+        "text/plain",
+        10,
+        "CREATE TABLE posts (id INTEGER PRIMARY KEY); CREATE TABLE drafts (id INTEGER); DROP TABLE drafts;",
+      );
+      const { postId } = await publishTemplatePost(author, {
+        title: "테이블",
+        body: "설명",
+        slug: `tb-${Math.random().toString(36).slice(2, 8)}`,
+        license: "mit",
+        licenseAccepted: true,
+        files: ["tb/index.html", "tb/_naru/migrations/0001_core.sql"],
+        collections: [],
+      });
+      const [version] = (await getTemplateForPost(postId))!.versions;
+      expect(version.tables).toEqual(["posts"]);
+      const stored = await db
+        .selectFrom("board_template_versions")
+        .select("site_tables")
+        .where("id", "=", version.id)
+        .executeTakeFirstOrThrow();
+      expect(stored.site_tables).toEqual(["posts"]);
+    });
+
     test("disconnecting can remove the template's files, keeping the owner's", async () => {
       const author = await member();
       const { postId } = await template(author, "d/", [
@@ -1128,9 +1161,20 @@ integration("board", () => {
       expect(siteOf(site.loginName)).toEqual(before);
       expect(await listInstalls(site)).toHaveLength(1);
 
+      const steps: string[] = [];
       expect(
-        await disconnectInstall(site, installId, { removeFiles: true }),
-      ).toMatchObject({ removed: 2, kept: 1 });
+        await disconnectInstall(site, installId, {
+          removeFiles: true,
+          onProgress: (p) => steps.push(`${p.phase} ${p.done}/${p.total}`),
+        }),
+      ).toMatchObject({ removed: 2, kept: 1, migrations: 0 });
+      expect(steps).toEqual([
+        "backup 0/2",
+        "backup 1/2",
+        "backup 2/2",
+        "remove 0/1",
+        "code 0/1",
+      ]);
       expect(Object.keys(siteOf(site.loginName, "d/")).sort()).toEqual([
         "d/mine.html",
         "d/style.css",

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/board/access";
 import { boardErrorResponse, parseId, readJson } from "@/lib/board/errors";
-import { disconnectInstall, setInstallNotify } from "@/lib/board/updates";
+import { progressResponse, wantsProgress } from "@/lib/board/progress-stream";
+import {
+  disconnectInstall,
+  setInstallNotify,
+  type DisconnectProgress,
+} from "@/lib/board/updates";
 
 // Whether the install is told of new versions: { notify: boolean }.
 export async function PATCH(
@@ -29,9 +34,17 @@ export async function DELETE(
     const installId = parseId((await params).id);
     const body = await readJson(request);
     const user = await requireUser();
-    const result = await disconnectInstall(user, installId, {
-      removeFiles: body.removeFiles === true,
-    });
+    const removeFiles = body.removeFiles === true;
+    // Removing files takes a while: a page may follow it (progress-stream.ts).
+    if (removeFiles && wantsProgress(request))
+      return progressResponse(
+        (report: (progress: DisconnectProgress) => void) =>
+          disconnectInstall(user, installId, {
+            removeFiles,
+            onProgress: report,
+          }),
+      );
+    const result = await disconnectInstall(user, installId, { removeFiles });
     return NextResponse.json({ success: true, result });
   } catch (error) {
     return boardErrorResponse(error);

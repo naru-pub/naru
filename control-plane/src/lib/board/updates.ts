@@ -448,6 +448,16 @@ export async function setInstallNotify(
   }
 }
 
+/**
+ * How far removing a template's files has got, for the page to show:
+ * backing them up, removing them, publishing the site's code without them.
+ */
+export type DisconnectProgress = {
+  phase: "backup" | "remove" | "code";
+  done: number;
+  total: number;
+};
+
 export interface DisconnectResult {
   // The template's files removed, and where they were kept first.
   removed: number;
@@ -471,7 +481,13 @@ export interface DisconnectResult {
 export async function disconnectInstall(
   user: User,
   installId: string,
-  { removeFiles = false }: { removeFiles?: boolean } = {},
+  {
+    removeFiles = false,
+    onProgress: report = () => {},
+  }: {
+    removeFiles?: boolean;
+    onProgress?: (progress: DisconnectProgress) => void;
+  } = {},
 ): Promise<DisconnectResult> {
   if (!removeFiles) {
     await forgetInstall(user, installId);
@@ -490,13 +506,19 @@ export async function disconnectInstall(
         ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
         : null;
     if (backupPath) {
-      await backUp(user.loginName, backupPath, untouched);
+      let done = 0;
+      report({ phase: "backup", done, total: untouched.length });
+      await backUp(user.loginName, backupPath, untouched, () =>
+        report({ phase: "backup", done: ++done, total: untouched.length }),
+      );
       try {
+        report({ phase: "remove", done: 0, total: 1 });
         await storage.deleteObjects(
           untouched.map((path) => getUserObjectKey(user.loginName, path)),
         );
         // Publishes the site's code without the removed files, when they
         // were some of it; Naru may refuse what is left.
+        report({ phase: "code", done: 0, total: 1 });
         await storage.purgeSiteFiles(user.loginName, untouched);
       } catch (error) {
         await putBack(user.loginName, {

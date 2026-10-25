@@ -13,8 +13,13 @@ import type {
   UpdateAction,
   UpdatePlan,
   UpdateResult,
+  DisconnectProgress,
 } from "@/lib/board/updates";
-import { boardRequest } from "../board/_components/api";
+import { boardRequest, boardStream } from "../board/_components/api";
+import {
+  TemplateProgress,
+  type TemplateProgressStep,
+} from "../board/_components/TemplateProgress";
 
 const ACTIONS: Record<UpdateAction, { label: string; className: string }> = {
   create: { label: "+ 새 파일", className: "text-success" },
@@ -25,6 +30,14 @@ const ACTIONS: Record<UpdateAction, { label: string; className: string }> = {
   keep: { label: "= 직접 고쳐서 남겨 둠", className: "text-muted-foreground" },
 };
 
+type DisconnectPhase = DisconnectProgress["phase"] | "forget";
+const DISCONNECT_LABELS: Record<DisconnectPhase, string> = {
+  forget: "연결을 끊는 중",
+  backup: "템플릿 파일을 보관하는 중",
+  remove: "템플릿 파일을 지우는 중",
+  code: "사이트 코드를 다시 적용하는 중",
+};
+
 export function InstallCard({ install }: { install: InstallSummary }) {
   const router = useRouter();
   const confirm = useConfirm();
@@ -32,6 +45,11 @@ export function InstallCard({ install }: { install: InstallSummary }) {
   const [result, setResult] = useState<UpdateResult | null>(null);
   const [notify, setNotify] = useState(install.notify);
   const [busy, setBusy] = useState(false);
+  // While disconnecting: which way, and how far removing files has got.
+  const [disconnecting, setDisconnecting] = useState<{
+    removeFiles: boolean;
+    progress: TemplateProgressStep<DisconnectPhase> | null;
+  } | null>(null);
   const base = `/api/board/installs/${install.id}`;
 
   async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
@@ -95,21 +113,32 @@ export function InstallCard({ install }: { install: InstallSummary }) {
           },
     );
     if (!ok) return;
+    setDisconnecting({
+      removeFiles,
+      progress: removeFiles ? null : { phase: "forget", done: 0, total: 1 },
+    });
     await run(async () => {
-      const { result } = await boardRequest<{
-        result: {
-          removed: number;
-          kept: number;
-          migrations: number;
-          backupPath: string | null;
-        };
-      }>(base, "DELETE", { removeFiles });
+      type Result = {
+        removed: number;
+        kept: number;
+        migrations: number;
+        backupPath: string | null;
+      };
+      const result = removeFiles
+        ? await boardStream<Result, DisconnectProgress>(
+            base,
+            { removeFiles },
+            (progress) => setDisconnecting({ removeFiles, progress }),
+            "DELETE",
+          )
+        : (await boardRequest<{ result: Result }>(base, "DELETE", {})).result;
       if (removeFiles)
         toast.success(
           `파일 ${result.removed}개를 지웠어요${result.kept > 0 ? `, 직접 고친 파일 ${result.kept}개는 남겨 뒀어요` : ""}${result.migrations > 0 ? `, 적용된 마이그레이션 ${result.migrations}개는 남겨 뒀어요` : ""}.`,
         );
       router.refresh();
     });
+    setDisconnecting(null);
   };
 
   return (
@@ -152,7 +181,7 @@ export function InstallCard({ install }: { install: InstallSummary }) {
               </p>
             )}
             <Button onClick={review} disabled={busy}>
-              {busy ? "확인하는 중…" : "바뀌는 파일 보기"}
+              {busy && !disconnecting ? "확인하는 중…" : "바뀌는 파일 보기"}
             </Button>
           </div>
         )}
@@ -259,6 +288,17 @@ export function InstallCard({ install }: { install: InstallSummary }) {
           새 버전이 나오면 알려 주기
         </label>
 
+        {disconnecting && (
+          <TemplateProgress
+            progress={disconnecting.progress}
+            labels={DISCONNECT_LABELS}
+            note={
+              disconnecting.removeFiles
+                ? "페이지를 떠나도 끝까지 진행돼요. 중간에 실패하면 파일을 원래대로 되돌려요."
+                : "파일은 그대로 두고 연결만 끊어요."
+            }
+          />
+        )}
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           <Button
             type="button"

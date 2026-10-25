@@ -397,3 +397,35 @@ integration(
   },
   60_000,
 );
+
+integration(
+  "a template version's migrations are tried on the edge and leave nothing behind",
+  async () => {
+    const { trialTables } =
+      require("@/lib/board/site-code") as typeof import("@/lib/board/site-code");
+    const migrations = [
+      {
+        name: "0001_core.sql",
+        sql: "CREATE TABLE posts (id INTEGER PRIMARY KEY); CREATE TABLE drafts (id INTEGER);",
+      },
+      {
+        name: "0002_rename.sql",
+        sql: "ALTER TABLE drafts RENAME TO notes; CREATE INDEX posts_by_id ON posts (id);",
+      },
+    ];
+    // What the migrations leave, as SQLite has it, not as their text says.
+    expect((await trialTables(migrations)).sort()).toEqual(["notes", "posts"]);
+    // Rolled back: the same migrations try again from nothing.
+    expect((await trialTables(migrations)).sort()).toEqual(["notes", "posts"]);
+    expect(await callSiteObject("_template-trial", "siteTables", {})).toEqual(
+      [],
+    );
+    // What a site refuses, the trial refuses too.
+    await expect(
+      trialTables([
+        { name: "0001_bad.sql", sql: "PRAGMA journal_mode = off;" },
+      ]),
+    ).rejects.toMatchObject({ status: 422 });
+  },
+  60_000,
+);

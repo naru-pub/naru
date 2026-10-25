@@ -30,9 +30,10 @@ export async function boardStream<Result, Progress>(
   url: string,
   body: unknown,
   onProgress: (progress: Progress) => void,
+  method: "POST" | "DELETE" = "POST",
 ): Promise<Result> {
   const response = await fetch(url, {
-    method: "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       Accept: "application/x-ndjson",

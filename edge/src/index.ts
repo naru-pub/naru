@@ -106,6 +106,9 @@ const OPERATIONS = [
   "configure",
   "call",
   "activateFunctions",
+  // The tables a template version's migrations make, run on an object no
+  // site uses and rolled back (control-plane board/site-code.ts).
+  "trialMigrations",
   // Returning a site to a restore point its object kept in R2 (1.1.0), and
   // keeping one when the owner asks.
   "restoreFrom",
@@ -164,6 +167,8 @@ function dispatch(
       return stub.tableMediaReferences(input);
     case "siteTables":
       return stub.siteTables();
+    case "trialMigrations":
+      return stub.trialMigrations(input);
     case "tableRows":
       return stub.tableRows(input);
     case "ownerQuery":
@@ -561,7 +566,9 @@ export default {
         env,
         operation === "call"
           ? "site"
-          : operation === "activateFunctions" || operation === "putFunctions"
+          : operation === "activateFunctions" ||
+              operation === "putFunctions" ||
+              operation === "trialMigrations"
             ? "migrations"
             : "naru",
       );

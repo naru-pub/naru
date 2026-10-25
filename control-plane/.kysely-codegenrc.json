@@ -28,6 +28,7 @@
       "board_template_uploads.status": "ColumnType<\"planned\" | \"finalized\" | \"failed\" | \"expired\", \"planned\" | \"finalized\" | \"failed\" | \"expired\" | undefined>",
       "board_template_uploads.manifest": "ColumnType<import(\"./deploy/siteDeploy\").DeployManifest, string, string>",
       "board_template_uploads.uploaded_paths": "ColumnType<string[], string, string>",
+      "board_template_versions.site_tables": "ColumnType<string[] | null, string | null | undefined, string | null>",
       "board_template_versions.data_collections": "ColumnType<import(\"./board/template-collections\").BoardTemplateCollection[], string | undefined, string>",
       "subscriptions.billing_key_required_status": "ColumnType<\"active\", never, never>",
       "entitlement_repairs.status": "ColumnType<\"pending\" | \"completed\" | \"skipped\", \"pending\" | \"completed\" | \"skipped\" | undefined>",

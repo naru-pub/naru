@@ -52,6 +52,7 @@ import {
 } from "./constants";
 import { normalizeGitHubPath } from "./github-source";
 import { notifyTemplateVersion, recordVersionEtags } from "./installs";
+import { recordVersionTables } from "./templates";
 import { templateFileKey } from "./preview";
 import {
   assertPreviewSize,
@@ -585,6 +586,8 @@ export async function finalizeTemplateUpload(params: {
 
     // After the version, so a version that fails leaves the preview be.
     if (preview) await storeTemplatePreview(template.id, preview);
+    if (!result.unchanged && result.versionId)
+      await recordVersionTables(result.versionId);
     await deleteObjects([...uploaded].map(stagedKey));
     return {
       ...result,

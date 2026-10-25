@@ -50,6 +50,25 @@ export async function siteTableNames(site: string): Promise<Set<string>> {
   return new Set(tables.map((table) => table.name.toLowerCase()));
 }
 
+// The site object template migrations are tried on: no site's, as login
+// names cannot start with "_", and empty, as each trial is rolled back.
+const TRIAL_SITE = "_template-trial";
+
+/**
+ * The tables `migrations` (a template version's, in order) make in an empty
+ * site database: run on the edge as a site's are, with its limits and
+ * refusals, then rolled back (`trialMigrations`, edge/src/site.ts).
+ */
+export async function trialTables(
+  migrations: { name: string; sql: string }[],
+): Promise<string[]> {
+  return (
+    await callSiteObject<{ tables: string[] }>(TRIAL_SITE, "trialMigrations", {
+      migrations,
+    })
+  ).tables;
+}
+
 /** Keeps a restore point of the site's database now; answers its name. */
 export async function saveDatabase(ownerId: string): Promise<string> {
   return (await createRestorePoint(ownerId)).saved.name;

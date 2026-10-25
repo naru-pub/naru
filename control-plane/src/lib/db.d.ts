@@ -385,6 +385,7 @@ export interface BoardTemplateVersions {
   id: Generated<string>;
   preview_rendered_at: Timestamp | null;
   site_code: Generated<boolean>;
+  site_tables: ColumnType<string[] | null, string | null | undefined, string | null>;
   size_bytes: Int8;
   source_path: string;
   template_id: string;

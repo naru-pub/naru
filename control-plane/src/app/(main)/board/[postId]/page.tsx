@@ -361,21 +361,38 @@ export default async function PostPage({
                   </section>
                 )}
 
-                {latest.collections.length > 0 && (
+                {(latest.collections.length > 0 ||
+                  (latest.tables?.length ?? 0) > 0) && (
                   <section className="space-y-2 border-2 border-line bg-card p-4 text-xs leading-relaxed">
                     <h2 className="text-sm font-bold">필요한 기능</h2>
-                    <p className="text-muted-foreground">
-                      데이터베이스 — 적용할 때 빈 컬렉션{" "}
-                      {latest.collections.map((c, index) => (
-                        <span key={c.name}>
-                          {index > 0 && ", "}
-                          <code className="bg-secondary px-1 text-foreground">
-                            <CollectionName name={c.name} />
-                          </code>
-                        </span>
-                      ))}
-                      을(를) 만들어요.
-                    </p>
+                    {latest.collections.length > 0 && (
+                      <p className="text-muted-foreground">
+                        데이터베이스 — 적용할 때 빈 컬렉션{" "}
+                        {latest.collections.map((c, index) => (
+                          <span key={c.name}>
+                            {index > 0 && ", "}
+                            <code className="bg-secondary px-1 text-foreground">
+                              <CollectionName name={c.name} />
+                            </code>
+                          </span>
+                        ))}
+                        을(를) 만들어요.
+                      </p>
+                    )}
+                    {latest.tables && latest.tables.length > 0 && (
+                      <p className="text-muted-foreground">
+                        데이터베이스 — 적용할 때 사이트 데이터베이스에 빈 테이블{" "}
+                        {latest.tables.map((table, index) => (
+                          <span key={table}>
+                            {index > 0 && ", "}
+                            <code className="bg-secondary px-1 text-foreground">
+                              {table}
+                            </code>
+                          </span>
+                        ))}
+                        을(를) 만들어요.
+                      </p>
+                    )}
                   </section>
                 )}
 

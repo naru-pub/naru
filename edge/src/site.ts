@@ -1647,6 +1647,49 @@ export class SiteData extends DurableObject<Env> {
     return pending;
   }
 
+  /**
+   * The tables `migrations` leave in this object's database, run in order as
+   * a release's are (applyMigration: the same statements allowed, the same
+   * limits) and then rolled back, so nothing they did stays. For a template
+   * version's post to say what it makes (control-plane board/site-code.ts),
+   * on an object no site uses, whose database is empty; one that is not is
+   * refused, as its tables would be counted.
+   */
+  async trialMigrations(input: { migrations?: unknown }) {
+    const migrations = input?.migrations;
+    if (
+      !Array.isArray(migrations) ||
+      migrations.length > 1000 ||
+      migrations.some(
+        (m) =>
+          typeof m?.name !== "string" ||
+          !/^[A-Za-z0-9_.-]{1,128}\.sql$/.test(m.name) ||
+          typeof m.sql !== "string",
+      )
+    )
+      return this.run(() => {
+        throw new DataError(400, "Invalid migrations.");
+      });
+    const rollBack = new Error("trialMigrations rolls back");
+    let tables: string[] = [];
+    try {
+      this.ctx.storage.transactionSync(() => {
+        if (this.siteObjects().length)
+          throw new DataError(409, "This object's database is not empty.");
+        for (const migration of migrations as Migration[])
+          this.applyMigration({ ...migration, digest: "" }, "trial");
+        tables = this.siteObjects()
+          .filter((object) => object.type === "table")
+          .map((object) => object.name);
+        throw rollBack;
+      });
+    } catch (error) {
+      if (error instanceof DataError) return this.failure(error);
+      if (error !== rollBack) throw error;
+    }
+    return { ok: true as const, value: { tables } };
+  }
+
   /** Runs one migration's statements and records it, inside the caller's transaction. */
   private applyMigration(migration: Migration, generation: string) {
     const fail = (reason: string) =>

@@ -122,6 +122,16 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   site's database (tables, data) is left as it is. Applying it
   publishes the site's code (the purge after copying does); if Naru refuses
   it, the files of both templates go back and nothing is recorded.
+- **Tables**: a site-code version's post says which tables its migrations
+  make. They are not read from the SQL: when the version is published (or
+  first shown, for one from before), its migrations run on the edge in a
+  site object no site uses (`_template-trial`; login names cannot start with
+  `_`), exactly as a site's would, with the same statements allowed and the
+  same limits, and the tables SQLite then has are recorded in
+  `board_template_versions.site_tables` before the transaction is rolled
+  back (`trialMigrations`, edge/src/site.ts; `recordVersionTables`).
+  Migrations the edge refuses make none; one tried while the edge is away
+  is tried again on the next view.
 - **Applying** is two calls:
   1. `apply/plan` reports which files would be created or overwritten, and
      writes nothing.
@@ -200,7 +210,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   recorded) are backed up and removed, and those the owner changed and its
   migrations stay. If
   Naru then refuses the site's code, they all go back and the install
-  stays. The database is left as it is. Applications from before installs existed
+  stays. The card follows it as the apply dialog does (backing up,
+  removing, the site's code), streamed by the same `progress-stream.ts`. The database is left as it is. Applications from before installs existed
   (migration `1792850254347`) have none and are not updated.
 
 ## Routes

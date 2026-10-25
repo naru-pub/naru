@@ -27,6 +27,7 @@ import type {
   ApplyProgress,
 } from "@/lib/board/templates";
 import { boardRequest, boardStream } from "./api";
+import { TemplateProgress } from "./TemplateProgress";
 import CollectionName from "@/components/CollectionName";
 
 type Step =
@@ -41,45 +42,6 @@ const PHASE_LABELS: Record<ApplyProgress["phase"], string> = {
   code: "사이트 코드를 적용하는 중",
   collections: "컬렉션을 만드는 중",
 };
-
-/** Where an application has got, while it runs. */
-function ApplyProgressBar({ progress }: { progress: ApplyProgress | null }) {
-  const label = progress ? PHASE_LABELS[progress.phase] : "시작하는 중";
-  const counted = progress && progress.total > 1;
-  const percent =
-    progress && progress.total > 0
-      ? Math.round((progress.done / progress.total) * 100)
-      : 0;
-  return (
-    <div role="status" aria-live="polite" className="space-y-2">
-      <div className="flex justify-between gap-3 text-sm">
-        <span className="font-bold">{label}…</span>
-        {counted && (
-          <span className="text-muted-foreground">
-            {progress.done} / {progress.total}
-          </span>
-        )}
-      </div>
-      <div
-        className="h-2 w-full overflow-hidden bg-muted"
-        role="progressbar"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={counted ? percent : undefined}
-      >
-        <div
-          className={`h-full bg-primary transition-[width] ${counted ? "" : "animate-pulse"}`}
-          style={{ width: counted ? `${percent}%` : "100%" }}
-        />
-      </div>
-      <p className="text-xs text-muted-foreground">
-        페이지를 떠나도 적용은 끝까지 진행돼요. 중간에 실패하면 사이트를
-        원래대로 되돌려요.
-      </p>
-    </div>
-  );
-}
 
 export function ApplyTemplateDialog({
   title,
@@ -581,7 +543,13 @@ export function ApplyTemplateDialog({
               </span>
             </label>
 
-            {applying && <ApplyProgressBar progress={applying.progress} />}
+            {applying && (
+              <TemplateProgress
+                progress={applying.progress}
+                labels={PHASE_LABELS}
+                note="페이지를 떠나도 적용은 끝까지 진행돼요. 중간에 실패하면 사이트를 원래대로 되돌려요."
+              />
+            )}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">

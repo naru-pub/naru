@@ -15,6 +15,7 @@ import {
   getUserObjectKey,
 } from "@/lib/site-urls";
 import { createCollections, listCollections } from "@/lib/site-data/service";
+import { DataError } from "@/lib/site-data/validation";
 import {
   APPLICATIONS_PER_HOUR,
   MAX_CHANGELOG_LENGTH,
@@ -55,6 +56,7 @@ import {
   restoreDatabase,
   saveDatabase,
   siteTableNames,
+  trialTables,
 } from "./site-code";
 import { withSiteLock } from "./site-lock";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
@@ -449,7 +451,7 @@ export async function publishTemplatePost(
   );
   const size = files.reduce((sum, file) => sum + file.size, 0);
 
-  return await db.transaction().execute(async (tx) => {
+  const published = await db.transaction().execute(async (tx) => {
     const post = await tx
       .insertInto("board_posts")
       .values({ user_id: user.id, kind: "template", title, body })
@@ -498,8 +500,10 @@ export async function publishTemplatePost(
     await recordVersionEtags(tx, template.id, 1, version.id);
     // Durable work is visible only after this version commits.
     await enqueueTemplatePreview(tx, version.id);
-    return { postId: post.id, templateId: template.id };
+    return { postId: post.id, templateId: template.id, versionId: version.id };
   });
+  await recordVersionTables(published.versionId);
+  return { postId: published.postId, templateId: published.templateId };
 }
 
 async function findLiveTemplate(templateId: string) {
@@ -550,7 +554,7 @@ export async function publishTemplateVersion(
   );
   const size = files.reduce((sum, file) => sum + file.size, 0);
 
-  return await db.transaction().execute(async (tx) => {
+  const published = await db.transaction().execute(async (tx) => {
     // Serialises two publishes of the same template.
     await tx
       .selectFrom("board_templates")
@@ -603,8 +607,61 @@ export async function publishTemplateVersion(
     await recordVersionEtags(tx, templateId, versionNumber, version.id);
     await enqueueTemplatePreview(tx, version.id);
     await notifyTemplateVersion(tx, templateId, version.id);
-    return versionNumber;
+    return { versionNumber, versionId: version.id };
   });
+  await recordVersionTables(published.versionId);
+  return published.versionNumber;
+}
+
+/**
+ * Records the tables a site-code version's migrations make in an empty
+ * database (site-code.ts, `trialTables`), for its post to say so. Best
+ * effort: one the edge refuses makes none; one tried while the edge is
+ * away keeps none yet, and is tried again when its post is next shown.
+ */
+export async function recordVersionTables(
+  versionId: string,
+): Promise<string[] | null> {
+  const version = await db
+    .selectFrom("board_template_versions")
+    .select(["template_id", "version", "site_code"])
+    .where("id", "=", versionId)
+    .executeTakeFirst();
+  if (!version?.site_code) return null;
+  const files = await db
+    .selectFrom("board_template_files")
+    .select("path")
+    .where("version_id", "=", versionId)
+    .where("path", "like", "\\_naru/migrations/%")
+    .orderBy("path")
+    .execute();
+  let tables: string[];
+  try {
+    const migrations = await Promise.all(
+      files.map(async (file) => ({
+        name: file.path.slice(MIGRATIONS_PREFIX.length),
+        sql:
+          (await storage.getText(
+            templateFileKey(version.template_id, version.version, file.path),
+          )) ?? "",
+      })),
+    );
+    tables = migrations.length > 0 ? await trialTables(migrations) : [];
+  } catch (error) {
+    // Migrations a site would refuse (422) make nothing; anything else (the
+    // edge away, or one without trialMigrations yet) is tried again later.
+    if (!(error instanceof DataError) || error.status !== 422) {
+      console.error("Trying a template version's migrations", error);
+      return null;
+    }
+    tables = [];
+  }
+  await db
+    .updateTable("board_template_versions")
+    .set({ site_tables: JSON.stringify(tables) })
+    .where("id", "=", versionId)
+    .execute();
+  return tables;
 }
 
 async function ownLiveTemplate(user: User, templateId: string) {
@@ -714,6 +771,9 @@ export interface TemplateDetail {
     githubSha: string | null;
     // Site code migrations this version adds to the one before it.
     newMigrations: string[];
+    // The tables its migrations make in an empty site database, or null
+    // when not known (no site code, or not tried yet).
+    tables: string[] | null;
   }[];
   files: { path: string; sizeBytes: number }[];
 }
@@ -745,6 +805,11 @@ export async function getTemplateForPost(
     .where("template_id", "=", template.id)
     .orderBy("version", "desc")
     .execute();
+  // Versions from before tables were recorded are tried as they are shown.
+  const latestTables =
+    versions[0]?.site_code && versions[0].site_tables === null
+      ? await recordVersionTables(versions[0].id)
+      : (versions[0]?.site_tables ?? null);
   const migrations = await db
     .selectFrom("board_template_files as f")
     .innerJoin("board_template_versions as v", "v.id", "f.version_id")
@@ -802,6 +867,7 @@ export async function getTemplateForPost(
       createdAt: version.created_at,
       siteCode: version.site_code,
       githubSha: version.github_sha,
+      tables: index === 0 ? latestTables : version.site_tables,
       newMigrations: (() => {
         const before = versions[index + 1]
           ? migrationsOf(versions[index + 1].version)
