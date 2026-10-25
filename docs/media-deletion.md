@@ -42,10 +42,14 @@ removing metadata: bytes recreated through a recently expired presigned PUT are 
 cleanup, and previously cached public media URLs may remain visible. Deletion is
 not an immediate revocation guarantee for copies or caches.
 
-Abandoned pending uploads use the same durable path. Their cleanup claim checks
-that they are still pending; finalization checks the tombstone again after storage
-HEAD, so concurrent cleanup/delete cannot revive their metadata. Cleanup failures
-retain the work and quota rather than losing track of an undeleted object.
+The `media-cleanup` job (`src/cli/cleanup-pending-media.ts`, every 15 minutes)
+only finishes deletions the owner asked for. Nothing is deleted on Naru's own
+judgement: an unfinished (pending) upload stays, marked in the media library,
+until the owner deletes it, since its address may already be in use. A
+deletion racing an upload's finalization wins: finalization checks the
+tombstone again after storage HEAD, so it cannot revive the metadata. Cleanup
+failures retain the work and quota rather than losing track of an undeleted
+object.
 
 If a site needs to delete its own uploads later, the place for it is site code
 (a mutation that knows nothing still names the file), not the browser SDK.
