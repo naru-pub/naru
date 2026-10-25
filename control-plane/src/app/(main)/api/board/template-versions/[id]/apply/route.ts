@@ -29,6 +29,7 @@ export async function POST(
       backup: body.backup,
       createCollections: body.createCollections,
       notify: body.notify,
+      replace: body.replace,
     };
     if (!request.headers.get("accept")?.includes("application/x-ndjson")) {
       const result = await applyTemplate(user, versionId, input);

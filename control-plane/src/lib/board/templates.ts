@@ -38,6 +38,7 @@ import {
   backUp,
   backupStamp,
   notifyTemplateVersion,
+  installFileStates,
   installedFiles,
   putBack,
   recordInstall,
@@ -857,6 +858,15 @@ export interface ApplicationPlan {
     action: "create" | "exists" | "unavailable";
   }[];
   totalBytes: number;
+  // Another template's site code is installed (a site has one): applying
+  // this one with `replace` removes that template's files still as it wrote
+  // them, keeps those the owner changed, and forgets its install.
+  replaces: {
+    installId: string;
+    slug: string;
+    remove: string[];
+    keep: string[];
+  } | null;
 }
 
 function normalizeTarget(value: unknown): string {
@@ -879,7 +889,7 @@ async function otherSiteCodeInstall(userId: string, templateId: string) {
     .selectFrom("board_template_installs as i")
     .innerJoin("board_template_versions as v", "v.id", "i.version_id")
     .innerJoin("board_templates as t", "t.id", "i.template_id")
-    .select(["t.slug"])
+    .select(["i.id", "i.target_path", "i.files", "t.slug"])
     .where("i.user_id", "=", userId)
     .where("i.template_id", "<>", templateId)
     .where("v.site_code", "=", true)
@@ -922,6 +932,7 @@ export async function planApplication(
   );
 
   const blockers: string[] = [];
+  let replaces: ApplicationPlan["replaces"] = null;
   if (version.site_code) {
     if (!hasDatabase) {
       blockers.push(
@@ -930,9 +941,15 @@ export async function planApplication(
     }
     const other = await otherSiteCodeInstall(user.id, version.template_id);
     if (other) {
-      blockers.push(
-        `다른 템플릿(${other.slug})의 사이트 코드가 설치되어 있어요. 설치한 템플릿에서 그 템플릿의 연결을 먼저 끊어 주세요.`,
-      );
+      // What this template writes is overwritten (and backed up) anyway.
+      const writes = new Set(files.map((file) => `${targetPath}${file.path}`));
+      const states = await installFileStates(user.loginName, other);
+      replaces = {
+        installId: other.id,
+        slug: other.slug,
+        remove: states.untouched.filter((path) => !writes.has(path)),
+        keep: states.changed.filter((path) => !writes.has(path)),
+      };
     }
   }
 
@@ -958,6 +975,7 @@ export async function planApplication(
           : "unavailable",
     })),
     totalBytes: planned.reduce((sum, file) => sum + file.sizeBytes, 0),
+    replaces,
   };
 }
 
@@ -972,6 +990,8 @@ export interface ApplicationResult {
   skippedCollections: string[];
   // Not created because the site has no database feature.
   unavailableCollections: string[];
+  // The template whose site code this one replaced, and what of its files.
+  replaced: { slug: string; removed: number; kept: number } | null;
 }
 
 /** Why the site's code was refused, for a person to read. */
@@ -1005,6 +1025,9 @@ export async function applyTemplate(
     createCollections: unknown;
     // Told of new versions; true unless false.
     notify?: unknown;
+    // Replaces another template's installed site code (the plan's
+    // `replaces`); without it, that is refused.
+    replace?: unknown;
     onProgress?: (progress: ApplyProgress) => void;
   },
 ): Promise<ApplicationResult> {
@@ -1034,6 +1057,13 @@ async function applyLocked(
   const version = await findApplicableVersion(versionId);
   const plan = await planApplication(user, versionId, input.targetPath);
   if (plan.blockers.length > 0) throw new BoardError(409, plan.blockers[0]);
+  const replaces = plan.replaces;
+  if (replaces && input.replace !== true)
+    throw new BoardError(
+      409,
+      `다른 템플릿(${replaces.slug})의 사이트 코드가 설치되어 있어요. 이 템플릿으로 바꾸려면 바꾸기를 골라 주세요.`,
+    );
+  const removed = replaces?.remove ?? [];
   // Site code is put back on failure, so its backups are always kept.
   const keepBackup = plan.siteCode || input.backup !== false;
   const overwritten = plan.files
@@ -1045,8 +1075,9 @@ async function applyLocked(
   // Overwritten files are backed up even when the person asked for no
   // backup, so a failure can put them back; that backup has a folder of its
   // own and goes once the template is in.
+  const backedUp = [...overwritten, ...removed];
   const backupPath =
-    overwritten.length === 0
+    backedUp.length === 0
       ? null
       : keepBackup
         ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
@@ -1055,9 +1086,9 @@ async function applyLocked(
   // Backups first: if anything after this fails, the originals are safe.
   if (backupPath) {
     let done = 0;
-    report({ phase: "backup", done, total: overwritten.length });
-    await backUp(user.loginName, backupPath, overwritten, () =>
-      report({ phase: "backup", done: ++done, total: overwritten.length }),
+    report({ phase: "backup", done, total: backedUp.length });
+    await backUp(user.loginName, backupPath, backedUp, () =>
+      report({ phase: "backup", done: ++done, total: backedUp.length }),
     );
   }
 
@@ -1068,6 +1099,11 @@ async function applyLocked(
     .where("version_id", "=", version.id)
     .execute();
   try {
+    // The replaced template's files go first; they come back on a failure.
+    if (removed.length > 0)
+      await storage.deleteObjects(
+        removed.map((path) => getUserObjectKey(user.loginName, path)),
+      );
     report({ phase: "copy", done: 0, total: sources.length });
     await forEachConcurrently(sources, async (file) => {
       const path = `${plan.targetPath}${file.path}`;
@@ -1083,18 +1119,20 @@ async function applyLocked(
     // Purging publishes the site's code when the files hold some, and Naru
     // may refuse it (a migration that fails). For files alone it only
     // refreshes caches, which expire anyway.
-    await storage.purgeSiteFiles(user.loginName, written).catch((error) => {
-      if (plan.siteCode) throw error;
-      console.error("Purge after applying a template", error);
-    });
+    await storage
+      .purgeSiteFiles(user.loginName, [...written, ...removed])
+      .catch((error) => {
+        if (plan.siteCode) throw error;
+        console.error("Purge after applying a template", error);
+      });
   } catch (error) {
     await putBack(user.loginName, {
       backupPath,
-      backedUp: backupPath ? overwritten : [],
+      backedUp: backupPath ? backedUp : [],
       created,
     });
     await storage
-      .purgeSiteFiles(user.loginName, written)
+      .purgeSiteFiles(user.loginName, [...written, ...removed])
       .catch((cause) => console.error("Purge after putting back", cause));
     if (backupPath && !keepBackup) await removeBackup(user, backupPath);
     throw new BoardError(
@@ -1149,6 +1187,13 @@ async function applyLocked(
           .where("id", "=", version.template_id)
           .execute();
       }
+      // The replaced template's install goes with its files.
+      if (replaces)
+        await tx
+          .deleteFrom("board_template_installs")
+          .where("id", "=", replaces.installId)
+          .where("user_id", "=", user.id)
+          .execute();
       const installId = await recordInstall(tx, {
         userId: user.id,
         templateId: version.template_id,
@@ -1190,6 +1235,13 @@ async function applyLocked(
     createdCollections,
     skippedCollections,
     unavailableCollections,
+    replaced: replaces
+      ? {
+          slug: replaces.slug,
+          removed: removed.length,
+          kept: replaces.keep.length,
+        }
+      : null,
   };
 }
 

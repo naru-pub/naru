@@ -19,17 +19,20 @@ export async function PATCH(
   }
 }
 
-// Disconnects the install: its files stay, as the owner's own.
+// Disconnects the install: its files stay, as the owner's own, or with
+// { removeFiles: true } those still as the template wrote them go.
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const installId = parseId((await params).id);
-    await readJson(request);
+    const body = await readJson(request);
     const user = await requireUser();
-    await disconnectInstall(user, installId);
-    return NextResponse.json({ success: true });
+    const result = await disconnectInstall(user, installId, {
+      removeFiles: body.removeFiles === true,
+    });
+    return NextResponse.json({ success: true, result });
   } catch (error) {
     return boardErrorResponse(error);
   }

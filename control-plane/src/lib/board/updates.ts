@@ -18,6 +18,7 @@ import {
   BACKUP_DIRECTORY,
   backUp,
   backupStamp,
+  installFileStates,
   installedFiles,
   putBack,
   recordInstall,
@@ -446,14 +447,75 @@ export async function setInstallNotify(
   }
 }
 
+export interface DisconnectResult {
+  // The template's files removed, and where they were kept first.
+  removed: number;
+  backupPath: string | null;
+  // Files the owner changed, left in place.
+  kept: number;
+}
+
 /**
- * Forgets an install: its files stay, now the owner's own, and it is no
- * longer updated (another template's site code may then be installed).
+ * Forgets an install, so it is no longer told of new versions (and another
+ * template's site code may then be installed). Its files stay, now the
+ * owner's own, unless `removeFiles`: then the files still exactly as the
+ * template wrote them go, backed up first, and those the owner changed stay.
+ * If Naru refuses the site's code without them, they all go back and the
+ * install stays. The site's database is left as it is.
  */
 export async function disconnectInstall(
   user: User,
   installId: string,
-): Promise<void> {
+  { removeFiles = false }: { removeFiles?: boolean } = {},
+): Promise<DisconnectResult> {
+  if (!removeFiles) {
+    await forgetInstall(user, installId);
+    return { removed: 0, backupPath: null, kept: 0 };
+  }
+  if (await siteSuspended(user.id))
+    throw new BoardError(403, SUSPENDED_MESSAGE);
+  return await withSiteLock(user.id, async () => {
+    const install = await loadInstall(user, installId);
+    const { untouched, changed } = await installFileStates(
+      user.loginName,
+      install,
+    );
+    const backupPath =
+      untouched.length > 0
+        ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
+        : null;
+    if (backupPath) {
+      await backUp(user.loginName, backupPath, untouched);
+      try {
+        await storage.deleteObjects(
+          untouched.map((path) => getUserObjectKey(user.loginName, path)),
+        );
+        // Publishes the site's code without the removed files, when they
+        // were some of it; Naru may refuse what is left.
+        await storage.purgeSiteFiles(user.loginName, untouched);
+      } catch (error) {
+        await putBack(user.loginName, {
+          backupPath,
+          backedUp: untouched,
+          created: [],
+        });
+        await storage
+          .purgeSiteFiles(user.loginName, untouched)
+          .catch((cause) => console.error("Purge after putting back", cause));
+        const message = error instanceof Error ? error.message : String(error);
+        throw new BoardError(
+          422,
+          `템플릿 파일을 지우지 못해서 그대로 두었어요: ${message.slice(0, 300)}`,
+        );
+      }
+    }
+    await forgetInstall(user, installId);
+    await recordSiteEdit(user.id);
+    return { removed: untouched.length, backupPath, kept: changed.length };
+  });
+}
+
+async function forgetInstall(user: User, installId: string) {
   const result = await db
     .deleteFrom("board_template_installs")
     .where("id", "=", installId)

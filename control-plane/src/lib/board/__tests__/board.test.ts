@@ -961,25 +961,106 @@ integration("board", () => {
         version: { siteCode: true },
       });
 
-      // A second template's site code waits until the first is disconnected.
+      // A second template's site code replaces the first's, when asked.
       const other = await template(author, "other/", [
         "index.html",
         "_naru/queries/x.js",
       ]);
       const otherVersion = await latestVersion(other.postId);
-      const blocked = await planApplication(site, otherVersion.id, "");
-      expect(blocked.blockers[0]).toMatch(/연결을 먼저 끊어/);
+      const plan = await planApplication(site, otherVersion.id, "");
+      expect(plan.blockers).toEqual([]);
+      // index.html the second writes over, so it is not in `remove`.
+      expect(plan.replaces).toMatchObject({
+        installId: result.installId,
+        remove: ["_naru/migrations/0001_core.sql", "_naru/queries/posts.js"],
+        keep: [],
+      });
+      const replacing = {
+        targetPath: "",
+        backup: true,
+        createCollections: true,
+        replace: true,
+      };
       await expect(
-        applyTemplate(site, otherVersion.id, {
-          targetPath: "",
-          backup: true,
-          createCollections: true,
-        }),
+        applyTemplate(site, otherVersion.id, { ...replacing, replace: false }),
       ).rejects.toMatchObject({ status: 409 });
-      await disconnectInstall(site, result.installId);
+
+      // The owner changed the first template's query: it is theirs now.
+      put(`${site.loginName}/_naru/queries/posts.js`);
+      // If Naru refuses the code, both templates' files go back.
+      const before = siteOf(site.loginName);
+      storageMock.purgeSiteFiles.mockImplementationOnce(async () => {
+        throw new DataError(422, "migration failed", "INVALID_REQUEST");
+      });
+      await expect(
+        applyTemplate(site, otherVersion.id, replacing),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(siteOf(site.loginName)).toEqual(before);
+      expect((await listInstalls(site)).map((i) => i.id)).toEqual([
+        result.installId,
+      ]);
+
+      const replaced = await applyTemplate(site, otherVersion.id, replacing);
+      expect(replaced.replaced).toMatchObject({ removed: 1, kept: 1 });
+      expect(Object.keys(siteOf(site.loginName)).sort()).toEqual([
+        "_naru/queries/posts.js",
+        "_naru/queries/x.js",
+        "index.html",
+      ]);
       expect(
-        (await planApplication(site, otherVersion.id, "")).blockers,
-      ).toEqual([]);
+        [...bucket.keys()].some(
+          (key) =>
+            key.startsWith(`${site.loginName}/.backup/`) &&
+            key.endsWith("/_naru/migrations/0001_core.sql"),
+        ),
+      ).toBe(true);
+      expect((await listInstalls(site)).map((i) => i.id)).toEqual([
+        replaced.installId,
+      ]);
+    });
+
+    test("disconnecting can remove the template's files, keeping the owner's", async () => {
+      const author = await member();
+      const { postId } = await template(author, "d/", [
+        "index.html",
+        "style.css",
+        "app.js",
+      ]);
+      const site = await member();
+      const { installId } = await applyTemplate(
+        site,
+        (await latestVersion(postId)).id,
+        { targetPath: "d", backup: true, createCollections: true },
+      );
+      put(`${site.loginName}/d/style.css`);
+      put(`${site.loginName}/d/mine.html`);
+
+      // Refused, everything stays, the install too.
+      const before = siteOf(site.loginName);
+      storageMock.purgeSiteFiles.mockImplementationOnce(async () => {
+        throw new Error("purge failed");
+      });
+      await expect(
+        disconnectInstall(site, installId, { removeFiles: true }),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(siteOf(site.loginName)).toEqual(before);
+      expect(await listInstalls(site)).toHaveLength(1);
+
+      expect(
+        await disconnectInstall(site, installId, { removeFiles: true }),
+      ).toMatchObject({ removed: 2, kept: 1 });
+      expect(Object.keys(siteOf(site.loginName, "d/")).sort()).toEqual([
+        "d/mine.html",
+        "d/style.css",
+      ]);
+      expect(
+        [...bucket.keys()].some(
+          (key) =>
+            key.startsWith(`${site.loginName}/.backup/`) &&
+            key.endsWith("/d/index.html"),
+        ),
+      ).toBe(true);
+      expect(await listInstalls(site)).toEqual([]);
     });
 
     test("an update changes only the template's files, and backs up the owner's", async () => {

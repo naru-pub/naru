@@ -107,6 +107,8 @@ export function ApplyTemplateDialog({
   const [backup, setBackup] = useState(true);
   const [createCollections, setCreateCollections] = useState(true);
   const [notify, setNotify] = useState(true);
+  // Confirms replacing another template's site code, when the plan says so.
+  const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState(false);
   // Set while applying: null until the first progress line arrives.
   const [applying, setApplying] = useState<{
@@ -134,6 +136,7 @@ export function ApplyTemplateDialog({
         "POST",
         { targetPath },
       );
+      setReplace(false);
       setStep({ name: "review", plan });
     } catch (error: any) {
       toast.error(error.message);
@@ -148,7 +151,7 @@ export function ApplyTemplateDialog({
     try {
       const result = await boardStream<ApplicationResult, ApplyProgress>(
         `/api/board/template-versions/${versionId}/apply`,
-        { targetPath, backup, createCollections, notify },
+        { targetPath, backup, createCollections, notify, replace },
         (progress) => setApplying({ progress }),
       );
       setStep({ name: "done", result });
@@ -344,6 +347,32 @@ export function ApplyTemplateDialog({
                 </p>
               </div>
             )}
+            {step.plan.replaces && (
+              <label className="flex cursor-pointer gap-3 border-2 border-warning p-3 text-sm">
+                <Checkbox
+                  checked={replace}
+                  onCheckedChange={(checked) => setReplace(checked === true)}
+                  className="mt-0.5"
+                />
+                <span className="space-y-1">
+                  <span className="block font-bold">
+                    설치한 템플릿 {step.plan.replaces.slug}을(를) 이 템플릿으로
+                    바꾸기
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    사이트 코드는 사이트에 하나만 둘 수 있어요.{" "}
+                    {step.plan.replaces.slug}이(가) 설치한 그대로인 파일{" "}
+                    {step.plan.replaces.remove.length}개를 /.backup/에 보관하고
+                    지워요.
+                    {step.plan.replaces.keep.length > 0 &&
+                      ` 직접 고친 파일 ${step.plan.replaces.keep.length}개는 남겨 둬요.`}{" "}
+                    데이터베이스의 테이블과 데이터는 그대로예요. 실패하면 두
+                    템플릿 모두 원래대로 되돌려요.
+                  </span>
+                </span>
+              </label>
+            )}
+
             <div className="space-y-2">
               <h3 className="text-sm font-bold">바뀌는 파일</h3>
               <div className="max-h-72 overflow-y-auto border border-border">
@@ -488,7 +517,11 @@ export function ApplyTemplateDialog({
                 </Button>
                 <Button
                   onClick={apply}
-                  disabled={busy || step.plan.blockers.length > 0}
+                  disabled={
+                    busy ||
+                    step.plan.blockers.length > 0 ||
+                    (step.plan.replaces !== null && !replace)
+                  }
                 >
                   {busy ? "적용하는 중…" : "적용하기"}
                 </Button>
@@ -502,6 +535,15 @@ export function ApplyTemplateDialog({
             <p className="text-base font-bold">적용했어요!</p>
             <ul className="space-y-1 text-sm text-muted-foreground">
               <li>파일 {step.result.written}개를 썼어요.</li>
+              {step.result.replaced && (
+                <li>
+                  {step.result.replaced.slug}의 파일{" "}
+                  {step.result.replaced.removed}개를 지웠어요
+                  {step.result.replaced.kept > 0 &&
+                    ` (직접 고친 파일 ${step.result.replaced.kept}개는 남겨 뒀어요)`}
+                  .
+                </li>
+              )}
               {step.result.backupPath && (
                 <li>원래 파일은 /{step.result.backupPath} 에 보관했어요.</li>
               )}

@@ -102,10 +102,14 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   200 and 20 MiB for snapshots.
 - **Site code**: a version whose files include `_naru/` (`site_code`)
   installs at the site's root only (a site has one `_naru/`), needs the
-  database feature, and is refused while another template's site code is
-  installed there. Applying it publishes the site's code (the purge after
-  copying does); if Naru refuses it, the files go back and nothing is
-  recorded.
+  database feature, and replaces another template's site code installed
+  there only when asked (`replace`; the plan's `replaces` says what it
+  does): the other template's files still exactly as it wrote them are
+  backed up and removed, those the owner changed stay, and its install is
+  forgotten, all in the same all-or-nothing application. The site's database
+  (tables, data, migrations already run) is left as it is. Applying it
+  publishes the site's code (the purge after copying does); if Naru refuses
+  it, the files of both templates go back and nothing is recorded.
 - **Applying** is two calls:
   1. `apply/plan` reports which files would be created or overwritten, and
      writes nothing.
@@ -178,8 +182,12 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   reads them. The 템플릿 link in the navigation counts the installs with a
   newer version waiting (`installCounts`). An install with `notify` off is
   never told, and `/templates` does not offer it new versions until it is
-  turned back on. Disconnecting an install
-  forgets it; its files stay. Applications from before installs existed
+  turned back on. Disconnecting an install forgets it and its files stay,
+  now the owner's own; or, with `removeFiles` ("템플릿 파일 지우고 연결
+  끊기"), the files still exactly as it wrote them (by the ETags it
+  recorded) are backed up and removed and those the owner changed stay. If
+  Naru then refuses the site's code, they all go back and the install
+  stays. The database is left as it is. Applications from before installs existed
   (migration `1792850254347`) have none and are not updated.
 
 ## Routes

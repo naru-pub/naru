@@ -76,17 +76,33 @@ export function InstallCard({ install }: { install: InstallSummary }) {
       router.refresh();
     });
 
-  const disconnect = async () => {
-    const ok = await confirm({
-      title: "템플릿 연결 끊기",
-      description:
-        "파일은 그대로 내 것이 되고, 더는 업데이트되지 않아요. 다른 템플릿의 사이트 코드를 설치하려면 먼저 연결을 끊어야 해요.",
-      confirmText: "연결 끊기",
-      destructive: true,
-    });
+  const disconnect = async (removeFiles: boolean) => {
+    const ok = await confirm(
+      removeFiles
+        ? {
+            title: "템플릿 파일 지우고 연결 끊기",
+            description:
+              "템플릿이 설치한 그대로인 파일을 /.backup/에 보관하고 지워요. 직접 고친 파일은 남겨 둬요. 데이터베이스의 테이블과 데이터는 그대로예요.",
+            confirmText: "지우고 연결 끊기",
+            destructive: true,
+          }
+        : {
+            title: "템플릿 연결 끊기",
+            description:
+              "파일은 그대로 내 것이 되고, 더는 새 버전을 받지 않아요.",
+            confirmText: "연결 끊기",
+            destructive: true,
+          },
+    );
     if (!ok) return;
     await run(async () => {
-      await boardRequest(base, "DELETE", {});
+      const { result } = await boardRequest<{
+        result: { removed: number; kept: number; backupPath: string | null };
+      }>(base, "DELETE", { removeFiles });
+      if (removeFiles)
+        toast.success(
+          `파일 ${result.removed}개를 지웠어요${result.kept > 0 ? `, 직접 고친 파일 ${result.kept}개는 남겨 뒀어요` : ""}.`,
+        );
       router.refresh();
     });
   };
@@ -238,15 +254,26 @@ export function InstallCard({ install }: { install: InstallSummary }) {
           새 버전이 나오면 알려 주기
         </label>
 
-        <Button
-          type="button"
-          variant="link"
-          onClick={disconnect}
-          disabled={busy}
-          className="h-auto p-0 text-xs text-destructive"
-        >
-          템플릿 연결 끊기 (파일은 그대로 내 것이 돼요)
-        </Button>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => disconnect(false)}
+            disabled={busy}
+            className="h-auto p-0 text-xs text-destructive"
+          >
+            연결 끊기 (파일은 그대로 내 것이 돼요)
+          </Button>
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => disconnect(true)}
+            disabled={busy}
+            className="h-auto p-0 text-xs text-destructive"
+          >
+            템플릿 파일 지우고 연결 끊기
+          </Button>
+        </div>
       </div>
     </section>
   );

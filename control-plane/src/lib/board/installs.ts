@@ -49,6 +49,28 @@ export async function siteFiles(
   );
 }
 
+/**
+ * An install's files as they are now: those still exactly as it wrote them
+ * (the template's, which removing it may delete), and those the owner has
+ * changed since (theirs, which removing it leaves). Files no longer there are
+ * neither.
+ */
+export async function installFileStates(
+  loginName: string,
+  install: { target_path: string; files: InstalledFile[] },
+): Promise<{ untouched: string[]; changed: string[] }> {
+  const present = await siteFiles(loginName, install.target_path);
+  const untouched: string[] = [];
+  const changed: string[] = [];
+  for (const file of install.files) {
+    if (!present.has(file.path)) continue;
+    if (file.etag !== null && present.get(file.path) === file.etag)
+      untouched.push(file.path);
+    else changed.push(file.path);
+  }
+  return { untouched, changed };
+}
+
 /** `paths` as they are now in the site, for an install's record. */
 export async function installedFiles(
   loginName: string,
