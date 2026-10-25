@@ -44,7 +44,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   They are counted from the rows' `created_at`, so no counter table is needed.
 - **Notifications**: a new reply notifies the post's author and the author of
   the reply it answers, at most once each, and never the person writing it.
-  Opening the thread marks them read. They are listed at `/board/notifications`.
+  Opening the thread marks them read. They are listed at `/board/notifications`,
+  with new versions of the templates someone installed (below).
 - **Fediverse**: publishing a template post sends a Create(Note) to the
   author's followers, linking to the post, and adds it to their outbox
   (`dispatchTemplatePost`). Deleting the post sends Delete(Tombstone) and
@@ -165,7 +166,16 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   first; if Naru refuses the new site code, it all goes back and the install
   stays on its version. Publishing a version queues an update
   (`template-update-v1`, the maintenance worker) for each `auto` install,
-  which skips a version that adds migrations. Disconnecting an install
+  which skips a version that adds migrations, and tells each person with a
+  `notify` install (알려 주기) through a board notification
+  (`board_notifications.reason = 'template_version'`, migration
+  `1792911506464`): one per person and version, replacing their unread one of
+  an earlier version, never the author's own. `/board/notifications` lists
+  them beside replies, linking to `/templates`, and opening `/templates`
+  reads them. The 템플릿 link in the navigation counts the installs with a
+  newer version waiting (`installCounts`). A `never` install (받지 않기) is
+  never told and `/templates` does not offer it new versions until its
+  setting changes. Disconnecting an install
   forgets it; its files stay. Applications from before installs existed
   (migration `1792850254347`) have none and are not updated.
 
@@ -178,7 +188,7 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 | `/board/[postId]`                   | post, template panel and apply dialog, reply tree        |
 | `/board/[postId]/edit`              | edit; publish a new template version                     |
 | `/board/[postId]/replies/[replyId]` | a reply and everything under it (permalink)              |
-| `/board/notifications`              | my reply notifications                                   |
+| `/board/notifications`              | my reply and template version notifications              |
 
 Every API route takes JSON only, including DELETE, and refuses cross-origin
 requests (`readJson`):

@@ -258,9 +258,10 @@ export interface BoardNotifications {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   read_at: Timestamp | null;
-  reason: "reply_to_post" | "reply_to_reply";
-  reply_id: string;
+  reason: "reply_to_post" | "reply_to_reply" | "template_version";
+  reply_id: string | null;
   user_id: string;
+  version_id: string | null;
 }
 
 export interface BoardPostLikes {

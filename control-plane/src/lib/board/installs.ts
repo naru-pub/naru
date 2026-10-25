@@ -161,6 +161,58 @@ export async function putBack(
     .catch((error) => console.error("Could not remove created files", error));
 }
 
+/**
+ * Tells everyone who installed the template and asked to be told (updates =
+ * 'notify') of `versionId`, in the transaction that published it: a board
+ * notification each, once however many folders they installed it in. One
+ * they have not read yet for an earlier version goes, as this one says more.
+ * The author is not told of their own version.
+ */
+export async function notifyTemplateVersion(
+  executor: Kysely<DB> | Transaction<DB>,
+  templateId: string,
+  versionId: string,
+): Promise<void> {
+  const told = executor
+    .selectFrom("board_template_installs as i")
+    .innerJoin("board_templates as t", "t.id", "i.template_id")
+    .select("i.user_id")
+    .distinct()
+    .where("i.template_id", "=", templateId)
+    .where("i.updates", "=", "notify")
+    .where("i.version_id", "<>", versionId)
+    .whereRef("i.user_id", "<>", "t.user_id");
+  await executor
+    .deleteFrom("board_notifications")
+    .where("reason", "=", "template_version")
+    .where("read_at", "is", null)
+    .where("user_id", "in", told)
+    .where("version_id", "in", (eb) =>
+      eb
+        .selectFrom("board_template_versions")
+        .select("id")
+        .where("template_id", "=", templateId)
+        .where("id", "<>", versionId),
+    )
+    .execute();
+  await executor
+    .insertInto("board_notifications")
+    .columns(["user_id", "reason", "version_id"])
+    .expression(
+      told.select([
+        sql<"template_version">`'template_version'`.as("reason"),
+        sql<string>`${versionId}::uuid`.as("version_id"),
+      ]),
+    )
+    .onConflict((oc) =>
+      oc
+        .columns(["user_id", "version_id"])
+        .where("version_id", "is not", null)
+        .doNothing(),
+    )
+    .execute();
+}
+
 export const TEMPLATE_UPDATE_TASK = "template-update-v1";
 export type TemplateUpdate = { installId: string; versionId: string };
 

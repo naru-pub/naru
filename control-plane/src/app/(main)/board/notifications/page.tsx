@@ -41,7 +41,11 @@ export default async function NotificationsPage() {
                 className={`border-b border-border last:border-b-0 ${n.read ? "" : "bg-primary/5"}`}
               >
                 <Link
-                  href={`/board/${n.postId}#reply-${n.replyId}`}
+                  href={
+                    n.reason === "template_version"
+                      ? "/templates"
+                      : `/board/${n.postId}#reply-${n.replyId}`
+                  }
                   className="block space-y-1 p-4 hover:bg-accent"
                 >
                   <span className="block text-sm">
@@ -51,14 +55,25 @@ export default async function NotificationsPage() {
                         aria-label="읽지 않음"
                       />
                     )}
-                    <strong>{n.fromLoginName}</strong> 님이{" "}
-                    {n.reason === "reply_to_reply" ? "내 답글에" : "내 글"}{" "}
-                    {n.reason === "reply_to_reply"
-                      ? "답글을 달았어요"
-                      : `「${n.postTitle}」에 답글을 달았어요`}
+                    {n.reason === "template_version" ? (
+                      <>
+                        설치한 템플릿 「{n.postTitle}」의 새 버전{" "}
+                        <strong>v{n.version}</strong>이 나왔어요
+                      </>
+                    ) : (
+                      <>
+                        <strong>{n.fromLoginName}</strong> 님이{" "}
+                        {n.reason === "reply_to_reply" ? "내 답글에" : "내 글"}{" "}
+                        {n.reason === "reply_to_reply"
+                          ? "답글을 달았어요"
+                          : `「${n.postTitle}」에 답글을 달았어요`}
+                      </>
+                    )}
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">
-                    {n.replyExcerpt}
+                    {n.reason === "template_version"
+                      ? `${n.fromLoginName} · 설치한 템플릿에서 업데이트할 수 있어요`
+                      : n.replyExcerpt}
                   </span>
                   <span className="block text-xs text-muted-foreground">
                     {formatRelative(n.createdAt)}

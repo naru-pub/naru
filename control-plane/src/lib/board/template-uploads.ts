@@ -51,7 +51,11 @@ import {
   formatBytes,
 } from "./constants";
 import { normalizeGitHubPath } from "./github-source";
-import { enqueueTemplateUpdates, recordVersionEtags } from "./installs";
+import {
+  enqueueTemplateUpdates,
+  notifyTemplateVersion,
+  recordVersionEtags,
+} from "./installs";
 import { templateFileKey } from "./preview";
 import {
   assertPreviewSize,
@@ -576,6 +580,7 @@ export async function finalizeTemplateUpload(params: {
         .execute();
       await enqueueTemplatePreview(tx, version.id);
       await enqueueTemplateUpdates(tx, template.id, version.id);
+      await notifyTemplateVersion(tx, template.id, version.id);
       return {
         version: versionNumber,
         versionId: version.id,

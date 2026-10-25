@@ -45,7 +45,8 @@ export interface InstallSummary {
   targetPath: string;
   updates: UpdatePreference;
   version: { id: string; version: number; siteCode: boolean };
-  // The newest version, when it is newer than the installed one.
+  // The newest version, when it is newer than the installed one and the
+  // install takes new versions (not 'never').
   latest: {
     id: string;
     version: number;
@@ -111,6 +112,7 @@ export async function listInstalls(user: User): Promise<InstallSummary[]> {
       row.latest_id &&
       row.latest_version !== null &&
       row.latest_version > row.version &&
+      row.updates !== "never" &&
       !row.deleted_at
         ? {
             id: row.latest_id,
@@ -122,6 +124,34 @@ export async function listInstalls(user: User): Promise<InstallSummary[]> {
     deleted: row.deleted_at !== null,
     updatedAt: row.updated_at,
   }));
+}
+
+/**
+ * For the navigation: whether `userId` installed any template, and how many of
+ * their installs have a newer version waiting (those that take new versions).
+ */
+export async function installCounts(
+  userId: string,
+): Promise<{ installed: number; updatable: number }> {
+  const row = await db
+    .selectFrom("board_template_installs as i")
+    .innerJoin("board_templates as t", "t.id", "i.template_id")
+    .innerJoin("board_posts as p", "p.id", "t.post_id")
+    .innerJoin("board_template_versions as v", "v.id", "i.version_id")
+    .leftJoin(
+      "board_template_versions as latest",
+      "latest.id",
+      "t.latest_version_id",
+    )
+    .select([
+      sql<number>`count(*)::int`.as("installed"),
+      sql<number>`(count(*) filter (where latest.version > v.version and i.updates <> 'never' and p.deleted_at is null))::int`.as(
+        "updatable",
+      ),
+    ])
+    .where("i.user_id", "=", userId)
+    .executeTakeFirstOrThrow();
+  return { installed: row.installed, updatable: row.updatable };
 }
 
 /** `user`'s install of a template, for the template's page. */

@@ -40,6 +40,7 @@ import {
   backUp,
   backupStamp,
   enqueueTemplateUpdates,
+  notifyTemplateVersion,
   installedFiles,
   putBack,
   recordInstall,
@@ -594,6 +595,7 @@ export async function publishTemplateVersion(
     await recordVersionEtags(tx, templateId, versionNumber, version.id);
     await enqueueTemplatePreview(tx, version.id);
     await enqueueTemplateUpdates(tx, templateId, version.id);
+    await notifyTemplateVersion(tx, templateId, version.id);
     return versionNumber;
   });
 }

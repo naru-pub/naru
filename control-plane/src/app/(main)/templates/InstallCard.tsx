@@ -78,6 +78,8 @@ export function InstallCard({ install }: { install: InstallSummary }) {
     run(async () => {
       await boardRequest(base, "PATCH", { updates: value });
       setUpdates(value);
+      // A version 받지 않기 hid shows, or one shown hides.
+      router.refresh();
     });
 
   const disconnect = async () => {
@@ -226,7 +228,11 @@ export function InstallCard({ install }: { install: InstallSummary }) {
         )}
 
         {!install.latest && !result && (
-          <p className="text-sm text-muted-foreground">최신 버전이에요.</p>
+          <p className="text-sm text-muted-foreground">
+            {updates === "never"
+              ? "새 버전을 받지 않아요. 받으려면 아래에서 바꿔 주세요."
+              : "최신 버전이에요."}
+          </p>
         )}
 
         <fieldset className="space-y-2">

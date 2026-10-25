@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
+import { markTemplateNotificationsRead } from "@/lib/board/replies";
 import { listInstalls } from "@/lib/board/updates";
 import { InstallCard } from "./InstallCard";
 
@@ -12,6 +13,8 @@ export default async function TemplatesPage() {
   const { user } = await validateRequest();
   if (!user) redirect("/login");
   const installs = await listInstalls(user);
+  // This page is where new versions are taken, so their notices are read.
+  await markTemplateNotificationsRead(user.id);
 
   return (
     <div className="bg-background min-h-screen p-4 sm:p-6">

@@ -127,6 +127,8 @@ const {
 } = require("../posts") as typeof import("../posts");
 const {
   countUnreadNotifications,
+  listNotifications,
+  markTemplateNotificationsRead,
   createReply,
   deleteReply,
   listReplies,
@@ -154,6 +156,7 @@ const {
 const {
   applyUpdate,
   disconnectInstall,
+  installCounts,
   listInstalls,
   planUpdate,
   setUpdatePreference,
@@ -1146,6 +1149,79 @@ integration("board", () => {
         db,
       );
       expect(queued.rows).toHaveLength(1);
+    });
+
+    test("a new version notifies 알려 주기 installs once, and 받지 않기 hides it", async () => {
+      const author = await member();
+      const { postId, templateId } = await template(author, "n/", [
+        "index.html",
+      ]);
+      const v1 = (await latestVersion(postId)).id;
+      const install = async (updates: string, folder = "n") => {
+        const site = await member();
+        await applyTemplate(site, v1, {
+          targetPath: folder,
+          backup: true,
+          createCollections: true,
+          updates,
+        });
+        return site;
+      };
+      const told = await install("notify");
+      // Installed twice, told once.
+      await applyTemplate(told, v1, {
+        targetPath: "again",
+        backup: true,
+        createCollections: true,
+        updates: "notify",
+      });
+      const quiet = await install("never");
+      const automatic = await install("auto");
+      // The author's own install hears nothing of their own version.
+      await applyTemplate(author, v1, {
+        targetPath: "mine",
+        backup: true,
+        createCollections: true,
+        updates: "notify",
+      });
+      const publish = () =>
+        publishTemplateVersion(author, templateId, {
+          files: ["n/index.html"],
+          changelog: null,
+          collections: [],
+        });
+      const versionNotices = async (user: User) =>
+        (await listNotifications(user.id)).filter(
+          (n) => n.reason === "template_version",
+        );
+
+      await publish();
+      expect(await versionNotices(told)).toMatchObject([
+        { version: 2, read: false, fromLoginName: author.loginName, postId },
+      ]);
+      expect((await countUnreadNotifications(told.id)).count).toBe(1);
+      for (const other of [quiet, automatic, author])
+        expect(await versionNotices(other)).toEqual([]);
+
+      // A later version replaces the unread notice of the one before.
+      await publish();
+      expect(await versionNotices(told)).toMatchObject([{ version: 3 }]);
+
+      // The badge counts installs with a version waiting; 받지 않기 has none.
+      expect(await installCounts(told.id)).toEqual({
+        installed: 2,
+        updatable: 2,
+      });
+      expect(await installCounts(quiet.id)).toEqual({
+        installed: 1,
+        updatable: 0,
+      });
+      expect((await listInstalls(quiet))[0].latest).toBeNull();
+      expect((await listInstalls(told))[0].latest?.version).toBe(3);
+
+      await markTemplateNotificationsRead(told.id);
+      expect(await versionNotices(told)).toMatchObject([{ read: true }]);
+      expect((await countUnreadNotifications(told.id)).count).toBe(0);
     });
 
     test("a GitHub template starts empty and takes versions from its workflow", async () => {

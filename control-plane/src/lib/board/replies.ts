@@ -307,7 +307,8 @@ export async function setReplyLike(
   });
 }
 
-export interface NotificationItem {
+/** Someone replied to the person's post or reply. */
+export interface ReplyNotification {
   id: string;
   reason: "reply_to_post" | "reply_to_reply";
   read: boolean;
@@ -319,65 +320,159 @@ export interface NotificationItem {
   postTitle: string;
 }
 
+/** A template the person installed has a new version (updates = 'notify'). */
+export interface TemplateVersionNotification {
+  id: string;
+  reason: "template_version";
+  read: boolean;
+  createdAt: Date;
+  version: number;
+  fromLoginName: string;
+  postId: string;
+  postTitle: string;
+}
+
+export type NotificationItem = ReplyNotification | TemplateVersionNotification;
+
 export async function listNotifications(
   userId: string,
   limit = 50,
 ): Promise<NotificationItem[]> {
-  const rows = await db
+  const [replies, versions] = await Promise.all([
+    db
+      .selectFrom("board_notifications as n")
+      .innerJoin("board_replies as r", "r.id", "n.reply_id")
+      .innerJoin("board_posts as p", "p.id", "r.post_id")
+      .innerJoin("users as u", "u.id", "r.user_id")
+      .select([
+        "n.id",
+        "n.reason",
+        "n.read_at",
+        "n.created_at",
+        "r.id as reply_id",
+        sql<string>`left(r.body, 200)`.as("body"),
+        "u.login_name",
+        "p.id as post_id",
+        "p.title",
+      ])
+      .where("n.user_id", "=", userId)
+      .where("p.deleted_at", "is", null)
+      .orderBy("n.created_at", "desc")
+      .orderBy("n.id", "desc")
+      .limit(limit)
+      .execute(),
+    templateVersionNotifications(userId)
+      .select([
+        "n.id",
+        "n.read_at",
+        "n.created_at",
+        "v.version",
+        "u.login_name",
+        "p.id as post_id",
+        "p.title",
+      ])
+      .orderBy("n.created_at", "desc")
+      .orderBy("n.id", "desc")
+      .limit(limit)
+      .execute(),
+  ]);
+  const items: NotificationItem[] = [
+    ...replies.map((row) => ({
+      id: row.id,
+      reason: row.reason as ReplyNotification["reason"],
+      read: row.read_at !== null,
+      createdAt: row.created_at,
+      replyId: row.reply_id,
+      replyExcerpt: row.body.replace(/\s+/g, " ").trim(),
+      fromLoginName: row.login_name,
+      postId: row.post_id,
+      postTitle: row.title,
+    })),
+    ...versions.map((row) => ({
+      id: row.id,
+      reason: "template_version" as const,
+      read: row.read_at !== null,
+      createdAt: row.created_at,
+      version: row.version,
+      fromLoginName: row.login_name,
+      postId: row.post_id,
+      postTitle: row.title,
+    })),
+  ];
+  // Newest first; ids are UUIDv7, so they break ties in creation order.
+  return items
+    .sort(
+      (x, y) =>
+        y.createdAt.getTime() - x.createdAt.getTime() ||
+        (y.id < x.id ? -1 : y.id > x.id ? 1 : 0),
+    )
+    .slice(0, limit);
+}
+
+/**
+ * The person's template version notifications, of templates still posted:
+ * `n` the notification, `v` the version, `p` the template's post, `u` its
+ * author.
+ */
+function templateVersionNotifications(userId: string) {
+  return db
     .selectFrom("board_notifications as n")
-    .innerJoin("board_replies as r", "r.id", "n.reply_id")
-    .innerJoin("board_posts as p", "p.id", "r.post_id")
-    .innerJoin("users as u", "u.id", "r.user_id")
-    .select([
-      "n.id",
-      "n.reason",
-      "n.read_at",
-      "n.created_at",
-      "r.id as reply_id",
-      sql<string>`left(r.body, 200)`.as("body"),
-      "u.login_name",
-      "p.id as post_id",
-      "p.title",
-    ])
+    .innerJoin("board_template_versions as v", "v.id", "n.version_id")
+    .innerJoin("board_templates as t", "t.id", "v.template_id")
+    .innerJoin("board_posts as p", "p.id", "t.post_id")
+    .innerJoin("users as u", "u.id", "t.user_id")
     .where("n.user_id", "=", userId)
-    .where("p.deleted_at", "is", null)
-    .orderBy("n.created_at", "desc")
-    .orderBy("n.id", "desc")
-    .limit(limit)
-    .execute();
-  return rows.map((row) => ({
-    id: row.id,
-    reason: row.reason,
-    read: row.read_at !== null,
-    createdAt: row.created_at,
-    replyId: row.reply_id,
-    replyExcerpt: row.body.replace(/\s+/g, " ").trim(),
-    fromLoginName: row.login_name,
-    postId: row.post_id,
-    postTitle: row.title,
-  }));
+    .where("n.reason", "=", "template_version")
+    .where("p.deleted_at", "is", null);
 }
 
 export async function countUnreadNotifications(userId: string): Promise<{
   count: number;
   from: string[];
 }> {
-  const rows = await db
-    .selectFrom("board_notifications as n")
-    .innerJoin("board_replies as r", "r.id", "n.reply_id")
-    .innerJoin("board_posts as p", "p.id", "r.post_id")
-    .innerJoin("users as u", "u.id", "r.user_id")
-    .select(["u.login_name"])
-    .where("n.user_id", "=", userId)
-    .where("n.read_at", "is", null)
-    .where("p.deleted_at", "is", null)
-    .orderBy("n.created_at", "desc")
-    .limit(100)
-    .execute();
+  const [replies, versions] = await Promise.all([
+    db
+      .selectFrom("board_notifications as n")
+      .innerJoin("board_replies as r", "r.id", "n.reply_id")
+      .innerJoin("board_posts as p", "p.id", "r.post_id")
+      .innerJoin("users as u", "u.id", "r.user_id")
+      .select(["u.login_name", "n.created_at"])
+      .where("n.user_id", "=", userId)
+      .where("n.read_at", "is", null)
+      .where("p.deleted_at", "is", null)
+      .orderBy("n.created_at", "desc")
+      .limit(100)
+      .execute(),
+    templateVersionNotifications(userId)
+      .select(["u.login_name", "n.created_at"])
+      .where("n.read_at", "is", null)
+      .orderBy("n.created_at", "desc")
+      .limit(100)
+      .execute(),
+  ]);
+  const rows = [...replies, ...versions]
+    .sort((x, y) => y.created_at.getTime() - x.created_at.getTime())
+    .slice(0, 100);
   return {
     count: rows.length,
     from: [...new Set(rows.map((row) => row.login_name))].slice(0, 3),
   };
+}
+
+/**
+ * Opening the installed templates reads every notification of their new
+ * versions: that page is where they are taken.
+ */
+export async function markTemplateNotificationsRead(
+  userId: string,
+): Promise<void> {
+  await db
+    .updateTable("board_notifications")
+    .set({ read_at: new Date() })
+    .where("user_id", "=", userId)
+    .where("reason", "=", "template_version")
+    .where("read_at", "is", null)
+    .execute();
 }
 
 export async function markNotificationsRead(
