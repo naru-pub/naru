@@ -268,6 +268,12 @@ async function waitForFunctions(endpoint, audience, deploymentId) {
   }
 }
 
+// `dir` as a folder of the repository, which a template's post names.
+function repositoryFolder(rootDir) {
+  const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
+  return path.relative(workspace, rootDir).split(path.sep).join("/");
+}
+
 // The pushed commit's message, for a template version's changelog.
 async function commitMessage() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
@@ -281,7 +287,9 @@ async function commitMessage() {
 }
 
 async function main() {
-  const template = getInput("template");
+  const templateOwner = getInput("template-owner");
+  const templateId = getInput("template");
+  const template = templateId || templateOwner;
   const site = template ? "" : getInput("site", { required: true });
   const dir = getInput("dir", { required: true });
   const targetPrefix = getInput("target", { defaultValue: "/" });
@@ -309,7 +317,7 @@ async function main() {
 
   info(
     template
-      ? `Planning template ${template}'s next version with ${files.length} file(s)`
+      ? `Planning the template's next version with ${files.length} file(s)`
       : `Planning Naru deploy for ${site} with ${files.length} file(s)`,
   );
 
@@ -319,13 +327,26 @@ async function main() {
     token,
     {
       ...(template
-        ? { template, changelog: await commitMessage() }
+        ? {
+            ...(templateId
+              ? { template: templateId }
+              : { templateOwner, folder: repositoryFolder(rootDir) }),
+            changelog: await commitMessage(),
+          }
         : { site, targetPrefix }),
       manifest: {
         files: files.map(({ absolutePath, ...file }) => file),
       },
     },
   );
+
+  if (plan.skipped) {
+    // The template's post does not exist yet; the first run after it does
+    // publishes its first version.
+    info(plan.message);
+    await appendStepSummary(`## No Naru template yet\n\n${plan.message}.\n`);
+    return;
+  }
 
   await setOutput("deployment-id", plan.deploymentId);
   info(`Uploading ${plan.uploads.length} staged file(s)`);
@@ -360,7 +381,7 @@ async function main() {
 
 | | |
 | --- | --- |
-| Template | \`${template}\` |
+| Template | \`${templateId || `${templateOwner}: ${repositoryFolder(rootDir) || "/"}`}\` |
 | Version | v${finalize.version}${finalize.unchanged ? " (unchanged, no new version)" : ""} |
 | Commit | \`${process.env.GITHUB_SHA || "unknown"}\` |
 | Files | ${finalize.deployedFiles ?? 0} (${finalize.uploadedFiles ?? 0} uploaded) |

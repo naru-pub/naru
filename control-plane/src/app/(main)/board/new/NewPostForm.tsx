@@ -54,6 +54,7 @@ export function NewPostForm({
   const [source, setSource] = useState<"site" | "github">("site");
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("main");
+  const [folder, setFolder] = useState("dist");
   const [busy, setBusy] = useState(false);
 
   // Filled in from the checked files' top folder until the person edits it.
@@ -79,6 +80,7 @@ export function NewPostForm({
               source,
               githubRepository: repository,
               githubRef: branch,
+              githubPath: folder,
             }
           : { kind, title, body };
       const { postId } = await boardRequest<{ postId: string }>(
@@ -197,9 +199,22 @@ export function NewPostForm({
                   className="font-mono"
                 />
               </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label htmlFor="template-folder" className="text-xs">
+                  폴더 (워크플로의 dir, 저장소 맨 위면 비워 두기)
+                </label>
+                <Input
+                  id="template-folder"
+                  value={folder}
+                  onChange={(event) => setFolder(event.target.value)}
+                  placeholder="dist"
+                  className="font-mono"
+                />
+              </div>
               <p className="text-xs text-muted-foreground sm:col-span-2">
-                글을 올린 뒤 고치기 화면에 나오는 한 줄을 워크플로에 넣으면,
-                워크플로가 실행될 때마다 새 버전이 올라가요.
+                워크플로에 나루의 배포 액션을 넣고 template-owner에 내 아이디를,
+                dir에 이 폴더를 적어요. 글을 올린 뒤 처음 실행될 때 첫 버전이
+                올라가요. 글보다 워크플로를 먼저 넣어도 돼요.
               </p>
             </div>
           )}

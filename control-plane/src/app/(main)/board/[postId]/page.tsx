@@ -217,8 +217,9 @@ export default async function PostPage({
                       <a href={githubUrl!} className="underline">
                         {template.github.repository}
                       </a>
-                      의 GitHub Actions 워크플로가 첫 버전을 올리면 설치할 수
-                      있어요.
+                      {template.github.path ? ` /${template.github.path}` : ""}
+                      을 올리는 GitHub Actions 워크플로가 다음에 실행될 때 첫
+                      버전이 올라와요. 그 뒤로 설치할 수 있어요.
                     </>
                   ) : (
                     "작성자가 첫 버전을 올리면 설치할 수 있어요."
@@ -292,7 +293,10 @@ export default async function PostPage({
                           <a href={githubUrl!} className="underline">
                             {template.github.repository}
                           </a>{" "}
-                          · {template.github.ref.replace(/^refs\/heads\//, "")}{" "}
+                          · {template.github.ref.replace(/^refs\/heads\//, "")}
+                          {template.github.path
+                            ? ` · /${template.github.path}`
+                            : ""}{" "}
                           (GitHub Actions)
                         </>
                       ) : (

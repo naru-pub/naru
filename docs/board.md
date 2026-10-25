@@ -79,10 +79,16 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   alone.
 - **Where versions come from** (`board_templates.source`): `site`, a
   snapshot of the author's checked files ("새 버전 올리기"), or `github`, a
-  GitHub Actions workflow on the template's repository and ref
-  (`lib/board/template-uploads.ts`). A workflow publishes through the deploy
-  endpoints with `template` in place of `site`
-  (`naru-pub/naru/actions/deploy` with `template:`): plan answers upload URLs
+  GitHub Actions workflow on the template's repository, ref and folder
+  (`github_path`, the action's `dir`; `lib/board/template-uploads.ts`). A
+  workflow publishes through the deploy endpoints naming the template's
+  owner and its folder (`templateOwner`, `folder`; the action's
+  `template-owner:`) or the template's ID (`template`), in place of `site`.
+  An owner has one template per repository, ref and folder, so a workflow
+  names its owner and finds its template without an ID, and may run before
+  the template's post exists: plan then answers `skipped` and the action
+  succeeds. Naming the owner keeps another account that names the same
+  repository from taking its runs. Plan answers upload URLs
   for the files whose sha256 the previous version lacked, finalize checks
   them, refuses site code that does not parse (`_naru/**/*.js`,
   `routes.json`), and publishes the version with the commit's sha and

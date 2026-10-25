@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
       source: body.source,
       githubRepository: body.githubRepository,
       githubRef: body.githubRef,
+      githubPath: body.githubPath,
     });
     // The post is up whether or not the fediverse hears about it.
     try {

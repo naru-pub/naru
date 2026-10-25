@@ -1115,6 +1115,7 @@ integration("board", () => {
           manifest: { files: files.map(({ text: _, ...f }) => f) },
           changelog,
         });
+        if ("skipped" in plan) throw new Error(plan.message);
         for (const target of plan.uploads) {
           const key = target.url.slice("https://upload.test/".length);
           const body = Buffer.from(
@@ -1204,6 +1205,102 @@ integration("board", () => {
       // Switching to snapshots lets the author publish from their site.
       await setTemplateSource(author, templateId, { source: "site" });
       expect((await getTemplateForPost(postId))?.source).toBe("site");
+    });
+
+    test("a workflow finds its template by its owner, repository, branch and folder", async () => {
+      const author = await member();
+      const claims = {
+        iss: "https://token.actions.githubusercontent.com",
+        aud: "https://naru.pub",
+        sub: "repo:naru-pub/monorepo:ref:refs/heads/main",
+        exp: 0,
+        repository: "naru-pub/monorepo",
+        repository_id: "77",
+        ref: "refs/heads/main",
+        sha: "f".repeat(40),
+      };
+      const text = "<title>방명록</title>";
+      const manifest = {
+        files: [
+          {
+            path: "index.html",
+            size: Buffer.byteLength(text),
+            sha256: require("node:crypto")
+              .createHash("sha256")
+              .update(text)
+              .digest("hex"),
+          },
+        ],
+      };
+      const plan = (folder: string, owner = author.loginName) =>
+        planTemplateUpload({ claims, owner, folder, manifest });
+
+      // Before its post exists the run has nothing to publish, and says so.
+      expect(await plan("templates/guestbook")).toMatchObject({
+        skipped: true,
+        uploads: [],
+      });
+
+      const base = {
+        title: "방명록",
+        body: "",
+        license: "mit",
+        licenseAccepted: true,
+        files: [],
+        collections: [],
+        source: "github",
+        githubRepository: "naru-pub/monorepo",
+        githubRef: "main",
+      };
+      const guestbook = await publishTemplatePost(author, {
+        ...base,
+        slug: `guestbook-${n}`,
+        githubPath: "./templates/guestbook/",
+      });
+      expect(await getTemplateForPost(guestbook.postId)).toMatchObject({
+        github: { path: "templates/guestbook" },
+      });
+      // One template per folder: another folder of the same branch is fine.
+      await publishTemplatePost(author, {
+        ...base,
+        slug: `links-${n}`,
+        githubPath: "templates/links",
+      });
+      await expect(
+        publishTemplatePost(author, {
+          ...base,
+          slug: `again-${n}`,
+          githubPath: "templates/guestbook",
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+      await expect(
+        publishTemplatePost(author, {
+          ...base,
+          slug: `escape-${n}`,
+          githubPath: "templates/../secret",
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+
+      // The folder finds it, however it is written.
+      const found = await plan("templates/guestbook/");
+      expect("skipped" in found).toBe(false);
+      // Someone else naming the same repository is not this owner: a
+      // workflow names its owner, so another account cannot take its runs.
+      const squatter = await member();
+      await publishTemplatePost(squatter, {
+        ...base,
+        slug: `squat-${n}`,
+        githubPath: "templates/guestbook",
+      });
+      const again = await plan("templates/guestbook");
+      expect("skipped" in again ? null : again.deploymentId).toBeTruthy();
+      expect(
+        await db
+          .selectFrom("board_template_uploads")
+          .select("template_id")
+          .where("id", "=", "skipped" in again ? "" : again.deploymentId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ template_id: guestbook.templateId });
     });
   });
 });

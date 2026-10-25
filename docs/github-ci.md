@@ -85,8 +85,11 @@ The target must be registered in Naru before this workflow can deploy.
 ## Template Versions
 
 A board template whose versions come from GitHub Actions (its edit page)
-publishes through the same three calls with `template: <template id>` (and
-`changelog`, the commit message) in place of `site` and `targetPrefix`. The
+publishes through the same three calls with `templateOwner` (the Naru account
+that posted it) and `folder` (the repository folder its post names), or
+`template: <template id>`, and `changelog` (the commit message), in place of
+`site` and `targetPrefix`. With no matching template yet, plan answers
+`{ skipped: true, message }` and the action finishes successfully. The
 token must name the template's repository and ref. Plan answers uploads only
 for files the previous version lacked by sha256; finalize copies the rest from
 that version, refuses site code that does not parse, publishes the next

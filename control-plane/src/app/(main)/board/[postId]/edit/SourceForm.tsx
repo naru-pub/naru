@@ -13,19 +13,26 @@ import { boardRequest } from "../../_components/api";
 // folder, or a GitHub Actions workflow that publishes its build.
 export function SourceForm({
   templateId,
+  owner,
   source,
   repository,
   branch,
+  path,
 }: {
   templateId: string;
+  // The author's login, which their workflow names.
+  owner: string;
   source: TemplateSource;
   repository: string;
   branch: string;
+  // The repository's folder; null for a template published by ID.
+  path: string | null;
 }) {
   const router = useRouter();
   const [chosen, setChosen] = useState<TemplateSource>(source);
   const [repo, setRepo] = useState(repository);
   const [ref, setRef] = useState(branch || "main");
+  const [folder, setFolder] = useState(path ?? "dist");
   const [busy, setBusy] = useState(false);
 
   async function submit(event: React.FormEvent) {
@@ -36,6 +43,7 @@ export function SourceForm({
         source: chosen,
         githubRepository: repo,
         githubRef: ref,
+        githubPath: folder,
       });
       toast.success("저장했어요.");
       router.refresh();
@@ -109,6 +117,21 @@ export function SourceForm({
                   className="font-mono"
                 />
               </span>
+              <span className="space-y-1 sm:col-span-2">
+                <label htmlFor="source-folder" className="block text-xs">
+                  폴더 (워크플로의 dir, 저장소 맨 위면 비워 두기)
+                </label>
+                <Input
+                  id="source-folder"
+                  value={folder}
+                  placeholder="dist"
+                  onChange={(event) => {
+                    setFolder(event.target.value);
+                    setChosen("github");
+                  }}
+                  className="font-mono"
+                />
+              </span>
             </span>
           </span>
         </label>
@@ -117,8 +140,9 @@ export function SourceForm({
       {chosen === "github" && (
         <div className="space-y-2 text-xs">
           <p className="text-muted-foreground">
-            워크플로에서 빌드한 폴더를 이 템플릿의 새 버전으로 올려요. 커밋
-            메시지가 버전 설명이 돼요.
+            워크플로에 이 단계를 넣으면, 실행될 때마다 그 폴더가 이 템플릿의 새
+            버전으로 올라가요. 커밋 메시지가 버전 설명이 돼요. ID로 올리려면
+            template-owner 대신 template: {templateId}를 써요.
           </p>
           <pre className="overflow-x-auto border border-border bg-secondary p-3 font-mono leading-relaxed">
             {`permissions:
@@ -127,8 +151,8 @@ steps:
   - run: pnpm install --frozen-lockfile && pnpm build
   - uses: naru-pub/naru/actions/deploy@main
     with:
-      dir: dist
-      template: ${templateId}`}
+      dir: ${folder || "."}
+      template-owner: ${owner}`}
           </pre>
         </div>
       )}

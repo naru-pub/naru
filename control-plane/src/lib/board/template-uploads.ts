@@ -40,6 +40,7 @@ import {
   TEMPLATE_GITHUB_MAX_FILES,
   formatBytes,
 } from "./constants";
+import { normalizeGitHubPath } from "./github-source";
 import { enqueueTemplateUpdates, recordVersionEtags } from "./installs";
 import { templateFileKey } from "./preview";
 import * as storage from "./storage";
@@ -78,6 +79,30 @@ async function findGitHubTemplate(templateId: string) {
     github_repository: template.github_repository,
     github_ref: template.github_ref,
   };
+}
+
+/**
+ * The template `owner` publishes from the run's repository and branch and
+ * this folder of it, or null when they have none (yet).
+ */
+async function templateForFolder(
+  claims: GitHubActionsClaims,
+  owner: string,
+  folder: unknown,
+): Promise<string | null> {
+  const template = await db
+    .selectFrom("board_templates as t")
+    .innerJoin("board_posts as p", "p.id", "t.post_id")
+    .innerJoin("users as u", "u.id", "t.user_id")
+    .select("t.id")
+    .where("u.login_name", "=", owner)
+    .where("t.source", "=", "github")
+    .where("t.github_repository", "=", claims.repository)
+    .where("t.github_ref", "=", claims.ref)
+    .where("t.github_path", "=", normalizeGitHubPath(folder))
+    .where("p.deleted_at", "is", null)
+    .executeTakeFirst();
+  return template?.id ?? null;
 }
 
 /** A template's manifest: deploy paths, within the template limits. */
@@ -131,11 +156,26 @@ async function reusableFiles(versionId: string | null) {
 
 export async function planTemplateUpload(params: {
   claims: GitHubActionsClaims;
-  templateId: string;
+  // The template by ID, or by its owner's login and the repository's folder.
+  templateId?: string;
+  owner?: string;
+  folder?: unknown;
   manifest: unknown;
   changelog?: unknown;
 }) {
-  const template = await findGitHubTemplate(params.templateId);
+  const templateId =
+    params.templateId ??
+    (await templateForFolder(params.claims, params.owner ?? "", params.folder));
+  if (!templateId) {
+    // Not an error: the workflow may run before its template's post exists,
+    // and publishes into it from the first run after.
+    return {
+      skipped: true as const,
+      message: `${params.owner} has no template publishing ${params.claims.repository} ${params.claims.ref.replace(/^refs\/heads\//, "")} /${normalizeGitHubPath(params.folder)} yet`,
+      uploads: [],
+    };
+  }
+  const template = await findGitHubTemplate(templateId);
   if (!(await userHasFeature(template.user_id, "github_deploys"))) {
     throw new Error("GitHub deploys are available to supporters only");
   }

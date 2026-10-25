@@ -65,9 +65,11 @@ export default async function EditPostPage({
             </div>
             <SourceForm
               templateId={template.id}
+              owner={user.loginName}
               source={template.source}
               repository={template.github?.repository ?? ""}
               branch={template.github?.ref.replace(/^refs\/heads\//, "") ?? ""}
+              path={template.github?.path ?? null}
             />
           </section>
         )}

@@ -19,20 +19,24 @@ export async function POST(request: NextRequest) {
 
     const claims = await verifyGitHubActionsToken(token);
     const body = await request.json();
-    // A template's workflow names the template instead of a site.
-    const plan = body.template
-      ? await planTemplateUpload({
-          claims,
-          templateId: String(body.template),
-          manifest: body.manifest,
-          changelog: body.changelog,
-        })
-      : await createGitHubDeploymentPlan({
-          claims,
-          site: String(body.site ?? ""),
-          targetPrefix: body.targetPrefix,
-          manifest: body.manifest,
-        });
+    // A template's workflow names the template, or its owner and the
+    // folder it publishes, instead of a site.
+    const plan =
+      body.template || body.templateOwner
+        ? await planTemplateUpload({
+            claims,
+            templateId: body.template ? String(body.template) : undefined,
+            owner: body.templateOwner ? String(body.templateOwner) : undefined,
+            folder: body.folder,
+            manifest: body.manifest,
+            changelog: body.changelog,
+          })
+        : await createGitHubDeploymentPlan({
+            claims,
+            site: String(body.site ?? ""),
+            targetPrefix: body.targetPrefix,
+            manifest: body.manifest,
+          });
 
     return NextResponse.json({ success: true, ...plan });
   } catch (error) {

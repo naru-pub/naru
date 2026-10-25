@@ -58,32 +58,36 @@ If published from a multi-action repository, use:
 
 ## Publishing a template
 
-A board template whose versions come from GitHub Actions (set on its edit
-page) takes `template` instead of `site`: each run publishes `dir` as the
-template's next version, the commit message as its changelog, and the sites
-that installed it are told (or updated, if they chose automatic updates).
+A board template whose versions come from GitHub Actions names its repository,
+branch and folder on its post. Its workflow publishes that folder with
+`template-owner`, the Naru account that posted the template, instead of
+`site`: each run publishes `dir` as the template's next version, with the
+commit message as its changelog, and the sites that installed it are told (or
+updated, if they chose automatic updates).
 
 ```yaml
 - uses: naru-pub/naru/actions/deploy@main
   with:
     dir: dist
-    template: 01a1f3c2-7d0e-7b55-9c2e-5a8e0f1b3d44
+    template-owner: my-naru-login
 ```
 
-Only files that changed since the previous version are uploaded.
-
-A run whose files are the same as the latest version's makes no new version.
-So one repository can keep several templates, one folder each, bound to the
-same repository and branch, and publish them all on every push; only the ones
-that changed get a version:
+The workflow can come first: until a post names this repository, branch and
+`dir`, a run does nothing and succeeds. Only files that changed since the
+previous version are uploaded, and a run with exactly the latest version's
+files makes no new version. So one repository can keep several templates,
+one folder each, and publish them all on every push:
 
 ```yaml
 - uses: naru-pub/naru/actions/deploy@main
   with:
     dir: templates/guestbook
-    template: <guestbook template ID>
+    template-owner: my-naru-login
 - uses: naru-pub/naru/actions/deploy@main
   with:
     dir: templates/link-tree
-    template: <link-tree template ID>
+    template-owner: my-naru-login
 ```
+
+`template: <id>` (the ID on the template's edit page) publishes to one
+template by ID instead.

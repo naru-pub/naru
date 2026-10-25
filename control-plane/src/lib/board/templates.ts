@@ -44,6 +44,7 @@ import {
   recordInstall,
   recordVersionEtags,
 } from "./installs";
+import { normalizeGitHubPath } from "./github-source";
 import { assertUnderHourlyLimit } from "./limits";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
 import {
@@ -298,15 +299,23 @@ export interface PublishTemplateInput {
   source?: unknown;
   githubRepository?: unknown;
   githubRef?: unknown;
+  githubPath?: unknown;
 }
 
 export interface GitHubSource {
   repository: string;
   ref: string;
+  // The folder of the repository it publishes: '' for its root, else 'a/b'.
+  // Null for a template its workflow publishes by ID.
+  path: string | null;
 }
 
-// The repository and ref a template's workflow publishes from.
-function validateGitHubSource(repository: unknown, ref: unknown): GitHubSource {
+// The repository, ref and folder a template's workflow publishes from.
+function validateGitHubSource(
+  repository: unknown,
+  ref: unknown,
+  folder: unknown,
+): GitHubSource {
   const repo = typeof repository === "string" ? repository.trim() : "";
   if (!GITHUB_REPOSITORY_REGEX.test(repo)) {
     throw new BoardError(400, "저장소는 owner/name 꼴로 적어 주세요.");
@@ -316,7 +325,22 @@ function validateGitHubSource(repository: unknown, ref: unknown): GitHubSource {
   if (!GITHUB_REF_REGEX.test(fullRef)) {
     throw new BoardError(400, "브랜치 이름이 올바르지 않습니다.");
   }
-  return { repository: repo, ref: fullRef };
+  return { repository: repo, ref: fullRef, path: normalizeGitHubPath(folder) };
+}
+
+/** Another of the author's templates takes this repository, branch and folder. */
+function folderTaken(error: unknown): never {
+  if (
+    (error as { code?: string; constraint?: string })?.code === "23505" &&
+    (error as { constraint?: string }).constraint ===
+      "board_templates_github_folder"
+  ) {
+    throw new BoardError(
+      409,
+      "같은 저장소·브랜치·폴더에서 버전을 받는 템플릿이 이미 있어요.",
+    );
+  }
+  throw error;
 }
 
 function validateSource(value: unknown): TemplateSource {
@@ -355,7 +379,11 @@ export async function publishTemplatePost(
   const source = validateSource(input.source);
   const github =
     source === "github"
-      ? validateGitHubSource(input.githubRepository, input.githubRef)
+      ? validateGitHubSource(
+          input.githubRepository,
+          input.githubRef,
+          input.githubPath,
+        )
       : null;
   const selection = github ? [] : validateSelection(input.files);
   await assertCanPost(user.id);
@@ -373,27 +401,31 @@ export async function publishTemplatePost(
 
   if (github) {
     // Its first version comes from the workflow's first run.
-    return await db.transaction().execute(async (tx) => {
-      const post = await tx
-        .insertInto("board_posts")
-        .values({ user_id: user.id, kind: "template", title, body })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-      const template = await tx
-        .insertInto("board_templates")
-        .values({
-          post_id: post.id,
-          user_id: user.id,
-          slug,
-          license,
-          source: "github",
-          github_repository: github.repository,
-          github_ref: github.ref,
-        })
-        .returning("id")
-        .executeTakeFirstOrThrow();
-      return { postId: post.id, templateId: template.id };
-    });
+    return await db
+      .transaction()
+      .execute(async (tx) => {
+        const post = await tx
+          .insertInto("board_posts")
+          .values({ user_id: user.id, kind: "template", title, body })
+          .returning("id")
+          .executeTakeFirstOrThrow();
+        const template = await tx
+          .insertInto("board_templates")
+          .values({
+            post_id: post.id,
+            user_id: user.id,
+            slug,
+            license,
+            source: "github",
+            github_repository: github.repository,
+            github_ref: github.ref,
+            github_path: github.path,
+          })
+          .returning("id")
+          .executeTakeFirstOrThrow();
+        return { postId: post.id, templateId: template.id };
+      })
+      .catch(folderTaken);
   }
 
   const collections = await resolveCollections(user, input.collections);
@@ -568,7 +600,12 @@ export async function publishTemplateVersion(
 export async function setTemplateSource(
   user: User,
   templateId: string,
-  input: { source: unknown; githubRepository?: unknown; githubRef?: unknown },
+  input: {
+    source: unknown;
+    githubRepository?: unknown;
+    githubRef?: unknown;
+    githubPath?: unknown;
+  },
 ): Promise<void> {
   const template = await findLiveTemplate(templateId);
   if (template.user_id !== user.id) {
@@ -583,7 +620,11 @@ export async function setTemplateSource(
       .execute();
     return;
   }
-  const github = validateGitHubSource(input.githubRepository, input.githubRef);
+  const github = validateGitHubSource(
+    input.githubRepository,
+    input.githubRef,
+    input.githubPath,
+  );
   await assertCanPublishFromGitHub(user.id);
   await db
     .updateTable("board_templates")
@@ -591,6 +632,7 @@ export async function setTemplateSource(
       source: "github",
       github_repository: github.repository,
       github_ref: github.ref,
+      github_path: github.path,
       // A different repository is a different identity to bind.
       github_repository_id: eb
         .case()
@@ -600,7 +642,8 @@ export async function setTemplateSource(
         .end(),
     }))
     .where("id", "=", templateId)
-    .execute();
+    .execute()
+    .catch(folderTaken);
 }
 
 export interface TemplateDetail {
@@ -642,6 +685,7 @@ export async function getTemplateForPost(
       "t.source",
       "t.github_repository",
       "t.github_ref",
+      "t.github_path",
     ])
     .where("t.post_id", "=", postId)
     .executeTakeFirst();
@@ -681,7 +725,11 @@ export async function getTemplateForPost(
     source: template.source,
     github:
       template.github_repository && template.github_ref
-        ? { repository: template.github_repository, ref: template.github_ref }
+        ? {
+            repository: template.github_repository,
+            ref: template.github_ref,
+            path: template.github_path,
+          }
         : null,
     versions: versions.map((version, index) => ({
       id: version.id,

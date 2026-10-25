@@ -211,7 +211,17 @@ integration("updatable templates migration", () => {
         .execute(),
     ).toEqual([]);
 
-    // It reads, applies and publishes as a template of today does.
+    // Later migrations too, then it reads, applies and publishes as a
+    // template of today does.
+    const latest = await migrator.migrateToLatest();
+    if (latest.error) throw latest.error;
+    expect(
+      await db
+        .selectFrom("board_templates")
+        .select("github_path")
+        .where("id", "=", template.id)
+        .executeTakeFirstOrThrow(),
+    ).toEqual({ github_path: null });
     const detail = await getTemplateForPost(post.id);
     expect(detail).toMatchObject({
       source: "site",

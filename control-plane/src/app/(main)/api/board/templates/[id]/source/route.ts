@@ -17,6 +17,7 @@ export async function PUT(
       source: body.source,
       githubRepository: body.githubRepository,
       githubRef: body.githubRef,
+      githubPath: body.githubPath,
     });
     return NextResponse.json({ success: true });
   } catch (error) {

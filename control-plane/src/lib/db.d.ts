@@ -337,6 +337,7 @@ export interface BoardTemplateInstalls {
 
 export interface BoardTemplates {
   apply_count: Generated<number>;
+  github_path: string | null;
   github_ref: string | null;
   github_repository: string | null;
   github_repository_id: string | null;

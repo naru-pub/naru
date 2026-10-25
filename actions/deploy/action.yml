@@ -4,13 +4,19 @@ author: naru-pub
 
 inputs:
   site:
-    description: Naru login name for the site to deploy. Leave out with `template`.
+    description: Naru login name for the site to deploy. Leave out with `template-owner` or `template`.
+    required: false
+  template-owner:
+    description: >-
+      The Naru account whose template publishes `dir` from this repository and
+      branch (set on the template's post). Publishes `dir` as that template's
+      next version; does nothing, successfully, while no post names it.
     required: false
   template:
     description: >-
       A Naru template's ID, from its edit page: publishes `dir` as the
-      template's next version instead of deploying a site. The commit message
-      becomes the version's changelog.
+      template's next version instead of deploying a site (`template-owner`
+      needs no ID). The commit message becomes the version's changelog.
     required: false
   dir:
     description: Directory containing the built static site.
