@@ -32,8 +32,6 @@ const host: Host = (operation, args) => {
   switch (operation) {
     case "random":
       return 0.5;
-    case "rolesOf":
-      return { m1: ["staff"] };
     case "passwordHash":
       return `hash:${args[0]}`;
     case "passwordVerify":
@@ -156,7 +154,7 @@ describe("calling", () => {
   test("ctx.owner says the site's owner called", () => {
     const source =
       "export function who(ctx) { return [ctx.owner, ctx.member]; }";
-    expect(run(source, "who")).toEqual([false, { id: "m-1", roles: [] }]);
+    expect(run(source, "who")).toEqual([false, { id: "m-1" }]);
     expect(
       runFunction(
         module,
@@ -190,9 +188,7 @@ describe("calling", () => {
         host,
       );
     expect(
-      visit(
-        "export function f(ctx) { return [ctx.owner, ctx.member]; }",
-      ),
+      visit("export function f(ctx) { return [ctx.owner, ctx.member]; }"),
     ).toEqual([false, null]);
     // Uploads are deleted in the owner's media library, never by site code:
     // ctx.media reads them only.
@@ -424,11 +420,10 @@ describe("calling", () => {
         "now",
         "fail",
         "sql",
-        "rolesOf",
         "media",
         "passwords",
       ]);
-    // A mutation may grant roles and notify members too.
+    // A mutation may notify members too.
     expect(
       call("export function f(ctx) { return Object.keys(ctx); }", "mutation"),
     ).toEqual([
@@ -438,37 +433,10 @@ describe("calling", () => {
       "now",
       "fail",
       "sql",
-      "rolesOf",
       "media",
       "passwords",
-      "setRoles",
       "notify",
     ]);
-    // The caller's roles ride on ctx.member, frozen.
-    expect(
-      runFunction(
-        module,
-        {
-          source:
-            "export function f(ctx) { try { ctx.member.roles.push('owner'); } catch {} return ctx.member; }",
-          name: "f",
-          args: null,
-          member: "m-1",
-          now: 1,
-          kind: "query",
-          readonly: true,
-          roles: ["staff"],
-        },
-        host,
-      ),
-    ).toEqual({ id: "m-1", roles: ["staff"] });
-    // A query cannot grant roles, even through the host entry point.
-    expect(() =>
-      call(
-        "export function f() { return __call('setRoles', 'm-2', ['staff']); }",
-        "query",
-      ),
-    ).toThrow(/a query has no ctx.setRoles/);
     // Notifications go out only when something is written.
     expect(() =>
       call(
@@ -790,9 +758,6 @@ describe("the host", () => {
     expect(failure(`ctx.sql("SELECT 1"); return 1;`)).toBe(
       "Function failed: it did not await ctx.sql.",
     );
-    expect(failure(`if (!ctx.rolesOf(["m1"])) return 1;`)).toBe(
-      "Function failed: it did not await ctx.rolesOf.",
-    );
     // The host's own failure explains more than the missing await.
     expect(() =>
       run(
@@ -806,7 +771,7 @@ describe("the host", () => {
       `return ctx.sql("SELECT 1");`,
       `return ctx.sql("SELECT 1").then((result) => result.rows);`,
       `await ctx.sql("SELECT 1").catch(() => null);`,
-      `await Promise.all([ctx.sql("SELECT 1"), ctx.rolesOf(["m1"])]);`,
+      `await Promise.all([ctx.sql("SELECT 1"), ctx.sql("SELECT 2")]);`,
       `const [a] = await Promise.allSettled([ctx.sql("SELECT 1")]); return a.status;`,
     ])
       expect(failure(body)).toBeNull();

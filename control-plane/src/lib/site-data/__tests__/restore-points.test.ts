@@ -64,7 +64,7 @@ export async function add(ctx, { body }) {
 `;
 
 integration("restore points", () => {
-  test("a restore returns tables, rows, migrations and roles, and can be undone", async () => {
+  test("a restore returns tables, rows and migrations, and can be undone", async () => {
     await callSiteObject(site, "erase", {});
     await callSiteObject(site, "configure", {
       ownerId,
@@ -82,10 +82,6 @@ integration("restore points", () => {
     await put(site, "queries", "notes", NOTES);
     await call("mutation", "add", { body: "하나" });
     await call("mutation", "add", { body: "둘" });
-    await callSiteObject(site, "setMemberRoles", {
-      member: "member-1",
-      roles: ["staff"],
-    });
     await callSiteObject(site, "createCollections", {
       ownerId,
       collections: [
@@ -103,14 +99,6 @@ integration("restore points", () => {
     const release = (await exported()).functions!;
     const point = `${release.generation}.ndjson.gz`;
     await call("mutation", "add", { body: "셋" });
-    await callSiteObject(site, "setMemberRoles", {
-      member: "member-1",
-      roles: [],
-    });
-    await callSiteObject(site, "setMemberRoles", {
-      member: "member-2",
-      roles: ["writer"],
-    });
     await callSiteObject(site, "createCollections", {
       ownerId,
       collections: [
@@ -132,9 +120,6 @@ integration("restore points", () => {
     ]);
     expect(back.site.migrations.map((row) => row.name)).toEqual([
       "0001_notes.sql",
-    ]);
-    expect(back.site.roles.map((row) => [row.member, row.roles])).toEqual([
-      ["member-1", '["staff"]'],
     ]);
     expect(await call("query", "list")).toEqual(["하나", "둘"]);
     expect((await exported()).collections.map((c) => c.name)).toEqual([

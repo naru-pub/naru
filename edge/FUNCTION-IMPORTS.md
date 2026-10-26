@@ -129,7 +129,7 @@ object only reads its own site's prefix. Under `blockConcurrencyWhile`, the
 object reads the restore point into staging tables, so one that is not a
 whole dump is refused before anything is kept or changed; dumps the present
 to `before-restore-<ms>.ndjson.gz`; then in one transaction empties and refills
-DUMP_TABLES and the site's tables, migrations and roles from the staging
+DUMP_TABLES and the site's tables and migrations from the staging
 tables, and re-runs every live query. What describes the
 present stays: the meta keys of the owner, paid status and limits, the
 month's budget and counts (flushed from memory first), and the active release (`functions_revision` and
@@ -173,7 +173,6 @@ value per line:
 {"type":"row","table":"meta","row":{…}}            Naru's tables, by name
 {"type":"row","table":"site:posts","row":{…}}       the site's own tables
 {"type":"row","table":"_naru_migrations","row":{…}}
-{"type":"row","table":"_naru_roles","row":{…}}
 {"type":"end","rows":<how many row lines>}
 ```
 

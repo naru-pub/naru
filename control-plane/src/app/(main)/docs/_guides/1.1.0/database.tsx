@@ -344,7 +344,7 @@ export default function DatabaseDocs() {
                   [
                     <code key="c">$member[&apos;mb_level&apos;]</code>,
                     <>
-                      회원의 역할, <code>ctx.member.roles</code>
+                      사이트 테이블의 회원 역할 (<a href="#members">역할</a>)
                     </>,
                   ],
                   [
@@ -722,9 +722,8 @@ input.oninput = async () => {
                 <code>member.mutate()</code>로 <a href="#code">사이트 코드</a>를
                 부르고, <code>member.subscribe()</code>로{" "}
                 <a href="#live">실시간 쿼리</a>를 듣습니다. 그러면 사이트
-                코드에서 <code>ctx.member</code>가{" "}
-                <code>{"{ id, roles }"}</code>입니다. 회원은 컬렉션에 따로
-                권한이 없으니, 컬렉션은 방문자로서{" "}
+                코드에서 <code>ctx.member</code>가 <code>{"{ id }"}</code>
+                입니다. 회원은 컬렉션에 따로 권한이 없으니, 컬렉션은 방문자로서{" "}
                 <code>naru.collection()</code>
                 으로 읽습니다.
               </p>
@@ -753,20 +752,25 @@ input.oninput = async () => {
               </p>
               <h3 className="font-bold">역할</h3>
               <p>
-                <strong>역할</strong>은 사이트가 회원에게 붙이는 이름입니다(예:{" "}
-                <code>staff</code>, <code>writer</code>). 회원마다 16개까지 붙일
-                수 있고, 제어판의 회원 목록이나 뮤테이션의{" "}
-                <code>ctx.setRoles(회원ID, 역할)</code>로 정합니다. 사이트
-                코드는 부른 회원의 역할을 <code>ctx.member.roles</code>로, 다른
-                회원의 역할을 <code>ctx.rolesOf([회원ID, …])</code>로 읽습니다.
-                그누보드의 회원 레벨이나 운영진 표시를 역할로 만드세요.
+                운영진, 회원 레벨, 그룹 같은 <strong>역할</strong>은 나루가 따로
+                보관하지 않습니다. 마이그레이션으로 역할 테이블을 만들고,{" "}
+                <code>ctx.member.id</code>를 키로 사이트 코드에서 읽고 쓰세요.
+                누가 역할을 줄 수 있는지도 사이트 코드가 확인합니다.
               </p>
+              <Code>{`-- _naru/migrations/0002_roles.sql
+CREATE TABLE roles (
+  member TEXT NOT NULL,
+  role TEXT NOT NULL,
+  PRIMARY KEY (member, role)
+);`}</Code>
               <Code>{`// _naru/mutations/staff.js
 export async function promote(ctx, { member }) {
-  if (!ctx.owner && !ctx.member?.roles.includes("staff"))
-    ctx.fail("ACCESS_DENIED", "운영진만 할 수 있습니다.");
-  const roles = (await ctx.rolesOf([member]))[member];
-  await ctx.setRoles(member, [...roles, "writer"]);
+  if (!ctx.owner) {
+    const { rows } = await ctx.sql\`
+      SELECT 1 FROM roles WHERE member = \${ctx.member?.id} AND role = 'staff'\`;
+    if (!rows.length) ctx.fail("ACCESS_DENIED", "운영진만 할 수 있습니다.");
+  }
+  await ctx.sql\`INSERT OR IGNORE INTO roles VALUES (\${member}, 'writer')\`;
 }`}</Code>
             </Section>
 
@@ -938,7 +942,7 @@ export async function remove(ctx, { id }) {
   const [post] = (await ctx.sql\`SELECT author FROM posts WHERE id = \${id}\`).rows;
   if (!post) return;
   const mine = post.author === ctx.member?.id;
-  if (!mine && !ctx.owner && !ctx.member?.roles.includes("staff"))
+  if (!mine && !ctx.owner)
     ctx.fail("ACCESS_DENIED", "내가 쓴 글만 지울 수 있습니다.");
   await ctx.sql\`DELETE FROM posts WHERE id = \${id}\`;
 }
@@ -970,7 +974,7 @@ try {
                   ],
                   [
                     <code key="c">member.query()·member.mutate()</code>,
-                    <code key="m">{"{ id, roles }"}</code>,
+                    <code key="m">{"{ id }"}</code>,
                     "false",
                   ],
                   [
@@ -1003,15 +1007,11 @@ try {
                   ],
                   [
                     <code key="c">sql</code>,
-                    "사이트 테이블에 SQL 한 문장을 실행합니다. 나루의 뷰 _naru_member_roles(member, role)와 _naru_uploads(id, url, member, name, type, size, created_at)도 읽고 조인할 수 있습니다.",
+                    "사이트 테이블에 SQL 한 문장을 실행합니다. 나루의 뷰 _naru_uploads(id, url, member, name, type, size, created_at)도 읽고 조인할 수 있습니다.",
                   ],
                   [
                     <code key="c">fail(코드, 메시지, 세부)</code>,
                     "요청을 거절하고 쓴 것을 되돌립니다.",
-                  ],
-                  [
-                    <code key="c">rolesOf(회원ID 목록)</code>,
-                    "회원들의 역할 (한 번에 100명까지)",
                   ],
                   [
                     <code key="c">media.types</code>,
@@ -1024,10 +1024,6 @@ try {
                   [
                     <code key="c">passwords.hash(비밀번호)</code>,
                     "손님 비밀번호의 해시 (뮤테이션만)",
-                  ],
-                  [
-                    <code key="c">setRoles(회원ID, 역할)</code>,
-                    "회원의 역할을 바꿉니다 (뮤테이션만)",
                   ],
                   [
                     <code key="c">
@@ -1513,10 +1509,9 @@ await member.mutate("board:write",
                 </li>
                 <li>
                   사이트 코드 한 번은 데이터베이스 작업(<code>ctx.sql</code> 한
-                  문장, <code>rolesOf</code>, <code>setRoles</code>,{" "}
-                  <code>Math.random()</code> 한 번씩) 100번, 비밀번호 해시와
-                  확인 3번, 수십 밀리초, 메모리 32 MiB까지 쓰고, 돌려주는 값은
-                  JSON으로 1 MiB까지입니다.
+                  문장 한 번씩) 100번, <code>Math.random()</code> 2,000번,
+                  비밀번호 해시와 확인 3번, 수십 밀리초, 메모리 32 MiB까지 쓰고,
+                  돌려주는 값은 JSON으로 1 MiB까지입니다.
                 </li>
                 <li>
                   사이트 코드 파일은 하나에 256 KiB, 모두 256개까지입니다.

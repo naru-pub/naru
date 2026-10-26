@@ -1726,28 +1726,6 @@ export class SiteData extends DurableObject<Env> {
   }
 
   /**
-   * Members' roles (1.1.0): names the site gives its members, kept with its
-   * data so its code reads them in every call (`ctx.member.roles`,
-   * `ctx.rolesOf`) and grants them (`ctx.setRoles`), and the owner edits them
-   * on the control panel. A member without any has none on record.
-   */
-  private memberRoles(ids: unknown): Record<string, string[]> {
-    if (!Array.isArray(ids) || ids.length > 100)
-      throw new DataError(400, "rolesOf takes at most 100 member IDs.");
-    const members = [...new Set(ids.map(name))];
-    if (!members.length) return {};
-    const found = new Map(
-      this.rows(
-        `SELECT member, roles FROM _naru_roles WHERE member IN (${members.map(() => "?").join(",")})`,
-        ...members,
-      ).map((row) => [String(row.member), JSON.parse(String(row.roles))]),
-    );
-    return Object.fromEntries(
-      members.map((member) => [member, found.get(member) ?? []]),
-    );
-  }
-
-  /**
    * Records finished uploads for site SQL's _naru_uploads (media.ts): each as it is
    * ready, and all of them, a thousand a call, as the owner opens the media
    * library, with `keep` (every upload's ID) last so none stays that Naru
@@ -1803,37 +1781,6 @@ export class SiteData extends DurableObject<Env> {
       );
       if (rowsWritten) this.scheduleRefresh(["_naru_uploads"]);
       return { forgotten: input.ids.length };
-    });
-  }
-
-  /** Replaces a member's roles: at most 16 distinct names, none to clear. */
-  private setRoles(member: unknown, roles: unknown) {
-    const id = name(member);
-    if (!Array.isArray(roles) || roles.length > 16)
-      throw new DataError(400, "A member has at most 16 roles.");
-    const names = [...new Set(roles.map(name))].sort();
-    if (names.length)
-      this.sql.exec(
-        "INSERT INTO _naru_roles (member, roles, updated_at) VALUES (?, ?, ?) ON CONFLICT (member) DO UPDATE SET roles = excluded.roles, updated_at = excluded.updated_at",
-        id,
-        JSON.stringify(names),
-        Date.now(),
-      );
-    else this.sql.exec("DELETE FROM _naru_roles WHERE member = ?", id);
-    // Live queries reading _naru_member_roles answer again.
-    this.scheduleRefresh(["_naru_member_roles"]);
-  }
-
-  /** The control panel's view of members' roles. */
-  async rolesOfMembers(input: { ids: unknown }) {
-    return this.run(() => this.memberRoles(input.ids));
-  }
-
-  /** The owner sets a member's roles on the control panel. */
-  async setMemberRoles(input: { member: unknown; roles: unknown }) {
-    return this.run(() => {
-      this.setRoles(input.member, input.roles);
-      return this.memberRoles([input.member])[String(input.member)];
     });
   }
 
@@ -1954,7 +1901,7 @@ export class SiteData extends DurableObject<Env> {
 
   /**
    * What site code's ctx may do, in this call's transaction: run site SQL,
-   * read and grant members' roles, and hash and check passwords. `tables`
+   * notify members, and hash and check passwords. `tables`
    * gathers the tables its SQL read and wrote, for live queries.
    */
   private siteHost(
@@ -1979,11 +1926,6 @@ export class SiteData extends DurableObject<Env> {
         }
         case "random":
           return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
-        case "rolesOf":
-          return this.memberRoles(args[0]);
-        case "setRoles":
-          this.setRoles(args[0], args[1]);
-          return null;
         case "sql":
           // [text, values, read-only], the last from the call, not the code.
           return this.siteSql(
@@ -2132,10 +2074,6 @@ export class SiteData extends DurableObject<Env> {
               now: Date.now(),
               readonly,
               kind,
-              roles:
-                input.member === null
-                  ? []
-                  : (this.memberRoles([input.member])[input.member] ?? []),
               ownerName: input.site,
             },
             this.siteHost(tables, {
@@ -2990,8 +2928,8 @@ export class SiteData extends DurableObject<Env> {
    * read into staging tables first, so one that is not a whole dump changes
    * nothing; then what the site holds now is kept as
    * `before-restore-<ms>.ndjson.gz`; then, in one transaction, collections,
-   * documents, upload references and the site's own tables, migrations and
-   * roles become the restore point's. What belongs to the present stays: the
+   * documents, upload references and the site's own tables and migrations
+   * become the restore point's. What belongs to the present stays: the
    * active release (its revision and generation, which the control plane's
    * records name), the owner, paid status and limits, the month's budget and
    * counts, and rate limits. Migrations of the
@@ -3258,7 +3196,6 @@ export class SiteData extends DurableObject<Env> {
             virtual: object.virtual,
           })),
         { table: "_naru_migrations", from: "_naru_migrations", virtual: false },
-        { table: "_naru_roles", from: "_naru_roles", virtual: false },
       ];
       const tables = sources.map((source, n) => {
         const snap = `${SNAP}${n}`;
@@ -3446,6 +3383,8 @@ export class SiteData extends DurableObject<Env> {
         site === null
           ? !(DUMP_TABLES as readonly string[]).includes(table) &&
             table !== "_naru_migrations" &&
+            // Members' roles, in dumps made before Naru dropped them:
+            // staged, and left out of the restore.
             table !== "_naru_roles"
           : !site || reserved(site)
       )
@@ -3519,7 +3458,6 @@ export class SiteData extends DurableObject<Env> {
             `DROP ${object.type.toUpperCase()} IF EXISTS ${quoteName(object.name)}`,
           );
         this.sql.exec("DELETE FROM _naru_migrations");
-        this.sql.exec("DELETE FROM _naru_roles");
         for (const sql of staged.schema) {
           for (const statement of statements(sql))
             classify(statement.tokens, ["schema"]);
@@ -3565,7 +3503,6 @@ export class SiteData extends DurableObject<Env> {
           copy(table, name, objects.get(name)!);
         }
         copy("_naru_migrations", "_naru_migrations", false);
-        copy("_naru_roles", "_naru_roles", false);
         for (const table of DUMP_TABLES) {
           if (options.keepPresent && table === "rate_limits") continue;
           this.sql.exec(`DELETE FROM ${table}`);

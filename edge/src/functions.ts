@@ -119,11 +119,9 @@ export type Invocation = {
   readonly?: boolean;
   /**
    * What is called: a query or a route, which only read, or a mutation,
-   * which may also grant roles and hash passwords.
+   * which may also hash passwords and notify members.
    */
   kind: "query" | "mutation" | "route";
-  /** The calling member's roles (`ctx.member.roles`). */
-  roles?: string[];
   /** The site's owner's Naru login (`ctx.ownerName`). */
   ownerName?: string;
 };
@@ -312,10 +310,8 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, now, args, kind, roles, ownerName, mediaTypes) => {
-  const who = member === null ? null : Object.freeze({ id: member, roles: Object.freeze(roles) });
-  const rolesOf = __operation("rolesOf");
-  const setRoles = __operation("setRoles");
+globalThis.__run = async (name, member, owner, now, args, kind, ownerName, mediaTypes) => {
+  const who = member === null ? null : Object.freeze({ id: member });
   // A notification in the Naru app for members, sent once the call commits.
   const notify = __operation("notify");
   // The types Naru Media takes; the uploads are site SQL's _naru_uploads.
@@ -388,10 +384,9 @@ globalThis.__run = async (name, member, owner, now, args, kind, roles, ownerName
     now,
     fail: (...args) => __call("fail", ...args),
     sql,
-    rolesOf,
     media,
     passwords: kind === "mutation" ? passwords : Object.freeze({ verify: passwords.verify }),
-    ...(kind === "mutation" ? { setRoles, notify } : {}),
+    ...(kind === "mutation" ? { notify } : {}),
   });
   const fn = Object.hasOwn(globalThis.__exports, name)
     ? globalThis.__exports[name]
@@ -546,12 +541,10 @@ export function runFunction(
         // Site code reaches the site's tables through sql alone.
         const kind = invocation.kind;
         if (
-          !["sql", "random", "rolesOf", "passwordVerify"].includes(name) &&
+          !["sql", "random", "passwordVerify"].includes(name) &&
           !(
             kind === "mutation" &&
-            (name === "setRoles" ||
-              name === "passwordHash" ||
-              name === "notify")
+            (name === "passwordHash" || name === "notify")
           )
         )
           throw failed(`a ${kind} has no ctx.${name}.`);
@@ -626,7 +619,6 @@ export function runFunction(
         invocation.now,
         JSON.stringify(invocation.args ?? null),
         invocation.kind,
-        invocation.roles ?? [],
         invocation.ownerName ?? "",
         MEDIA_TYPES,
       ]

@@ -147,8 +147,8 @@ export async function summarizeDump(
 
 /**
  * Tests only: a site's dump on the Worker its object lives on, read whole,
- * as its text and its rows: Naru's tables by name, and the site's tables,
- * migrations and roles under `site`.
+ * as its text and its rows: Naru's tables by name, and the site's tables
+ * and migrations under `site`.
  */
 export async function readSiteDump(site: string) {
   const text = await new Response(
@@ -176,7 +176,6 @@ export async function readSiteDump(site: string) {
       schema: dump.schema,
       tables,
       migrations: dump.tables._naru_migrations ?? [],
-      roles: dump.tables._naru_roles ?? [],
     },
   };
 }

@@ -20,8 +20,8 @@ export const posts: Query<{ board: string }, { id: number }[]> = async (
 ) => {
   // @ts-expect-error Queries reach tables through sql only.
   await ctx.get("posts", "1");
-  // @ts-expect-error Only a mutation grants roles.
-  await ctx.setRoles("m-1", []);
+  // @ts-expect-error Roles are the site's own, in its tables.
+  await ctx.rolesOf(["m-1"]);
   // @ts-expect-error Only a mutation notifies.
   await ctx.notify(["m-1"], { title: "t" });
   // @ts-expect-error Only a mutation hashes passwords.
@@ -38,8 +38,8 @@ export const write: Mutation<{ title: string }, number> = async (
   // @ts-expect-error A visitor is neither ctx.member nor ctx.owner.
   void ctx.visitor;
   if (!ctx.member) return ctx.fail("AUTH_REQUIRED", "로그인해 주세요.");
-  if (!ctx.member.roles.includes("writer"))
-    await ctx.setRoles(ctx.member.id, [...ctx.member.roles, "writer"]);
+  // @ts-expect-error Roles are the site's own, in its tables.
+  void ctx.member.roles;
   const hash: string = await ctx.passwords.hash(title);
   await ctx.notify([ctx.member.id], { title: "새 글", path: "/posts/1" });
   // @ts-expect-error A notification has a title, and members come as a list.

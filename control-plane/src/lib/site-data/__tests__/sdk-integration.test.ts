@@ -811,7 +811,7 @@ integration("SDK and data API contract", () => {
       });
       expect(await member.query("counter:who")).toEqual({
         owner: false,
-        member: { id: member.id, roles: [] },
+        member: { id: member.id },
       });
       expect(await members.query("counter:who")).toEqual({
         owner: false,

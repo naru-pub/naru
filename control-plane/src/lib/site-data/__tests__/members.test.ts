@@ -423,7 +423,7 @@ integration("site members", () => {
     await expect(probe(free.accessToken)).resolves.toBeDefined();
   });
 
-  test("the owner gives members roles, which a member's query reads", async () => {
+  test("a member's query knows them by ID alone; Naru keeps no roles", async () => {
     users.rolf = await insertUser("rolf");
     await sql`insert into sessions values ('rolf-session', ${users.rolf}, now() + interval '60 days')`.execute(
       db,
@@ -436,16 +436,6 @@ integration("site members", () => {
       source: "export function me(ctx) { return ctx.member; }",
     });
     expect(
-      await manageMembership(owner, "PATCH", {
-        id: member.memberId,
-        roles: ["staff", "writer"],
-      }),
-    ).toEqual({ id: member.memberId, roles: ["staff", "writer"] });
-    const page = await manageMembership(owner, "GET");
-    expect(
-      page.members.find((row) => row.id === member.memberId)?.roles,
-    ).toEqual(["staff", "writer"]);
-    expect(
       await executeCall({
         site: "alice",
         method: "POST",
@@ -453,17 +443,14 @@ integration("site members", () => {
         kind: "query",
         bearer: { token: member.accessToken, origin },
       }),
-    ).toMatchObject({
-      result: { id: member.memberId, roles: ["staff", "writer"] },
-    });
-    // Only the owner's own members.
+    ).toMatchObject({ result: { id: member.memberId } });
+    // The control panel sets no roles.
     await expect(
       manageMembership(owner, "PATCH", {
-        id: crypto.randomUUID(),
+        id: member.memberId,
         roles: ["staff"],
       }),
-    ).rejects.toMatchObject({ status: 404 });
-    await manageMembership(owner, "PATCH", { id: member.memberId, roles: [] });
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   test("approval and bans govern existing tokens across data, queries, mutations and uploads", async () => {
@@ -607,8 +594,7 @@ integration("site members", () => {
       expect(list.admission).toBe("open");
       expect(
         list.members!.every(
-          (m) =>
-            Object.keys(m).sort().join(",") === "createdAt,id,roles,status",
+          (m) => Object.keys(m).sort().join(",") === "createdAt,id,status",
         ),
       ).toBe(true);
     } finally {
@@ -918,7 +904,7 @@ integration("site members", () => {
       {
         type: "result",
         id: "me",
-        result: { id: bob.memberId, roles: [] },
+        result: { id: bob.memberId },
       },
     ]);
     expect(visitor.heard).toEqual([{ type: "result", id: "me", result: null }]);

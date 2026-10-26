@@ -21,7 +21,7 @@ support ends loses access without signing out.
 
 Members are `pending`, `approved`, or `banned`. Only the signed-in site owner
 can change admission or member states in the database control panel. Any state
-can transition to either of the other states. IDs, roles and the site's data
+can transition to either of the other states. IDs and the site's data
 remain intact; banning does not delete media, documents, the site's table rows,
 payment records or durable work.
 Collection-scoped SDK owner tokens do not grant membership administration.
@@ -62,4 +62,4 @@ neo-avocado's application membership documents are not automatically migrated.
 Before removing its checks, map its approvals and bans to platform member states
 and update its admission screen to read `error.details.membership`. Its board ACLs,
 profile validation and business rules belong in its queries and mutations, with
-levels and moderators kept as member roles (`ctx.member.roles`, `ctx.setRoles`).
+levels and moderators kept in its own tables, keyed by the member ID.

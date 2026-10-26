@@ -95,10 +95,10 @@ integration("a site's tables on the control panel", () => {
   test("the owner's console reads, and changes nothing", async () => {
     expect(
       await query(
-        "SELECT p.id, p.title, p.cover, (SELECT count(*) FROM _naru_member_roles) AS roles FROM posts p WHERE p.id <= 2 ORDER BY p.id",
+        "SELECT p.id, p.title, p.cover, (SELECT count(*) FROM _naru_uploads) AS uploads FROM posts p WHERE p.id <= 2 ORDER BY p.id",
       ),
     ).toEqual({
-      columns: ["id", "title", "cover", "roles"],
+      columns: ["id", "title", "cover", "uploads"],
       rows: [
         [1, "post 1", { blob: 2048 }, 0],
         [2, "post 2", null, 0],

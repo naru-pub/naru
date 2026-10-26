@@ -96,8 +96,6 @@ const OPERATIONS = [
   "tableRows",
   // One read-only statement of the owner's own SQL, from the same tab.
   "ownerQuery",
-  "rolesOfMembers",
-  "setMemberRoles",
   // Uploads as Naru Media finishes and deletes them, for site SQL's _naru_uploads.
   "recordMedia",
   "forgetMedia",
@@ -173,12 +171,8 @@ function dispatch(
       return stub.tableRows(input);
     case "ownerQuery":
       return stub.ownerQuery(input);
-    case "rolesOfMembers":
-      return stub.rolesOfMembers(input);
     case "render":
       return stub.render(input);
-    case "setMemberRoles":
-      return stub.setMemberRoles(input);
     case "recordMedia":
       return stub.recordMedia(input);
     case "forgetMedia":

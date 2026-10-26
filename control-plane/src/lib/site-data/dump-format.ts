@@ -6,7 +6,6 @@
 //   {"type":"row","table":"meta","row":{…}}          Naru's tables, by name
 //   {"type":"row","table":"site:posts","row":{…}}     the site's own tables
 //   {"type":"row","table":"_naru_migrations","row":{…}}
-//   {"type":"row","table":"_naru_roles","row":{…}}
 //   {"type":"end","rows":<how many row lines>}
 //
 // A BLOB is { "$base64": … }; a full-text table's rows carry `rowid`. A dump

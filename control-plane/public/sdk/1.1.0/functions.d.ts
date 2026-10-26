@@ -44,12 +44,11 @@ export type ErrorCode =
   | "UNAVAILABLE";
 
 /**
- * The member who called, and the roles the site gave them (names such as
- * `staff`, set on the control panel or by `setRoles`).
+ * The member who called: their ID on this site, the same on every visit.
+ * What they may do is the site's to keep, in its own tables.
  */
 export interface CallingMember {
   readonly id: string;
-  readonly roles: readonly string[];
 }
 
 /** A value site SQL binds or returns (a boolean binds as 1 or 0). */
@@ -91,11 +90,10 @@ export interface QueryCtx {
    * binds every interpolated value as a parameter; given text and values,
    * it runs a query builder's compiled statement. SELECT, INSERT, UPDATE and
    * DELETE run; a query only reads. Naru's own tables, pragmas, triggers,
-   * transactions and recursion are refused, but two of Naru's views may be
-   * read and joined: `_naru_member_roles (member, role)`, a row for each
-   * role a member holds, and `_naru_uploads (id, url, member, name, type,
-   * size, created_at)`, the site's finished uploads (`member` null for the
-   * owner's). A statement is stopped once
+   * transactions and recursion are refused, but Naru's view
+   * `_naru_uploads (id, url, member, name, type, size, created_at)`, the
+   * site's finished uploads (`member` null for the owner's), may be read
+   * and joined. A statement is stopped once
    * SQLite works on one step of it for 3 seconds; one stopped 3 times within
    * a minute is paused for 5 minutes. It binds at most 100 values, returns at most 1,000 rows and 1 MiB, BLOB columns as
    * Uint8Arrays, and counts as one database operation; a call's statements
@@ -123,8 +121,6 @@ export interface QueryCtx {
     text: string,
     values?: SqlValue[],
   ): Promise<SqlResult<Row>>;
-  /** Members' roles, by ID: at most 100 IDs a call; a member without any has []. */
-  rolesOf(members: string[]): Promise<Record<string, string[]>>;
   /** The types Naru Media stores: an upload of any other is refused. */
   media: { readonly types: readonly string[] };
   /**
@@ -137,17 +133,12 @@ export interface QueryCtx {
   };
 }
 
-/** A mutation's `ctx`: a query's, writing, and granting roles. */
+/** A mutation's `ctx`: a query's, writing, and notifying members. */
 export interface MutationCtx extends QueryCtx {
   passwords: QueryCtx["passwords"] & {
     /** A hash of `password` (1–256 characters) to keep in a table. */
     hash(password: string): Promise<string>;
   };
-  /**
-   * Replaces a member's roles with these (at most 16 names); [] clears
-   * them. Kept only if the mutation returns.
-   */
-  setRoles(member: string, roles: string[]): Promise<null>;
   /**
    * Notifies these members (at most 1,000 a call) in the Naru app, once the
    * mutation returns: on their devices if they allowed the site there, or in

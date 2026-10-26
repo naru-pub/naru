@@ -263,90 +263,6 @@ integration("queries and mutations", () => {
   });
 });
 
-integration("member roles", () => {
-  const code = (
-    kind: "query" | "mutation",
-    name: string,
-    args: unknown,
-    member: string | null,
-  ) =>
-    callSiteObject<{ result: unknown }>(site, "call", {
-      ownerId,
-      site,
-      member,
-      ...(member === null ? { visitor: true } : {}),
-      kind,
-      file: "roles",
-      name,
-      args,
-    }).then((answer) => answer.result);
-
-  test("a mutation grants roles, every call reads its caller's, and the owner sets them", async () => {
-    await put(
-      "queries",
-      "roles",
-      `export async function me(ctx) { return ctx.member; }
-       export async function of(ctx, { ids }) { return ctx.rolesOf(ids); }`,
-      false,
-    );
-    await put(
-      "mutations",
-      "roles",
-      `export async function promote(ctx, { member }) {
-         if (!ctx.member?.roles.includes("staff")) ctx.fail("ACCESS_DENIED", "운영진만 할 수 있어요.");
-         const now = (await ctx.rolesOf([member]))[member];
-         await ctx.setRoles(member, [...now, "writer"]);
-       }`,
-    );
-    expect(await code("query", "me", null, "member-3")).toEqual({
-      id: "member-3",
-      roles: [],
-    });
-    await expect(
-      code("mutation", "promote", { member: "member-3" }, "member-3"),
-    ).rejects.toMatchObject({ status: 403 });
-    // The owner, on the control panel.
-    expect(
-      await callSiteObject(site, "setMemberRoles", {
-        member: "member-1",
-        roles: ["staff", "staff", "admin"],
-      }),
-    ).toEqual(["admin", "staff"]);
-    await code("mutation", "promote", { member: "member-3" }, "member-1");
-    expect(await code("query", "me", null, "member-3")).toEqual({
-      id: "member-3",
-      roles: ["writer"],
-    });
-    expect(
-      await code(
-        "query",
-        "of",
-        { ids: ["member-1", "member-3", "nobody"] },
-        null,
-      ),
-    ).toEqual({
-      "member-1": ["admin", "staff"],
-      "member-3": ["writer"],
-      nobody: [],
-    });
-    expect(
-      await callSiteObject(site, "rolesOfMembers", { ids: ["member-3"] }),
-    ).toEqual({ "member-3": ["writer"] });
-    await expect(
-      callSiteObject(site, "setMemberRoles", {
-        member: "member-3",
-        roles: Array.from({ length: 17 }, (_, i) => `r${i}`),
-      }),
-    ).rejects.toMatchObject({ status: 400 });
-    // Dumps carry them.
-    const dump = await readSiteDump(site);
-    expect(dump.site.roles.map((row) => row.member).sort()).toEqual([
-      "member-1",
-      "member-3",
-    ]);
-  });
-});
-
 integration("live queries", () => {
   test("a subscription answers now, and again when a mutation changes what it read", async () => {
     jest.setTimeout?.(30_000);
@@ -1071,7 +987,7 @@ integration("statement plans", () => {
     expect((await readSiteDump(site)).text).toContain('"type":"end"');
   });
 
-  test("site SQL reads Naru's views of roles and uploads; ctx has the owner's name", async () => {
+  test("site SQL reads Naru's view of uploads; ctx has the owner's name", async () => {
     const run = (
       name: string,
       args: unknown = null,
@@ -1093,10 +1009,8 @@ integration("statement plans", () => {
     await put(
       "queries",
       "extras",
-      `export async function who(ctx, { role }) {
-         const { rows } = await ctx.sql\`SELECT member FROM _naru_member_roles
-           WHERE role = \${role} ORDER BY member\`;
-         return { owner: ctx.ownerName, members: rows.map((row) => row.member) };
+      `export async function who(ctx) {
+         return { owner: ctx.ownerName, member: ctx.member, rolesOf: typeof ctx.rolesOf };
        }
        export async function upload(ctx, { url }) {
          const { rows } = await ctx.sql\`SELECT member, name, type, size FROM _naru_uploads
@@ -1110,22 +1024,12 @@ integration("statement plans", () => {
       "extras",
       `export async function drop(ctx) { return ctx.sql\`DELETE FROM _naru_uploads\`; }`,
     );
-    await callSiteObject(site, "setMemberRoles", {
-      member: "member-5",
-      roles: ["moderator"],
-    });
-    await callSiteObject(site, "setMemberRoles", {
-      member: "member-6",
-      roles: ["moderator", "staff"],
-    });
-    expect(await result("who", { role: "moderator" })).toEqual({
+    // Roles are the site's own, in its tables: Naru keeps none.
+    expect(await result("who")).toEqual({
       owner: site,
-      members: ["member-5", "member-6"],
+      member: { id: "member-1" },
+      rolesOf: "undefined",
     });
-    // A live query reading the view is re-run as roles change.
-    expect(
-      (await run("who", { role: "staff" }, "query", "subscribe")).tables,
-    ).toContain("_naru_member_roles");
     // Uploads as Naru Media recorded them, and forgot them.
     const id = "0190f5a0-0000-7000-8000-00000000f001";
     const url = "https://media.naru.pub/u/a.pdf";

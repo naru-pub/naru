@@ -12,8 +12,7 @@ weighs both and proposes an order.
 - `classify` (edge/src/sql.ts) sorts one statement into `read`, `write` or
   `schema` and refuses everything else: PRAGMA, ATTACH, temporary tables,
   virtual tables other than fts5, and Naru's own tables (`reserved`). It
-  already lets SQL read `_naru_member_roles` and `_naru_uploads` but never
-  write them.
+  already lets SQL read `_naru_uploads` but never write it.
 - `siteSql` (edge/src/site.ts) runs one site statement with limits: 64 KiB of
   text, at most `MAX_ROWS` (1,000) rows and 1 MiB of JSON returned, and
   `MAX_ROWS_READ` (500,000) rows read per call. On the mini, workerd also

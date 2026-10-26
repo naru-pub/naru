@@ -131,41 +131,32 @@ describe("site SQL", () => {
       ).toThrow(message);
   });
 
-  test("Naru's views of roles and uploads are read and joined, never written or built on", () => {
+  test("Naru's view of uploads is read and joined, never written or built on", () => {
     for (const sql of [
-      "SELECT member FROM _naru_member_roles WHERE role = 'staff'",
+      "SELECT id FROM _naru_uploads WHERE type = 'image/png'",
       "SELECT p.id, u.size FROM posts p JOIN _naru_uploads u ON u.url = p.image",
-      "SELECT * FROM posts WHERE author IN (SELECT member FROM _naru_member_roles)",
-      "INSERT INTO staff SELECT member FROM _naru_member_roles WHERE role = 'staff'",
+      "SELECT * FROM posts WHERE author IN (SELECT member FROM _naru_uploads)",
+      "INSERT INTO images SELECT url FROM _naru_uploads WHERE type = 'image/png'",
     ])
       expect(one(sql), sql).not.toBe("schema");
     for (const sql of [
       "DROP VIEW _naru_uploads",
       "CREATE VIEW v AS SELECT * FROM _naru_uploads",
-      "CREATE INDEX i ON _naru_member_roles (role)",
+      "CREATE INDEX i ON _naru_uploads (type)",
       "CREATE VIRTUAL TABLE t USING fts5(name, content='_naru_uploads')",
     ])
       expect(() => one(sql), sql).toThrow(/is Naru's/);
     // SQLite itself writes no view.
     const db = naru();
-    db.exec(`INSERT INTO _naru_roles VALUES ('m1', '["staff","mod"]', 0)`);
     db.exec(
       "INSERT INTO _naru_media VALUES ('u1', 'https://x/a.png', 'm1', 'a.png', 'image/png', 10, 0)",
     );
-    expect(
-      db
-        .prepare("SELECT member, role FROM _naru_member_roles ORDER BY role")
-        .all(),
-    ).toEqual([
-      { member: "m1", role: "mod" },
-      { member: "m1", role: "staff" },
-    ]);
     expect(db.prepare("SELECT member, size FROM _naru_uploads").all()).toEqual([
       { member: "m1", size: 10 },
     ]);
     for (const sql of [
       "DELETE FROM _naru_uploads",
-      "UPDATE _naru_member_roles SET role = 'owner'",
+      "UPDATE _naru_uploads SET member = 'owner'",
       "INSERT INTO _naru_uploads (id) VALUES ('x')",
     ])
       expect(() => db.exec(sql), sql).toThrow(/view/);
@@ -191,7 +182,7 @@ describe("site SQL", () => {
       "CREATE VIEW v AS SELECT * FROM documents",
       // A write's conflict clause before its table.
       "UPDATE OR IGNORE meta SET value = 'x' WHERE key = 'entitled_until'",
-      "UPDATE OR REPLACE _naru_roles SET roles = '[]'",
+      "UPDATE OR REPLACE _naru_media SET member = NULL",
       "UPDATE OR ABORT main.meta SET value = 'x'",
       "INSERT OR REPLACE INTO meta VALUES ('k', 'v')",
       // Parenthesized tables, and tables after a function, a subquery, an
@@ -201,7 +192,7 @@ describe("site SQL", () => {
       "SELECT * FROM (posts JOIN meta)",
       "SELECT * FROM posts JOIN (meta) ON 1",
       "SELECT * FROM json_each('[0]'), meta",
-      "SELECT * FROM (SELECT 1) AS x, _naru_roles",
+      "SELECT * FROM (SELECT 1) AS x, _naru_media",
       "SELECT * FROM posts INDEXED BY p, meta",
       "SELECT * FROM posts NOT INDEXED, meta",
       "SELECT * FROM posts a JOIN posts b ON a.id = b.id, meta",

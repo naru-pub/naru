@@ -33,9 +33,9 @@ export const INTERNAL = new Set([
 ]);
 /**
  * Naru's views that site SQL may read, never write or build on (query.ts):
- * members' roles and the site's uploads, to join with the site's tables.
+ * the site's uploads, to join with the site's tables.
  */
-export const READABLE = new Set(["_naru_member_roles", "_naru_uploads"]);
+export const READABLE = new Set(["_naru_uploads"]);
 /** A collection field's index (query.ts, site.ts). */
 const INTERNAL_PREFIXES = ["documents_index_", "documents_unique_"];
 

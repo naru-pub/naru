@@ -340,13 +340,13 @@ integration("website owner authorization", () => {
       entitledUntil: null,
       confirmedUntil: Date.now() + 60_000,
     });
-    // Reads a view, so any change of roles runs it again.
+    // Reads a view, so any upload Naru Media records runs it again.
     await callSiteObject("alice", "putFunctions", {
       site: "alice",
       folder: "queries",
       file: "whoami",
       source: `export async function staff(ctx) {
-        const { rows } = await ctx.sql\`SELECT count(*) AS n FROM _naru_member_roles\`;
+        const { rows } = await ctx.sql\`SELECT count(*) AS n FROM _naru_uploads\`;
         return { owner: ctx.owner, n: rows[0].n };
       }`,
     });
@@ -396,9 +396,18 @@ integration("website owner authorization", () => {
       const before = visitor.heard[0].n;
       expect(ownerPage.heard[0]).toEqual({ owner: true, n: before });
       expect(visitor.heard[0]).toEqual({ owner: false, n: before });
-      await callSiteObject("alice", "setMemberRoles", {
-        member: "member-live",
-        roles: ["staff"],
+      await callSiteObject("alice", "recordMedia", {
+        files: [
+          {
+            id: "0190f5a0-0000-7000-8000-00000000f0a1",
+            url: "https://media.naru.pub/alice/live.png",
+            member: null,
+            name: "live.png",
+            type: "image/png",
+            size: 1,
+            createdAt: 1,
+          },
+        ],
       });
       await until(
         () => ownerPage.heard.length === 2 && visitor.heard.length === 2,

@@ -3,7 +3,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useState } from "react";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 type Status = "pending" | "approved" | "banned";
 type Admission = "open" | "approval" | "closed";
@@ -11,7 +10,6 @@ type Member = {
   id: string;
   status: Status;
   createdAt: string;
-  roles: string[];
 };
 type Page = {
   admission: Admission;
@@ -62,8 +60,7 @@ export default function MembershipManager() {
       | { admission: Admission }
       | { verifiedEmail: boolean }
       | { supportersOnly: boolean }
-      | { id: string; status: Status }
-      | { id: string; roles: string[] },
+      | { id: string; status: Status },
   ) {
     setBusy(true);
     setError("");
@@ -172,11 +169,6 @@ export default function MembershipManager() {
             파일을 올릴 수 없습니다. 공개 자료는 방문자로 볼 수 있습니다. 가입
             설정을 바꿔도 기존 회원의 상태는 유지됩니다.
           </p>
-          <p className="text-sm text-muted-foreground">
-            역할은 사이트가 회원에게 붙이는 이름입니다(예: staff, writer).
-            쉼표로 나눠 회원마다 16개까지 붙일 수 있고, 사이트 코드는{" "}
-            <code>ctx.member.roles</code>로 읽고 뮤테이션에서 바꿀 수 있습니다.
-          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -184,7 +176,6 @@ export default function MembershipManager() {
                   <th className="py-2">회원 번호</th>
                   <th>상태</th>
                   <th>변경</th>
-                  <th>역할</th>
                 </tr>
               </thead>
               <tbody>
@@ -210,40 +201,6 @@ export default function MembershipManager() {
                                 : "차단"}
                           </Button>
                         ))}
-                    </td>
-                    <td className="py-2">
-                      <form
-                        className="flex gap-2"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const value = new FormData(event.currentTarget).get(
-                            "roles",
-                          );
-                          change({
-                            id: member.id,
-                            roles: String(value ?? "")
-                              .split(/[\s,]+/)
-                              .filter(Boolean),
-                          });
-                        }}
-                      >
-                        <Input
-                          name="roles"
-                          aria-label={`${member.id}의 역할`}
-                          defaultValue={member.roles.join(", ")}
-                          placeholder="staff, writer"
-                          disabled={busy}
-                          className="h-8 min-w-40"
-                        />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          disabled={busy}
-                        >
-                          저장
-                        </Button>
-                      </form>
                     </td>
                   </tr>
                 ))}

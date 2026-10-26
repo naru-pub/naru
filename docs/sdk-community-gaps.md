@@ -12,8 +12,8 @@ is historical; the gaps it lists are now addressed this way:
   and reached through its queries (`_naru/queries/`) and mutations
   (`_naru/mutations/`), which anyone may call and which decide what each caller
   (`ctx.member`, `ctx.owner`; a visitor has neither) may see and do. Board permissions,
-  secret posts, levels and moderators are code over those tables, with member
-  roles (`ctx.member.roles`, `ctx.setRoles`) for levels and moderators.
+  secret posts, levels and moderators are code over those tables, roles
+  included: Naru keeps none.
 - Queries only read and are limited as reads (600 a minute); mutations write in
   one transaction (30 a minute per member). The owner calls both too
   (`ctx.owner`). Shared code lives in `_naru/modules/`.

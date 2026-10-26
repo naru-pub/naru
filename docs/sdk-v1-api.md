@@ -213,11 +213,10 @@ each. They cannot delete or list media, batch, or change collections. A member's
 rate limited per member, and members' requests count against the site's
 monthly budget like visitors'.
 
-**Roles.** A site gives its members roles, names such as `staff` or
-`level3`: the owner sets them on the control panel, and a mutation with
-`ctx.setRoles(memberId, roles)`. The site's code reads the caller's as
-`ctx.member.roles` and anyone's with `ctx.rolesOf(ids)`. Roles mean nothing
-to Naru; they are for the site's code to check.
+**Roles.** Naru keeps no roles: moderators, levels and groups are the
+site's own, a table keyed by `ctx.member.id` that its migrations create and
+its mutations write, as the board example under Site code does with `roles`.
+Who may grant a role is for the site's code to check.
 
 A sign-in that was denied, took longer than ten minutes, or could not be
 completed resolves `session()` with `null`. Members need a Naru supporter
@@ -283,6 +282,12 @@ CREATE TABLE posts (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX posts_board ON posts (board, id);
+-- Members' roles are the site's own: staff may post notices.
+CREATE TABLE roles (
+  member TEXT NOT NULL,
+  role TEXT NOT NULL,
+  PRIMARY KEY (member, role)
+);
 ```
 
 ```js
@@ -299,8 +304,12 @@ export async function posts(ctx, { board }) {
 // _naru/mutations/board.js
 export async function write(ctx, { board, title }) {
   if (!ctx.member) ctx.fail("AUTH_REQUIRED", "로그인이 필요합니다.");
-  if (board === "notice" && !ctx.member.roles.includes("staff"))
-    ctx.fail("ACCESS_DENIED", "공지는 운영진만 쓸 수 있습니다.");
+  if (board === "notice") {
+    const { rows: staff } = await ctx.sql`
+      SELECT 1 FROM roles WHERE member = ${ctx.member.id} AND role = 'staff'`;
+    if (!staff.length)
+      ctx.fail("ACCESS_DENIED", "공지는 운영진만 쓸 수 있습니다.");
+  }
   const { rows } = await ctx.sql`
     INSERT INTO posts (board, author, title, created_at)
     VALUES (${board}, ${ctx.member.id}, ${title}, ${ctx.now})
@@ -325,7 +334,7 @@ passes `undefined`, so default parameters apply.
 each caller may see and do. `naru.query()` and `naru.mutate()` call as a
 visitor, signed in to nothing: `ctx.member` is null and `ctx.owner` false.
 `member.query()` and `member.mutate()` call as that member: `ctx.member` is
-`{ id, roles }`. `admin.query()` and `admin.mutate()` call as the owner:
+`{ id }`. `admin.query()` and `admin.mutate()` call as the owner:
 `ctx.owner` is true and `ctx.member` null, whatever collections the owner's
 sign-in approved, so a page that manages the site only through its code signs
 in with no collections. Naru refuses a call only for the caller's standing (a
@@ -375,14 +384,12 @@ refused), and these methods, which return promises:
   resolves `{ rows, changes }`. `SELECT`, `VALUES`, `INSERT`, `REPLACE`,
   `UPDATE` and `DELETE` run (`RETURNING` included); schema changes belong in
   migrations. Naru's own tables, pragmas, attaching, triggers, transactions
-  and recursive queries are refused, except two of Naru's views, which
-  statements may read and join but never write or build on:
-  `_naru_member_roles (member, role)`, a row for each role a member holds,
-  and `_naru_uploads (id, url, member, name, type, size, created_at)`, the
-  site's uploads as Naru Media finished them (`member` null for the
-  owner's; recorded as each is finished and again whenever the owner opens
-  the media library). Live queries reading them answer again as they
-  change. A statement that runs too long is
+  and recursive queries are refused, except Naru's view
+  `_naru_uploads (id, url, member, name, type, size, created_at)`, which
+  statements may read and join but never write or build on: the site's
+  uploads as Naru Media finished them (`member` null for the owner's;
+  recorded as each is finished and again whenever the owner opens the media
+  library). Live queries reading it answer again as it changes. A statement that runs too long is
   stopped (see **SQL limits**).
   It binds at most 100 values and returns at most 1,000 rows and 1 MiB; a
   `Uint8Array` binds as a
@@ -390,16 +397,12 @@ refused), and these methods, which return promises:
   value a `UNIQUE` column already holds fails the call with `CONFLICT`,
   `details.unique` naming the column; any other mistake is SQLite's refusal,
   with its message;
-- `rolesOf(ids)`, members' roles by ID, at most 100 IDs; a member without
-  any has `[]`;
 - `passwords.verify(password, hash, key)`, whether a guest's password
   matches a hash the site kept. Each `key` (such as `"post:42"`) accepts ten
   wrong passwords an hour, whoever tries; then every check of it fails with
   `RATE_LIMITED`;
 - in mutations only, `passwords.hash(password)`, a salted PBKDF2-SHA256 hash
   of a 1–256 character password to keep in a table, and
-  `setRoles(memberId, roles)`, which replaces a member's roles (at most 16
-  names; `[]` clears them) if the mutation returns, and
   `notify(memberIds, { title, body?, path? })` (see **Notifications**).
 
 Every promise a `ctx` method returns must be used: awaited, returned,
@@ -570,7 +573,7 @@ table of long text takes about 1.5 seconds.
 Before a release applies migrations, Naru keeps a restore point of the whole
 site database; the owner can return the site to one on the control panel
 (데이터베이스 → 복원 지점). A restore brings back collections, documents,
-the site's tables and rows, the applied migrations and members' roles as they
+the site's tables and rows and the applied migrations as they
 were, replacing everything since, after keeping a restore point of the present
 so it can be undone; a restore point that cannot be read whole changes
 nothing. The owner can also keep one of the present at any time (지금 복원
@@ -584,7 +587,7 @@ the next release, so edit or remove one first to keep it from running.
 squashing them before a first release, the owner can empty the database
 (데이터베이스 → 복원 지점 → 데이터베이스 초기화, typing the site's name). Naru
 keeps a restore point of the present first, then removes every collection,
-document, table, applied migration, member role and record of uploads,
+document, table, applied migration and record of uploads,
 confirms the site's plan to it again, and releases its `_naru` code anew, so
 its migrations apply to the empty database. The site's files, its uploads and
 its members on Naru stay. A release the code fails leaves the database empty
@@ -602,8 +605,9 @@ line per row, `{"type":"row","table":…,"row":{column: value}}`: the site's
 tables as `site:<name>` (a full-text table's rows carry their `rowid`; its
 own storage tables are left out), Naru's tables by their names
 (`collections`, `documents` with each document's JSON in `data`, `meta`,
-`usage`, `media_refs`, `rate_limits` and the like) and `_naru_migrations` and
-`_naru_roles` (members' roles). A value is a string, a number or null; a BLOB
+`usage`, `media_refs`, `rate_limits` and the like) and `_naru_migrations`.
+Files made before 2026-10-26 also carry `_naru_roles`, members' roles as Naru
+kept them then; a restore leaves them out. A value is a string, a number or null; a BLOB
 is `{"$base64": …}`. The last line is `{"type":"end","rows":<count>}`: a file
 without it, or with another count, was cut short. Uploads are not in it:
 their files stay in Naru Media, and rows hold their URLs. Naru does not take
@@ -613,8 +617,7 @@ The owner can browse the site's tables on the control panel (데이터베이스 
 to its first 1,000 characters and a BLOB shown as its size; views, Naru's
 tables and a full-text table's storage are not browsed. Beside it, SQL 조회
 runs one read-only statement of the owner's own (SELECT, VALUES or WITH …
-SELECT, with the same refusals as site SQL; `_naru_member_roles` and
-`_naru_uploads` read too) and shows its first 1,000 rows, 30 statements a
+SELECT, with the same refusals as site SQL; `_naru_uploads` reads too) and shows its first 1,000 rows, 30 statements a
 minute.
 The site's tables count toward the site's database quota with its
 collections. naru-dev (`npx @naru-pub/dev`) writes `_naru/types/database.d.ts`, the tables

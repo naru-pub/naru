@@ -115,10 +115,9 @@ function Console({ example }: { example: string }) {
     <section className="min-w-0 border p-5 space-y-4">
       <h2 className="font-bold">SQL 조회</h2>
       <p className="text-sm text-muted-foreground">
-        SELECT 문 하나로 테이블을 조회합니다. 사이트 회원 역할(
-        <code>_naru_member_roles</code>)과 업로드(<code>_naru_uploads</code>
-        )도 함께 읽을 수 있습니다. 데이터를 바꾸는 문장은 실행하지 않으며,
-        결과는 처음 1,000행까지 보입니다.
+        SELECT 문 하나로 테이블을 조회합니다. 업로드(
+        <code>_naru_uploads</code>)도 함께 읽을 수 있습니다. 데이터를 바꾸는
+        문장은 실행하지 않으며, 결과는 처음 1,000행까지 보입니다.
       </p>
       <form
         className="space-y-2"

@@ -12,8 +12,6 @@ type MemberPage = {
     id: string;
     status: MembershipStatus;
     createdAt: Date;
-    /** The names the site gave the member, kept in its database. */
-    roles: string[];
   }[];
   nextCursor: string | null;
 };
@@ -34,7 +32,6 @@ export function manageMembership(
   | { verifiedEmail: boolean }
   | { supportersOnly: boolean }
   | { id: string; status: MembershipStatus }
-  | { id: string; roles: string[] }
 >;
 export async function manageMembership(
   ownerId: string,
@@ -48,7 +45,6 @@ export async function manageMembership(
     const settings = await db
       .selectFrom("users")
       .select([
-        "login_name",
         "site_member_admission",
         "site_member_verified_email",
         "site_member_supporters_only",
@@ -64,18 +60,10 @@ export async function manageMembership(
     if (after) query = query.where("id", ">", uuidId(after));
     const rows = await query.execute();
     const page = rows.slice(0, 100);
-    const roles = page.length
-      ? await callSiteObject<Record<string, string[]>>(
-          settings.login_name,
-          "rolesOfMembers",
-          { ids: page.map((row) => row.id) },
-        )
-      : {};
     const members = page.map((row) => ({
       id: row.id,
       status: row.status,
       createdAt: row.created_at,
-      roles: roles[row.id] ?? [],
     }));
     return {
       admission: settings.site_member_admission,
@@ -127,23 +115,6 @@ export async function manageMembership(
       .execute();
     return { supportersOnly };
   }
-  if (keys.length === 2 && keys.includes("id") && keys.includes("roles")) {
-    const id = uuidId(body.id);
-    const owner = await db
-      .selectFrom("site_members")
-      .innerJoin("users", "users.id", "site_members.site_user_id")
-      .select("users.login_name")
-      .where("site_members.site_user_id", "=", ownerId)
-      .where("site_members.id", "=", id)
-      .executeTakeFirst();
-    if (!owner) throw new DataError(404, "Member not found.");
-    const roles = await callSiteObject<string[]>(
-      owner.login_name,
-      "setMemberRoles",
-      { member: id, roles: body.roles },
-    );
-    return { id, roles };
-  }
   if (
     keys.length !== 2 ||
     !keys.includes("id") ||
@@ -153,7 +124,7 @@ export async function manageMembership(
   )
     throw new DataError(
       400,
-      "Provide admission, verifiedEmail, supportersOnly, or a member id and status or roles.",
+      "Provide admission, verifiedEmail, supportersOnly, or a member id and status.",
     );
   const id = uuidId(body.id);
   const status = body.status as MembershipStatus;
