@@ -112,7 +112,7 @@ export default function McpConsent({
         <p>
           MCP 연결은{" "}
           <Link href="/supporter" className="underline">
-            후원 플랜
+            서포터 플랜
           </Link>{" "}
           기능입니다.
         </p>

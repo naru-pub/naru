@@ -125,7 +125,7 @@ export async function connectRepository(params: {
   targetPrefix?: string;
 }) {
   if (!(await userHasFeature(params.userId, "github_deploys")))
-    throw new DeployError("GitHub 배포는 후원자 기능입니다.");
+    throw new DeployError("GitHub 배포는 서포터 기능입니다.");
   const installationId = String(params.installationId);
   const repositoryId = String(params.repositoryId);
   if (!/^\d+$/.test(installationId) || !/^\d+$/.test(repositoryId))
@@ -315,7 +315,7 @@ type ClaimedTarget = NonNullable<Awaited<ReturnType<typeof claimTarget>>>;
 /** Fetches the target's pending commit and publishes it. */
 async function deploy(target: ClaimedTarget) {
   if (!(await userHasFeature(target.user_id, "github_deploys")))
-    throw new DeployError("GitHub 배포는 후원자 기능입니다.");
+    throw new DeployError("GitHub 배포는 서포터 기능입니다.");
   if (
     !(await mayUse(
       target.user_id,

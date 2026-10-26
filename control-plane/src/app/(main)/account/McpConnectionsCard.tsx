@@ -92,11 +92,11 @@ export default function McpConnectionsCard({
           <p className="text-sm">
             MCP 연결은{" "}
             <Link href="/supporter" className="underline underline-offset-4">
-              후원 플랜
+              서포터 플랜
             </Link>{" "}
             기능입니다.
             {connections.length > 0 &&
-              " 후원이 끝난 동안에는 연결된 앱이 사이트에 닿지 못합니다."}
+              " 서포터 기간이 끝나면 다시 서포터가 될 때까지 연결된 앱이 사이트에 닿지 못합니다."}
           </p>
         )}
         {connections.length > 0 && (

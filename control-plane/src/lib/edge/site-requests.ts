@@ -305,7 +305,7 @@ export async function limitSiteRequests(now = new Date()) {
         site.override === "exempt"
           ? ", 예외라 차단하지 않음"
           : site.supporter
-            ? ", 후원자라 차단하지 않음"
+            ? ", 서포터라 차단하지 않음"
             : "";
       lines.push(`${site.login}: 이번 달 요청 한도 넘음${spared} — ${usage}`);
       marks.push({ userId: site.userId, exceeded: true });

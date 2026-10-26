@@ -62,7 +62,7 @@ export default async function FirewallPage() {
           <h3 className="font-bold">사이트 요청 한도</h3>
           <p className="text-sm text-muted-foreground">
             사이트마다 한 달(UTC)에 {count(allowance)}회까지 요청을 받아요. 넘은
-            사이트는 그 달이 끝날 때까지 차단해요. 후원자 사이트와 예외로 둔
+            사이트는 그 달이 끝날 때까지 차단해요. 서포터 사이트와 예외로 둔
             사이트는 차단하지 않아요. 요청 수는 30분마다 Cloudflare 분석에서
             세어요. 한도의 절반을 넘은 사이트와 지정한 사이트만 보여요.
           </p>
@@ -104,7 +104,7 @@ export default async function FirewallPage() {
                     {site.override === "exempt" && (
                       <Badge variant="outline">예외</Badge>
                     )}
-                    {site.supporter && <Badge variant="outline">후원자</Badge>}
+                    {site.supporter && <Badge variant="outline">서포터</Badge>}
                     {site.overrideReason && (
                       <span className="text-xs text-muted-foreground">
                         {site.overrideReason}

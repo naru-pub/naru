@@ -240,7 +240,7 @@ integration("Naru MCP", () => {
     });
     await expect(
       oauth.approveAuthorization(lapsed, input, ["read"]),
-    ).rejects.toThrow("후원 플랜");
+    ).rejects.toThrow("서포터 기능");
   });
 
   test("spends a code on a wrong verifier", async () => {

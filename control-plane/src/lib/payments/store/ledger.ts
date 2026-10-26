@@ -292,7 +292,7 @@ export async function moveStoreSubscription(opts: {
     if (target.id === from)
       throw new StoreTransferError("이미 이 계정의 구독입니다.", 400);
     if (target.supporter_comp)
-      throw new StoreTransferError("옮길 계정은 평생 후원자입니다.");
+      throw new StoreTransferError("옮길 계정은 평생 서포터입니다.");
 
     // Grants and refunds lock in one order: payments, users, subscriptions.
     // The old account's refunded periods may be compacted below.

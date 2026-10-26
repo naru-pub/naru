@@ -160,7 +160,7 @@ export async function supporterStatus(
   const current = subs.find((sub) => sub.store === store) ?? subs[0] ?? null;
 
   let message: string | null = null;
-  if (comp) message = "평생 후원자 계정입니다.";
+  if (comp) message = "평생 서포터 계정입니다.";
   else if (plan && ONE_TIME_BLOCKING_STATUSES.includes(plan.status))
     message =
       "나루 웹사이트에서 정기 결제 중입니다. 웹사이트에서 관리해 주세요.";

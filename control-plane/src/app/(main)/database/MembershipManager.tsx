@@ -160,11 +160,12 @@ export default function MembershipManager() {
                 change({ supportersOnly: checked === true })
               }
             />
-            나루 후원자만 회원으로 로그인
+            나루 서포터만 회원으로 로그인
           </label>
           <p className="text-sm text-muted-foreground">
-            켜면 나루 후원 플랜이 없는 계정은 가입하거나 로그인할 수 없고, 이미
-            로그인한 회원도 후원이 끝나면 바로 이용할 수 없게 됩니다.
+            켜면 나루 서포터 플랜이 없는 계정은 가입하거나 로그인할 수 없고,
+            이미 로그인한 회원도 서포터 기간이 끝나면 바로 이용할 수 없게
+            됩니다.
           </p>
           <p className="text-sm text-muted-foreground">
             승인 대기 중이거나 차단된 회원은 회원 데이터와 함수를 이용하거나

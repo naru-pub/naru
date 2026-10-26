@@ -128,7 +128,7 @@ integration("site request limits", () => {
     expect(blockedHosts()).toEqual([]);
     expect(alerts.flatMap((alert) => alert.lines).sort()).toEqual([
       "srl-busy: 이번 달 요청 절반 넘음 — 600 / 1,000 (60%)",
-      "srl-fan: 이번 달 요청 한도 넘음, 후원자라 차단하지 않음 — 1,200 / 1,000 (120%)",
+      "srl-fan: 이번 달 요청 한도 넘음, 서포터라 차단하지 않음 — 1,200 / 1,000 (120%)",
     ]);
 
     counts["srl-busy.naru.pub"] = 500;
