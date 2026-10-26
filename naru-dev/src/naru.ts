@@ -1002,7 +1002,8 @@ self.addEventListener("fetch", (event) => {
       const answer = routeAnswer(result);
       if ("redirect" in answer)
         res.writeHead(answer.status, { location: answer.redirect }).end();
-      else if ("html" in answer) html(answer.status, answer.html);
+      else if ("body" in answer && answer.type === "text/html")
+        html(answer.status, answer.body);
       else if ("body" in answer)
         res
           .writeHead(answer.status, {
