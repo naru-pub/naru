@@ -412,17 +412,12 @@ async function serveRoute(
       status: answer.status,
       headers: { Location: answer.redirect },
     });
-  else if ("html" in answer)
-    response = new Response(answer.html, {
-      status: answer.status,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
   else if ("body" in answer)
     response = new Response(answer.body, {
       status: answer.status,
       headers: {
         "Content-Type": `${answer.type}; charset=utf-8`,
-        // A feed is not a page the site's scripts run in.
+        // Served as what the route says it is, never sniffed as another.
         "X-Content-Type-Options": "nosniff",
       },
     });

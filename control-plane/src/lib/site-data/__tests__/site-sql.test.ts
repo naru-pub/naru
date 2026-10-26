@@ -421,7 +421,7 @@ integration("routes", () => {
          const id = Number(path.split("/")[2]);
          const [post] = (await ctx.sql\`SELECT title FROM posts WHERE id = \${id}\`).rows;
          if (!post) ctx.fail("NOT_FOUND", "그런 글은 없어요.");
-         return { html: \`<h1>\${post.title}</h1><p>\${origin ?? ""}\${path} \${query.tab ?? ""} \${ctx.owner}</p>\`, cache: 30 };
+         return { type: "text/html", body: \`<h1>\${post.title}</h1><p>\${origin ?? ""}\${path} \${query.tab ?? ""} \${ctx.owner}</p>\`, cache: 30 };
        }`,
     );
     const render = (id: string) =>
@@ -433,7 +433,8 @@ integration("routes", () => {
       });
     expect(await render("1")).toEqual({
       result: {
-        html: "<h1>첫 글</h1><p>https://sqlsite.naru.pub/posts/1 c false</p>",
+        type: "text/html",
+        body: "<h1>첫 글</h1><p>https://sqlsite.naru.pub/posts/1 c false</p>",
         cache: 30,
       },
     });

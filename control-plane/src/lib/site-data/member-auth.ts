@@ -17,14 +17,11 @@ import { DataError, name } from "./validation";
 // identity there, not the owner's collections. A member's id is a row in
 // site_members, so a site never learns which account is behind it.
 //
-// Members need no Naru supporter plan, unless Naru's operators require one of
-// a site's members (users.site_members_free off; it is on by default). Then a
-// plan (comp, paid, within the payment grace, or a free trial) is checked at sign-in and on
-// every request, so a member whose support ends, or whose site comes to
-// require one, loses access without signing out.
-//
-// A site's owner may require a plan of its members too
-// (site_member_supporters_only), checked the same way.
+// Members need no Naru supporter plan, unless the site's owner requires one
+// (site_member_supporters_only). Then a plan (comp, paid, within the payment
+// grace, or a free trial) is checked at sign-in and on every request, so a
+// member whose support ends, or whose site comes to require one, loses
+// access without signing out.
 //
 // A site may also require a verified email (site_member_verified_email): an
 // account without one cannot sign in to it as a member, new or returning.
@@ -70,15 +67,15 @@ async function emailVerified(tx: Kysely<DB>, userId: string) {
   return Boolean(user?.email && user.email_verified_at);
 }
 
-/** Whether an account may be a member of the site: the site is free to join, or it supports Naru. */
+/** Whether an account may be a member of the site: the site asks no plan, or it supports Naru. */
 async function mayJoin(tx: Kysely<DB>, userId: string, siteUserId: string) {
   const site = await tx
     .selectFrom("users")
-    .select(["site_members_free", "site_member_supporters_only"])
+    .select("site_member_supporters_only")
     .where("id", "=", siteUserId)
     .executeTakeFirst();
   return (
-    (site?.site_members_free === true && !site.site_member_supporters_only) ||
+    site?.site_member_supporters_only === false ||
     (await getUserEntitlement(userId, tx)).hasPaidFeatures
   );
 }

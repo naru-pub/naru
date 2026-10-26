@@ -31,8 +31,6 @@ import { up as mediaDeletionUp } from "@/migrations/1791803004027_media_deletion
 import { up as membershipUp } from "@/migrations/1791800344085_site_membership_admission";
 import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
 import { up as verifiedEmailUp } from "@/migrations/1791981028752_site_member_verified_email";
-import { up as membersFreeUp } from "@/migrations/1791981384263_site_members_free";
-import { up as membersFreeByDefaultUp } from "@/migrations/1792503307965_site_members_free_by_default";
 import { up as supportersOnlyUp } from "@/migrations/1792821018829_site_member_supporters_only";
 import { up as managedMediaUp } from "@/migrations/1791981970276_site_data_files_managed";
 
@@ -60,9 +58,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await sql`create table custom_domains(id serial primary key, user_id integer references users(id), hostname text,
     verified_at timestamptz, cloudflare_status text, ssl_status text,
     dns_resolves boolean not null default false, dns_checked_at timestamptz,
-    dns_failing_since timestamptz, released_at timestamptz)`.execute(
-    db,
-  );
+    dns_failing_since timestamptz, released_at timestamptz)`.execute(db);
   await baseUp(db);
   await authUp(db);
   await sortingUp(db);
@@ -101,8 +97,6 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await membersUp(db);
   await membershipUp(db);
   await verifiedEmailUp(db);
-  await membersFreeUp(db);
-  await membersFreeByDefaultUp(db);
   await supportersOnlyUp(db);
   await managedMediaUp(db);
   await mediaDeletionUp(db);

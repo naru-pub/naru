@@ -178,8 +178,8 @@ unless a condition was supplied.
 ## Members (1.1.0)
 
 A member is a visitor who signed in to your site with their own Naru account.
-Any Naru account with a supporter plan can be a member of any site with the
-database; there is nothing to register. Members are what a community site is
+Any Naru account can be a member of any site with the database; there is
+nothing to register. Members are what a community site is
 made of: the site's own code (see Site code) knows which member calls and
 decides what each may see and do.
 
@@ -219,11 +219,12 @@ its mutations write, as the board example under Site code does with `roles`.
 Who may grant a role is for the site's code to check.
 
 A sign-in that was denied, took longer than ten minutes, or could not be
-completed resolves `session()` with `null`. Members need a Naru supporter
-plan, unless Naru has exempted the site: an account without one is asked to
-support Naru on Naru's sign-in page, and a member whose plan has ended gets
-`ACCESS_DENIED` until it resumes. A site may also require approval of new
-members, and may ban them ([site membership](site-membership.md)).
+completed resolves `session()` with `null`. Members need no Naru supporter
+plan, unless the site's owner requires one on the control panel: then an
+account without one is asked to support Naru on Naru's sign-in page, and a
+member whose plan has ended gets `ACCESS_DENIED` until it resumes. A site may
+also require approval of new members or a verified email, and may ban members
+([site membership](site-membership.md)).
 
 An owner's and a member's sign-in can share a page: each only finishes the
 sign-in this tab started for it.
@@ -662,9 +663,10 @@ like `og:url`. It reads the path itself:
 export default async function (ctx, { path }) {
   const [, kind, id] = path.split("/");
   if (kind !== "posts" || !/^\d+$/.test(id ?? ""))
-    return { status: 404, html: "<p>없는 페이지입니다.</p>" };
+    return { status: 404, type: "text/html", body: "<p>없는 페이지입니다.</p>" };
   const { rows } = await ctx.sql`SELECT title FROM posts WHERE id = ${id}`;
-  if (!rows.length) return { status: 404, html: "<p>없는 글입니다.</p>" };
+  if (!rows.length)
+    return { status: 404, type: "text/html", body: "<p>없는 글입니다.</p>" };
   const title = rows[0].title.replace(
     /[&<>"]/g,
     (c) => `&#${c.charCodeAt(0)};`,
@@ -679,9 +681,10 @@ export default async function (ctx, { path }) {
 
 A route runs as a visitor's query: it only reads, sees `ctx.member` null and
 `ctx.owner` false, and is limited and counted as a visitor's query is. It
-returns a string of HTML, or one of `{ html }`, `{ body, type }` (text such as a feed, as one of
-`text/plain`, `text/css`, `text/calendar`, `text/xml`, `application/xml`,
-`application/rss+xml`, `application/atom+xml` or `application/json`),
+returns one of `{ body, type }` (a page or text such as a feed, as one of
+`text/html`, `text/plain`, `text/css`, `text/calendar`, `text/xml`,
+`application/xml`, `application/rss+xml`, `application/atom+xml` or
+`application/json`),
 `{ file, head }` (one of the site's files, with `head` added to its
 `<head>` when it is HTML) or `{ redirect }` (a path or an `https://` URL),
 each with an optional `status` and `cache`, the seconds (0–300) the edge may

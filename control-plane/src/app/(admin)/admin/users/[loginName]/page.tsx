@@ -17,7 +17,6 @@ import {
 import { formatDate, formatKrw } from "../../_components/format";
 import { SUBSCRIPTION_STATUS_LABELS } from "../../_components/metrics";
 import { requireOperator } from "../../_components/requireOperator";
-import { SiteMembersFreeToggle } from "../../_components/SiteMembersFreeToggle";
 import { SupporterCompToggle } from "../../_components/SupporterCompToggle";
 import { ImpersonateButton } from "../../_components/ImpersonateButton";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
@@ -61,7 +60,6 @@ export default async function AccountPage({
       "users.supporter_comp",
       "users.supporter_until",
       "users.supporter_grace",
-      "users.site_members_free",
       "subscriptions.status as subscription_status",
       "subscriptions.billing_interval",
       "subscriptions.next_billing_at",
@@ -225,17 +223,6 @@ export default async function AccountPage({
               : "-"}
           </Field>
           <Field label="다음 결제">{formatDate(user.next_billing_at)}</Field>
-          <Field label="사이트 회원">
-            {user.site_members_free ? "누구나 가입 가능" : "서포터 플랜 필요"}
-            {!user.deleted_at && (
-              <span className="ml-2">
-                <SiteMembersFreeToggle
-                  loginName={user.login_name}
-                  free={user.site_members_free}
-                />
-              </span>
-            )}
-          </Field>
         </dl>
       </Card>
 

@@ -1281,7 +1281,8 @@ export default async function (ctx, { path, query }) {
   const [post] = (await ctx.sql\`SELECT title, body FROM posts WHERE id = \${Number(id)}\`).rows;
   if (!post) ctx.fail("NOT_FOUND", "글이 없거나 지워졌습니다.");
   return {
-    html: \`<!doctype html>
+    type: "text/html",
+    body: \`<!doctype html>
 <meta charset="utf-8">
 <title>\${escape(post.title)}</title>
 <h1>\${escape(post.title)}</h1>
@@ -1307,15 +1308,10 @@ export default async function (ctx, { path, query }) {
                 head={["돌려주는 값", "응답"]}
                 rows={[
                   [
-                    <code key="c">&quot;&lt;h1&gt;…&quot;</code>,
-                    "문자열은 HTML 페이지입니다.",
-                  ],
-                  [<code key="c">{"{ html }"}</code>, "HTML 페이지"],
-                  [
                     <code key="c">{"{ body, type }"}</code>,
                     <>
-                      RSS·JSON 같은 글. <code>type</code>은{" "}
-                      <code>application/rss+xml</code>·
+                      HTML 페이지나 RSS·JSON 같은 글. <code>type</code>은{" "}
+                      <code>text/html</code>·<code>application/rss+xml</code>·
                       <code>application/atom+xml</code>·
                       <code>application/json</code>·<code>application/xml</code>
                       ·<code>text/xml</code>·<code>text/plain</code>·

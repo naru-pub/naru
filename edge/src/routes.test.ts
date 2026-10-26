@@ -74,16 +74,14 @@ describe("rules", () => {
 });
 
 describe("answers", () => {
-  test("HTML, a file with a head, or a redirect, with a status and cache", () => {
-    expect(routeAnswer("<p>hi</p>")).toEqual({
-      status: 200,
-      cache: 0,
-      html: "<p>hi</p>",
-    });
-    expect(routeAnswer({ html: "x", status: 404, cache: 60 })).toEqual({
+  test("a page, a file with a head, or a redirect, with a status and cache", () => {
+    expect(
+      routeAnswer({ body: "x", type: "text/html", status: 404, cache: 60 }),
+    ).toEqual({
       status: 404,
       cache: 60,
-      html: "x",
+      body: "x",
+      type: "text/html",
     });
     expect(
       routeAnswer({ file: "/index.html", head: "<title>t</title>" }),
@@ -99,7 +97,7 @@ describe("answers", () => {
       redirect: "/posts/1",
     });
   });
-  test("text such as a feed, as one of the types that cannot run as the site", () => {
+  test("text such as a feed, as one of the types a route may serve", () => {
     expect(
       routeAnswer({ body: "<rss/>", type: "application/rss+xml", cache: 300 }),
     ).toEqual({
@@ -108,12 +106,7 @@ describe("answers", () => {
       body: "<rss/>",
       type: "application/rss+xml",
     });
-    for (const type of [
-      "text/html",
-      "image/svg+xml",
-      "application/javascript",
-      undefined,
-    ])
+    for (const type of ["image/svg+xml", "application/javascript", undefined])
       expect(() => routeAnswer({ body: "x", type })).toThrow(
         /whose type is not one of/,
       );
@@ -124,8 +117,11 @@ describe("answers", () => {
       null,
       42,
       {},
-      { html: "x", status: 700 },
-      { html: "x", cache: 3600 },
+      // HTML is { body, type: "text/html" }: no bare string, no { html }.
+      "<p>hi</p>",
+      { html: "x" },
+      { body: "x", type: "text/html", status: 700 },
+      { body: "x", type: "text/html", cache: 3600 },
       { file: "../alice/index.html" },
       { redirect: "//evil.example" },
       { redirect: "/x", status: 200 },
@@ -192,10 +188,14 @@ describe("serving", () => {
     );
 
   test("a route's page, its path and query, never cached unless asked", async () => {
-    answer = { ok: true, value: { result: "<h1>글 42</h1>" } };
+    answer = {
+      ok: true,
+      value: { result: { type: "text/html", body: "<h1>글 42</h1>" } },
+    };
     const page = await get("/posts/42?tab=comments");
     expect(page.status).toBe(200);
     expect(await page.text()).toBe("<h1>글 42</h1>");
+    expect(page.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
     expect(page.headers.get("Cache-Control")).toBe("no-store");
     expect(asked.at(-1)).toMatchObject({
       site: "carol",

@@ -344,57 +344,11 @@ integration("site members", () => {
     );
   });
 
-  test("operators can require a supporter plan of a site's members, also once signed in", async () => {
+  test("a site's owner can require a supporter plan of its members, also once signed in", async () => {
     // By default, accounts without a plan are members.
     expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
       mayJoin: true,
     });
-    const free = await signIn("ivy");
-    await expect(probe(free.accessToken)).resolves.toBeDefined();
-    const member = await signIn("erin");
-    await sql`update users set site_members_free = false where id = ${owner}`.execute(
-      db,
-    );
-    try {
-      // Requiring one reaches members already signed in; an account without
-      // one is told so, and cannot join.
-      await expect(probe(free.accessToken)).rejects.toMatchObject({
-        status: 403,
-        code: "ACCESS_DENIED",
-      });
-      expect(await previewMemberSignIn(users.ivy, input())).toMatchObject({
-        mayJoin: false,
-      });
-      await expect(
-        approveMemberSignIn(users.ivy, "ivy-session", input()),
-      ).rejects.toMatchObject({ status: 403, code: "ACCESS_DENIED" });
-      // A member whose support ends loses access on the next request, and
-      // gets it back when it resumes.
-      await expect(probe(member.accessToken)).resolves.toBeDefined();
-      await sql`update users set supporter_comp = false where id = ${users.erin}`.execute(
-        db,
-      );
-      try {
-        await expect(probe(member.accessToken)).rejects.toMatchObject({
-          status: 403,
-          code: "ACCESS_DENIED",
-        });
-        await expect(code("erin")).rejects.toMatchObject({ status: 403 });
-      } finally {
-        await sql`update users set supporter_comp = true where id = ${users.erin}`.execute(
-          db,
-        );
-      }
-      await expect(probe(member.accessToken)).resolves.toBeDefined();
-    } finally {
-      await sql`update users set site_members_free = true where id = ${owner}`.execute(
-        db,
-      );
-    }
-    await expect(probe(free.accessToken)).resolves.toBeDefined();
-  });
-
-  test("a site's owner can require a supporter plan of its members", async () => {
     const free = await signIn("ivy");
     const member = await signIn("erin");
     try {
@@ -413,6 +367,23 @@ integration("site members", () => {
         status: 403,
         code: "ACCESS_DENIED",
       });
+      await expect(probe(member.accessToken)).resolves.toBeDefined();
+      // A member whose support ends loses access on the next request, and
+      // gets it back when it resumes.
+      await sql`update users set supporter_comp = false where id = ${users.erin}`.execute(
+        db,
+      );
+      try {
+        await expect(probe(member.accessToken)).rejects.toMatchObject({
+          status: 403,
+          code: "ACCESS_DENIED",
+        });
+        await expect(code("erin")).rejects.toMatchObject({ status: 403 });
+      } finally {
+        await sql`update users set supporter_comp = true where id = ${users.erin}`.execute(
+          db,
+        );
+      }
       await expect(probe(member.accessToken)).resolves.toBeDefined();
       await expect(
         manageMembership(owner, "PATCH", { supportersOnly: "yes" }),

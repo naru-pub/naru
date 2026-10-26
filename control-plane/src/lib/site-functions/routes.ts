@@ -102,11 +102,9 @@ export function routed(rules: RouteRules, pathname: string) {
   );
 }
 
-/**
- * What `{ body, type }` may be served as: text the browser shows or a
- * reader parses, never anything that runs as the site (HTML is `html`).
- */
+/** What `{ body, type }` may be served as: a page, or text such as a feed. */
 const BODY_TYPES = [
+  "text/html",
   "text/plain",
   "text/css",
   "text/calendar",
@@ -123,7 +121,6 @@ export type RouteAnswer = {
   /** Seconds the edge may keep the page, 0–300. */
   cache: number;
 } & (
-  | { html: string }
   | { body: string; type: string }
   | { file: string; head: string }
   | { redirect: string }
@@ -133,18 +130,15 @@ const invalid = (message: string) =>
   new DataError(500, `The route answered ${message}`);
 
 /**
- * A route's answer, checked: a string of HTML, or `{ html }`, `{ body, type }`
- * (text such as a feed, served as `type`), `{ file, head }` (a site file
+ * A route's answer, checked: `{ body, type }` (a page or text such as a
+ * feed, served as `type`), `{ file, head }` (a site file
  * with `head` added to its <head>, for link previews of a page the browser
  * renders) or `{ redirect }`, each with an optional `status` and `cache`
  * (seconds).
  */
 export function routeAnswer(value: unknown): RouteAnswer {
-  if (typeof value === "string") return { status: 200, cache: 0, html: value };
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw invalid(
-      "neither HTML nor { html }, { body }, { file } or { redirect }.",
-    );
+    throw invalid("neither { body }, { file } nor { redirect }.");
   const answer = value as Record<string, unknown>;
   const status = answer.status ?? (answer.redirect !== undefined ? 302 : 200);
   if (
@@ -161,7 +155,6 @@ export function routeAnswer(value: unknown): RouteAnswer {
   )
     throw invalid("a cache other than 0–300 seconds.");
   const base = { status: status as number, cache: cache as number };
-  if (typeof answer.html === "string") return { ...base, html: answer.html };
   if (typeof answer.body === "string") {
     if (typeof answer.type !== "string" || !BODY_TYPES.includes(answer.type))
       throw invalid(
@@ -184,9 +177,7 @@ export function routeAnswer(value: unknown): RouteAnswer {
       throw invalid("a redirect to neither a path nor an https URL.");
     return { ...base, redirect: answer.redirect };
   }
-  throw invalid(
-    "neither HTML nor { html }, { body }, { file } or { redirect }.",
-  );
+  throw invalid("neither { body }, { file } nor { redirect }.");
 }
 
 /** `head` added to an HTML file's <head>, or before it when it has none. */
