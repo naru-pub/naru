@@ -76,7 +76,7 @@ export default function McpConnectionsCard({
         <p className="text-muted-foreground leading-relaxed">
           MCP를 지원하는 앱에서 아래 주소를 추가하면, 그 앱이 내 사이트의 파일을
           읽고 고칠 수 있습니다.{" "}
-          <Link href="/docs/mcp" className="underline underline-offset-4">
+          <Link href="/help/mcp" className="underline underline-offset-4">
             자세히
           </Link>
         </p>

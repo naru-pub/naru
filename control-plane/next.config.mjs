@@ -3,9 +3,13 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig = {
   // The Dockerfile's web image runs .next/standalone/server.js.
   output: "standalone",
-  // The GitHub deploys page was /deploys; old links and bookmarks follow it.
+  // Old addresses, for links and bookmarks: the GitHub deploys page was
+  // /deploys, the MCP guide /docs/mcp.
   async redirects() {
-    return [{ source: "/deploys", destination: "/github", permanent: true }];
+    return [
+      { source: "/deploys", destination: "/github", permanent: true },
+      { source: "/docs/mcp", destination: "/help/mcp", permanent: true },
+    ];
   },
   async headers() {
     return [

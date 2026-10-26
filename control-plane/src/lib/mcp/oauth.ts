@@ -67,7 +67,7 @@ export function protectedResourceMetadata() {
     scopes_supported: [...SCOPES],
     bearer_methods_supported: ["header"],
     resource_name: "Naru",
-    resource_documentation: `${naruOrigin()}/docs/mcp`,
+    resource_documentation: `${naruOrigin()}/help/mcp`,
   };
 }
 
@@ -85,7 +85,7 @@ export function authorizationServerMetadata() {
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
     authorization_response_iss_parameter_supported: true,
-    service_documentation: `${origin}/docs/mcp`,
+    service_documentation: `${origin}/help/mcp`,
   };
 }
 

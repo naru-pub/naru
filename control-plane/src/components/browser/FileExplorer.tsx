@@ -51,6 +51,7 @@ import {
   Eye,
   Settings2,
   Loader2,
+  CircleHelp,
 } from "lucide-react";
 import { loadingFetch } from "@/lib/loading-bar";
 
@@ -489,7 +490,11 @@ export default function FileExplorer({
     await handleUpload(droppedFiles, getCurrentDirectory());
   };
 
-  const { uploading, progress: uploadProgress, upload: handleUpload } = useFileUpload(handleRefresh);
+  const {
+    uploading,
+    progress: uploadProgress,
+    upload: handleUpload,
+  } = useFileUpload(handleRefresh);
 
   const activeIsText = !!active && isEditable(active);
   const activeStatus = active ? status[active] : undefined;
@@ -507,7 +512,9 @@ export default function FileExplorer({
       : null;
   const isImage =
     !!active &&
-    IMAGE_FILE_EXTENSIONS.includes(active.split(".").pop()?.toLowerCase() ?? "");
+    IMAGE_FILE_EXTENSIONS.includes(
+      active.split(".").pop()?.toLowerCase() ?? "",
+    );
 
   // Tabs that share a name show their folder too.
   const tabLabel = (path: string) => {
@@ -543,6 +550,18 @@ export default function FileExplorer({
             aria-label="파일로 이동"
           >
             <Search />
+          </Button>
+          {/* A new tab, so unsaved edits here stay. */}
+          <Button variant="ghost" size="icon" className="size-8" asChild>
+            <a
+              href="/help/files"
+              target="_blank"
+              rel="noopener"
+              title="파일 편집기 도움말"
+              aria-label="파일 편집기 도움말"
+            >
+              <CircleHelp />
+            </a>
           </Button>
         </div>
         <DirectoryTree
@@ -580,7 +599,10 @@ export default function FileExplorer({
       />
 
       {/* Right Main Area - tabs, toolbar, editor and preview */}
-      <div ref={mainRef} className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div
+        ref={mainRef}
+        className="flex-1 flex flex-col min-w-0 overflow-hidden"
+      >
         {tabs.length > 0 && (
           <div
             role="tablist"
@@ -635,7 +657,9 @@ export default function FileExplorer({
                         aria-label="저장하지 않음"
                       />
                     )}
-                    <X className={isDirty ? "invisible group-hover:visible" : ""} />
+                    <X
+                      className={isDirty ? "invisible group-hover:visible" : ""}
+                    />
                   </Button>
                 </div>
               );
@@ -684,9 +708,13 @@ export default function FileExplorer({
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      setDiffFor((current) => (current === active ? null : active))
+                      setDiffFor((current) =>
+                        current === active ? null : active,
+                      )
                     }
-                    disabled={!activeReady || (!dirty.has(active) && diffFor !== active)}
+                    disabled={
+                      !activeReady || (!dirty.has(active) && diffFor !== active)
+                    }
                   >
                     {diffFor === active ? "편집" : "변경 사항"}
                   </Button>
@@ -750,9 +778,27 @@ export default function FileExplorer({
               )}
               {isImage && (
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => fileViewerRef.current?.zoomOut()}>축소</Button>
-                  <Button variant="outline" size="sm" onClick={() => fileViewerRef.current?.resetZoom()}>원본</Button>
-                  <Button variant="outline" size="sm" onClick={() => fileViewerRef.current?.zoomIn()}>확대</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileViewerRef.current?.zoomOut()}
+                  >
+                    축소
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileViewerRef.current?.resetZoom()}
+                  >
+                    원본
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileViewerRef.current?.zoomIn()}
+                  >
+                    확대
+                  </Button>
                 </div>
               )}
             </>
@@ -779,12 +825,17 @@ export default function FileExplorer({
               <div className="absolute inset-0 flex items-center justify-center bg-card">
                 {activeStatus?.error ? (
                   <div className="text-center">
-                    <p className="text-destructive mb-2">파일을 불러올 수 없습니다</p>
-                    <p className="text-sm text-muted-foreground">{activeStatus.error}</p>
+                    <p className="text-destructive mb-2">
+                      파일을 불러올 수 없습니다
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {activeStatus.error}
+                    </p>
                   </div>
                 ) : (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" /> 파일을 불러오는 중...
+                    <Loader2 className="size-4 animate-spin" /> 파일을 불러오는
+                    중...
                   </p>
                 )}
               </div>
@@ -802,7 +853,11 @@ export default function FileExplorer({
             {!active && (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <div className="text-center">
-                  <FolderOpen size={60} className="mx-auto mb-4" strokeWidth={1.25} />
+                  <FolderOpen
+                    size={60}
+                    className="mx-auto mb-4"
+                    strokeWidth={1.25}
+                  />
                   <p>왼쪽에서 파일을 선택하여 내용을 확인하세요</p>
                   <p className="mt-2 text-sm">
                     {mod}P 파일로 이동 · {mod}S 저장
@@ -851,8 +906,14 @@ export default function FileExplorer({
       {isDragOver && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-card p-6 text-center border-4 border-dashed border-primary">
-            <Upload size={60} className="mx-auto mb-4 text-primary" strokeWidth={1.25} />
-            <p className="text-xl font-semibold text-primary">파일을 여기에 드롭하세요</p>
+            <Upload
+              size={60}
+              className="mx-auto mb-4 text-primary"
+              strokeWidth={1.25}
+            />
+            <p className="text-xl font-semibold text-primary">
+              파일을 여기에 드롭하세요
+            </p>
             <p className="text-sm mt-2 text-muted-foreground">
               {getCurrentDirectory() || "루트 폴더"}에 업로드됩니다
             </p>

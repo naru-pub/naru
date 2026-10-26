@@ -5,6 +5,7 @@ import Link from "next/link";
 const LINK_ROWS: { href: string; label: string; strong?: boolean }[][] = [
   [
     { href: "/board", label: "게시판" },
+    { href: "/help", label: "도움말" },
     { href: "/developers", label: "개발자" },
     { href: "/supporter", label: "서포터" },
     { href: "/open", label: "지표" },

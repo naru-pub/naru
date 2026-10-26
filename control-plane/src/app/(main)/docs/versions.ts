@@ -5,7 +5,7 @@ export const isDocsVersion = (value: string): value is DocsVersion =>
 // The MCP guide is about naru.pub, not the SDK, so it has no versions.
 export const guidePath = (version: DocsVersion, topic: string) =>
   topic === "mcp"
-    ? "/docs/mcp"
+    ? "/help/mcp"
     : topic === "sdk"
       ? `/docs/sdk/${version}`
       : `/docs/${version}/${topic}`;

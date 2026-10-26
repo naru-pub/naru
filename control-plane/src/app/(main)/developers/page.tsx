@@ -36,7 +36,7 @@ const TOOLS = [
     note: "naru-pub/actions",
   },
   {
-    href: "/docs/mcp",
+    href: "/help/mcp",
     title: "MCP 서버",
     note: mcpResource(),
     summary: "AI 도구에서 내 사이트의 파일과 데이터베이스를 다뤄요.",
