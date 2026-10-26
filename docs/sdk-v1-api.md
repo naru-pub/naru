@@ -663,7 +663,11 @@ like `og:url`. It reads the path itself:
 export default async function (ctx, { path }) {
   const [, kind, id] = path.split("/");
   if (kind !== "posts" || !/^\d+$/.test(id ?? ""))
-    return { status: 404, type: "text/html", body: "<p>없는 페이지입니다.</p>" };
+    return {
+      status: 404,
+      type: "text/html",
+      body: "<p>없는 페이지입니다.</p>",
+    };
   const { rows } = await ctx.sql`SELECT title FROM posts WHERE id = ${id}`;
   if (!rows.length)
     return { status: 404, type: "text/html", body: "<p>없는 글입니다.</p>" };
@@ -681,7 +685,7 @@ export default async function (ctx, { path }) {
 
 A route runs as a visitor's query: it only reads, sees `ctx.member` null and
 `ctx.owner` false, and is limited and counted as a visitor's query is. It
-returns one of `{ body, type }` (a page or text such as a feed, as one of
+returns a string of HTML, or one of `{ body, type }` (a page or text such as a feed, as one of
 `text/html`, `text/plain`, `text/css`, `text/calendar`, `text/xml`,
 `application/xml`, `application/rss+xml`, `application/atom+xml` or
 `application/json`),

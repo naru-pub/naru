@@ -130,15 +130,18 @@ const invalid = (message: string) =>
   new DataError(500, `The route answered ${message}`);
 
 /**
- * A route's answer, checked: `{ body, type }` (a page or text such as a
+ * A route's answer, checked: a string of HTML (served as `{ body, type:
+ * "text/html" }`), `{ body, type }` (a page or text such as a
  * feed, served as `type`), `{ file, head }` (a site file
  * with `head` added to its <head>, for link previews of a page the browser
  * renders) or `{ redirect }`, each with an optional `status` and `cache`
  * (seconds).
  */
 export function routeAnswer(value: unknown): RouteAnswer {
+  if (typeof value === "string")
+    return { status: 200, cache: 0, body: value, type: "text/html" };
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw invalid("neither { body }, { file } nor { redirect }.");
+    throw invalid("neither HTML nor { body }, { file } or { redirect }.");
   const answer = value as Record<string, unknown>;
   const status = answer.status ?? (answer.redirect !== undefined ? 302 : 200);
   if (
@@ -177,7 +180,7 @@ export function routeAnswer(value: unknown): RouteAnswer {
       throw invalid("a redirect to neither a path nor an https URL.");
     return { ...base, redirect: answer.redirect };
   }
-  throw invalid("neither { body }, { file } nor { redirect }.");
+  throw invalid("neither HTML nor { body }, { file } or { redirect }.");
 }
 
 /** `head` added to an HTML file's <head>, or before it when it has none. */

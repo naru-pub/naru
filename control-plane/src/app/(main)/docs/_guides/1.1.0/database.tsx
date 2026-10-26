@@ -1308,6 +1308,10 @@ export default async function (ctx, { path, query }) {
                 head={["돌려주는 값", "응답"]}
                 rows={[
                   [
+                    <code key="c">&quot;&lt;h1&gt;…&quot;</code>,
+                    "문자열은 HTML 페이지입니다.",
+                  ],
+                  [
                     <code key="c">{"{ body, type }"}</code>,
                     <>
                       HTML 페이지나 RSS·JSON 같은 글. <code>type</code>은{" "}
