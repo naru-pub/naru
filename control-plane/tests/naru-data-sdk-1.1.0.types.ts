@@ -2,7 +2,7 @@
 // queries and mutations, live queries, and members.
 import {
   createNaru,
-  // @ts-expect-error The types Naru Media stores are site code's ctx.media.types.
+  // @ts-expect-error The SDK does not list the types Naru Media stores.
   MEDIA_TYPES,
   type Admin,
   type AdminCollection,

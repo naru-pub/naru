@@ -102,8 +102,6 @@ export async function dataRequest(
       // The control panel's quota readout; the media service ignores it for
       // anyone but a signed-in owner.
       usage: url.searchParams.get("usage") === "1",
-      // The control panel's library: where the site's tables name uploads.
-      tableReferences: url.searchParams.get("references") === "tables",
       ifVersion: !admin
         ? websiteCondition(url)
         : url.searchParams.has("ifVersion")

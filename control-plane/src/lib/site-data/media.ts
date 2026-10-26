@@ -68,17 +68,8 @@ type MediaCommand = {
   after?: string;
   size?: number;
   usage?: boolean;
-  /** The owner's library asks where the site's tables name its uploads. */
-  tableReferences?: boolean;
   filter?: unknown;
 };
-/** What the site's object answers of where its tables name uploads. */
-type TableReferences = {
-  references: Record<string, { table: string; column: string }[]>;
-  partial: boolean;
-};
-/** The object stops searching at 8 s (TABLE_SCAN_MS, edge/src/site.ts). */
-const TABLE_REFERENCES_TIMEOUT_MS = 20_000;
 /** Newest first is what a media library is for, and the only order offered. */
 const MEDIA_SORT = sorting("createdAt", "desc");
 
@@ -234,14 +225,10 @@ export async function executeMedia(command: MediaCommand) {
   };
   if (command.method === "GET" && command.path.length === 0) {
     // A quota readout is a single aggregate row, and only the control panel's
-    // own library screen shows one; website tokens are not offered it.
-    if (command.usage && command.adminUserId !== undefined)
-      return { usage: await readUsage() };
-    // Where the site's own tables (1.1.0) name its uploads, which no write
-    // records: searched now, as the owner opens the library, once for every
-    // upload rather than for each page (`tableMediaReferences`,
-    // edge/src/site.ts). `partial` when the search stopped short.
-    if (command.tableReferences && command.adminUserId !== undefined) {
+    // own library screen shows one; website tokens are not offered it. As
+    // the owner opens the library, every upload is recorded again for site
+    // SQL's _naru_uploads, so missed or stale records are put right.
+    if (command.usage && command.adminUserId !== undefined) {
       const ready = await files()
         .where("status", "=", "ready")
         .where("deleted_at", "is", null)
@@ -260,24 +247,7 @@ export async function executeMedia(command: MediaCommand) {
       // Every upload, as site SQL's _naru_uploads reads them: missed or stale records
       // are put right as the owner looks.
       await recordUploads(command.site, ready, true);
-      const ids = ready.map((file) => file.id);
-      if (!ids.length) return { tableReferences: {}, partial: false };
-      const found = await callSiteObject<TableReferences>(
-        command.site,
-        "tableMediaReferences",
-        { ids },
-        undefined,
-        TABLE_REFERENCES_TIMEOUT_MS,
-      );
-      return {
-        tableReferences: Object.fromEntries(
-          ids.flatMap((id) => {
-            const places = found.references[id.toLowerCase()];
-            return places?.length ? [[id, places]] : [];
-          }),
-        ),
-        partial: found.partial,
-      };
+      return { usage: await readUsage() };
     }
     // Refused rather than ignored: a caller that still filters by what a file
     // belongs to would otherwise get the whole library back, and delete it.
@@ -318,8 +288,7 @@ export async function executeMedia(command: MediaCommand) {
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     // An upload no document names is marked, not deleted: the owner
-    // decides (the control panel's media library shows it, with what
-    // `tableReferences` finds in the site's tables).
+    // decides (the control panel's media library shows it).
     const ready = page
       .filter((file) => file.status === "ready")
       .map((file) => file.id);

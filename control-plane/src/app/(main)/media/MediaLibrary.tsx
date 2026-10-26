@@ -29,11 +29,9 @@ type MediaFile = {
   updatedAt: string;
   /**
    * For a finished upload: whether any of the site's collection documents
-   * names it (the listing's answer), or, once merged, any of its tables.
+   * names it (the listing's answer). The site's own tables are not searched.
    */
   referenced?: boolean;
-  /** Where the site's own tables name it (`?references=tables`). */
-  tableReferences?: { table: string; column: string }[];
   /** An upload that was started but never finished. */
   unfinished?: boolean;
   /** Until when the unfinished upload's signed address still accepts it. */
@@ -113,12 +111,6 @@ function TypeIcon({ type }: { type: string }) {
 type Library = {
   files: MediaFile[];
   usage: Usage;
-  /**
-   * Whether the site's tables were wholly searched: "partial" when the
-   * search stopped short or failed, "busy" when they were searched a moment
-   * ago for another question (429), and not again yet.
-   */
-  tables: "whole" | "partial" | "busy";
 };
 
 async function fetchLibrary(): Promise<Library> {
@@ -134,25 +126,10 @@ async function fetchLibrary(): Promise<Library> {
     files.push(...page.files);
     cursor = page.nextCursor ?? undefined;
   } while (cursor);
-  // The quota is its own request and no longer rides along with the listing.
+  // The quota is its own request; it also records every upload again for
+  // site SQL's _naru_uploads.
   const { usage } = await api("?usage=1");
-  // Documents' references come with the listing; the site's own tables are
-  // searched once, now, for every upload. A search that fails leaves the
-  // documents' answer, said to be partial.
-  let tables: Library["tables"] = "whole";
-  try {
-    const { tableReferences, partial } = await api("?references=tables");
-    if (partial) tables = "partial";
-    for (const file of files) {
-      const places = tableReferences[file.id];
-      if (!places?.length || file.referenced === undefined) continue;
-      file.referenced = true;
-      file.tableReferences = places;
-    }
-  } catch (error) {
-    tables = (error as { status?: number }).status === 429 ? "busy" : "partial";
-  }
-  return { files, usage, tables };
+  return { files, usage };
 }
 
 export default function MediaLibrary() {
@@ -172,13 +149,9 @@ export default function MediaLibrary() {
   const [copied, setCopied] = useState("");
   const confirm = useConfirm();
 
-  const [tables, setTables] = useState<Library["tables"]>("whole");
-  const tablesPartial = tables !== "whole";
-
   function show(library: Library) {
     setFiles(library.files);
     setUsage(library.usage);
-    setTables(library.tables);
   }
 
   async function refresh() {
@@ -446,19 +419,6 @@ export default function MediaLibrary() {
           {error}
         </p>
       )}
-      {tables === "busy" && (
-        <p className="text-sm text-warning" role="status">
-          사이트 SQL 테이블의 참조를 확인하는 중입니다. 잠시 후 다시 열어
-          주세요. 그때까지 &lsquo;참조 없음&rsquo;은 컬렉션 문서만 보고 붙인
-          것입니다.
-        </p>
-      )}
-      {tables === "partial" && (
-        <p className="text-sm text-warning" role="status">
-          사이트 SQL 테이블을 다 확인하지 못했습니다. &lsquo;참조 없음&rsquo;인
-          파일도 테이블 어딘가에서 쓰고 있을 수 있습니다.
-        </p>
-      )}
       {busy && !files.length && (
         <div className="flex items-center justify-center gap-2 border border-dashed p-12 text-sm text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
@@ -531,24 +491,9 @@ export default function MediaLibrary() {
                 {file.referenced === false && (
                   <p
                     className="mt-2 inline-block border border-warning px-1.5 py-0.5 text-xs text-warning"
-                    title={
-                      tablesPartial
-                        ? "어떤 컬렉션 문서도 이 파일의 URL을 담고 있지 않습니다. 사이트 SQL 테이블은 일부만 확인했습니다. 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
-                        : "어떤 컬렉션 문서도, 사이트 SQL 테이블의 어떤 행도 이 파일의 URL이나 ID를 담고 있지 않습니다. 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
-                    }
+                    title="어떤 컬렉션 문서도 이 파일의 URL을 담고 있지 않습니다. 사이트 SQL 테이블, 사이트 파일이나 다른 곳에서 쓰는지는 확인하지 않으니, 필요 없을 때만 삭제하세요."
                   >
-                    참조 없음
-                  </p>
-                )}
-                {!!file.tableReferences?.length && (
-                  <p
-                    className="mt-2 truncate text-xs text-muted-foreground"
-                    title="이 파일의 URL이나 ID를 담은 사이트 SQL 테이블과 열입니다."
-                  >
-                    테이블:{" "}
-                    {file.tableReferences
-                      .map((place) => `${place.table}.${place.column}`)
-                      .join(", ")}
+                    문서 참조 없음
                   </p>
                 )}
               </div>

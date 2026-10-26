@@ -121,8 +121,6 @@ export interface QueryCtx {
     text: string,
     values?: SqlValue[],
   ): Promise<SqlResult<Row>>;
-  /** The types Naru Media stores: an upload of any other is refused. */
-  media: { readonly types: readonly string[] };
   /**
    * Guests' passwords, kept by the site as hashes. `verify` allows ten wrong
    * passwords an hour for each `key` (such as "post:42"), whoever tries,

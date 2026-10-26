@@ -55,9 +55,7 @@ If a site needs to delete its own uploads later, the place for it is site code
 (a mutation that knows nothing still names the file), not the browser SDK.
 
 Before deleting an upload by hand, the owner's media library shows whether
-anything names it: collection documents (recorded as they are written) and the
-site's own SQL tables (searched for the upload's URL or ID when the library
-opens, with the table and column shown; docs/sdk-v1-api.md "Upload
-references"). An upload marked 참조 없음 is named by neither, unless the
-library says it searched only part of the tables. Site files and other sites
+any collection document names it (recorded as documents are written;
+docs/sdk-v1-api.md "Upload references"). An upload marked 문서 참조 없음 is
+named by no document; the site's own SQL tables, its files and other sites
 are not searched.

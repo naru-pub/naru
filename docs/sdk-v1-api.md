@@ -375,8 +375,7 @@ by hand beside the generated `naru.d.ts` (`Query`, `Mutation`, `QueryCtx`,
 `MutationCtx`, `CallingMember`, `SqlValue`, `SqlResult`, `ErrorCode`, `Json`).
 `ctx` has `member`, `owner`, `ownerName` (the site's owner's Naru login,
 whoever calls), `now` (milliseconds, fixed for the whole call), `fail()`,
-`media.types` (the types Naru Media stores; an upload of any other is
-refused), and these methods, which return promises:
+and these methods, which return promises:
 
 - `sql`, one statement against the site's own tables: as a tag,
   ``ctx.sql`... ${value}` `` binds every interpolated value as a parameter;
@@ -723,28 +722,15 @@ holds at most 1,000 connections at once.
 
 ## Upload references (1.1.0)
 
-The owner's media library marks the uploads nothing names as unreferenced
-(참조 없음), and shows where the others are named. Nothing is deleted on
-Naru's judgement, since media may be linked from anywhere (site files, other
-sites); uploads are deleted by the owner, in the media library. Pages and
-site code cannot delete them.
-
-- **Collection documents.** Naru records which documents name each upload:
-  any document whose JSON contains the upload's URL, in a plain field or
-  inside HTML, from any write path (pages and batches).
-- **The site's own tables.** Nothing is recorded as site SQL writes; when the
-  owner opens the media library, Naru searches every TEXT value of the site's
-  tables (not full-text tables, which copy their sources, nor BLOBs) for each
-  upload's ID: its URL (`https://media.naru.pub/<owner>/<id>.<ext>`), a bare
-  ID as `upload()` returns it, or either inside JSON or HTML. The library
-  lists the table and column of each. A row deleted or edited is seen on the
-  next look. The search is bounded (8 seconds, 256 Mi characters of text): past
-  that, the library says it looked at only part of the tables, and an
-  upload marked unreferenced may still be named in the rest. A ~100 MiB
-  database is searched whole in about half a second. The tables are searched
-  at most once a minute: reopening the library within it shows the same
-  answer, or, after a write, says the references are still being checked
-  (documents' only until then).
+The owner's media library marks the uploads no collection document names
+(문서 참조 없음). Naru records which documents name each upload: any
+document whose JSON contains the upload's URL, in a plain field or inside
+HTML, from any write path (pages and batches). The site's own tables and
+files are not searched, so a site with site code should know its own
+uploads (`_naru_uploads` joins with its tables). Nothing is deleted on
+Naru's judgement, since media may be linked from anywhere; uploads are
+deleted by the owner, in the media library. Pages and site code cannot
+delete them.
 
 ## Documents, pages, and queries
 

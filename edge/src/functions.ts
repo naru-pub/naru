@@ -1,5 +1,4 @@
 import { fuel } from "./engine";
-import { MEDIA_TYPES } from "../../control-plane/src/lib/site-data/media-types";
 import { resolveModule, type ModuleSources } from "./modules";
 import type {
   QuickJSContext,
@@ -310,12 +309,10 @@ const __operation = (operation) => (...args) => {
   return promise;
 };
 globalThis.__unawaited = () => __unused.values().next().value;
-globalThis.__run = async (name, member, owner, now, args, kind, ownerName, mediaTypes) => {
+globalThis.__run = async (name, member, owner, now, args, kind, ownerName) => {
   const who = member === null ? null : Object.freeze({ id: member });
   // A notification in the Naru app for members, sent once the call commits.
   const notify = __operation("notify");
-  // The types Naru Media takes; the uploads are site SQL's _naru_uploads.
-  const media = Object.freeze({ types: Object.freeze(mediaTypes) });
   // A guest's password, kept by the site as a hash.
   const passwords = Object.freeze({
     hash: __operation("passwordHash"),
@@ -384,7 +381,6 @@ globalThis.__run = async (name, member, owner, now, args, kind, ownerName, media
     now,
     fail: (...args) => __call("fail", ...args),
     sql,
-    media,
     passwords: kind === "mutation" ? passwords : Object.freeze({ verify: passwords.verify }),
     ...(kind === "mutation" ? { notify } : {}),
   });
@@ -620,7 +616,6 @@ export function runFunction(
         JSON.stringify(invocation.args ?? null),
         invocation.kind,
         invocation.ownerName ?? "",
-        MEDIA_TYPES,
       ]
         .map((value) => JSON.stringify(value))
         .join(", ")})`,

@@ -1,5 +1,5 @@
 // The types Naru Media stores: an upload of any other is refused
-// (media.ts), and site code reads the list as ctx.media.types.
+// (media.ts), so site SQL's _naru_uploads holds only these.
 export const MEDIA_TYPES = Object.freeze([
   "image/avif",
   "image/gif",

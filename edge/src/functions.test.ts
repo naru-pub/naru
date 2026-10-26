@@ -190,11 +190,11 @@ describe("calling", () => {
     expect(
       visit("export function f(ctx) { return [ctx.owner, ctx.member]; }"),
     ).toEqual([false, null]);
-    // Uploads are deleted in the owner's media library, never by site code:
-    // ctx.media reads them only.
+    // Uploads are deleted in the owner's media library, never by site code,
+    // which reads them in SQL (_naru_uploads) alone.
     expect(
-      visit("export function f(ctx) { return Object.keys(ctx.media); }"),
-    ).toEqual(["types"]);
+      visit("export function f(ctx) { return ctx.media === undefined; }"),
+    ).toBe(true);
   });
 
   test("ctx.fail carries the code's details to the caller", () => {
@@ -420,7 +420,6 @@ describe("calling", () => {
         "now",
         "fail",
         "sql",
-        "media",
         "passwords",
       ]);
     // A mutation may notify members too.
@@ -433,7 +432,6 @@ describe("calling", () => {
       "now",
       "fail",
       "sql",
-      "media",
       "passwords",
       "notify",
     ]);
@@ -898,7 +896,7 @@ test("native cycles and re-exports retain live bindings, fresh for each call", (
   expect(invoke()).toBe(2);
 });
 
-describe("ctx's owner name and media types", () => {
+describe("ctx's owner name", () => {
   const call = (
     source: string,
     kind: Invocation["kind"],
@@ -919,22 +917,13 @@ describe("ctx's owner name and media types", () => {
       host,
     );
 
-  test("site code has the owner's name and the types Naru Media stores", () => {
+  test("site code has the owner's name", () => {
     expect(
       call(
-        `export function f(ctx) {
-          return { owner: ctx.ownerName, pdf: ctx.media.types.includes("application/pdf") };
-        }`,
+        "export function f(ctx) { return { owner: ctx.ownerName, media: ctx.media }; }",
         "query",
         { ownerName: "avocado" },
       ),
-    ).toEqual({ owner: "avocado", pdf: true });
-    // The media types cannot be changed by site code.
-    expect(
-      call(
-        "export function f(ctx) { try { ctx.media.types.push('x'); } catch {} return ctx.media.types.length; }",
-        "query",
-      ),
-    ).toBe(12);
+    ).toEqual({ owner: "avocado" });
   });
 });

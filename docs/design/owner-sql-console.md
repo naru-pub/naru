@@ -75,8 +75,8 @@ Things that make this harder than it looks:
    or be read-only.
 5. **Side effects the object already handles for site writes:** the database
    size quota (`checkDatabaseSize`), live-query refresh (`scheduleRefresh`
-   for the written table), and upload references, which are scanned on
-   demand so nothing extra is needed.
+   for the written table). Uploads named in site tables are not tracked, so
+   nothing extra is needed.
 6. **Undo.** Before a session's first write, save a restore point
    automatically. A manual-style point would use up the 3-an-hour limit, so
    give it its own name and kind (`before-edit-<ms>`, kept the usual 7 days,

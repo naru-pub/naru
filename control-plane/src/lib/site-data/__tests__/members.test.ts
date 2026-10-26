@@ -1030,90 +1030,45 @@ integration("site members", () => {
       }
     });
 
-    test("the owner's library finds uploads the site's tables name, as it asks", async () => {
+    test("opening the owner's library records every upload again for _naru_uploads", async () => {
       const bob = await signIn("bob");
       const authorized = await media(bob.accessToken, "POST", [], file);
-      const inTable = (await media(bob.accessToken, "PUT", [authorized.id]))
+      const upload = (await media(bob.accessToken, "PUT", [authorized.id]))
         .file;
       await callSiteObject("alice", "putFunctions", {
         site: "alice",
-        folder: "migrations",
-        file: "0001_gallery",
-        source: "CREATE TABLE gallery (id INTEGER PRIMARY KEY, image TEXT);",
-        publish: false,
+        folder: "queries",
+        file: "uploads",
+        source: `export async function has(ctx, { id }) {
+          return (await ctx.sql\`SELECT 1 FROM _naru_uploads WHERE id = \${id}\`).rows.length > 0;
+        }`,
       });
-      await callSiteObject("alice", "putFunctions", {
+      const has = async () =>
+        (
+          (await callSiteObject("alice", "call", {
+            ownerId: String(owner),
+            site: "alice",
+            member: null,
+            visitor: true,
+            kind: "query",
+            file: "uploads",
+            name: "has",
+            args: { id: upload.id },
+          })) as { result: boolean }
+        ).result;
+      expect(await has()).toBe(true);
+      // A record lost along the way is put right as the owner looks.
+      await callSiteObject("alice", "recordMedia", { files: [], keep: [] });
+      expect(await has()).toBe(false);
+      await executeMedia({
         site: "alice",
-        folder: "mutations",
-        file: "gallery",
-        source: `export async function add(ctx, { image }) { await ctx.sql\`INSERT INTO gallery (image) VALUES (\${image})\`; }
-          export async function clear(ctx) { await ctx.sql\`DELETE FROM gallery\`; }`,
+        path: [],
+        method: "GET",
+        body: {},
+        adminUserId: owner,
+        usage: true,
       });
-      const gallery = (name: string, args: unknown = null) =>
-        callSiteObject("alice", "call", {
-          ownerId: String(owner),
-          site: "alice",
-          member: null,
-          kind: "mutation",
-          file: "gallery",
-          name,
-          args,
-        });
-      const tables = () =>
-        executeMedia({
-          site: "alice",
-          path: [],
-          method: "GET",
-          body: {},
-          adminUserId: owner,
-          tableReferences: true,
-        }) as Promise<Record<string, any>>;
-      await gallery("add", { image: inTable.url });
-      expect(await tables()).toEqual({
-        tableReferences: {
-          [inTable.id]: [{ table: "gallery", column: "image" }],
-        },
-        partial: false,
-      });
-      // The listing itself is the documents' answer, which no table changes.
-      const listed = (
-        (await executeMedia({
-          site: "alice",
-          path: [],
-          method: "GET",
-          body: {},
-          adminUserId: owner,
-          size: 100,
-        })) as { files: Record<string, unknown>[] }
-      ).files;
-      expect(listed.find((entry) => entry.id === inTable.id)).toMatchObject({
-        referenced: false,
-      });
-      // Only the owner's control panel asks.
-      await expect(
-        executeMedia({
-          site: "alice",
-          path: [],
-          method: "GET",
-          body: {},
-          bearer: { token: bob.accessToken, origin },
-          tableReferences: true,
-        }),
-      ).rejects.toMatchObject({ status: 403 });
-      // Within the minute the same look is answered again, but one after a
-      // write would scan again: refused, so reopening cannot keep the
-      // Worker scanning (table-media-references.test.ts sees the row gone).
-      expect(await tables()).toEqual({
-        tableReferences: {
-          [inTable.id]: [{ table: "gallery", column: "image" }],
-        },
-        partial: false,
-      });
-      await gallery("clear");
-      await expect(tables()).rejects.toMatchObject({
-        status: 429,
-        code: "RATE_LIMITED",
-      });
+      expect(await has()).toBe(true);
     });
 
     test("a site's first media listing records the references its documents already had", async () => {

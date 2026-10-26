@@ -1014,10 +1014,6 @@ try {
                     "요청을 거절하고 쓴 것을 되돌립니다.",
                   ],
                   [
-                    <code key="c">media.types</code>,
-                    "나루 미디어가 저장하는 파일 종류",
-                  ],
-                  [
                     <code key="c">passwords.verify(비밀번호, 해시, 키)</code>,
                     "손님 비밀번호 확인",
                   ],

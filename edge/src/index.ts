@@ -88,9 +88,6 @@ const OPERATIONS = [
   "createCollections",
   "configureCollections",
   "mediaReferences",
-  // Where the site's own tables name uploads, scanned when the owner's
-  // media library asks (1.1.0).
-  "tableMediaReferences",
   "siteTables",
   // A page of one of the site's tables, for the owner's control panel.
   "tableRows",
@@ -161,8 +158,6 @@ function dispatch(
       return stub.configureCollections(input);
     case "mediaReferences":
       return stub.mediaReferences(input);
-    case "tableMediaReferences":
-      return stub.tableMediaReferences(input);
     case "siteTables":
       return stub.siteTables();
     case "trialMigrations":
