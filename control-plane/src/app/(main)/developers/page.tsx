@@ -3,6 +3,8 @@ import Link from "next/link";
 import { validateRequest } from "@/lib/auth";
 import { authoredTemplates } from "@/lib/board/updates";
 import { mcpResource } from "@/lib/mcp/oauth";
+import codeStyles from "../docs/Code.module.css";
+import { highlight, type Language } from "../docs/highlight";
 
 export const metadata: Metadata = {
   title: "개발자 | 나루",
@@ -87,14 +89,23 @@ const LINK = "font-bold text-link underline-offset-4 hover:underline";
 const BUTTON =
   "inline-flex min-h-11 items-center border-2 border-line px-5 font-bold";
 
-function Snippet({ label, code }: { label: string; code: string }) {
+function Snippet({
+  label,
+  code,
+  language,
+}: {
+  label: string;
+  code: string;
+  language: Language;
+}) {
   return (
     <pre
       tabIndex={0}
       aria-label={label}
-      className="min-w-0 overflow-x-auto bg-foreground p-4 font-mono text-sm leading-7 text-background"
+      className={`${codeStyles.block} min-w-0 overflow-x-auto border border-border p-4 font-mono text-sm leading-7`}
     >
-      <code>{code}</code>
+      {/* highlight.js escapes source text before adding its token spans. */}
+      <code dangerouslySetInnerHTML={{ __html: highlight(code, language) }} />
     </pre>
   );
 }
@@ -221,9 +232,9 @@ export default async function DevelopersPage() {
                   돌려줘요. 페이지는 SDK 주소를 그대로 가져와서 빌드가 필요
                   없어요.
                 </p>
-                <Snippet label="SQL 마이그레이션 예제" code={MIGRATION} />
-                <Snippet label="JavaScript 쿼리 예제" code={QUERY} />
-                <Snippet label="HTML 페이지 예제" code={PAGE} />
+                <Snippet label="SQL 마이그레이션 예제" language="sql" code={MIGRATION} />
+                <Snippet label="JavaScript 쿼리 예제" language="javascript" code={QUERY} />
+                <Snippet label="HTML 페이지 예제" language="html" code={PAGE} />
                 <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
                   <Link href={`${GUIDE}#code`} className={LINK}>
                     사이트 코드 길잡이 →
@@ -239,7 +250,7 @@ export default async function DevelopersPage() {
                   파일을 고치면 바로 다시 게시하고, 운영자와 회원 로그인은 클릭
                   한 번이에요.
                 </p>
-                <Snippet label="naru-dev 실행 예제" code={NARU_DEV} />
+                <Snippet label="naru-dev 실행 예제" language="bash" code={NARU_DEV} />
                 <p className="text-sm">
                   <a href={`${REPOSITORY}/naru-dev#readme`} className={LINK}>
                     naru-dev 설명서 →
@@ -254,6 +265,7 @@ export default async function DevelopersPage() {
                 </p>
                 <Snippet
                   label="GitHub 워크플로 예제"
+                  language="yaml"
                   code={workflow(user?.loginName ?? "demo")}
                 />
                 <div className="flex flex-wrap items-center gap-3">
