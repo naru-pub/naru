@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Copy, Github, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, Github, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,17 @@ function refFromBranch(branch: string) {
   return `refs/heads/${trimmed || "main"}`;
 }
 
+// A tag keeps its full ref, which refFromBranch passes through.
+function branchFromRef(ref: string) {
+  return ref.startsWith("refs/heads/") ? displayRef(ref) : ref;
+}
+
+type TargetFields = {
+  githubRepository: string;
+  branch: string;
+  targetPrefix: string;
+};
+
 export default function GitHubDeployTargetsCard({
   loginName,
   targets,
@@ -45,6 +56,12 @@ export default function GitHubDeployTargetsCard({
   const [branch, setBranch] = useState("main");
   const [targetPrefix, setTargetPrefix] = useState("/");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<TargetFields>({
+    githubRepository: "",
+    branch: "",
+    targetPrefix: "",
+  });
 
   const sortedTargets = useMemo(
     () => targets.filter((target) => target.enabled),
@@ -78,6 +95,45 @@ export default function GitHubDeployTargetsCard({
       }
     } catch {
       toast.error("GitHub 배포 대상 저장 중 오류가 발생했습니다.");
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  function startEditing(target: GitHubDeployTarget) {
+    setEditingId(target.id);
+    setEditFields({
+      githubRepository: target.githubRepository,
+      branch: branchFromRef(target.githubRef),
+      targetPrefix: normalizeWorkflowTargetPrefix(target.targetPrefix),
+    });
+  }
+
+  async function updateTarget(event: FormEvent<HTMLFormElement>, id: string) {
+    event.preventDefault();
+    setPendingId(id);
+
+    try {
+      const response = await fetch("/api/account/github-deploy-targets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          githubRepository: editFields.githubRepository,
+          githubRef: refFromBranch(editFields.branch),
+          targetPrefix: editFields.targetPrefix,
+        }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("GitHub 배포 대상이 수정되었습니다.");
+        window.location.reload();
+      } else {
+        toast.error(result.message);
+      }
+    } catch {
+      toast.error("GitHub 배포 대상 수정 중 오류가 발생했습니다.");
     } finally {
       setPendingId(null);
     }
@@ -218,6 +274,17 @@ export default function GitHubDeployTargetsCard({
                         type="button"
                         variant="outline"
                         size="sm"
+                        onClick={() => startEditing(target)}
+                        disabled={pendingId !== null || editingId === target.id}
+                        className="flex items-center gap-2"
+                      >
+                        <Pencil size={14} />
+                        수정
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => copyWorkflow(target)}
                         disabled={pendingId !== null}
                         className="flex items-center gap-2"
@@ -238,6 +305,93 @@ export default function GitHubDeployTargetsCard({
                       </Button>
                     </div>
                   </div>
+
+                  {editingId === target.id && (
+                    <form
+                      onSubmit={(event) => updateTarget(event, target.id)}
+                      className="space-y-2"
+                    >
+                      <div className="grid gap-2 sm:grid-cols-[1fr_160px_140px] sm:items-end">
+                        <div className="space-y-1">
+                          <Label htmlFor={`github-repository-${target.id}`}>
+                            저장소
+                          </Label>
+                          <Input
+                            id={`github-repository-${target.id}`}
+                            value={editFields.githubRepository}
+                            onChange={(event) =>
+                              setEditFields({
+                                ...editFields,
+                                githubRepository: event.target.value,
+                              })
+                            }
+                            placeholder="owner/repo"
+                            disabled={pendingId !== null}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`github-branch-${target.id}`}>
+                            브랜치
+                          </Label>
+                          <Input
+                            id={`github-branch-${target.id}`}
+                            value={editFields.branch}
+                            onChange={(event) =>
+                              setEditFields({
+                                ...editFields,
+                                branch: event.target.value,
+                              })
+                            }
+                            placeholder="main"
+                            disabled={pendingId !== null}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`github-target-prefix-${target.id}`}>
+                            대상
+                          </Label>
+                          <Input
+                            id={`github-target-prefix-${target.id}`}
+                            value={editFields.targetPrefix}
+                            onChange={(event) =>
+                              setEditFields({
+                                ...editFields,
+                                targetPrefix: event.target.value,
+                              })
+                            }
+                            placeholder="/"
+                            disabled={pendingId !== null}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        대상 폴더를 바꾸면 이전 폴더에 배포된 파일은 그대로
+                        남습니다. 저장한 뒤 워크플로를 다시 복사해 저장소에
+                        반영하세요.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={
+                            pendingId !== null ||
+                            editFields.githubRepository.trim() === ""
+                          }
+                        >
+                          저장
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingId(null)}
+                          disabled={pendingId !== null}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                    </form>
+                  )}
 
                   <pre className="bg-background border border-border rounded p-3 text-xs overflow-x-auto whitespace-pre">
                     {yaml}

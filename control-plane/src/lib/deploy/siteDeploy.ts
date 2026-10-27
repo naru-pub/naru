@@ -759,6 +759,9 @@ async function publishDeployment(
         updated_at: new Date(),
       })
       .where("id", "=", deployment.target_id)
+      // Moved to another folder while this published: the record is of
+      // files the target no longer has.
+      .where("target_prefix", "=", deployment.target_prefix)
       .execute();
 
     await db
@@ -804,6 +807,7 @@ export async function assertNoOverlappingTarget(params: {
   userId: string;
   targetPrefix: string;
   same: (target: {
+    id: string;
     github_repository: string;
     github_repository_id: string | null;
     github_ref: string;
@@ -814,6 +818,7 @@ export async function assertNoOverlappingTarget(params: {
   const targets = await db
     .selectFrom("github_deploy_targets")
     .select([
+      "id",
       "github_repository",
       "github_repository_id",
       "github_ref",
@@ -847,8 +852,7 @@ export async function assertNoOverlappingTarget(params: {
   }
 }
 
-export async function upsertGitHubDeployTarget(params: {
-  user: UserRow;
+function workflowTargetFields(params: {
   githubRepository: string;
   githubRef: string;
   targetPrefix?: string | null;
@@ -867,6 +871,17 @@ export async function upsertGitHubDeployTarget(params: {
     );
   }
   const targetPrefix = normalizeTargetPrefix(params.targetPrefix);
+  return { githubRepository, githubRef, targetPrefix };
+}
+
+export async function upsertGitHubDeployTarget(params: {
+  user: UserRow;
+  githubRepository: string;
+  githubRef: string;
+  targetPrefix?: string | null;
+}) {
+  const { githubRepository, githubRef, targetPrefix } =
+    workflowTargetFields(params);
   await assertNoOverlappingTarget({
     userId: params.user.id,
     targetPrefix,
@@ -908,4 +923,99 @@ export async function upsertGitHubDeployTarget(params: {
         }),
     )
     .execute();
+}
+
+/**
+ * Changes the repository, ref or site folder of an enabled workflow target,
+ * keeping its id and so its deployment history. Deployments planned before
+ * the change can no longer publish. A new folder starts with no record of
+ * published files: the old folder's files stay where they are, as when the
+ * target is deleted. A deleted target already saved under the new settings
+ * is folded into this one.
+ */
+export async function updateGitHubDeployTarget(params: {
+  user: UserRow;
+  id: string;
+  githubRepository: string;
+  githubRef: string;
+  targetPrefix?: string | null;
+}) {
+  const { githubRepository, githubRef, targetPrefix } =
+    workflowTargetFields(params);
+  const target = await db
+    .selectFrom("github_deploy_targets")
+    .select(["github_repository", "github_ref", "target_prefix"])
+    .where("id", "=", params.id)
+    .where("user_id", "=", params.user.id)
+    .where("enabled", "=", true)
+    .where("installation_id", "is", null)
+    .executeTakeFirst();
+  if (!target) {
+    throw new Error("GitHub deploy target was not found");
+  }
+  if (
+    target.github_repository === githubRepository &&
+    target.github_ref === githubRef &&
+    target.target_prefix === targetPrefix
+  ) {
+    return;
+  }
+  await assertNoOverlappingTarget({
+    userId: params.user.id,
+    targetPrefix,
+    same: (other) => other.id === params.id,
+  });
+
+  await db.transaction().execute(async (trx) => {
+    // The unique key holds deleted targets too; one in the way hands its
+    // deployments over (before it goes: they cascade), with a generation
+    // below this target's next one.
+    const deleted = await trx
+      .selectFrom("github_deploy_targets")
+      .select(["id", "deploy_generation"])
+      .where("user_id", "=", params.user.id)
+      .where("github_repository", "=", githubRepository)
+      .where("github_ref", "=", githubRef)
+      .where("target_prefix", "=", targetPrefix)
+      .where("enabled", "=", false)
+      .where("id", "!=", params.id)
+      .forUpdate()
+      .executeTakeFirst();
+    if (deleted) {
+      await trx
+        .updateTable("github_deployments")
+        .set({ target_id: params.id })
+        .where("target_id", "=", deleted.id)
+        .execute();
+      await trx
+        .deleteFrom("github_deploy_targets")
+        .where("id", "=", deleted.id)
+        .execute();
+    }
+
+    const updated = await trx
+      .updateTable("github_deploy_targets")
+      .set((eb) => ({
+        github_repository: githubRepository,
+        github_ref: githubRef,
+        target_prefix: targetPrefix,
+        deploy_generation: sql<number>`greatest(${eb.ref(
+          "deploy_generation",
+        )}, ${deleted?.deploy_generation ?? 0}) + 1`,
+        ...(target.github_repository !== githubRepository
+          ? { github_repository_id: null }
+          : {}),
+        ...(target.target_prefix !== targetPrefix
+          ? { last_manifest: null }
+          : {}),
+        updated_at: new Date(),
+      }))
+      .where("id", "=", params.id)
+      .where("enabled", "=", true)
+      .where("installation_id", "is", null)
+      .executeTakeFirst();
+    if (updated.numUpdatedRows === BigInt(0)) {
+      throw new Error("GitHub deploy target was not found");
+    }
+  });
 }

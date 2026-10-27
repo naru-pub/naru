@@ -3,7 +3,10 @@ import { validateRequest } from "@/lib/auth";
 import { db } from "@/lib/database";
 import { userHasFeature } from "@/lib/entitlements";
 import { assertJsonContentType } from "@/lib/utils";
-import { upsertGitHubDeployTarget } from "@/lib/deploy/siteDeploy";
+import {
+  updateGitHubDeployTarget,
+  upsertGitHubDeployTarget,
+} from "@/lib/deploy/siteDeploy";
 import { parseUuid } from "@/lib/uuid";
 
 export async function GET() {
@@ -81,6 +84,67 @@ export async function POST(request: NextRequest) {
           error instanceof Error
             ? error.message
             : "GitHub deploy target could not be saved",
+      },
+      { status: 400 },
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    try {
+      assertJsonContentType(request);
+    } catch {
+      return NextResponse.json(
+        { success: false, message: "Invalid content type" },
+        { status: 400 },
+      );
+    }
+
+    const { user } = await validateRequest();
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "로그인이 필요합니다." },
+        { status: 401 },
+      );
+    }
+
+    if (!(await userHasFeature(user.id, "github_deploys"))) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "GitHub 배포는 유료 기능입니다.",
+        },
+        { status: 403 },
+      );
+    }
+
+    const body = await request.json();
+    const id = parseUuid(body.id);
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "id is required" },
+        { status: 400 },
+      );
+    }
+
+    await updateGitHubDeployTarget({
+      user,
+      id,
+      githubRepository: String(body.githubRepository ?? ""),
+      githubRef: String(body.githubRef ?? ""),
+      targetPrefix: body.targetPrefix,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "GitHub deploy target could not be updated",
       },
       { status: 400 },
     );
