@@ -363,8 +363,8 @@ export default async function DevelopersPage() {
             <ul className="flex list-disc flex-col gap-1.5 pl-5 text-muted-foreground">
               <li>템플릿이 쓴 그대로인 파일은 새 버전으로 바뀌어요.</li>
               <li>
-                주인이 고친 파일은 <code>/.backup/&lt;시각&gt;/</code>에 보관한
-                뒤 바뀌어요. 고친 내용은 남지만, 다시 옮겨 와야 해요.
+                사이트 주인이 고친 파일은 <code>/.backup/&lt;시각&gt;/</code>에
+                보관한 뒤 바뀌어요. 고친 내용은 남지만, 다시 옮겨 와야 해요.
               </li>
               <li>새 버전에 없는 파일은, 고쳤으면 남고 아니면 지워져요.</li>
               <li>데이터베이스(테이블과 데이터)는 그대로예요.</li>
@@ -376,8 +376,8 @@ export default async function DevelopersPage() {
             </ul>
             <h3 className="font-bold">템플릿을 만든다면</h3>
             <p className="text-muted-foreground">
-              주인이 바꿀 만한 것은 파일이 아닌 곳에 두세요. 사이트 이름, 색,
-              메뉴, 안내 글처럼 운영 화면에서 정하는 것은 데이터베이스에
+              사이트 주인이 바꿀 만한 것은 파일이 아닌 곳에 두세요. 사이트 이름,
+              색, 메뉴, 안내 글처럼 운영 화면에서 정하는 것은 데이터베이스에
               저장하면 업데이트와 상관없이 남아요. 파일로 고치게 하려면 템플릿의
               스타일과 스크립트 뒤에 <code>/{OWNER_DIRECTORY}/</code>의 파일을
               불러오세요. 파일이 없으면 그 요청은 404로 끝나니, 운영 화면에서
