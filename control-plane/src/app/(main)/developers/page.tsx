@@ -19,14 +19,14 @@ const REPOSITORY = "https://github.com/naru-pub/naru/tree/main";
 const NEW_TEMPLATE = "/board/new?kind=template";
 
 const REFERENCE = [
+  { href: GUIDE, title: "데이터베이스 가이드" },
+  { href: `/docs/${SDK_VERSION}/media`, title: "미디어 가이드" },
   { href: `/docs/sdk/${SDK_VERSION}`, title: "SDK 레퍼런스" },
-  { href: `${GUIDE}#code`, title: "ctx와 사이트 코드" },
-  { href: `${GUIDE}#errors`, title: "한도와 오류 코드" },
 ];
 
 const TOOLS = [
   {
-    href: `${REPOSITORY}/sdk#readme`,
+    href: `${REPOSITORY}/sdk`,
     title: "@naru-pub/sdk",
     note: `${SDK_VERSION}-dev`,
     command: "npm install @naru-pub/sdk@dev",
@@ -162,12 +162,17 @@ export default async function DevelopersPage() {
               이에요.
             </p>
           </div>
-          <Link
-            href={NEW_TEMPLATE}
-            className={`${BUTTON} press bg-primary text-primary-foreground`}
-          >
-            새 템플릿 공개하기
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link href={GUIDE} className={`${BUTTON} press bg-card`}>
+              문서 보기
+            </Link>
+            <Link
+              href={NEW_TEMPLATE}
+              className={`${BUTTON} press bg-primary text-primary-foreground`}
+            >
+              새 템플릿 공개하기
+            </Link>
+          </div>
         </section>
 
         {user && (
@@ -232,15 +237,20 @@ export default async function DevelopersPage() {
                   돌려줘요. 페이지는 SDK 주소를 그대로 가져와서 빌드가 필요
                   없어요.
                 </p>
-                <Snippet label="SQL 마이그레이션 예제" language="sql" code={MIGRATION} />
-                <Snippet label="JavaScript 쿼리 예제" language="javascript" code={QUERY} />
+                <Snippet
+                  label="SQL 마이그레이션 예제"
+                  language="sql"
+                  code={MIGRATION}
+                />
+                <Snippet
+                  label="JavaScript 쿼리 예제"
+                  language="javascript"
+                  code={QUERY}
+                />
                 <Snippet label="HTML 페이지 예제" language="html" code={PAGE} />
-                <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                  <Link href={`${GUIDE}#code`} className={LINK}>
-                    사이트 코드 길잡이 →
-                  </Link>
-                  <Link href={`${GUIDE}#members`} className={LINK}>
-                    뮤테이션과 회원 →
+                <p className="text-sm">
+                  <Link href={GUIDE} className={LINK}>
+                    데이터베이스 가이드 →
                   </Link>
                 </p>
               </Step>
@@ -250,9 +260,13 @@ export default async function DevelopersPage() {
                   파일을 고치면 바로 다시 게시하고, 운영자와 회원 로그인은 클릭
                   한 번이에요.
                 </p>
-                <Snippet label="naru-dev 실행 예제" language="bash" code={NARU_DEV} />
+                <Snippet
+                  label="naru-dev 실행 예제"
+                  language="bash"
+                  code={NARU_DEV}
+                />
                 <p className="text-sm">
-                  <a href={`${REPOSITORY}/naru-dev#readme`} className={LINK}>
+                  <a href={`${REPOSITORY}/naru-dev`} className={LINK}>
                     naru-dev 설명서 →
                   </a>
                 </p>
