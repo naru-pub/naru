@@ -13,6 +13,7 @@ import type {
   UpdateAction,
   UpdatePlan,
   UpdateResult,
+  UpdateProgress,
   DisconnectProgress,
 } from "@/lib/board/updates";
 import { boardRequest, boardStream } from "../board/_components/api";
@@ -30,6 +31,13 @@ const ACTIONS: Record<UpdateAction, { label: string; className: string }> = {
   keep: { label: "= 직접 고쳐서 남겨 둠", className: "text-muted-foreground" },
 };
 
+const UPDATE_LABELS: Record<UpdateProgress["phase"], string> = {
+  backup: "원래 파일을 보관하는 중",
+  copy: "파일을 복사하는 중",
+  remove: "빠진 파일을 지우는 중",
+  code: "사이트 코드를 적용하는 중",
+};
+
 type DisconnectPhase = DisconnectProgress["phase"] | "forget";
 const DISCONNECT_LABELS: Record<DisconnectPhase, string> = {
   forget: "연결을 끊는 중",
@@ -45,6 +53,10 @@ export function InstallCard({ install }: { install: InstallSummary }) {
   const [result, setResult] = useState<UpdateResult | null>(null);
   const [notify, setNotify] = useState(install.notify);
   const [busy, setBusy] = useState(false);
+  // Set while updating: null until the first progress line arrives.
+  const [updating, setUpdating] = useState<{
+    progress: UpdateProgress | null;
+  } | null>(null);
   // While disconnecting: which way, and how far removing files has got.
   const [disconnecting, setDisconnecting] = useState<{
     removeFiles: boolean;
@@ -73,18 +85,21 @@ export function InstallCard({ install }: { install: InstallSummary }) {
       setPlan(plan);
     });
 
-  const update = () =>
-    run(async () => {
-      const { result } = await boardRequest<{ result: UpdateResult }>(
+  const update = async () => {
+    setUpdating({ progress: null });
+    await run(async () => {
+      const result = await boardStream<UpdateResult, UpdateProgress>(
         `${base}/update`,
-        "POST",
         { versionId: plan?.to.id },
+        (progress) => setUpdating({ progress }),
       );
       setResult(result);
       setPlan(null);
       toast.success(`v${result.version}로 업데이트했어요.`);
       router.refresh();
     });
+    setUpdating(null);
+  };
 
   const choose = (value: boolean) =>
     run(async () => {
@@ -244,6 +259,13 @@ export function InstallCard({ install }: { install: InstallSummary }) {
               나루가 새 사이트 코드를 거절하면 모든 파일을 되돌려서 v
               {plan.from.version} 그대로 둬요.
             </p>
+            {updating && (
+              <TemplateProgress
+                progress={updating.progress}
+                labels={UPDATE_LABELS}
+                note="페이지를 떠나도 업데이트는 끝까지 진행돼요. 중간에 실패하면 파일을 원래대로 되돌려요."
+              />
+            )}
             <div className="flex flex-wrap justify-end gap-2">
               <Button
                 variant="outline"

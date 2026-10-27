@@ -1346,8 +1346,17 @@ integration("board", () => {
 
       const ownedBefore = bucket.get(`${site.loginName}/t/own.html`)!.etag;
       const editedBefore = bucket.get(`${site.loginName}/t/style.css`)!.etag;
-      const result = await applyUpdate(site, installId);
+      const steps: string[] = [];
+      const result = await applyUpdate(site, installId, undefined, (p) =>
+        steps.push(`${p.phase} ${p.done}/${p.total}`),
+      );
       expect(result).toMatchObject({ version: 2, deleted: 1, kept: 1 });
+      // Backs up what it replaces or deletes, copies, then deletes.
+      expect(steps[0]).toBe("backup 0/4");
+      expect(steps).toContain("backup 4/4");
+      expect(steps).toContain("copy 0/4");
+      expect(steps).toContain("copy 4/4");
+      expect(steps.at(-1)).toBe("remove 0/1");
       const after = siteOf(site.loginName, "t/");
       expect(Object.keys(after).sort()).toEqual([
         "t/dropped-edited.js",

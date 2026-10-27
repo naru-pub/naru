@@ -348,6 +348,17 @@ export interface UpdateResult {
 }
 
 /**
+ * How far an update has got, for the page to show: backing up the files it
+ * replaces or deletes, copying the new version's files in, deleting the
+ * dropped ones, publishing the site's code.
+ */
+export type UpdateProgress = {
+  phase: "backup" | "copy" | "remove" | "code";
+  done: number;
+  total: number;
+};
+
+/**
  * Updates `installId` to `versionId`, all or nothing: every file it replaces
  * or deletes is backed up first, and if a file cannot be copied or Naru
  * refuses the new site code they all go back and the files it created go.
@@ -357,18 +368,20 @@ export async function applyUpdate(
   user: User,
   installId: string,
   versionId?: string,
+  onProgress: (progress: UpdateProgress) => void = () => {},
 ): Promise<UpdateResult> {
   if (await siteSuspended(user.id))
     throw new BoardError(403, SUSPENDED_MESSAGE);
   return await withSiteLock(user.id, () =>
-    updateLocked(user, installId, versionId),
+    updateLocked(user, installId, versionId, onProgress),
   );
 }
 
 async function updateLocked(
   user: User,
   installId: string,
-  versionId?: string,
+  versionId: string | undefined,
+  report: (progress: UpdateProgress) => void,
 ): Promise<UpdateResult> {
   const plan = await planUpdate(user, installId, versionId);
   const install = await loadInstall(user, installId);
@@ -387,7 +400,13 @@ async function updateLocked(
     replaced.length > 0
       ? `${BACKUP_DIRECTORY}/${backupStamp(new Date())}/`
       : null;
-  if (backupPath) await backUp(user.loginName, backupPath, replaced);
+  if (backupPath) {
+    let done = 0;
+    report({ phase: "backup", done, total: replaced.length });
+    await backUp(user.loginName, backupPath, replaced, () =>
+      report({ phase: "backup", done: ++done, total: replaced.length }),
+    );
+  }
 
   const sources = await db
     .selectFrom("board_template_files")
@@ -401,25 +420,29 @@ async function updateLocked(
   );
   const written: string[] = [];
   const change = { backupPath, backedUp: replaced, created };
+  const copying = sources.filter((file) =>
+    writing.has(`${install.target_path}${file.path}`),
+  );
   try {
-    await forEachConcurrently(
-      sources.filter((file) =>
-        writing.has(`${install.target_path}${file.path}`),
-      ),
-      async (file) => {
-        const path = `${install.target_path}${file.path}`;
-        await storage.copyObject(
-          templateFileKey(install.template_id, plan.to.version, file.path),
-          getUserObjectKey(user.loginName, path),
-          file.content_type,
-        );
-        written.push(path);
-      },
-    );
-    await storage.deleteObjects(
-      deleted.map((path) => getUserObjectKey(user.loginName, path)),
-    );
+    report({ phase: "copy", done: 0, total: copying.length });
+    await forEachConcurrently(copying, async (file) => {
+      const path = `${install.target_path}${file.path}`;
+      await storage.copyObject(
+        templateFileKey(install.template_id, plan.to.version, file.path),
+        getUserObjectKey(user.loginName, path),
+        file.content_type,
+      );
+      written.push(path);
+      report({ phase: "copy", done: written.length, total: copying.length });
+    });
+    if (deleted.length > 0) {
+      report({ phase: "remove", done: 0, total: 1 });
+      await storage.deleteObjects(
+        deleted.map((path) => getUserObjectKey(user.loginName, path)),
+      );
+    }
     // Publishes the site's code when it changed; Naru may refuse it.
+    if (plan.to.siteCode) report({ phase: "code", done: 0, total: 1 });
     await storage.purgeSiteFiles(user.loginName, [...written, ...deleted]);
   } catch (error) {
     await putBack(user.loginName, change);
