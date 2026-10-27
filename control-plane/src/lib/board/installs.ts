@@ -12,6 +12,16 @@ import * as storage from "./storage";
 // Where applying and updating keep the files they replaced.
 export const BACKUP_DIRECTORY = ".backup";
 
+// The site owner's own folder, at the site's root: no template may ship a
+// file in it, none is applied into it, and no install, update or disconnect
+// writes, backs up or removes one there. What an owner keeps in it outlasts
+// every template, and templates may load it (docs/board.md).
+export const OWNER_DIRECTORY = "_owner";
+
+/** Whether a site path is in the owner's own folder. */
+export const inOwnerDirectory = (path: string) =>
+  path === OWNER_DIRECTORY || path.startsWith(`${OWNER_DIRECTORY}/`);
+
 /** A file an install wrote: its site path, and its ETag when written. */
 export interface InstalledFile {
   path: string;
@@ -63,7 +73,8 @@ export async function installFileStates(
   const untouched: string[] = [];
   const changed: string[] = [];
   for (const file of install.files) {
-    if (!present.has(file.path)) continue;
+    // Never the owner's own, whatever an older install recorded.
+    if (!present.has(file.path) || inOwnerDirectory(file.path)) continue;
     if (file.etag !== null && present.get(file.path) === file.etag)
       untouched.push(file.path);
     else changed.push(file.path);

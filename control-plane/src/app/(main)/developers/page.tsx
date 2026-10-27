@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { validateRequest } from "@/lib/auth";
+import { OWNER_DIRECTORY } from "@/lib/board/installs";
 import { authoredTemplates } from "@/lib/board/updates";
 import { mcpResource } from "@/lib/mcp/oauth";
 import codeStyles from "../docs/Code.module.css";
@@ -79,6 +80,11 @@ steps:
     with:
       dir: site
       template-owner: ${owner}`;
+
+// What a template loads of its owner's own folder, after its own styles and
+// scripts, so the owner's win and no update touches them.
+const OWNER_FILES = `<link rel="stylesheet" href="/${OWNER_DIRECTORY}/style.css" />
+<script type="module" src="/${OWNER_DIRECTORY}/script.js"></script>`;
 
 const PANEL = "border-2 border-line bg-card";
 const PANEL_HEADING =
@@ -344,6 +350,53 @@ export default async function DevelopersPage() {
             </section>
           </aside>
         </div>
+
+        <section id="updates" aria-labelledby="updates-h" className={PANEL}>
+          <h2 id="updates-h" className={PANEL_HEADING}>
+            업데이트해도 남는 것
+          </h2>
+          <div className="flex flex-col gap-4 px-5 py-5 leading-relaxed">
+            <p className="text-muted-foreground">
+              템플릿을 설치한 사람이 새 버전으로 업데이트하면, 나루는 파일마다
+              설치했을 때와 비교해요.
+            </p>
+            <ul className="flex list-disc flex-col gap-1.5 pl-5 text-muted-foreground">
+              <li>템플릿이 쓴 그대로인 파일은 새 버전으로 바뀌어요.</li>
+              <li>
+                주인이 고친 파일은 <code>/.backup/&lt;시각&gt;/</code>에 보관한
+                뒤 바뀌어요. 고친 내용은 남지만, 다시 옮겨 와야 해요.
+              </li>
+              <li>새 버전에 없는 파일은, 고쳤으면 남고 아니면 지워져요.</li>
+              <li>데이터베이스(테이블과 데이터)는 그대로예요.</li>
+              <li>
+                <code>/{OWNER_DIRECTORY}/</code> 폴더는 건드리지 않아요.
+                템플릿은 이 폴더에 파일을 넣을 수 없고, 설치·업데이트·연결
+                끊기도 이 폴더의 파일을 쓰거나 옮기거나 지우지 않아요.
+              </li>
+            </ul>
+            <h3 className="font-bold">템플릿을 만든다면</h3>
+            <p className="text-muted-foreground">
+              주인이 바꿀 만한 것은 파일이 아닌 곳에 두세요. 사이트 이름, 색,
+              메뉴, 안내 글처럼 운영 화면에서 정하는 것은 데이터베이스에
+              저장하면 업데이트와 상관없이 남아요. 파일로 고치게 하려면 템플릿의
+              스타일과 스크립트 뒤에 <code>/{OWNER_DIRECTORY}/</code>의 파일을
+              불러오세요. 파일이 없으면 그 요청은 404로 끝나니, 운영 화면에서
+              켜고 끄게 해도 돼요.
+            </p>
+            <Snippet
+              label="사이트 주인의 파일을 불러오는 예제"
+              language="html"
+              code={OWNER_FILES}
+            />
+            <h3 className="font-bold">템플릿을 쓴다면</h3>
+            <p className="text-muted-foreground">
+              템플릿의 파일을 직접 고치지 말고, 템플릿이 쓰는 설정이나{" "}
+              <code>/{OWNER_DIRECTORY}/</code> 폴더에 바꿀 것을 두세요. 이미
+              고친 파일이 업데이트로 바뀌었다면 <code>/.backup/</code>에서 찾을
+              수 있어요.
+            </p>
+          </div>
+        </section>
       </div>
     </div>
   );

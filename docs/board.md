@@ -179,6 +179,17 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   account also removes that user's `_templates/` objects and their site
   screenshot.
 
+- **The owner's folder**: `_owner/` at a site's root is the owner's own
+  (`OWNER_DIRECTORY`, `lib/board/installs.ts`). Publishing refuses a file
+  in it (a snapshot's selection, a GitHub upload's manifest), the share
+  form hides it, applying refuses it as a target, and a plan refuses a
+  version that would write there (`blockers` for applying, 409 for
+  updating), which only one published before the rule could. Installs,
+  updates and disconnecting never write, back up or remove a file in it,
+  whatever an older install recorded (`installFileStates`, `planUpdate`).
+  So a template can load `/_owner/style.css` or `script.js` after its own,
+  and what the owner keeps there outlasts every update; /developers says
+  so for authors.
 - **Installs and updates** (`lib/board/updates.ts`): applying records an
   install (`board_template_installs`: the folder, the version, every file it
   wrote with its ETag then, and `notify`: whether it is told of new

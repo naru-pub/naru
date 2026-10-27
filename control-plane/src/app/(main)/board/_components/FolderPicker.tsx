@@ -31,8 +31,12 @@ function filesUnder(node: FileNode): string[] {
   return (node.children ?? []).flatMap(filesUnder);
 }
 
-function isBackup(node: FileNode) {
-  return node.path === ".backup" || node.path.startsWith(".backup/");
+// Backups, and the owner's own folder (lib/board/installs.ts), which no
+// template may hold.
+function unshareable(node: FileNode) {
+  return ["_owner", ".backup"].some(
+    (folder) => node.path === folder || node.path.startsWith(`${folder}/`),
+  );
 }
 
 // The person's whole site as a tree, nothing checked: they check the files
@@ -56,7 +60,7 @@ export function FolderPicker({
         if (cancelled) return;
         if (data.success) {
           const nodes: FileNode[] = data.files.filter(
-            (node: FileNode) => !isBackup(node),
+            (node: FileNode) => !unshareable(node),
           );
           setTree(nodes);
           // Open the folders that hold what is already checked.
@@ -103,7 +107,7 @@ export function FolderPicker({
 
   function renderNodes(nodes: FileNode[], depth: number): React.ReactNode {
     return nodes
-      .filter((node) => !isBackup(node))
+      .filter((node) => !unshareable(node))
       .map((node) => {
         const files = filesUnder(node);
         const count = files.filter((path) => selected.has(path)).length;

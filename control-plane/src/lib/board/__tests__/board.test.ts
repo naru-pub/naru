@@ -631,14 +631,17 @@ integration("board", () => {
       ).toEqual(["retro/index.html"]);
     });
 
-    test("refuses unhostable, missing, backup and escaping paths", async () => {
+    test("refuses unhostable, missing, backup, owner's and escaping paths", async () => {
       put("alice/bad/run.exe", "application/octet-stream");
+      put("alice/_owner/style.css", "text/css");
       for (const files of [
         ["bad/run.exe"],
         [],
         ["../bob/index.html"],
         ["missing.html"],
         [".backup/2026/index.html"],
+        // The owner's own folder, which no template may hold.
+        ["_owner/style.css"],
       ]) {
         await expect(publish({ files })).rejects.toMatchObject({ status: 400 });
       }
@@ -908,13 +911,18 @@ integration("board", () => {
       });
     });
 
-    test("refuses to apply into the backup folder", async () => {
+    test("refuses to apply into the backup folder or the owner's", async () => {
       put("alice/retro/index.html");
       const { postId } = await publish();
       const versionId = (await getTemplateForPost(postId))!.versions[0].id;
+      for (const target of [".backup/x", "_owner", "_owner/x"])
+        await expect(
+          planApplication(bob, versionId, target),
+        ).rejects.toMatchObject({ status: 400 });
+      // A folder merely named alike elsewhere is the site's as any other.
       await expect(
-        planApplication(bob, versionId, ".backup/x"),
-      ).rejects.toMatchObject({ status: 400 });
+        planApplication(bob, versionId, "x/_owner"),
+      ).resolves.toMatchObject({ blockers: [] });
     });
   });
 
@@ -1184,6 +1192,100 @@ integration("board", () => {
         ),
       ).toBe(true);
       expect(await listInstalls(site)).toEqual([]);
+    });
+
+    test("nothing a template does reaches the owner's _owner/ folder", async () => {
+      const author = await member();
+      const { postId, templateId } = await template(author, "o/", [
+        "index.html",
+        "app.js",
+      ]);
+      const site = await member();
+      const v1 = await latestVersion(postId);
+      const { installId } = await applyTemplate(site, v1.id, {
+        targetPath: "",
+        backup: true,
+        createCollections: true,
+      });
+      put(`${site.loginName}/_owner/style.css`, "text/css");
+      const ownEtag = bucket.get(`${site.loginName}/_owner/style.css`)!.etag;
+      // As if an install from before the folder was reserved had written it.
+      const install = await db
+        .selectFrom("board_template_installs")
+        .select("files")
+        .where("id", "=", installId)
+        .executeTakeFirstOrThrow();
+      await db
+        .updateTable("board_template_installs")
+        .set({
+          files: JSON.stringify([
+            ...install.files,
+            { path: "_owner/style.css", etag: ownEtag },
+          ]),
+        })
+        .where("id", "=", installId)
+        .execute();
+
+      // v2 drops app.js: the update deletes it, and leaves _owner/ alone.
+      put(`${author.loginName}/o/index.html`);
+      await publishTemplateVersion(author, templateId, {
+        files: ["o/index.html"],
+        changelog: null,
+        collections: [],
+      });
+      const plan = await planUpdate(site, installId);
+      expect(plan.files.map((file) => file.path).sort()).toEqual([
+        "app.js",
+        "index.html",
+      ]);
+      await applyUpdate(site, installId);
+      expect(bucket.get(`${site.loginName}/_owner/style.css`)?.etag).toBe(
+        ownEtag,
+      );
+      // Removing the template's files leaves it too.
+      await disconnectInstall(site, installId, { removeFiles: true });
+      expect(bucket.get(`${site.loginName}/_owner/style.css`)?.etag).toBe(
+        ownEtag,
+      );
+      expect(bucket.has(`${site.loginName}/index.html`)).toBe(false);
+
+      // A version published before the folder was reserved, with a file
+      // there, is neither applied nor updated to.
+      const { postId: oldPost, templateId: oldTemplate } = await template(
+        author,
+        "p/",
+        ["index.html"],
+      );
+      const old = await latestVersion(oldPost);
+      const other = await member();
+      const { installId: otherInstall } = await applyTemplate(other, old.id, {
+        targetPath: "",
+        backup: true,
+        createCollections: true,
+      });
+      put(`${author.loginName}/p/index.html`);
+      await publishTemplateVersion(author, oldTemplate, {
+        files: ["p/index.html"],
+        changelog: null,
+        collections: [],
+      });
+      const newer = await latestVersion(oldPost);
+      await db
+        .insertInto("board_template_files")
+        .values({
+          version_id: newer.id,
+          path: "_owner/x.css",
+          content_type: "text/css",
+          size_bytes: 1,
+          etag: null,
+          sha256: null,
+        })
+        .execute();
+      const blocked = await planApplication(await member(), newer.id, "");
+      expect(blocked.blockers.join()).toMatch(/_owner\/ 폴더/);
+      await expect(planUpdate(other, otherInstall)).rejects.toMatchObject({
+        status: 409,
+      });
     });
 
     test("an update changes only the template's files, and backs up the owner's", async () => {

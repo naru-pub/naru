@@ -51,7 +51,11 @@ import {
   formatBytes,
 } from "./constants";
 import { normalizeGitHubPath } from "./github-source";
-import { notifyTemplateVersion, recordVersionEtags } from "./installs";
+import {
+  inOwnerDirectory,
+  notifyTemplateVersion,
+  recordVersionEtags,
+} from "./installs";
 import { recordVersionTables } from "./version-tables";
 import { templateFileKey } from "./preview";
 import {
@@ -140,7 +144,7 @@ function validateTemplateManifest(input: unknown): DeployManifest {
     );
   }
   for (const file of manifest.files) {
-    if (file.path.startsWith(".backup/")) {
+    if (file.path.startsWith(".backup/") || inOwnerDirectory(file.path)) {
       throw new Error(`A template cannot hold ${file.path}`);
     }
   }

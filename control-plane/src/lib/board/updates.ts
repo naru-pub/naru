@@ -16,6 +16,8 @@ import { BoardError } from "./board-error";
 import { forEachConcurrently } from "./concurrency";
 import {
   BACKUP_DIRECTORY,
+  OWNER_DIRECTORY,
+  inOwnerDirectory,
   backUp,
   backupStamp,
   installFileStates,
@@ -285,6 +287,17 @@ export async function planUpdate(
     installed.get(path) !== null &&
     installed.get(path) === present.get(path);
 
+  // A version published before the owner's folder was reserved may hold
+  // files that would land in it.
+  const intoOwner = newFiles.find((file) =>
+    inOwnerDirectory(`${target}${file.path}`),
+  );
+  if (intoOwner) {
+    throw new BoardError(
+      409,
+      `이 버전에는 사이트 주인의 ${OWNER_DIRECTORY}/ 폴더에 들어갈 파일(${intoOwner.path})이 있어서 업데이트할 수 없어요.`,
+    );
+  }
   const files: UpdatePlan["files"] = [];
   let unchanged = 0;
   const kept = new Set<string>();
@@ -298,7 +311,9 @@ export async function planUpdate(
     else files.push({ path, action: "overwrite" });
   }
   for (const path of installed.keys()) {
-    if (kept.has(path) || !present.has(path)) continue;
+    // Never the owner's own, whatever an older install recorded.
+    if (kept.has(path) || !present.has(path) || inOwnerDirectory(path))
+      continue;
     files.push({ path, action: ours(path) ? "delete" : "keep" });
   }
 

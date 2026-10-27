@@ -35,6 +35,8 @@ import { forEachConcurrently } from "./concurrency";
 import { BoardError } from "./errors";
 import {
   BACKUP_DIRECTORY,
+  OWNER_DIRECTORY,
+  inOwnerDirectory,
   backUp,
   backupStamp,
   notifyTemplateVersion,
@@ -70,7 +72,7 @@ import * as storage from "./storage";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 import { uuidv7 } from "@/lib/uuid";
 
-export { BACKUP_DIRECTORY };
+export { BACKUP_DIRECTORY, OWNER_DIRECTORY };
 
 // "" is the whole site; anything else is a folder, returned as "a/b/".
 export function normalizeFolder(value: unknown): string {
@@ -221,7 +223,8 @@ function validateSelection(value: unknown): string[] {
     if (
       !path ||
       path.endsWith("/") ||
-      path.startsWith(`${BACKUP_DIRECTORY}/`)
+      path.startsWith(`${BACKUP_DIRECTORY}/`) ||
+      inOwnerDirectory(path)
     ) {
       throw new BoardError(400, `템플릿에 넣을 수 없는 경로입니다: ${path}`);
     }
@@ -909,6 +912,12 @@ function normalizeTarget(value: unknown): string {
   ) {
     throw new BoardError(400, "백업 폴더에는 적용할 수 없어요.");
   }
+  if (inOwnerDirectory(target.replace(/\/$/, ""))) {
+    throw new BoardError(
+      400,
+      `${OWNER_DIRECTORY}/ 폴더는 사이트 주인의 것이라 템플릿을 적용할 수 없어요.`,
+    );
+  }
   return target;
 }
 
@@ -964,6 +973,16 @@ export async function planApplication(
   );
 
   const blockers: string[] = [];
+  // A version published before the owner's folder was reserved may hold
+  // files that would land in it.
+  const intoOwner = files.find((file) =>
+    inOwnerDirectory(`${targetPath}${file.path}`),
+  );
+  if (intoOwner) {
+    blockers.push(
+      `이 버전에는 사이트 주인의 ${OWNER_DIRECTORY}/ 폴더에 들어갈 파일(${intoOwner.path})이 있어서 적용할 수 없어요.`,
+    );
+  }
   let replaces: ApplicationPlan["replaces"] = null;
   if (version.site_code) {
     if (!hasDatabase) {
