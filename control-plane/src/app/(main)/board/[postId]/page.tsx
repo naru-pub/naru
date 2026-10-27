@@ -283,6 +283,17 @@ export default async function PostPage({
                     <dt className="text-muted-foreground">버전</dt>
                     <dd>
                       v{latest.version} · {formatDate(latest.createdAt)}
+                      {template.versions.length > 1 && (
+                        <>
+                          {" · "}
+                          <Link
+                            href={`/board/${post.id}/versions`}
+                            className="text-primary underline"
+                          >
+                            버전 기록
+                          </Link>
+                        </>
+                      )}
                     </dd>
                     <dt className="text-muted-foreground">출처</dt>
                     <dd className="break-all">
@@ -405,43 +416,6 @@ export default async function PostPage({
                   </section>
                 )}
 
-                {template.versions.length > 1 && (
-                  <section className="border-2 border-line bg-card">
-                    <h2 className="border-b-2 border-line bg-secondary px-4 py-3 font-bold">
-                      버전 기록
-                    </h2>
-                    <ol className="space-y-3 p-4 text-xs">
-                      {template.versions.map((version) => (
-                        <li key={version.id} className="space-y-1">
-                          <div className="font-bold">
-                            v{version.version}{" "}
-                            <span className="font-normal text-muted-foreground">
-                              {formatDate(version.createdAt)}
-                              {version.githubSha && githubUrl && (
-                                <>
-                                  {" · "}
-                                  <a
-                                    href={`${githubUrl}/commit/${version.githubSha}`}
-                                    className="font-mono underline"
-                                  >
-                                    {version.githubSha.slice(0, 7)}
-                                  </a>
-                                </>
-                              )}
-                              {version.newMigrations.length > 0 &&
-                                ` · 마이그레이션 ${version.newMigrations.length}개`}
-                            </span>
-                          </div>
-                          {version.changelog && (
-                            <p className="whitespace-pre-wrap text-muted-foreground">
-                              {version.changelog}
-                            </p>
-                          )}
-                        </li>
-                      ))}
-                    </ol>
-                  </section>
-                )}
               </>
             )}
           </aside>
