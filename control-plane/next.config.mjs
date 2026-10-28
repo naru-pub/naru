@@ -23,6 +23,18 @@ const nextConfig = {
           { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
         ],
       },
+      // Monaco's workers, named by content hash. Revalidated each time the
+      // editor started one, they failed to load on flaky connections; kept
+      // instead, a returning visitor starts them without a fetch.
+      {
+        source: "/monaco-editor/vs/assets/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
       {
         source: "/database/authorize",
         headers: [
