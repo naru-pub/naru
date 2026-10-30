@@ -50,7 +50,12 @@
       "store_subscriptions.environment": "\"sandbox\" | \"production\"",
       "store_subscriptions.status": "\"active\" | \"billing_retry\" | \"expired\" | \"revoked\"",
       "store_transactions.store": "\"apple\" | \"google\"",
-      "store_notifications.store": "\"apple\" | \"google\""
+      "store_notifications.store": "\"apple\" | \"google\"",
+      "market_sellers.business_type": "import(\"./market/states\").SellerBusinessType",
+      "market_sellers.status": "ColumnType<import(\"./market/states\").SellerStatus, import(\"./market/states\").SellerStatus | undefined, import(\"./market/states\").SellerStatus>",
+      "seller_payouts.status": "ColumnType<import(\"./market/states\").PayoutStatus, import(\"./market/states\").PayoutStatus | undefined, import(\"./market/states\").PayoutStatus>",
+      "template_purchases.status": "ColumnType<import(\"./market/states\").PurchaseStatus, import(\"./market/states\").PurchaseStatus | undefined, import(\"./market/states\").PurchaseStatus>",
+      "seller_payouts.error": "ColumnType<{ code: string; message: string } | null, string | null | undefined, string | null>"
     }
   }
 }

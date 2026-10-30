@@ -209,6 +209,21 @@ export const MAINTENANCE_JOBS = [
     alertAfterMinutes: 2880,
   },
   {
+    // The template marketplace (lib/market): orders left pending, payouts
+    // whose webhook was missed, and the day's new payouts. 01:00 UTC is
+    // 10:00 KST, inside Toss's business hours; a payout is scheduled for the
+    // next weekday. A missed day only pays a day later: report only
+    // failures that last two days.
+    name: "market-payouts",
+    script: "market-payouts.ts",
+    minutes: 1440,
+    hour: 1,
+    minute: 0,
+    timeout: 600,
+    payment: true,
+    alertAfterMinutes: 2880,
+  },
+  {
     name: "payment-invariant-check",
     script: "check-payment-invariants.ts",
     minutes: 1440,

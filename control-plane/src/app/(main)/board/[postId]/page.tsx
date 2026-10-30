@@ -11,6 +11,9 @@ import {
   listTemplateAppliers,
 } from "@/lib/board/templates";
 import { findInstall } from "@/lib/board/updates";
+import { canUseTemplate, hasPurchased } from "@/lib/market/access";
+import { REFUND_WINDOW_DAYS, won } from "@/lib/market/constants";
+import { BuyTemplateButton } from "../../market/_components/BuyTemplateButton";
 import { getHomepageUrl, getRenderedSiteUrl } from "@/lib/site-urls";
 import { ApplyTemplateDialog } from "../_components/ApplyTemplateDialog";
 import { BoardText } from "../_components/BoardText";
@@ -89,6 +92,22 @@ export default async function PostPage({
   }));
 
   const latest = template?.versions[0] ?? null;
+  // A paid template is applied by its author, its buyers, and those who
+  // applied it while it was free (lib/market/access).
+  const paid = !!template && template.price > 0;
+  const canUse =
+    !template ||
+    template.price === 0 ||
+    (!!user &&
+      (await canUseTemplate(user.id, {
+        id: template.id,
+        user_id: template.authorId,
+        price: template.price,
+      })));
+  const purchased =
+    paid && !!user && user.id !== template.authorId
+      ? await hasPurchased(user.id, template.id)
+      : false;
   const install =
     template && user ? await findInstall(user, template.id) : undefined;
   const githubUrl = template?.github
@@ -227,24 +246,59 @@ export default async function PostPage({
             {template && latest && (
               <>
                 <section className="space-y-3 border-2 border-primary bg-primary/5 p-4">
-                  <ApplyTemplateDialog
-                    title={post.title}
-                    slug={template.slug}
-                    authorLoginName={post.authorLoginName}
-                    samplePath={
-                      template.files.find((f) => f.path === "index.html")
-                        ?.path ??
-                      template.files[0]?.path ??
-                      "index.html"
-                    }
-                    versions={template.versions.map((v) => ({
-                      id: v.id,
-                      version: v.version,
-                      siteCode: v.siteCode,
-                    }))}
-                    siteUrl={user ? getHomepageUrl(user.loginName) : null}
-                    siteName={user?.loginName ?? null}
-                  />
+                  {paid && (
+                    <p className="text-sm">
+                      <span className="text-xl font-bold text-primary">
+                        {won(template.price)}
+                      </span>
+                      {purchased && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          구매함 ·{" "}
+                          <Link
+                            href="/account/market"
+                            className="text-primary underline"
+                          >
+                            구매 내역
+                          </Link>
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {canUse ? (
+                    <ApplyTemplateDialog
+                      title={post.title}
+                      slug={template.slug}
+                      authorLoginName={post.authorLoginName}
+                      samplePath={
+                        template.files.find((f) => f.path === "index.html")
+                          ?.path ??
+                        template.files[0]?.path ??
+                        "index.html"
+                      }
+                      versions={template.versions.map((v) => ({
+                        id: v.id,
+                        version: v.version,
+                        siteCode: v.siteCode,
+                      }))}
+                      siteUrl={user ? getHomepageUrl(user.loginName) : null}
+                      siteName={user?.loginName ?? null}
+                    />
+                  ) : (
+                    <>
+                      <BuyTemplateButton
+                        templateId={template.id}
+                        postId={post.id}
+                        price={template.price}
+                        clientKey={process.env.TOSS_MARKET_CLIENT_KEY ?? ""}
+                        loggedIn={!!user}
+                        loginName={user?.loginName ?? null}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        한 번 사면 새 버전도 계속 받아요. 적용하기 전에는{" "}
+                        {REFUND_WINDOW_DAYS}일 안에 환불할 수 있어요.
+                      </p>
+                    </>
+                  )}
                   <div className="border border-border bg-background p-3">
                     <div className="text-xl font-bold text-primary">
                       {template.applyCount}
@@ -318,6 +372,8 @@ export default async function PostPage({
                         <dd>사이트 전체 (/)</dd>
                       </>
                     )}
+                    <dt className="text-muted-foreground">가격</dt>
+                    <dd>{paid ? won(template.price) : "무료"}</dd>
                     <dt className="text-muted-foreground">라이선스</dt>
                     <dd>
                       <a
@@ -415,7 +471,6 @@ export default async function PostPage({
                     </div>
                   </section>
                 )}
-
               </>
             )}
           </aside>

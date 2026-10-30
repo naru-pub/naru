@@ -105,7 +105,14 @@ export type PaymentJob =
       cardRegistrationId?: string;
       lab?: boolean;
       testCode?: string;
-    };
+    }
+  // The template marketplace (lib/market/market-jobs).
+  | { kind: "confirm_template_purchase"; purchaseId: string }
+  | { kind: "refund_template_purchase"; purchaseId: string }
+  | { kind: "reconcile_template_purchase"; purchaseId: string }
+  | { kind: "request_payout"; payoutId: string }
+  | { kind: "sync_payout"; payoutId: string }
+  | { kind: "sync_seller"; tossSellerId: string };
 
 export const MAX_ATTEMPTS = 8;
 export const PAYMENT_QUEUE = "payments";
@@ -274,6 +281,16 @@ async function handle(job: PaymentJob): Promise<void> {
         if (outcome.error) throw outcome.error;
       } else await run();
       return;
+    }
+    case "confirm_template_purchase":
+    case "refund_template_purchase":
+    case "reconcile_template_purchase":
+    case "request_payout":
+    case "sync_payout":
+    case "sync_seller": {
+      // Imported here: the marketplace enqueues jobs itself.
+      const { handleMarketJob } = await import("@/lib/market/market-jobs");
+      return handleMarketJob(job);
     }
     case "reconcile_payment": {
       // Imported here: reconciliation enqueues jobs itself.

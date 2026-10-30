@@ -1,10 +1,18 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { createHash, randomInt } from "crypto";
+import {
+  decryptJwe,
+  encryptJwe,
+  isCompactJwe,
+  securityKeyBytes,
+} from "@/lib/market/jwe";
 
 const TOSS_API = "https://api.tosspayments.com";
 
 export type BillingInterval = "month" | "year";
-export type TossPaymentFlow = "billing" | "one-time";
+// "market" is the template marketplace's MID (lib/market), the one Toss
+// pays sellers out of.
+export type TossPaymentFlow = "billing" | "one-time" | "market";
 
 // Authoritative server-side amounts (KRW). Never trust client-sent amounts.
 export const PLAN_AMOUNTS: Record<BillingInterval, number> = {
@@ -132,7 +140,16 @@ export function describeTossError(error: unknown): string {
 function secretKey(flow: TossPaymentFlow): string | undefined {
   return flow === "billing"
     ? process.env.TOSS_BILLING_SECRET_KEY
-    : process.env.TOSS_PAYMENT_SECRET_KEY;
+    : flow === "market"
+      ? process.env.TOSS_MARKET_SECRET_KEY
+      : process.env.TOSS_PAYMENT_SECRET_KEY;
+}
+
+// The market MID's 보안 키, for the payout and seller APIs' ENCRYPTION mode.
+function securityKey(): Buffer {
+  const hex = process.env.TOSS_MARKET_SECURITY_KEY;
+  if (!hex) throw new Error("TOSS_MARKET_SECURITY_KEY is not configured.");
+  return securityKeyBytes(hex);
 }
 
 // The secret keys configured, by flow. Only for checking webhook signatures
@@ -141,7 +158,7 @@ export function tossSecretKeys(): Array<{
   flow: TossPaymentFlow;
   key: string;
 }> {
-  return (["billing", "one-time"] as const).flatMap((flow) => {
+  return (["billing", "one-time", "market"] as const).flatMap((flow) => {
     const key = secretKey(flow);
     return key ? [{ flow, key }] : [];
   });
@@ -153,6 +170,7 @@ export function isTossLiveMode(): boolean {
   const keys = [
     process.env.TOSS_BILLING_SECRET_KEY,
     process.env.TOSS_PAYMENT_SECRET_KEY,
+    process.env.TOSS_MARKET_SECRET_KEY,
   ].filter((key): key is string => Boolean(key));
   return keys.length > 0 && keys.every((key) => key.startsWith("live_"));
 }
@@ -163,6 +181,7 @@ export function isTossTestMode(): boolean {
   const keys = [
     process.env.TOSS_BILLING_SECRET_KEY,
     process.env.TOSS_PAYMENT_SECRET_KEY,
+    process.env.TOSS_MARKET_SECRET_KEY,
   ].filter((key): key is string => Boolean(key));
   return keys.length > 0 && keys.every((key) => key.startsWith("test_"));
 }
@@ -212,7 +231,17 @@ export function maskSecret(value: string): string {
     : `${value.slice(0, 4)}••••${value.slice(-4)}`;
 }
 
-const MASKED_FIELDS = new Set(["billingKey", "secret", "authKey"]);
+// Also a seller's account number and contact details (lib/market), which
+// 나루 keeps nowhere else.
+const MASKED_FIELDS = new Set([
+  "billingKey",
+  "secret",
+  "authKey",
+  "accountNumber",
+  "phone",
+  "email",
+  "businessRegistrationNumber",
+]);
 
 export function maskBody(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(maskBody);
@@ -242,7 +271,9 @@ function authHeader(flow: TossPaymentFlow): string {
     throw new Error(
       flow === "billing"
         ? "TOSS_BILLING_SECRET_KEY is not configured."
-        : "TOSS_PAYMENT_SECRET_KEY is not configured.",
+        : flow === "market"
+          ? "TOSS_MARKET_SECRET_KEY is not configured."
+          : "TOSS_PAYMENT_SECRET_KEY is not configured.",
     );
   }
   // Toss uses HTTP Basic auth with the secret key as username and empty password.
@@ -262,6 +293,9 @@ async function tossRequest<T>(
     body?: unknown;
     idempotencyKey?: string;
     timeoutMs?: number;
+    // The payout and seller APIs' ENCRYPTION mode: the body goes as a JWE
+    // and the answer comes back as one.
+    encrypted?: boolean;
   } = {},
 ): Promise<T> {
   const lab = labContext.getStore();
@@ -316,7 +350,12 @@ function orderIdOf(path: string, body: unknown): string | null {
 async function sendTossRequest<T>(
   flow: TossPaymentFlow,
   path: string,
-  init: { body?: unknown; idempotencyKey?: string; timeoutMs?: number },
+  init: {
+    body?: unknown;
+    idempotencyKey?: string;
+    timeoutMs?: number;
+    encrypted?: boolean;
+  },
   method: string,
   testCode: string | null,
   record: TossCallRecord,
@@ -329,13 +368,21 @@ async function sendTossRequest<T>(
       method,
       headers: {
         Authorization: authHeader(flow),
-        "Content-Type": "application/json",
+        "Content-Type": init.encrypted ? "text/plain" : "application/json",
+        ...(init.encrypted
+          ? { "TossPayments-api-security-mode": "ENCRYPTION" }
+          : {}),
         ...(init.idempotencyKey
           ? { "Idempotency-Key": init.idempotencyKey }
           : {}),
         ...(testCode ? { "TossPayments-Test-Code": testCode } : {}),
       },
-      body: init.body == null ? undefined : JSON.stringify(init.body),
+      body:
+        init.body == null
+          ? undefined
+          : init.encrypted
+            ? encryptJwe(JSON.stringify(init.body), securityKey())
+            : JSON.stringify(init.body),
       signal: AbortSignal.timeout(init.timeoutMs ?? TOSS_REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
@@ -352,7 +399,11 @@ async function sendTossRequest<T>(
   // own bad input.
   let data: Record<string, unknown>;
   try {
-    const text = await res.text();
+    let text = await res.text();
+    // Encrypted requests are answered encrypted, failures too.
+    if (init.encrypted && isCompactJwe(text)) {
+      text = decryptJwe(text, securityKey());
+    }
     record.responseBody = text.slice(0, 4000);
     // A successful DELETE may answer with no body at all.
     data = (text ? JSON.parse(text) : {}) as Record<string, unknown>;
@@ -364,10 +415,15 @@ async function sendTossRequest<T>(
     );
   }
   if (!res.ok) {
+    // The v2 APIs (payouts, sellers) nest it: { version, traceId, error }.
+    const error =
+      data?.error && typeof data.error === "object"
+        ? (data.error as Record<string, unknown>)
+        : data;
     throw new TossApiError(
-      (data?.message as string) ?? `Toss API request failed (${res.status})`,
+      (error?.message as string) ?? `Toss API request failed (${res.status})`,
       res.status,
-      data?.code as string | undefined,
+      error?.code as string | undefined,
     );
   }
   return data as T;
@@ -449,8 +505,9 @@ export function chargeBillingKey(params: {
 export function confirmPayment(
   params: { paymentKey: string; orderId: string; amount: number },
   idempotencyKey: string,
+  flow: TossPaymentFlow = "one-time",
 ) {
-  return tossRequest<TossPaymentResult>("one-time", "/v1/payments/confirm", {
+  return tossRequest<TossPaymentResult>(flow, "/v1/payments/confirm", {
     body: params,
     idempotencyKey,
   });
@@ -549,7 +606,7 @@ export function paymentFlowForRecord(
   flow: string | null,
   attemptKey: string | null,
 ): TossPaymentFlow {
-  return flow === "billing" || flow === "one-time"
+  return flow === "billing" || flow === "one-time" || flow === "market"
     ? flow
     : paymentFlowForAttempt(attemptKey);
 }
@@ -563,7 +620,9 @@ export function configuredMid(flow: TossPaymentFlow): string | null {
   const mid =
     flow === "billing"
       ? process.env.TOSS_BILLING_MID
-      : process.env.TOSS_PAYMENT_MID;
+      : flow === "market"
+        ? process.env.TOSS_MARKET_MID
+        : process.env.TOSS_PAYMENT_MID;
   return mid?.trim() || null;
 }
 
@@ -723,4 +782,153 @@ function isOrderIdConflict(error: unknown): boolean {
     constraint?: string;
   };
   return code === "23505" && constraint === "payments_order_id_key";
+}
+
+// Toss's 지급대행 (payouts) API, on the market MID
+// (https://docs.tosspayments.com/reference/additional#지급대행). Its POSTs
+// with a body go encrypted; its answers are { version, traceId,
+// entityType, entityBody }.
+
+type TossEntity<T> = { entityType?: string; entityBody: T };
+
+export type TossMoney = { currency: string; value: number };
+
+export type TossSeller = {
+  id: string;
+  refSellerId: string | null;
+  businessType: string;
+  status: string;
+  company?: { name?: string | null; representativeName?: string } | null;
+  individual?: { name?: string } | null;
+  account?: { bankCode: string; accountNumber: string; holderName: string };
+};
+
+export type TossSellerInput = {
+  refSellerId: string;
+  businessType: string;
+  company?: {
+    name?: string;
+    representativeName: string;
+    businessRegistrationNumber: string;
+    email: string;
+    phone: string;
+  };
+  individual?: { name: string; email: string; phone: string };
+  account: { bankCode: string; accountNumber: string; holderName: string };
+  metadata?: Record<string, string>;
+};
+
+export type TossSellerUpdate = {
+  company?: { email?: string; phone?: string; representativeName?: string };
+  individual?: { email?: string; phone?: string };
+  account?: { bankCode: string; accountNumber: string; holderName: string };
+};
+
+export type TossPayout = {
+  id: string;
+  refPayoutId: string | null;
+  destination: string;
+  scheduleType: "EXPRESS" | "SCHEDULED";
+  payoutDate: string;
+  amount: TossMoney;
+  transactionDescription: string;
+  requestedAt: string;
+  status: string;
+  error: { code: string; message: string } | null;
+  metadata?: Record<string, string> | null;
+};
+
+export type TossPayoutInput = {
+  refPayoutId: string;
+  destination: string;
+  scheduleType: "EXPRESS" | "SCHEDULED";
+  payoutDate?: string;
+  amount: TossMoney;
+  // At most seven characters, shown on the seller's bank statement.
+  transactionDescription: string;
+  metadata?: Record<string, string>;
+};
+
+// Registration checks the account and business number with the banks; the
+// refSellerId is the idempotency key, so a retry after a lost answer gets
+// the same seller back.
+export async function registerSeller(input: TossSellerInput) {
+  const answer = await tossRequest<TossEntity<TossSeller>>(
+    "market",
+    "/v2/sellers",
+    {
+      body: input,
+      encrypted: true,
+      idempotencyKey: `seller-${input.refSellerId}`,
+    },
+  );
+  return answer.entityBody;
+}
+
+export async function updateSeller(sellerId: string, input: TossSellerUpdate) {
+  const answer = await tossRequest<TossEntity<TossSeller>>(
+    "market",
+    `/v2/sellers/${encodeURIComponent(sellerId)}`,
+    { body: input, encrypted: true },
+  );
+  return answer.entityBody;
+}
+
+export async function getSeller(sellerId: string) {
+  const answer = await tossRequest<TossEntity<TossSeller>>(
+    "market",
+    `/v2/sellers/${encodeURIComponent(sellerId)}`,
+    { method: "GET" },
+  );
+  return answer.entityBody;
+}
+
+export async function deleteSeller(sellerId: string): Promise<void> {
+  await tossRequest<unknown>(
+    "market",
+    `/v2/sellers/${encodeURIComponent(sellerId)}`,
+    { method: "DELETE" },
+  );
+}
+
+// What the market MID can pay out now, and what it will once settled.
+export async function getPayoutBalance() {
+  const answer = await tossRequest<
+    TossEntity<{ availableAmount: TossMoney; pendingAmount?: TossMoney }>
+  >("market", "/v2/balances", { method: "GET" });
+  return answer.entityBody;
+}
+
+// Up to 100 at once, all or none: one refused fails the batch. The
+// idempotency key makes a retry after a lost answer safe; Toss's guide warns
+// against retrying an error under a new one.
+export async function requestPayouts(
+  payouts: TossPayoutInput[],
+  idempotencyKey: string,
+) {
+  const answer = await tossRequest<TossEntity<{ items: TossPayout[] }>>(
+    "market",
+    "/v2/payouts",
+    { body: payouts, encrypted: true, idempotencyKey },
+  );
+  return answer.entityBody.items;
+}
+
+export async function getPayout(payoutId: string) {
+  const answer = await tossRequest<TossEntity<TossPayout>>(
+    "market",
+    `/v2/payouts/${encodeURIComponent(payoutId)}`,
+    { method: "GET" },
+  );
+  return answer.entityBody;
+}
+
+// Only a SCHEDULED payout still REQUESTED can be canceled.
+export async function cancelPayout(payoutId: string) {
+  const answer = await tossRequest<TossEntity<TossPayout>>(
+    "market",
+    `/v2/payouts/${encodeURIComponent(payoutId)}/cancel`,
+    {},
+  );
+  return answer.entityBody;
 }

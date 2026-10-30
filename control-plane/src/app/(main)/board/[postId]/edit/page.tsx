@@ -8,6 +8,8 @@ import { listCollections } from "@/lib/site-data/service";
 import { EditPostForm } from "./EditPostForm";
 import { NewVersionForm } from "./NewVersionForm";
 import { PreviewForm } from "./PreviewForm";
+import { PriceForm } from "./PriceForm";
+import { canSell } from "@/lib/market/sellers";
 import { SourceForm } from "./SourceForm";
 
 export const metadata: Metadata = { title: "글 고치기 · 나루 게시판" };
@@ -33,6 +35,7 @@ export default async function EditPostPage({
   const template =
     post.kind === "template" ? await getTemplateForPost(post.id) : null;
   const collections = template ? await listCollections(user) : [];
+  const seller = template ? await canSell(user.id) : false;
   const latest = template?.versions[0] ?? null;
   const previousFiles =
     template && latest
@@ -71,6 +74,22 @@ export default async function EditPostPage({
               repository={template.github?.repository ?? ""}
               branch={template.github?.ref.replace(/^refs\/heads\//, "") ?? ""}
               path={template.github?.path ?? null}
+            />
+          </section>
+        )}
+        {template && (
+          <section className="space-y-4 border-2 border-line p-4">
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold">가격</h2>
+              <p className="text-sm text-muted-foreground">
+                유료 템플릿은 산 사람만 적용할 수 있어요. 이미 적용한 사람과 산
+                사람은 가격을 바꿔도 새 버전을 계속 받아요.
+              </p>
+            </div>
+            <PriceForm
+              templateId={template.id}
+              price={template.price}
+              canSell={seller}
             />
           </section>
         )}

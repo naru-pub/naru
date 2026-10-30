@@ -152,6 +152,37 @@ export async function POST(request: NextRequest) {
       return respond(200, "ignored: event not handled");
     }
 
+    // 지급대행: only a notice. The task asks Toss for the payout or seller
+    // as it is before writing anything.
+    if (event.type === "payout-changed") {
+      delivery.subject = event.payoutId;
+      const payout = await db
+        .selectFrom("seller_payouts")
+        .select("id")
+        .where("toss_payout_id", "=", event.payoutId)
+        .executeTakeFirst();
+      if (!payout) return respond(200, "ignored: unknown payout");
+      const job = await enqueueJob(db, {
+        kind: "sync_payout",
+        payoutId: payout.id,
+      });
+      return respond(200, `sync job ${job} for payout ${payout.id}`);
+    }
+    if (event.type === "seller-changed") {
+      delivery.subject = event.sellerId;
+      const seller = await db
+        .selectFrom("market_sellers")
+        .select("id")
+        .where("toss_seller_id", "=", event.sellerId)
+        .executeTakeFirst();
+      if (!seller) return respond(200, "ignored: unknown seller");
+      const job = await enqueueJob(db, {
+        kind: "sync_seller",
+        tossSellerId: event.sellerId,
+      });
+      return respond(200, `sync job ${job} for seller ${seller.id}`);
+    }
+
     const orderId = event.orderId;
     delivery.subject = orderId;
 
@@ -168,7 +199,23 @@ export async function POST(request: NextRequest) {
       ])
       .where("order_id", "=", orderId)
       .executeTakeFirst();
-    if (!ledger) return respond(200, "ignored: unknown order");
+    if (!ledger) {
+      // A template purchase (lib/market): reconciled from Toss's record.
+      const purchase = await db
+        .selectFrom("template_purchases")
+        .select("id")
+        .where("order_id", "=", orderId)
+        .executeTakeFirst();
+      if (!purchase) return respond(200, "ignored: unknown order");
+      const job = await enqueueJob(db, {
+        kind: "reconcile_template_purchase",
+        purchaseId: purchase.id,
+      });
+      return respond(
+        200,
+        `reconcile job ${job} for template purchase ${purchase.id}`,
+      );
+    }
     // A delivery from a MID whose key 나루 no longer holds (the test MID
     // after the switch to live): its lookup could only fail.
     const otherMid = paymentOfOtherMid(ledger);

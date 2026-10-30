@@ -1,5 +1,6 @@
 import { validateRequest } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import LogoutButton from "./LogoutButton";
 import DeleteAccountButton from "./DeleteAccountButton";
@@ -52,6 +53,19 @@ export default async function AccountPage() {
           emailVerifiedAt={user.emailVerifiedAt}
         />
         <ChangePasswordForm />
+        <Card className="bg-card border-2 border-line">
+          <CardContent className="p-6 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-muted-foreground text-sm">
+              템플릿을 팔거나 산 템플릿을 확인해요.
+            </p>
+            <Link
+              href="/account/market"
+              className="text-primary underline font-bold"
+            >
+              템플릿 판매와 구매 →
+            </Link>
+          </CardContent>
+        </Card>
         <McpConnectionsCard
           serverUrl={mcpResource()}
           entitled={mcpEntitled}

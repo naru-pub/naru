@@ -4,6 +4,10 @@ import type { TossPaymentFlow } from "@/lib/payments/toss";
 export type TossWebhookEvent =
   | { type: "payment-status-changed"; orderId: string }
   | { type: "billing-deleted"; billingKey: string }
+  // 지급대행 (lib/market): { eventType, eventId, entityType, entityBody },
+  // the body the changed Payout or Seller.
+  | { type: "payout-changed"; payoutId: string }
+  | { type: "seller-changed"; sellerId: string }
   | { type: "ignored" };
 
 export function parseTossWebhook(body: unknown): TossWebhookEvent {
@@ -21,6 +25,21 @@ export function parseTossWebhook(body: unknown): TossWebhookEvent {
     return typeof billingKey === "string" && billingKey
       ? { type: "billing-deleted", billingKey }
       : { type: "ignored" };
+  }
+
+  if (
+    event.eventType === "payout.changed" ||
+    event.eventType === "seller.changed"
+  ) {
+    const entity = event.entityBody;
+    const id =
+      entity && typeof entity === "object"
+        ? (entity as Record<string, unknown>).id
+        : undefined;
+    if (typeof id !== "string" || !id) return { type: "ignored" };
+    return event.eventType === "payout.changed"
+      ? { type: "payout-changed", payoutId: id }
+      : { type: "seller-changed", sellerId: id };
   }
 
   if (event.eventType !== "PAYMENT_STATUS_CHANGED") {
@@ -44,9 +63,7 @@ export function parseTossWebhook(body: unknown): TossWebhookEvent {
 const TERMINAL_FAILURE_STATUSES = new Set(["aborted", "expired", "failed"]);
 
 export type WebhookLedgerAction =
-  | { type: "reconcile" }
-  | { type: "fail"; status: string }
-  | { type: "record" };
+  { type: "reconcile" } | { type: "fail"; status: string } | { type: "record" };
 
 export function webhookLedgerAction(tossStatus: string): WebhookLedgerAction {
   const status = tossStatus.toLowerCase();

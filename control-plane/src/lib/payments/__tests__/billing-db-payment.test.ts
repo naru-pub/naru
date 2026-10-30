@@ -4147,6 +4147,7 @@ integration("payments against the database", () => {
       expect(toss.confirmPayment).toHaveBeenCalledWith(
         { paymentKey: `pk-${orderId}`, orderId, amount: 12000 },
         orderId,
+        "one-time",
       );
       expect(await status(paymentId)).toBe("done");
       expect((await supporterUntil(userId))! > new Date()).toBe(true);
@@ -4410,6 +4411,7 @@ integration("payments against the database", () => {
       expect(toss.confirmPayment).toHaveBeenLastCalledWith(
         { paymentKey: `pk-${orderId}`, orderId, amount: 12000 },
         expect.stringMatching(new RegExp(`^${orderId}:.+`)),
+        "one-time",
       );
       expect(await status(paymentId)).toBe("done");
     });

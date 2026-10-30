@@ -51,13 +51,15 @@ integration("Absurd payment migration", () => {
     await createLegacyJobs(db);
   });
 
+  // Dropping a database waits for a checkpoint, which takes longer the more
+  // the suites before this one wrote.
   afterAll(async () => {
     await db?.destroy();
     if (admin) {
       await admin.query(`drop database if exists ${name}`);
       await admin.end();
     }
-  });
+  }, 30_000);
 
   test("imports pending work, schedules, terminal history, and dedupe identities", async () => {
     const due = new Date(Date.now() + 86_400_000);

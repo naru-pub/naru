@@ -31,6 +31,7 @@ import { templateFileKey } from "./preview";
 import { isMigration } from "./site-code";
 import { withSiteLock } from "./site-lock";
 import * as storage from "./storage";
+import { assertCanUseTemplate } from "@/lib/market/access";
 
 export interface InstallSummary {
   id: string;
@@ -253,6 +254,7 @@ export async function planUpdate(
 ): Promise<UpdatePlan> {
   const install = await loadInstall(user, installId);
   const to = await loadTargetVersion(install.template_id, versionId);
+  await assertCanUseTemplate(user.id, install.template_id);
   if (to.version <= install.version) {
     throw new BoardError(409, "이미 최신 버전이에요.");
   }

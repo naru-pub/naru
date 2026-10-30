@@ -48,6 +48,12 @@ const taskLabels: Record<PaymentJob["kind"], string> = {
   subscription_canceled: "구독 취소 안내",
   grace_notice: "결제 유예 안내",
   past_due_notice: "연체 안내",
+  confirm_template_purchase: "템플릿 구매 승인",
+  refund_template_purchase: "템플릿 구매 환불",
+  reconcile_template_purchase: "템플릿 구매 대사",
+  request_payout: "판매자 지급 요청",
+  sync_payout: "판매자 지급 확인",
+  sync_seller: "판매자 상태 확인",
 };
 
 export const metadata: Metadata = { title: "결제 · 운영 · 나루" };

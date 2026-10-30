@@ -44,10 +44,12 @@ export function previousKstDay(now = new Date()) {
 }
 
 // Both MIDs' transactions, each once: with test keys both secret keys can
-// list the same account.
+// list the same account. The marketplace's MID is not this ledger's: its
+// purchases (template_purchases) are left out below.
 async function tossTransactions(startLocal: string, endLocal: string) {
   const all = new Map<string, TossTransaction>();
   for (const { flow } of tossSecretKeys()) {
+    if (flow === "market") continue;
     let startingAfter: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
       const rows = await listTransactions(flow, {
@@ -61,6 +63,34 @@ async function tossTransactions(startLocal: string, endLocal: string) {
     }
   }
   return [...all.values()];
+}
+
+// Template purchases (lib/market), which a test key may list with the rest.
+async function withoutTemplatePurchases(transactions: TossTransaction[]) {
+  if (transactions.length === 0) return transactions;
+  const rows = await db
+    .selectFrom("template_purchases")
+    .select(["order_id", "toss_payment_key"])
+    .where((eb) =>
+      eb.or([
+        eb(
+          "toss_payment_key",
+          "in",
+          transactions.map((t) => t.paymentKey),
+        ),
+        eb(
+          "order_id",
+          "in",
+          transactions.map((t) => t.orderId),
+        ),
+      ]),
+    )
+    .execute();
+  const keys = new Set(rows.map((row) => row.toss_payment_key));
+  const orders = new Set(rows.map((row) => row.order_id));
+  return transactions.filter(
+    (t) => !keys.has(t.paymentKey) && !orders.has(t.orderId),
+  );
 }
 
 // The ledger's rows for the day, counted by payment.
@@ -118,8 +148,10 @@ export async function checkTossTransactions(now = new Date()): Promise<{
   problems: string[];
 }> {
   const { start, end, startLocal, endLocal } = previousKstDay(now);
-  const toss = (await tossTransactions(startLocal, endLocal)).filter((t) =>
-    MONEY_MOVED.has(t.status),
+  const toss = await withoutTemplatePurchases(
+    (await tossTransactions(startLocal, endLocal)).filter((t) =>
+      MONEY_MOVED.has(t.status),
+    ),
   );
   const paymentOf = await ourPayments(toss);
   const problems: string[] = [];

@@ -79,11 +79,17 @@ describe("billing keys are only dropped through retireBillingKey", () => {
   });
 
   // Ending a plan has one way (endPlan): its key, event and mail go with it.
+  // The marketplace's purchases have their own "canceled", not a plan's.
   test("only endPlan ends a plan", () => {
+    const market = "lib/market/market-jobs.ts";
     expect(
-      offenders(/status:\s*"canceled"/, ["lib/payments/subscriptions.ts"]),
+      offenders(/status:\s*"canceled"/, [
+        "lib/payments/subscriptions.ts",
+        market,
+      ]),
     ).toEqual([]);
     expect(offenders(/status:\s*"canceled"/, [])).toEqual([
+      market,
       "lib/payments/subscriptions.ts",
     ]);
   });
@@ -98,6 +104,7 @@ describe("billing keys are only dropped through retireBillingKey", () => {
 
   test("only the Absurd handler approves one-time payments", () => {
     expect(offenders(/\bconfirmOrder\s*\(/, [])).toEqual([
+      "lib/market/market-jobs.ts",
       "lib/payments/payment-jobs.ts",
       "lib/payments/toss-gateway.ts",
     ]);
@@ -119,6 +126,7 @@ describe("billing keys are only dropped through retireBillingKey", () => {
 
   test("only the Absurd handler executes a refund", () => {
     expect(offenders(/\bcancelOrder\s*\(/, [])).toEqual([
+      "lib/market/market-jobs.ts",
       "lib/payments/payment-jobs.ts",
       "lib/payments/toss-gateway.ts",
     ]);

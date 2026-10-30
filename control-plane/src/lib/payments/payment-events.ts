@@ -36,6 +36,7 @@ export const PAYMENT_EVENT_LABELS = {
   store_charged: "앱 스토어 결제",
   store_revoked: "앱 스토어 환불·회수",
   store_moved: "앱 구독 이전",
+  template_refund_after_payout: "정산 후 템플릿 환불",
 } as const;
 
 export type PaymentEventKind = keyof typeof PAYMENT_EVENT_LABELS;
@@ -55,6 +56,7 @@ export const FAILURE_EVENT_KINDS: ReadonlySet<PaymentEventKind> = new Set([
   "job_failed",
   "invariant_violation",
   "toss_mismatch",
+  "template_refund_after_payout",
 ] as const);
 
 function isFailure(kind: string): boolean {

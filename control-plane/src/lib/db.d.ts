@@ -348,6 +348,7 @@ export interface BoardTemplates {
   preview_content_type: string | null;
   preview_sha256: string | null;
   preview_updated_at: Timestamp | null;
+  price: Generated<number>;
   slug: string;
   source: ColumnType<"site" | "github", "site" | "github" | undefined>;
   user_id: string;
@@ -559,6 +560,23 @@ export interface HomeDirectoryExports {
   user_id: string;
 }
 
+export interface MarketSellers {
+  account_last4: string;
+  bank_code: string;
+  business_type: import("./market/states").SellerBusinessType;
+  created_at: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
+  display_name: string;
+  holder_name: string;
+  id: Generated<string>;
+  ref_seller_id: string;
+  status: ColumnType<import("./market/states").SellerStatus, import("./market/states").SellerStatus | undefined, import("./market/states").SellerStatus>;
+  synced_at: Timestamp | null;
+  toss_seller_id: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface McpAuthCodes {
   challenge: string;
   client_id: string;
@@ -717,6 +735,19 @@ export interface RemoteActors {
   preferred_username: string | null;
   profile_url: string | null;
   shared_inbox_iri: string | null;
+}
+
+export interface SellerPayouts {
+  amount: number;
+  created_at: Generated<Timestamp>;
+  error: ColumnType<{ code: string; message: string } | null, string | null | undefined, string | null>;
+  finished_at: Timestamp | null;
+  id: Generated<string>;
+  payout_date: string | null;
+  requested_at: Timestamp | null;
+  seller_id: string;
+  status: ColumnType<import("./market/states").PayoutStatus, import("./market/states").PayoutStatus | undefined, import("./market/states").PayoutStatus>;
+  toss_payout_id: string | null;
 }
 
 export interface Sessions {
@@ -927,6 +958,29 @@ export interface SupporterTrialWindows {
   starts_at: Timestamp;
 }
 
+export interface TemplatePurchases {
+  amount: number;
+  buyer_id: string;
+  canceled_at: Timestamp | null;
+  charge_attempted_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  fee: number;
+  id: Generated<string>;
+  order_id: string;
+  paid_at: Timestamp | null;
+  payout_id: string | null;
+  raw: unknown | null;
+  refund_requested_at: Timestamp | null;
+  seller_id: string;
+  status: ColumnType<import("./market/states").PurchaseStatus, import("./market/states").PurchaseStatus | undefined, import("./market/states").PurchaseStatus>;
+  template_id: string;
+  template_title: string;
+  toss_method: string | null;
+  toss_mid: string | null;
+  toss_payment_key: string | null;
+  toss_receipt_url: string | null;
+}
+
 export interface TossCalls {
   created_at: Generated<Timestamp>;
   duration_ms: number;
@@ -1051,6 +1105,7 @@ export interface DB {
   github_deployments: GithubDeployments;
   github_installations: GithubInstallations;
   home_directory_exports: HomeDirectoryExports;
+  market_sellers: MarketSellers;
   mcp_auth_codes: McpAuthCodes;
   mcp_clients: McpClients;
   mcp_grants: McpGrants;
@@ -1065,6 +1120,7 @@ export interface DB {
   payment_transactions: PaymentTransactions;
   payments: Payments;
   remote_actors: RemoteActors;
+  seller_payouts: SellerPayouts;
   sessions: Sessions;
   site_data_access_tokens: SiteDataAccessTokens;
   site_data_auth_codes: SiteDataAuthCodes;
@@ -1085,6 +1141,7 @@ export interface DB {
   subscriptions: Subscriptions;
   supporter_trial_windows: SupporterTrialWindows;
   supporter_trials: SupporterTrials;
+  template_purchases: TemplatePurchases;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;
   toss_window_outcomes: TossWindowOutcomes;

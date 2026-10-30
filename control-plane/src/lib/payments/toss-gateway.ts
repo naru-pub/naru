@@ -202,7 +202,10 @@ export async function confirmOrder(opts: {
   firstKey: string;
   retryOnce: boolean;
   beforeSend: () => Promise<void>;
+  // The MID the buyer paid on: one-time support, or the marketplace.
+  flow?: TossPaymentFlow;
 }): Promise<OrderOutcome> {
+  const flow = opts.flow ?? "one-time";
   const params = {
     paymentKey: opts.paymentKey,
     orderId: opts.orderId,
@@ -213,12 +216,12 @@ export async function confirmOrder(opts: {
     await opts.beforeSend();
     try {
       return readOrder(
-        await confirmPayment(params, key),
+        await confirmPayment(params, key, flow),
         order,
         new Error("confirm returned an unexpected status"),
       );
     } catch (error) {
-      return settleOrder({ ...order, flow: "one-time", error });
+      return settleOrder({ ...order, flow, error });
     }
   };
 
@@ -293,8 +296,7 @@ export async function cancelOrder(opts: {
 }
 
 export type DeleteKeyOutcome =
-  | { kind: "deleted" }
-  | { kind: "failed"; error: unknown };
+  { kind: "deleted" } | { kind: "failed"; error: unknown };
 
 // Deletes a billing key at Toss. A key Toss no longer has (NOT_FOUND_BILLING)
 // is as deleted as it will ever be; any other 404 — a MID Toss does not know —

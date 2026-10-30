@@ -71,6 +71,7 @@ import { clearTemplatePreview, storeTemplatePreview } from "./template-preview";
 import * as storage from "./storage";
 import { SUSPENDED_MESSAGE, siteSuspended } from "@/lib/site-suspension";
 import { uuidv7 } from "@/lib/uuid";
+import { assertCanUseTemplate } from "@/lib/market/access";
 
 export { BACKUP_DIRECTORY, OWNER_DIRECTORY };
 
@@ -702,6 +703,9 @@ export interface TemplateDetail {
   id: string;
   slug: string;
   license: License;
+  authorId: string;
+  // Won; 0 when free (lib/market).
+  price: number;
   applyCount: number;
   source: TemplateSource;
   github: GitHubSource | null;
@@ -738,6 +742,8 @@ export async function getTemplateForPost(
       "t.id",
       "t.slug",
       "t.license",
+      "t.user_id",
+      "t.price",
       "t.apply_count",
       "t.latest_version_id",
       "t.source",
@@ -785,6 +791,8 @@ export async function getTemplateForPost(
     id: template.id,
     slug: template.slug,
     license: template.license,
+    authorId: template.user_id,
+    price: template.price,
     applyCount: template.apply_count,
     source: template.source,
     github:
@@ -945,6 +953,7 @@ export async function planApplication(
   targetInput: unknown,
 ): Promise<ApplicationPlan> {
   const version = await findApplicableVersion(versionId);
+  await assertCanUseTemplate(user.id, version.template_id);
   const targetPath = normalizeTarget(targetInput);
   if (version.site_code && targetPath !== "") {
     throw new BoardError(
@@ -1133,6 +1142,7 @@ async function applyLocked(
     throw new BoardError(400, "새 버전 알림 설정이 올바르지 않습니다.");
   const notify = input.notify !== false;
   const version = await findApplicableVersion(versionId);
+  await assertCanUseTemplate(user.id, version.template_id);
   const plan = await planApplication(user, versionId, input.targetPath);
   if (plan.blockers.length > 0) throw new BoardError(409, plan.blockers[0]);
   const replaces = plan.replaces;
