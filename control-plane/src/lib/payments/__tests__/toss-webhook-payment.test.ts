@@ -34,6 +34,36 @@ describe("Toss webhook parsing", () => {
     ).toEqual({ type: "billing-deleted", billingKey: "billing-1" });
   });
 
+  // 지급대행: the changed Payout or Seller is the entityBody.
+  test("accepts payout and seller events, with 나루's own payout id", () => {
+    expect(
+      parseTossWebhook({
+        eventType: "payout.changed",
+        entityType: "payout",
+        entityBody: { id: "FPA_1", refPayoutId: "ref-1", status: "COMPLETED" },
+      }),
+    ).toEqual({
+      type: "payout-changed",
+      payoutId: "FPA_1",
+      refPayoutId: "ref-1",
+    });
+    expect(
+      parseTossWebhook({
+        eventType: "payout.changed",
+        entityBody: { id: "FPA_2" },
+      }),
+    ).toEqual({ type: "payout-changed", payoutId: "FPA_2", refPayoutId: null });
+    expect(
+      parseTossWebhook({
+        eventType: "seller.changed",
+        entityBody: { id: "seller-1", status: "APPROVED" },
+      }),
+    ).toEqual({ type: "seller-changed", sellerId: "seller-1" });
+    expect(
+      parseTossWebhook({ eventType: "payout.changed", entityBody: {} }),
+    ).toEqual({ type: "ignored" });
+  });
+
   test.each([
     null,
     {},

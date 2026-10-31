@@ -104,8 +104,9 @@ export async function up(db: Kysely<any>): Promise<void> {
       created_at timestamptz not null default now(),
       check (status <> 'done' or (paid_at is not null and canceled_at is null)),
       check (status <> 'canceled' or canceled_at is not null),
-      -- A purchase paid out is not refunded through 나루.
-      check (payout_id is null or status = 'done')
+      -- In a payout only once paid; refunded from the Toss dashboard
+      -- afterwards, it stays in that payout's record.
+      check (payout_id is null or status in ('done', 'canceled'))
     )
   `.execute(db);
   await sql`

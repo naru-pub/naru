@@ -1142,7 +1142,6 @@ async function applyLocked(
     throw new BoardError(400, "새 버전 알림 설정이 올바르지 않습니다.");
   const notify = input.notify !== false;
   const version = await findApplicableVersion(versionId);
-  await assertCanUseTemplate(user.id, version.template_id);
   const plan = await planApplication(user, versionId, input.targetPath);
   if (plan.blockers.length > 0) throw new BoardError(409, plan.blockers[0]);
   const replaces = plan.replaces;

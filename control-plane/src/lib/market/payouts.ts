@@ -3,6 +3,7 @@ import { db } from "@/lib/database";
 import type { User } from "@/lib/auth";
 import { enqueueJob } from "@/lib/payments/payment-jobs";
 import {
+  cancelPayout,
   getPayout,
   isDefinitiveTossFailure,
   requestPayouts,
@@ -79,6 +80,14 @@ export async function createDuePayouts(now = new Date()): Promise<number> {
                 eb.and([
                   eb("sp.status", "=", "completed"),
                   eb("sp.created_at", ">", weekAgo),
+                ]),
+                // Toss took it and the bank turned it down: tried again a
+                // week on, or as soon as the seller changes their account.
+                eb.and([
+                  eb("sp.status", "=", "failed"),
+                  eb("sp.toss_payout_id", "is not", null),
+                  eb("sp.finished_at", ">", weekAgo),
+                  eb("sp.finished_at", ">", eb.ref("s.updated_at")),
                 ]),
               ]),
             ),
@@ -269,6 +278,30 @@ async function applyTossPayout(payoutId: string, item: TossPayout) {
     .execute();
 }
 
+/**
+ * Takes back a payout Toss hasn't started on (SCHEDULED, still REQUESTED),
+ * for a sale in it refunded since: its other sales go in the next one.
+ * Returns whether it was.
+ */
+export async function cancelOpenPayout(payoutId: string): Promise<boolean> {
+  const payout = await db
+    .selectFrom("seller_payouts")
+    .select(["status", "toss_payout_id"])
+    .where("id", "=", payoutId)
+    .executeTakeFirstOrThrow();
+  if (payout.status !== "requested" || !payout.toss_payout_id) return false;
+  let item: TossPayout;
+  try {
+    item = await cancelPayout(payout.toss_payout_id);
+  } catch (error) {
+    // Already under way, or done: past taking back.
+    if (isDefinitiveTossFailure(error)) return false;
+    throw error;
+  }
+  await applyTossPayout(payoutId, item);
+  return TOSS_PAYOUT_STATUSES[item.status] === "canceled";
+}
+
 /** Brings a payout in line with Toss: from the webhook, and daily. */
 export async function syncPayout(payoutId: string): Promise<void> {
   const payout = await db
@@ -276,8 +309,12 @@ export async function syncPayout(payoutId: string): Promise<void> {
     .select(["id", "status", "toss_payout_id"])
     .where("id", "=", payoutId)
     .executeTakeFirstOrThrow();
-  if (!payout.toss_payout_id || !OPEN_PAYOUT_STATUSES.includes(payout.status))
-    return;
+  if (!OPEN_PAYOUT_STATUSES.includes(payout.status)) return;
+  if (!payout.toss_payout_id) {
+    // A webhook ahead of sendPayout's answer: the task retries once Toss's
+    // id is written, or finds the payout ended.
+    throw new Error(`Payout ${payout.id} has no Toss id yet`);
+  }
   let item: TossPayout;
   try {
     item = await getPayout(payout.toss_payout_id);
@@ -286,6 +323,18 @@ export async function syncPayout(payoutId: string): Promise<void> {
     throw error;
   }
   await applyTossPayout(payout.id, item);
+}
+
+// Payouts still to be sent an hour after they were made: their task gave up
+// on Toss. Sent again under the same idempotency key.
+export async function unsentPayoutIds(now = new Date()): Promise<string[]> {
+  const rows = await db
+    .selectFrom("seller_payouts")
+    .select("id")
+    .where("status", "=", "pending")
+    .where("created_at", "<", new Date(now.getTime() - 60 * 60 * 1000))
+    .execute();
+  return rows.map((row) => row.id);
 }
 
 // Open payouts Toss has already accepted, to look at again in case a
@@ -356,6 +405,13 @@ export async function sellerEarnings(
     .orderBy("created_at", "desc")
     .limit(50)
     .execute();
+  // Every completed payout, not only the 50 listed.
+  const paid = await db
+    .selectFrom("seller_payouts")
+    .select(({ fn }) => fn.sum<string | null>("amount").as("total"))
+    .where("seller_id", "=", seller.id)
+    .where("status", "=", "completed")
+    .executeTakeFirstOrThrow();
   const unpaidSales = sales.filter(
     (sale) =>
       sale.status === "done" && !sale.payout_id && !sale.refund_requested_at,
@@ -365,9 +421,7 @@ export async function sellerEarnings(
     ready: unpaidSales
       .filter((sale) => sale.paid_at && new Date(sale.paid_at) <= heldUntil)
       .reduce((sum, sale) => sum + sale.amount - sale.fee, 0),
-    paidOut: payouts
-      .filter((payout) => payout.status === "completed")
-      .reduce((sum, payout) => sum + payout.amount, 0),
+    paidOut: Number(paid.total ?? 0),
     payouts: payouts.map((payout) => ({
       id: payout.id,
       amount: payout.amount,

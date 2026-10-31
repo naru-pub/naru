@@ -5,7 +5,6 @@ import type { User } from "@/lib/auth";
 import { BoardError } from "@/lib/board/board-error";
 import { enqueueJob } from "@/lib/payments/payment-jobs";
 import { newOrderId } from "@/lib/payments/toss";
-import { hasPurchased } from "./access";
 import { marketFee, REFUND_WINDOW_DAYS } from "./constants";
 
 // Buying a template: the browser opens Toss's payment window on the market
@@ -83,8 +82,22 @@ export async function prepareTemplatePurchase(
   if (!template.seller_id || !template.toss_seller_id) {
     throw new BoardError(409, "지금은 이 템플릿을 팔지 않아요.");
   }
-  if (await hasPurchased(user.id, template.id)) {
-    throw new BoardError(409, "이미 산 템플릿이에요.");
+  // A purchase being refunded still holds the one done row a buyer may have
+  // of a template (template_purchases_one_done_idx).
+  const owned = await db
+    .selectFrom("template_purchases")
+    .select("refund_requested_at")
+    .where("buyer_id", "=", user.id)
+    .where("template_id", "=", template.id)
+    .where("status", "=", "done")
+    .executeTakeFirst();
+  if (owned) {
+    throw new BoardError(
+      409,
+      owned.refund_requested_at
+        ? "환불을 처리하고 있어요. 끝난 뒤에 다시 살 수 있어요."
+        : "이미 산 템플릿이에요.",
+    );
   }
   // Each order is one Toss lookup later; a script hammering this would
   // multiply them.

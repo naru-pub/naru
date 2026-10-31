@@ -170,7 +170,7 @@ function newRefSellerId(): string {
 /**
  * Registers the user as a seller at Toss, or finishes a registration whose
  * answer was lost: the row is written first with its refSellerId, which
- * Toss's idempotency key is made of.
+ * Toss's idempotency key is made of. A refusal gives it a new one.
  */
 export async function registerAsSeller(
   user: User,
@@ -231,6 +231,17 @@ export async function registerAsSeller(
       metadata: { userId: user.id },
     });
   } catch (error) {
+    // Toss keeps a refused registration's answer under its idempotency key:
+    // corrected details go under a new refSellerId, and so a new key. One
+    // whose answer was lost keeps its own, to get that answer back.
+    if (isDefinitiveTossFailure(error)) {
+      await db
+        .updateTable("market_sellers")
+        .set({ ref_seller_id: newRefSellerId(), updated_at: new Date() })
+        .where("id", "=", row.id)
+        .where("toss_seller_id", "is", null)
+        .execute();
+    }
     throw refusal(error);
   }
   const registered = await db

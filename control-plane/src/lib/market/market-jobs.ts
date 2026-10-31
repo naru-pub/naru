@@ -13,10 +13,12 @@ import {
   type TossPaymentResult,
 } from "@/lib/payments/toss";
 import {
+  cancelOpenPayout,
   createDuePayouts,
   openPayoutIds,
   sendPayout,
   syncPayout,
+  unsentPayoutIds,
 } from "./payouts";
 import { syncSeller } from "./sellers";
 import { UNCONFIRMED_ORDER_MS } from "./purchases";
@@ -111,21 +113,22 @@ async function settle(purchaseId: string, payment: TossPaymentResult) {
       return;
     case "CANCELED":
     case "PARTIAL_CANCELED":
-      // A refund: from 나루, or the Toss dashboard. One already paid out is
-      // the operators' to settle with the seller; the ledger keeps it.
-      if (purchase.payout_id) {
-        await notePaymentEvent({
-          kind: "template_refund_after_payout",
-          summary: `판매자에게 정산한 템플릿 구매 ${purchase.order_id}(${won(purchase.amount)})가 Toss에서 환불됨: 판매자와 따로 정산해야 함`,
-        });
-        return;
+      // A refund: from 나루, or the Toss dashboard. A sale already in a
+      // payout takes that payout back while Toss still can; past that the
+      // operators settle with the seller, and the ledger keeps it.
+      if (purchase.status === "done" && purchase.payout_id) {
+        if (!(await cancelOpenPayout(purchase.payout_id))) {
+          await notePaymentEvent({
+            kind: "template_refund_after_payout",
+            summary: `판매자 정산에 들어간 템플릿 구매 ${purchase.order_id}(${won(purchase.amount)})가 Toss에서 환불됨: 정산을 되돌리지 못해 판매자와 따로 정산해야 함`,
+          });
+        }
       }
       await db
         .updateTable("template_purchases")
         .set({ ...provider, status: "canceled", canceled_at: new Date() })
         .where("id", "=", purchaseId)
         .where("status", "in", ["pending", "done"])
-        .where("payout_id", "is", null)
         .execute();
       return;
     case "ABORTED":
@@ -283,7 +286,8 @@ async function reconcilePurchase(purchaseId: string): Promise<void> {
 
 /**
  * The daily market run (cli/market-payouts): orders left pending, payouts
- * Toss may have finished without telling, then new payouts.
+ * whose task gave up before Toss took them, payouts Toss may have finished
+ * without telling, then new payouts.
  */
 export async function runMarketMaintenance(now = new Date()) {
   const stale = await db
@@ -298,6 +302,15 @@ export async function runMarketMaintenance(now = new Date()) {
       { kind: "reconcile_template_purchase", purchaseId: purchase.id },
       {
         dedupeKey: `template-purchase-reconcile:${purchase.id}:${now.toISOString().slice(0, 10)}`,
+      },
+    );
+  }
+  for (const payoutId of await unsentPayoutIds(now)) {
+    await enqueueJob(
+      db,
+      { kind: "request_payout", payoutId },
+      {
+        dedupeKey: `payout-request:${payoutId}:${now.toISOString().slice(0, 10)}`,
       },
     );
   }

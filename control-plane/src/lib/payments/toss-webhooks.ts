@@ -6,7 +6,7 @@ export type TossWebhookEvent =
   | { type: "billing-deleted"; billingKey: string }
   // 지급대행 (lib/market): { eventType, eventId, entityType, entityBody },
   // the body the changed Payout or Seller.
-  | { type: "payout-changed"; payoutId: string }
+  | { type: "payout-changed"; payoutId: string; refPayoutId: string | null }
   | { type: "seller-changed"; sellerId: string }
   | { type: "ignored" };
 
@@ -31,15 +31,21 @@ export function parseTossWebhook(body: unknown): TossWebhookEvent {
     event.eventType === "payout.changed" ||
     event.eventType === "seller.changed"
   ) {
-    const entity = event.entityBody;
-    const id =
-      entity && typeof entity === "object"
-        ? (entity as Record<string, unknown>).id
-        : undefined;
+    const entity =
+      event.entityBody && typeof event.entityBody === "object"
+        ? (event.entityBody as Record<string, unknown>)
+        : {};
+    const id = entity.id;
     if (typeof id !== "string" || !id) return { type: "ignored" };
-    return event.eventType === "payout.changed"
-      ? { type: "payout-changed", payoutId: id }
-      : { type: "seller-changed", sellerId: id };
+    if (event.eventType === "seller.changed")
+      return { type: "seller-changed", sellerId: id };
+    // 나루's own payout id, which Toss's may reach before it is written.
+    const ref = entity.refPayoutId;
+    return {
+      type: "payout-changed",
+      payoutId: id,
+      refPayoutId: typeof ref === "string" && ref ? ref : null,
+    };
   }
 
   if (event.eventType !== "PAYMENT_STATUS_CHANGED") {

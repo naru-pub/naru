@@ -12,6 +12,7 @@ import { endPlan } from "@/lib/payments/subscriptions";
 import { withAccountLock } from "@/lib/payments/account-lock";
 import { lookupOrder } from "@/lib/payments/toss-gateway";
 import { enqueueJob } from "@/lib/payments/payment-jobs";
+import { parseUuid } from "@/lib/uuid";
 import { recordWebhookDelivery } from "@/lib/payments/payment-events";
 import {
   formatWebhookLog,
@@ -156,10 +157,18 @@ export async function POST(request: NextRequest) {
     // as it is before writing anything.
     if (event.type === "payout-changed") {
       delivery.subject = event.payoutId;
+      // By refPayoutId too: the delivery can beat sendPayout's write of
+      // Toss's id, which syncPayout waits for.
+      const ref = parseUuid(event.refPayoutId);
       const payout = await db
         .selectFrom("seller_payouts")
         .select("id")
-        .where("toss_payout_id", "=", event.payoutId)
+        .where((eb) =>
+          eb.or([
+            eb("toss_payout_id", "=", event.payoutId),
+            ...(ref ? [eb("id", "=", ref)] : []),
+          ]),
+        )
         .executeTakeFirst();
       if (!payout) return respond(200, "ignored: unknown payout");
       const job = await enqueueJob(db, {

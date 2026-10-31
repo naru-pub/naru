@@ -21,7 +21,9 @@ authors are paid out through Toss's 지급대행 (payouts) API
    at order time.
 3. **Access.** A paid template can be applied, and updated to newer
    versions, by its author, its buyers, and anyone who applied it while it
-   was free (`lib/market/access.ts`). The check runs in the board's apply,
+   was free (`lib/market/access.ts`). A purchase stops counting once its
+   refund is requested, and an application made under a purchase later
+   refunded doesn't count either. The check runs in the board's apply,
    plan and update paths. Version files (`_templates/<id>/v<n>/…`) are
    stored in the private bucket (`lib/site-code-bucket.ts`), so they can't
    be fetched from `r2.<domain>`. Preview images stay public.
@@ -30,7 +32,10 @@ authors are paid out through Toss's 지급대행 (payouts) API
    paid out. Digital content that has been used can't be withdrawn
    (전자상거래법 제17조 제2항 제5호). The `refund_template_purchase` task
    cancels the payment. A refund made from the Toss dashboard arrives as a
-   `PAYMENT_STATUS_CHANGED` webhook and is reconciled.
+   `PAYMENT_STATUS_CHANGED` webhook and is reconciled. If that sale is
+   already in a payout Toss hasn't started (`REQUESTED`), the payout is
+   canceled and its other sales go in the next one; past that, operators
+   get a `template_refund_after_payout` alert to settle with the seller.
 5. **Payout.** The `market-payouts` maintenance job runs daily at 10:00 KST.
    For each seller whose Toss status allows payouts (`PARTIALLY_APPROVED`,
    `APPROVED`), it adds up sales older than `PAYOUT_HOLD_DAYS` (10) that
@@ -41,10 +46,14 @@ authors are paid out through Toss's 지급대행 (payouts) API
    it to Toss as a `SCHEDULED` payout for the next weekday, using the row's
    id as both `refPayoutId` and idempotency key. If Toss refuses the payout
    (a public holiday, a balance not yet settled), the row is marked failed
-   and its purchases are released for the next run. The `payout.changed`
-   and `seller.changed` webhooks are treated only as notices: the tasks
-   (`sync_payout`, `sync_seller`) fetch the payout or seller from Toss
-   before writing anything. The daily job also re-syncs open payouts in
+   and its purchases are released for the next run. A payout Toss took and
+   the bank then turned down waits a week, or until the seller changes
+   their account. A payout whose task gave up before Toss took it is sent
+   again by the daily job, under the same idempotency key. The
+   `payout.changed` and `seller.changed` webhooks are treated only as
+   notices (a payout is matched by Toss's id or by `refPayoutId`): the
+   tasks (`sync_payout`, `sync_seller`) fetch the payout or seller from
+   Toss before writing anything. The daily job also re-syncs open payouts in
    case a webhook was missed.
 
 ## Sellers
@@ -56,6 +65,8 @@ code, the account's last four digits and the holder name
 numbers are masked in `toss_calls`. An individual seller starts as
 `APPROVAL_REQUIRED` and must complete the identity check Toss sends them.
 They can sell before that, and their earnings accumulate until it is done.
+A registration Toss refuses is retried under a new `refSellerId`, since
+Toss keeps the refusal under the old one's idempotency key.
 Sales over 10,000,000 won a week, or a periodic review, move a seller to
 `KYC_REQUIRED`, which stops payouts until Toss's review is complete.
 

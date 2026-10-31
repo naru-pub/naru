@@ -137,12 +137,17 @@ export function describeTossError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Each flow's MID, by the environment variables that name its secret key
+// and the MID itself.
+const FLOW_ENV: Record<TossPaymentFlow, { secret: string; mid: string }> = {
+  billing: { secret: "TOSS_BILLING_SECRET_KEY", mid: "TOSS_BILLING_MID" },
+  "one-time": { secret: "TOSS_PAYMENT_SECRET_KEY", mid: "TOSS_PAYMENT_MID" },
+  market: { secret: "TOSS_MARKET_SECRET_KEY", mid: "TOSS_MARKET_MID" },
+};
+const FLOWS = Object.keys(FLOW_ENV) as TossPaymentFlow[];
+
 function secretKey(flow: TossPaymentFlow): string | undefined {
-  return flow === "billing"
-    ? process.env.TOSS_BILLING_SECRET_KEY
-    : flow === "market"
-      ? process.env.TOSS_MARKET_SECRET_KEY
-      : process.env.TOSS_PAYMENT_SECRET_KEY;
+  return process.env[FLOW_ENV[flow].secret];
 }
 
 // The market MID's 보안 키, for the payout and seller APIs' ENCRYPTION mode.
@@ -158,31 +163,29 @@ export function tossSecretKeys(): Array<{
   flow: TossPaymentFlow;
   key: string;
 }> {
-  return (["billing", "one-time", "market"] as const).flatMap((flow) => {
+  return FLOWS.flatMap((flow) => {
     const key = secretKey(flow);
     return key ? [{ flow, key }] : [];
   });
 }
 
-// True only when Toss keys are configured and every one is a live key
-// (live_…): the environment where real money moves, i.e. production.
+function configuredKeys(flows: readonly TossPaymentFlow[]): string[] {
+  return flows.map(secretKey).filter((key): key is string => Boolean(key));
+}
+
+// True only when the subscription and support keys are configured and every
+// one is a live key (live_…): the environment where real money moves, i.e.
+// production. The marketplace's key doesn't count, so its test keys can
+// go in beside live ones.
 export function isTossLiveMode(): boolean {
-  const keys = [
-    process.env.TOSS_BILLING_SECRET_KEY,
-    process.env.TOSS_PAYMENT_SECRET_KEY,
-    process.env.TOSS_MARKET_SECRET_KEY,
-  ].filter((key): key is string => Boolean(key));
+  const keys = configuredKeys(["billing", "one-time"]);
   return keys.length > 0 && keys.every((key) => key.startsWith("live_"));
 }
 
 // True only when every configured Toss key is a test key (test_…), so nothing
 // done here can move real money. The billing lab exists only then.
 export function isTossTestMode(): boolean {
-  const keys = [
-    process.env.TOSS_BILLING_SECRET_KEY,
-    process.env.TOSS_PAYMENT_SECRET_KEY,
-    process.env.TOSS_MARKET_SECRET_KEY,
-  ].filter((key): key is string => Boolean(key));
+  const keys = configuredKeys(FLOWS);
   return keys.length > 0 && keys.every((key) => key.startsWith("test_"));
 }
 
@@ -268,13 +271,7 @@ function maskPath(path: string): string {
 function authHeader(flow: TossPaymentFlow): string {
   const secret = secretKey(flow);
   if (!secret) {
-    throw new Error(
-      flow === "billing"
-        ? "TOSS_BILLING_SECRET_KEY is not configured."
-        : flow === "market"
-          ? "TOSS_MARKET_SECRET_KEY is not configured."
-          : "TOSS_PAYMENT_SECRET_KEY is not configured.",
-    );
+    throw new Error(`${FLOW_ENV[flow].secret} is not configured.`);
   }
   // Toss uses HTTP Basic auth with the secret key as username and empty password.
   return "Basic " + Buffer.from(`${secret}:`).toString("base64");
@@ -606,24 +603,18 @@ export function paymentFlowForRecord(
   flow: string | null,
   attemptKey: string | null,
 ): TossPaymentFlow {
-  return flow === "billing" || flow === "one-time" || flow === "market"
-    ? flow
+  return flow !== null && Object.hasOwn(FLOW_ENV, flow)
+    ? (flow as TossPaymentFlow)
     : paymentFlowForAttempt(attemptKey);
 }
 
 // The MID each flow's secret key belongs to (TOSS_BILLING_MID,
-// TOSS_PAYMENT_MID), or null when not configured. Toss keeps a payment or a
+// TOSS_PAYMENT_MID, TOSS_MARKET_MID), or null when not configured. Toss keeps a payment or a
 // billing key under the MID that made it, and only that MID's secret key can
 // look it up, cancel it or charge it: after a key swap — test keys to live —
 // the old ones are out of reach, and a call about them only fails.
 export function configuredMid(flow: TossPaymentFlow): string | null {
-  const mid =
-    flow === "billing"
-      ? process.env.TOSS_BILLING_MID
-      : flow === "market"
-        ? process.env.TOSS_MARKET_MID
-        : process.env.TOSS_PAYMENT_MID;
-  return mid?.trim() || null;
+  return process.env[FLOW_ENV[flow].mid]?.trim() || null;
 }
 
 export class OtherMidError extends Error {

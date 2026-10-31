@@ -1,9 +1,12 @@
+import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { BoardError } from "@/lib/board/board-error";
 
 // Who may use a paid template. Apart from purchases.ts so the board (and the
 // jobs image's template updates) need nothing of the payment code.
 
+// A purchase that is paid and kept: one whose refund is asked for no longer
+// counts, so the template can't be applied while the money goes back.
 export async function hasPurchased(
   userId: string,
   templateId: string,
@@ -14,14 +17,15 @@ export async function hasPurchased(
     .where("buyer_id", "=", userId)
     .where("template_id", "=", templateId)
     .where("status", "=", "done")
+    .where("refund_requested_at", "is", null)
     .executeTakeFirst();
   return !!row;
 }
 
 // Who may apply a template or update to a version of it: anyone while it
 // is free, its author, whoever bought it, and whoever applied it before it
-// had a price (applying a paid one took buying it, and a purchase applied
-// is not refunded).
+// had a price. An application made under a purchase since refunded doesn't
+// count: that one ended with the purchase.
 export async function canUseTemplate(
   userId: string,
   template: { id: string; user_id: string; price: number },
@@ -34,6 +38,18 @@ export async function canUseTemplate(
     .select("a.id")
     .where("a.user_id", "=", userId)
     .where("v.template_id", "=", template.id)
+    .where(({ not, exists, selectFrom }) =>
+      not(
+        exists(
+          selectFrom("template_purchases as tp")
+            .select(sql`1`.as("one"))
+            .where("tp.buyer_id", "=", userId)
+            .where("tp.template_id", "=", template.id)
+            .where("tp.status", "in", ["done", "canceled"])
+            .whereRef("tp.paid_at", "<=", "a.created_at"),
+        ),
+      ),
+    )
     .executeTakeFirst();
   return !!applied;
 }
