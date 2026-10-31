@@ -8,6 +8,7 @@ import {
   supporterUntilFromLedger,
 } from "@/lib/payments/paid-time";
 import { retireUnusedSignupKey } from "@/lib/payments/subscriptions";
+import { checkMarketInvariants } from "@/lib/market/invariants";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -162,6 +163,9 @@ export async function checkPaymentInvariants(
   const drift = await entitlementDrift(now);
   note("이용 기한이 결제 원장보다 짧음", drift.shortened);
   note("이용 기한이 결제 원장보다 김", drift.extended);
+  // The template marketplace's own (lib/market/invariants).
+  for (const [rule, list] of Object.entries(await checkMarketInvariants(now)))
+    note(rule, list);
   return found;
 }
 

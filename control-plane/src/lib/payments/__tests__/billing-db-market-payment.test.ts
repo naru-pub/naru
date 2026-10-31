@@ -57,6 +57,8 @@ const { createDuePayouts, sellerEarnings, syncPayout } =
   require("@/lib/market/payouts") as typeof import("@/lib/market/payouts");
 const { handleMarketJob, runMarketMaintenance } =
   require("@/lib/market/market-jobs") as typeof import("@/lib/market/market-jobs");
+const { checkMarketInvariants } =
+  require("@/lib/market/invariants") as typeof import("@/lib/market/invariants");
 const { deleteUserRow, settleChargesBeforeDeletion } =
   require("@/lib/account-deletion") as typeof import("@/lib/account-deletion");
 const { deletePost } =
@@ -1029,13 +1031,117 @@ integration("template marketplace", () => {
       .set({ status: "completed", finished_at: new Date() })
       .execute();
     await handleMarketJob({ kind: "deregister_seller", sellerId: seller.id });
-    expect(toss.deleteSeller).toHaveBeenCalledWith(seller.toss_seller_id);
+    expect(toss.deleteSeller).toHaveBeenCalledWith(seller.toss_seller_id!);
+    expect(await checkMarketInvariants(new Date(Date.now() + 3 * DAY))).toEqual(
+      {},
+    );
     // And no new payouts, even for a sale left unpaid.
     await db
       .updateTable("template_purchases")
       .set({ payout_id: null })
       .execute();
     expect(await createDuePayouts(new Date(Date.now() + 8 * DAY))).toBe(0);
+  });
+
+  test("the nightly check finds nothing after an ordinary sale and payout", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const sale = await buy(await makeUser(), templateId);
+    await buy(await makeUser(), templateId);
+    await age(sale.purchaseId, 11);
+    takePayout("FPA_10");
+    await createDuePayouts();
+    await runDueJobs();
+    expect(await checkMarketInvariants()).toEqual({});
+    // Toss never told of it, and the daily sync never caught it.
+    const [payout] = await db
+      .selectFrom("seller_payouts")
+      .selectAll()
+      .execute();
+    const threeDaysOn = new Date(
+      new Date(`${payout.payout_date}T12:00:00+09:00`).getTime() + 3 * DAY,
+    );
+    expect(await checkMarketInvariants(threeDaysOn)).toEqual({
+      "지급일이 이틀 지나도 끝나지 않은 정산": [payout.id],
+    });
+  });
+
+  test("the nightly check names each broken marketplace rule", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const buyer = await makeUser();
+    const paid = await buy(buyer, templateId);
+    await age(paid.purchaseId, 11);
+    takePayout("FPA_11");
+    await createDuePayouts();
+    await runDueJobs();
+    const [payout] = await db
+      .selectFrom("seller_payouts")
+      .selectAll()
+      .execute();
+    // A payout that drifted from its sales, long past its date.
+    await db
+      .updateTable("seller_payouts")
+      .set({ amount: 9999, payout_date: "2026-01-05" })
+      .execute();
+    // A sale claimed before its hold was up.
+    const early = await buy(await makeUser(), templateId);
+    await db
+      .updateTable("template_purchases")
+      .set({ payout_id: payout.id })
+      .where("id", "=", early.purchaseId)
+      .execute();
+    // An order left unresolved for days.
+    const stuck = await prepareTemplatePurchase(await makeUser(), templateId);
+    await db
+      .updateTable("template_purchases")
+      .set({ created_at: new Date(Date.now() - 3 * DAY) })
+      .where("order_id", "=", stuck.orderId)
+      .execute();
+    // A payout never sent, from another seller.
+    const other = await makeUser();
+    const otherTemplate = await makeTemplate(other);
+    await makeSeller(other);
+    await setTemplatePrice(other, otherTemplate, 5000);
+    const otherSale = await buy(await makeUser(), otherTemplate);
+    await age(otherSale.purchaseId, 14);
+    await createDuePayouts();
+    await db
+      .updateTable("seller_payouts")
+      .set({ created_at: new Date(Date.now() - 3 * DAY) })
+      .where("status", "=", "pending")
+      .execute();
+    // An account deleted around the code that retires its seller.
+    await db
+      .updateTable("users")
+      .set({ deleted_at: new Date() })
+      .where("id", "=", other.id)
+      .execute();
+    // A retired seller still at Toss days later.
+    await db
+      .updateTable("market_sellers")
+      .set({ deleted_at: new Date(Date.now() - 3 * DAY) })
+      .where("user_id", "=", author.id)
+      .execute();
+    await db
+      .updateTable("seller_payouts")
+      .set({ status: "completed", finished_at: new Date() })
+      .where("id", "=", payout.id)
+      .execute();
+
+    const found = await checkMarketInvariants();
+    expect(found).toEqual({
+      "이틀 넘게 결과를 모르는 템플릿 구매": [expect.any(String)],
+      "정산 금액이 판매 몫의 합과 다름": [payout.id],
+      "보류 기간 전에 정산에 들어간 판매": [early.purchaseId],
+      "이틀 넘게 보내지 못한 정산": [expect.any(String)],
+      "탈퇴한 계정의 판매자 정보가 남음": [expect.any(String)],
+      "탈퇴하고 이틀 넘게 Toss에 남은 판매자": [expect.any(String)],
+    });
   });
 
   test("a template applied after buying is not refunded", async () => {

@@ -85,6 +85,20 @@ Sales over 10,000,000 won a week, or a periodic review, move a seller to
 In Toss's test environment, only `CORPORATE` sellers with a real business
 number can be registered, and they can never reach `APPROVED`.
 
+## Nightly checks
+
+The nightly `payment-invariant-check` job also checks the marketplace's
+rules (`lib/market/invariants.ts`) and reports any that break as one
+`invariant_violation` alert:
+
+- no template purchase left pending (outcome unknown) for more than two days;
+- each open or completed payout's amount equals the shares of the sales it
+  claims, and no sale was claimed before its hold was up;
+- no payout left unsent for more than two days, or unfinished two days past
+  its payout date;
+- a deleted account's seller details are wiped, and the seller is removed at
+  Toss within two days once their payouts are done.
+
 ## Encryption
 
 Payout and seller `POST` requests that have a body are sent as compact JWE

@@ -385,4 +385,10 @@ export async function deregisterSeller(sellerId: string): Promise<void> {
     // Already gone at Toss.
     if (!(error instanceof TossApiError && error.status === 404)) throw error;
   }
+  // Gone at Toss: what the nightly check (market/invariants) looks for.
+  await db
+    .updateTable("market_sellers")
+    .set({ toss_seller_id: null, updated_at: new Date() })
+    .where("id", "=", sellerId)
+    .execute();
 }
