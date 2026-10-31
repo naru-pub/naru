@@ -46,6 +46,10 @@ const nextConfig = {
     ];
   },
   serverExternalPackages: ["@node-rs/argon2"],
+  // Help guides read their Markdown at render (help/markdown.ts).
+  outputFileTracingIncludes: {
+    "/help/*": ["./src/app/(main)/help/**/*.md"],
+  },
   images: {
     remotePatterns: [
       {

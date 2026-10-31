@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { HelpDocument } from "./markdown";
 
 // The manual for people using Naru: its pages, and the frame they share.
 const PAGES = [
@@ -114,11 +115,49 @@ export function HelpPage({
   );
 }
 
-/** A key to press, e.g. <Key>Ctrl</Key>. */
-export function Key({ children }: { children: ReactNode }) {
+// What a Markdown guide renders, styled as the guides written in JSX were.
+const MARKDOWN = [
+  "space-y-5",
+  "[&_ol]:list-decimal [&_ol]:space-y-3 [&_ol]:pl-6",
+  "[&_ul]:list-disc [&_ul]:space-y-3 [&_ul]:pl-6",
+  "[&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:border [&_pre]:bg-muted [&_pre]:px-4 [&_pre]:py-2 [&_pre]:text-sm [&_li>pre]:mt-2",
+  "[&_table]:w-full [&_table]:text-left [&_table]:text-sm [&_tr]:border-b [&_th]:p-3 [&_td]:p-3 [&_td:first-child]:whitespace-nowrap",
+  "[&_blockquote]:border-l-4 [&_blockquote]:border-line [&_blockquote]:bg-muted [&_blockquote]:px-4 [&_blockquote]:py-2",
+  "[&_kbd]:border [&_kbd]:border-b-2 [&_kbd]:border-line [&_kbd]:bg-card [&_kbd]:px-1.5 [&_kbd]:py-0.5 [&_kbd]:font-mono [&_kbd]:text-sm",
+].join(" ");
+
+/** A guide written in Markdown (markdown.ts), in the guides' frame. */
+export function MarkdownHelp({
+  current,
+  document,
+}: {
+  current: HelpTopic;
+  document: HelpDocument;
+}) {
   return (
-    <kbd className="border border-b-2 border-line bg-card px-1.5 py-0.5 font-mono text-sm">
-      {children}
-    </kbd>
+    <HelpPage
+      current={current}
+      path={document.path}
+      title={document.title}
+      lead={<span dangerouslySetInnerHTML={{ __html: document.lead }} />}
+      links={
+        document.links && (
+          <span
+            className="flex flex-wrap gap-5"
+            dangerouslySetInnerHTML={{ __html: document.links }}
+          />
+        )
+      }
+      sections={document.sections.map(({ id, title }) => [id, title] as const)}
+    >
+      {document.sections.map(({ id, title, html }) => (
+        <Section key={id} id={id} title={title}>
+          <div
+            className={MARKDOWN}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </Section>
+      ))}
+    </HelpPage>
   );
 }
