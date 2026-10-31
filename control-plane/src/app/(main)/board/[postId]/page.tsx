@@ -294,8 +294,9 @@ export default async function PostPage({
                         loginName={user?.loginName ?? null}
                       />
                       <p className="text-xs text-muted-foreground">
-                        한 번 사면 새 버전도 계속 받아요. 적용하기 전에는{" "}
-                        {REFUND_WINDOW_DAYS}일 안에 환불할 수 있어요.
+                        한 번 사면 새 버전도 계속 받아요. 사고{" "}
+                        {REFUND_WINDOW_DAYS}일 안에, 적용하기 전에만 환불할 수
+                        있어요. 적용하면 파일을 받은 것이라 환불할 수 없어요.
                       </p>
                     </>
                   )}

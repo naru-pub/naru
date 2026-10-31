@@ -63,6 +63,8 @@ const { deleteUserRow, settleChargesBeforeDeletion } =
   require("@/lib/account-deletion") as typeof import("@/lib/account-deletion");
 const { deletePost } =
   require("@/lib/board/posts") as typeof import("@/lib/board/posts");
+const { withSiteLock } =
+  require("@/lib/board/site-lock") as typeof import("@/lib/board/site-lock");
 
 // The template marketplace against a disposable, migrated database
 // (scripts/test-payments-db.sh), Toss mocked at lib/payments/toss.
@@ -1162,5 +1164,39 @@ integration("template marketplace", () => {
     await expect(requestTemplateRefund(buyer, purchaseId)).rejects.toThrow(
       "적용하기 전에만",
     );
+  });
+
+  test("a refund asked for while the template is being applied waits for it", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const buyer = await makeUser();
+    const { purchaseId } = await buy(buyer, templateId);
+    const version = await db
+      .selectFrom("board_template_versions")
+      .select("id")
+      .where("template_id", "=", templateId)
+      .executeTakeFirstOrThrow();
+    // An apply past its access check, copying files: the request is
+    // refused, and once the apply is recorded it is no longer refundable.
+    await withSiteLock(buyer.id, async () => {
+      await expect(requestTemplateRefund(buyer, purchaseId)).rejects.toThrow(
+        "템플릿을 적용하고 있어요",
+      );
+      await db
+        .insertInto("board_template_applications")
+        .values({ user_id: buyer.id, version_id: version.id })
+        .execute();
+    });
+    await expect(requestTemplateRefund(buyer, purchaseId)).rejects.toThrow(
+      "적용하기 전에만",
+    );
+    const purchase = await db
+      .selectFrom("template_purchases")
+      .select("refund_requested_at")
+      .where("id", "=", purchaseId)
+      .executeTakeFirstOrThrow();
+    expect(purchase.refund_requested_at).toBeNull();
   });
 });

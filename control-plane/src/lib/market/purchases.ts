@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import { db } from "@/lib/database";
 import type { User } from "@/lib/auth";
 import { BoardError } from "@/lib/board/board-error";
+import { withSiteLock } from "@/lib/board/site-lock";
 import { enqueueJob } from "@/lib/payments/payment-jobs";
 import { newOrderId } from "@/lib/payments/toss";
 import { marketFee, REFUND_WINDOW_DAYS } from "./constants";
@@ -305,11 +306,18 @@ async function appliedSincePurchase(
 }
 
 // A refund the buyer asked for: within the window, never applied, not yet
-// paid out to the seller. The task cancels the payment at Toss.
+// paid out to the seller. The task cancels the payment at Toss. Under the
+// site lock that applying holds from its access check to its record, so an
+// apply is either finished and seen here, or starts after the request and
+// is refused: never files and the money both.
 export async function requestTemplateRefund(
   user: User,
   purchaseId: string,
 ): Promise<void> {
+  await withSiteLock(user.id, () => requestLocked(user, purchaseId));
+}
+
+async function requestLocked(user: User, purchaseId: string): Promise<void> {
   const purchase = await getPurchase(user, purchaseId);
   if (!purchase.refundable) {
     throw new BoardError(

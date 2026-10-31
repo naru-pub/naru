@@ -40,8 +40,10 @@ authors are paid out through Toss's 지급대행 (payouts) API
 4. **Refund.** A buyer can request a refund within `REFUND_WINDOW_DAYS` (7)
    days, as long as they have not applied the template and it has not been
    paid out. Digital content that has been used can't be withdrawn
-   (전자상거래법 제17조 제2항 제5호). The `refund_template_purchase` task
-   cancels the payment. A refund made from the Toss dashboard arrives as a
+   (전자상거래법 제17조 제2항 제5호), so the buy button says so. The
+   request takes the site lock applying holds: while an apply runs, the
+   request is refused, and once it is recorded the purchase is no longer
+   refundable. The `refund_template_purchase` task cancels the payment. A refund made from the Toss dashboard arrives as a
    `PAYMENT_STATUS_CHANGED` webhook and is reconciled. If that sale is
    already in a payout Toss hasn't started (`REQUESTED`), the payout is
    canceled (in place if it hasn't been sent to Toss yet) and its other
