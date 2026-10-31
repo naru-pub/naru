@@ -147,56 +147,26 @@ describe("production session cookie", () => {
     expect(await auth.validateRequest()).toEqual({ user: null, session: null });
   });
 
-  test("moves a legacy session to a new __Host- session", async () => {
+  test("a legacy cookie signs no one in and is cleared", async () => {
     const auth = loadAuth("production");
     sessions.set("legacy", { user_id: "user-1", expires_at: inDays(20) });
     cookieHeader = "auth_session=legacy";
 
     const result = await auth.validateRequest();
 
-    expect(result.user?.loginName).toBe("alice");
-    expect(result.session?.id).not.toBe("legacy");
-    expect(sessions.has("legacy")).toBe(false);
-    expect(sessions.get(result.session!.id)?.user_id).toBe("user-1");
+    expect(result).toEqual({ user: null, session: null });
     expect(setCookies.map(({ name, value }) => [name, value])).toEqual([
-      ["__Host-auth_session", result.session!.id],
       ["auth_session", ""],
     ]);
   });
 
-  test("a legacy session can be moved only once", async () => {
+  test("while a page renders, a legacy cookie is left alone", async () => {
     const auth = loadAuth("production");
-    sessions.set("legacy", { user_id: "user-1", expires_at: inDays(20) });
-    cookieHeader = "auth_session=legacy";
-    await auth.validateRequest();
-    const again = await auth.validateRequest();
-    expect(again.user).toBeNull();
-  });
-
-  test("while a page renders, the legacy session serves without being moved or extended", async () => {
-    const auth = loadAuth("production");
-    const expiresAt = inDays(5);
-    sessions.set("legacy", { user_id: "user-1", expires_at: expiresAt });
+    sessions.set("legacy", { user_id: "user-1", expires_at: inDays(5) });
     cookieHeader = "auth_session=legacy";
     canSet = false;
 
-    const result = await auth.validateRequest();
-
-    expect(result.session?.id).toBe("legacy");
-    expect([...sessions.keys()]).toEqual(["legacy"]);
-    expect(sessions.get("legacy")?.expires_at).toBe(expiresAt);
-  });
-
-  test("two legacy cookies, one tossed next to the real one, sign in neither", async () => {
-    const auth = loadAuth("production");
-    sessions.set("attacker", { user_id: "user-2", expires_at: inDays(20) });
-    sessions.set("victim", { user_id: "user-1", expires_at: inDays(20) });
-    cookieHeader = "auth_session=attacker; auth_session=victim";
-
-    const result = await auth.validateRequest();
-
-    expect(result.user).toBeNull();
-    expect(sessions.size).toBe(2);
+    expect(await auth.validateRequest()).toEqual({ user: null, session: null });
   });
 
   test("a legacy cookie next to a __Host- one is ignored", async () => {
