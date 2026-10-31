@@ -49,7 +49,8 @@ export async function up(db: Kysely<any>): Promise<void> {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       synced_at timestamptz,
-      -- Deleted at Toss; the row stays for the payouts that name it.
+      -- The account was deleted: details wiped, no further payouts, and
+      -- removed at Toss. The row stays for the sales and payouts naming it.
       deleted_at timestamptz
     )
   `.execute(db);

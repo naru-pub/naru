@@ -2,8 +2,12 @@ import { randomBytes } from "crypto";
 import { db } from "@/lib/database";
 import type { User } from "@/lib/auth";
 import { BoardError } from "@/lib/board/board-error";
+import type { Executor } from "@/lib/entitlements";
+import { enqueueJob } from "@/lib/payments/payment-jobs";
 import {
+  deleteSeller,
   getSeller,
+  TossApiError,
   isDefinitiveTossFailure,
   registerSeller,
   updateSeller,
@@ -12,6 +16,7 @@ import {
 import { BANKS } from "./constants";
 import {
   isOneOf,
+  OPEN_PAYOUT_STATUSES,
   SELLER_BUSINESS_TYPES,
   SELLER_STATUSES,
   type SellerBusinessType,
@@ -185,14 +190,8 @@ export async function registerAsSeller(
     .selectAll()
     .where("user_id", "=", user.id)
     .executeTakeFirst();
-  if (existing?.toss_seller_id && !existing.deleted_at) {
+  if (existing?.toss_seller_id) {
     throw new BoardError(409, "이미 판매자로 등록했어요.");
-  }
-  if (existing?.deleted_at) {
-    throw new BoardError(
-      409,
-      "판매자 등록을 해지한 계정입니다. 운영자에게 문의해 주세요.",
-    );
   }
   const values = {
     business_type: registration.businessType,
@@ -217,7 +216,20 @@ export async function registerAsSeller(
           ref_seller_id: newRefSellerId(),
         })
         .returningAll()
-        .executeTakeFirstOrThrow();
+        .executeTakeFirstOrThrow()
+        .catch((error) => {
+          // The same form sent twice at once: the other request registers.
+          const { code, constraint } = (error ?? {}) as {
+            code?: string;
+            constraint?: string;
+          };
+          if (code === "23505" && constraint === "market_sellers_user_id_key")
+            throw new BoardError(
+              409,
+              "판매자 등록을 처리하고 있어요. 잠시 후 새로고침해 주세요.",
+            );
+          throw error;
+        });
 
   let seller: TossSeller;
   try {
@@ -308,4 +320,69 @@ export async function syncSeller(
     .where("toss_seller_id", "=", tossSellerId)
     .execute();
   return seller.status;
+}
+
+// Account deletion (lib/account-deletion), in its transaction: what 나루
+// keeps of the seller is wiped, they get no further payouts, and their
+// registration at Toss goes once any payout already under way is done.
+// The row stays for the sales and payouts that name it.
+export async function retireSeller(
+  trx: Executor,
+  userId: string,
+): Promise<void> {
+  const seller = await trx
+    .updateTable("market_sellers")
+    .set({
+      display_name: "탈퇴한 판매자",
+      holder_name: "",
+      account_last4: "",
+      deleted_at: new Date(),
+      updated_at: new Date(),
+    })
+    .where("user_id", "=", userId)
+    .returning("id")
+    .executeTakeFirst();
+  if (!seller) return;
+  await enqueueJob(
+    trx,
+    { kind: "deregister_seller", sellerId: seller.id },
+    { dedupeKey: `seller-deregister:${seller.id}` },
+  );
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The task retireSeller queues: waits a day at a time while a payout to the
+// seller is still open, then deletes them at Toss.
+export async function deregisterSeller(sellerId: string): Promise<void> {
+  const seller = await db
+    .selectFrom("market_sellers")
+    .select(["toss_seller_id", "deleted_at"])
+    .where("id", "=", sellerId)
+    .executeTakeFirstOrThrow();
+  if (!seller.toss_seller_id || !seller.deleted_at) return;
+  const open = await db
+    .selectFrom("seller_payouts")
+    .select("id")
+    .where("seller_id", "=", sellerId)
+    .where("status", "in", OPEN_PAYOUT_STATUSES)
+    .executeTakeFirst();
+  if (open) {
+    const runAt = new Date(Date.now() + DAY_MS);
+    await enqueueJob(
+      db,
+      { kind: "deregister_seller", sellerId },
+      {
+        runAt,
+        dedupeKey: `seller-deregister:${sellerId}:${runAt.toISOString().slice(0, 10)}`,
+      },
+    );
+    return;
+  }
+  try {
+    await deleteSeller(seller.toss_seller_id);
+  } catch (error) {
+    // Already gone at Toss.
+    if (!(error instanceof TossApiError && error.status === 404)) throw error;
+  }
 }

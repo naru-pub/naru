@@ -11,6 +11,8 @@ import {
   settleOneTimeOrders,
   settlePendingCharges,
 } from "@/lib/payments/payment-reconciliation";
+import { settleTemplatePurchasesBeforeDeletion } from "@/lib/market/market-jobs";
+import { retireSeller } from "@/lib/market/sellers";
 
 export const CHARGE_IN_FLIGHT_MESSAGE =
   "결제 또는 환불 결과를 확인하고 있어 지금은 계정을 삭제할 수 없습니다. 잠시 후 다시 시도해 주세요.";
@@ -37,6 +39,8 @@ export async function settleChargesBeforeDeletion(
       // A one-time payment the buyer authenticated and Toss is still
       // approving would charge an account about to be gone.
       if (!(await settleOneTimeOrders(userId))) return false;
+      // Template purchases likewise (lib/market).
+      if (!(await settleTemplatePurchasesBeforeDeletion(userId))) return false;
 
       // Recorded, so a deletion that fails after this (an S3 error) still
       // explains the canceled plan.
@@ -102,6 +106,7 @@ export async function deleteUserRow(
   const retired = await retireUserBillingKeys(trx, userId);
   if (ended?.retiredKey) retired.push(ended.retiredKey);
   await eraseAccountContent(trx, userId);
+  await retireSeller(trx, userId);
   await trx
     .updateTable("users")
     .set({ deleted_at: new Date() })

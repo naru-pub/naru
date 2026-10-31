@@ -112,7 +112,8 @@ export type PaymentJob =
   | { kind: "reconcile_template_purchase"; purchaseId: string }
   | { kind: "request_payout"; payoutId: string }
   | { kind: "sync_payout"; payoutId: string }
-  | { kind: "sync_seller"; tossSellerId: string };
+  | { kind: "sync_seller"; tossSellerId: string }
+  | { kind: "deregister_seller"; sellerId: string };
 
 export const MAX_ATTEMPTS = 8;
 export const PAYMENT_QUEUE = "payments";
@@ -287,7 +288,8 @@ async function handle(job: PaymentJob): Promise<void> {
     case "reconcile_template_purchase":
     case "request_payout":
     case "sync_payout":
-    case "sync_seller": {
+    case "sync_seller":
+    case "deregister_seller": {
       // Imported here: the marketplace enqueues jobs itself.
       const { handleMarketJob } = await import("@/lib/market/market-jobs");
       return handleMarketJob(job);

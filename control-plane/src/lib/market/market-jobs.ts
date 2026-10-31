@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { db } from "@/lib/database";
+import { withAccountLock } from "@/lib/payments/account-lock";
 import { enqueueJob, type PaymentJob } from "@/lib/payments/payment-jobs";
 import { notePaymentEvent, won } from "@/lib/payments/payment-events";
 import {
@@ -20,7 +21,7 @@ import {
   syncPayout,
   unsentPayoutIds,
 } from "./payouts";
-import { syncSeller } from "./sellers";
+import { deregisterSeller, syncSeller } from "./sellers";
 import { UNCONFIRMED_ORDER_MS } from "./purchases";
 
 // The marketplace's Absurd tasks, run by the payment worker
@@ -37,7 +38,8 @@ export type MarketJob = Extract<
       | "reconcile_template_purchase"
       | "request_payout"
       | "sync_payout"
-      | "sync_seller";
+      | "sync_seller"
+      | "deregister_seller";
   }
 >;
 
@@ -56,6 +58,8 @@ export async function handleMarketJob(job: MarketJob): Promise<void> {
     case "sync_seller":
       await syncSeller(job.tossSellerId);
       return;
+    case "deregister_seller":
+      return deregisterSeller(job.sellerId);
   }
 }
 
@@ -98,6 +102,14 @@ async function settle(purchaseId: string, payment: TossPaymentResult) {
   };
   switch (payment.status) {
     case "DONE":
+      // Charged for a template gone with its author's account since.
+      if (purchase.template_id === null && purchase.status === "pending") {
+        return chargeBack(
+          purchaseId,
+          payment,
+          "템플릿이 삭제되어 결제를 취소합니다",
+        );
+      }
       try {
         await db
           .updateTable("template_purchases")
@@ -113,7 +125,7 @@ async function settle(purchaseId: string, payment: TossPaymentResult) {
           .execute();
       } catch (error) {
         if (!isSecondPurchase(error)) throw error;
-        return refundSecondPurchase(purchaseId, payment);
+        return chargeBack(purchaseId, payment, "이미 산 템플릿의 중복 결제");
       }
       return;
     case "CANCELED":
@@ -162,16 +174,18 @@ function isSecondPurchase(error: unknown): boolean {
   return code === "23505" && constraint === "template_purchases_one_done_idx";
 }
 
-// Two tabs' orders approved at once: the one that found the template
-// already bought is charged back.
-async function refundSecondPurchase(
+// A charge that must not stand: the second of two tabs' orders approved at
+// once, or one for a template gone since. Cancelled at Toss, then settled as
+// canceled. A task that runs out of tries is a job_failed alert.
+async function chargeBack(
   purchaseId: string,
   payment: TossPaymentResult,
+  cancelReason: string,
 ): Promise<void> {
   const outcome = await cancelOrder({
     flow: "market",
     paymentKey: payment.paymentKey,
-    cancelReason: "이미 산 템플릿의 중복 결제",
+    cancelReason,
   });
   if (outcome.kind === "canceled") return settle(purchaseId, outcome.payment);
   const found = await lookupOrder(payment.orderId, "market");
@@ -179,11 +193,20 @@ async function refundSecondPurchase(
     return settle(purchaseId, found.payment);
   }
   throw new Error(
-    `Second purchase ${purchaseId} is charged and not yet refunded: ${describeTossError(outcome.error)}`,
+    `Purchase ${purchaseId} is charged and not yet refunded: ${describeTossError(outcome.error)}`,
   );
 }
 
+// Under the buyer's account lock (lib/payments/account-lock), as their other
+// payments: an account deletion waits for it, and it for the deletion.
 async function confirmPurchase(purchaseId: string): Promise<void> {
+  const { buyer_id } = await loadPurchase(purchaseId);
+  await withAccountLock(buyer_id, { waitMs: 0 }, () =>
+    confirmLocked(purchaseId),
+  );
+}
+
+async function confirmLocked(purchaseId: string): Promise<void> {
   const purchase = await loadPurchase(purchaseId);
   if (purchase.status !== "pending") return;
   if (!purchase.toss_payment_key)
@@ -197,11 +220,18 @@ async function confirmPurchase(purchaseId: string): Promise<void> {
       return;
     }
   }
-  // Bought meanwhile in another tab, or gone with its author's account:
-  // not approving lets Toss expire the authentication without charging the
-  // card. Two tabs approved at once are caught in settle.
-  const owned =
+  // Bought meanwhile in another tab, gone with its author's account, or the
+  // buyer's own account deleted: not approving lets Toss expire the
+  // authentication without charging the card. Two tabs approved at once are
+  // caught in settle.
+  const letGo =
     purchase.template_id === null ||
+    (await db
+      .selectFrom("users")
+      .select("id")
+      .where("id", "=", purchase.buyer_id)
+      .where("deleted_at", "is not", null)
+      .executeTakeFirst()) ||
     (await db
       .selectFrom("template_purchases")
       .select("id")
@@ -209,7 +239,7 @@ async function confirmPurchase(purchaseId: string): Promise<void> {
       .where("buyer_id", "=", purchase.buyer_id)
       .where("status", "=", "done")
       .executeTakeFirst());
-  if (owned) {
+  if (letGo) {
     if (purchase.charge_attempted_at)
       throw new Error(`Superseded purchase ${purchaseId} is unresolved`);
     await db
@@ -320,6 +350,42 @@ async function reconcilePurchase(purchaseId: string): Promise<void> {
   )
     return;
   await settle(purchaseId, found.payment);
+}
+
+/**
+ * Before an account is deleted, under its lock: orders not yet sent for
+ * approval are let go, so none is charged once the account is gone, and
+ * those whose approval may have gone through are asked of Toss. False while
+ * one is still unknown: the deletion waits.
+ */
+export async function settleTemplatePurchasesBeforeDeletion(
+  userId: string,
+): Promise<boolean> {
+  await db
+    .updateTable("template_purchases")
+    .set({ status: "expired" })
+    .where("buyer_id", "=", userId)
+    .where("status", "=", "pending")
+    .where("charge_attempted_at", "is", null)
+    .execute();
+  const attempted = await db
+    .selectFrom("template_purchases")
+    .select("id")
+    .where("buyer_id", "=", userId)
+    .where("status", "=", "pending")
+    .execute();
+  for (const { id } of attempted) {
+    await reconcilePurchase(id).catch((error) =>
+      console.error(`Settling template purchase ${id} failed`, error),
+    );
+  }
+  const unknown = await db
+    .selectFrom("template_purchases")
+    .select("id")
+    .where("buyer_id", "=", userId)
+    .where("status", "=", "pending")
+    .executeTakeFirst();
+  return !unknown;
 }
 
 /**

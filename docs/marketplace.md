@@ -31,7 +31,12 @@ authors are paid out through Toss's 지급대행 (payouts) API
    template has buyers, its author can't delete its post, since that would
    take what they paid for; only a board admin can take it down. An
    author who deletes their account takes their templates with them; the
-   purchases stay on record by title (`template_id` becomes null).
+   purchases stay on record by title (`template_id` becomes null), and a
+   charge for one that was in flight is refunded. Their seller details are
+   wiped, they get no further payouts (sales not yet in a payout are
+   forfeited), and the `deregister_seller` task removes them at Toss once
+   any payout under way is done. A buyer's account deletion lets their
+   open orders go and waits for any approval Toss may still be making.
 4. **Refund.** A buyer can request a refund within `REFUND_WINDOW_DAYS` (7)
    days, as long as they have not applied the template and it has not been
    paid out. Digital content that has been used can't be withdrawn

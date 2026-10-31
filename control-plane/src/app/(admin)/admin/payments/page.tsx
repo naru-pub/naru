@@ -54,6 +54,7 @@ const taskLabels: Record<PaymentJob["kind"], string> = {
   request_payout: "판매자 지급 요청",
   sync_payout: "판매자 지급 확인",
   sync_seller: "판매자 상태 확인",
+  deregister_seller: "판매자 등록 해지",
 };
 
 export const metadata: Metadata = { title: "결제 · 운영 · 나루" };

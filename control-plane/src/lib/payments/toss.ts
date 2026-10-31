@@ -882,14 +882,6 @@ export async function deleteSeller(sellerId: string): Promise<void> {
   );
 }
 
-// What the market MID can pay out now, and what it will once settled.
-export async function getPayoutBalance() {
-  const answer = await tossRequest<
-    TossEntity<{ availableAmount: TossMoney; pendingAmount?: TossMoney }>
-  >("market", "/v2/balances", { method: "GET" });
-  return answer.entityBody;
-}
-
 // Up to 100 at once, all or none: one refused fails the batch. The
 // idempotency key makes a retry after a lost answer safe; Toss's guide warns
 // against retrying an error under a new one.
