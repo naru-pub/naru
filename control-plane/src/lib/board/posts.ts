@@ -1,7 +1,8 @@
 import { sql } from "kysely";
 import { db } from "@/lib/database";
 import type { User } from "@/lib/auth";
-import { canModerate } from "./access";
+import { canModerate, isBoardAdmin } from "./access";
+import { hasBuyers } from "@/lib/market/access";
 import {
   MAX_POST_BODY_LENGTH,
   MAX_TITLE_LENGTH,
@@ -320,16 +321,24 @@ export async function deletePost(
   if (!canModerate(user, post.user_id)) {
     throw new BoardError(403, "이 글을 지울 수 없어요.");
   }
-  await db
-    .updateTable("board_posts")
-    .set({ deleted_at: new Date() })
-    .where("id", "=", id)
-    .execute();
   const template = await db
     .selectFrom("board_templates")
     .select("id")
     .where("post_id", "=", id)
     .executeTakeFirst();
+  // Buyers keep what they paid for: only a board admin takes a sold
+  // template down.
+  if (template && !isBoardAdmin(user) && (await hasBuyers(template.id))) {
+    throw new BoardError(
+      409,
+      "산 사람이 있는 템플릿은 지울 수 없어요. 운영자에게 문의해 주세요.",
+    );
+  }
+  await db
+    .updateTable("board_posts")
+    .set({ deleted_at: new Date() })
+    .where("id", "=", id)
+    .execute();
   return {
     kind: post.kind,
     authorId: post.user_id,

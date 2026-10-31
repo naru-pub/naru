@@ -80,7 +80,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`
     create table template_purchases (
       id uuid primary key default uuid_v7(),
-      template_id uuid not null references board_templates(id) on delete restrict,
+      -- Null once the author's account, and with it the template, is
+      -- deleted: the purchase stays on record by its title.
+      template_id uuid references board_templates(id) on delete set null,
       buyer_id ${userId} not null references users(id) on delete restrict,
       seller_id uuid not null references market_sellers(id) on delete restrict,
       -- What was bought, as it was named then.

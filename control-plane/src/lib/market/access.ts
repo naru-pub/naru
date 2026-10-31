@@ -22,6 +22,18 @@ export async function hasPurchased(
   return !!row;
 }
 
+// Whether anyone holds a purchase of the template: deleting its post would
+// take what they paid for (applying takes a live post).
+export async function hasBuyers(templateId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom("template_purchases")
+    .select("id")
+    .where("template_id", "=", templateId)
+    .where("status", "=", "done")
+    .executeTakeFirst();
+  return !!row;
+}
+
 // Who may apply a template or update to a version of it: anyone while it
 // is free, its author, whoever bought it, and whoever applied it before it
 // had a price. An application made under a purchase since refunded doesn't

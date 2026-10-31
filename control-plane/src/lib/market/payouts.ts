@@ -81,11 +81,12 @@ export async function createDuePayouts(now = new Date()): Promise<number> {
                   eb("sp.status", "=", "completed"),
                   eb("sp.created_at", ">", weekAgo),
                 ]),
-                // Toss took it and the bank turned it down: tried again a
-                // week on, or as soon as the seller changes their account.
+                // Toss took it (requested_at) and the bank then turned it
+                // down: tried again a week on, or as soon as the seller
+                // changes their account. One refused on asking is not held.
                 eb.and([
                   eb("sp.status", "=", "failed"),
-                  eb("sp.toss_payout_id", "is not", null),
+                  eb("sp.requested_at", "is not", null),
                   eb("sp.finished_at", ">", weekAgo),
                   eb("sp.finished_at", ">", eb.ref("s.updated_at")),
                 ]),
@@ -151,12 +152,14 @@ async function createPayout(
 }
 
 // Ends a payout that moved no money, freeing its purchases for the next one.
+// With `unsent`, only one never sent to Toss. Returns whether it ended it.
 async function releasePayout(
   payoutId: string,
   status: Extract<PayoutStatus, "failed" | "canceled">,
   error: { code: string; message: string } | null,
-) {
-  await db.transaction().execute(async (trx) => {
+  { unsent = false }: { unsent?: boolean } = {},
+): Promise<boolean> {
+  return db.transaction().execute(async (trx) => {
     const ended = await trx
       .updateTable("seller_payouts")
       .set({
@@ -165,15 +168,19 @@ async function releasePayout(
         finished_at: new Date(),
       })
       .where("id", "=", payoutId)
-      .where("status", "in", OPEN_PAYOUT_STATUSES)
+      .$if(unsent, (qb) =>
+        qb.where("status", "=", "pending").where("payout_date", "is", null),
+      )
+      .$if(!unsent, (qb) => qb.where("status", "in", OPEN_PAYOUT_STATUSES))
       .returning("id")
       .executeTakeFirst();
-    if (!ended) return;
+    if (!ended) return false;
     await trx
       .updateTable("template_purchases")
       .set({ payout_id: null })
       .where("payout_id", "=", payoutId)
       .execute();
+    return true;
   });
 }
 
@@ -200,15 +207,20 @@ export async function sendPayout(payoutId: string, now = new Date()) {
     return;
   }
   // The date goes with the payout: a retry under the same idempotency key
-  // must send the same body.
+  // must send the same body. Writing it marks the payout as sent, which a
+  // refund's cancelOpenPayout checks for, so it is claimed from pending.
   let payoutDate = payout.payout_date;
   if (!payoutDate) {
-    payoutDate = nextPayoutDate(now);
-    await db
+    const claimed = await db
       .updateTable("seller_payouts")
-      .set({ payout_date: payoutDate })
+      .set({ payout_date: nextPayoutDate(now) })
       .where("id", "=", payoutId)
-      .execute();
+      .where("status", "=", "pending")
+      .where("payout_date", "is", null)
+      .returning(["payout_date"])
+      .executeTakeFirst();
+    if (!claimed) return sendPayout(payoutId, now);
+    payoutDate = claimed.payout_date!;
   }
 
   let items: TossPayout[];
@@ -279,16 +291,22 @@ async function applyTossPayout(payoutId: string, item: TossPayout) {
 }
 
 /**
- * Takes back a payout Toss hasn't started on (SCHEDULED, still REQUESTED),
- * for a sale in it refunded since: its other sales go in the next one.
- * Returns whether it was.
+ * Takes back a payout Toss hasn't started on, for a sale in it refunded
+ * since: one never sent, or one Toss holds SCHEDULED and still REQUESTED.
+ * Its other sales go in the next one. Returns whether it was.
  */
 export async function cancelOpenPayout(payoutId: string): Promise<boolean> {
   const payout = await db
     .selectFrom("seller_payouts")
-    .select(["status", "toss_payout_id"])
+    .select(["status", "payout_date", "toss_payout_id"])
     .where("id", "=", payoutId)
     .executeTakeFirstOrThrow();
+  if (
+    payout.status === "pending" &&
+    !payout.payout_date &&
+    (await releasePayout(payoutId, "canceled", null, { unsent: true }))
+  )
+    return true;
   if (payout.status !== "requested" || !payout.toss_payout_id) return false;
   let item: TossPayout;
   try {
@@ -309,12 +327,10 @@ export async function syncPayout(payoutId: string): Promise<void> {
     .select(["id", "status", "toss_payout_id"])
     .where("id", "=", payoutId)
     .executeTakeFirstOrThrow();
-  if (!OPEN_PAYOUT_STATUSES.includes(payout.status)) return;
-  if (!payout.toss_payout_id) {
-    // A webhook ahead of sendPayout's answer: the task retries once Toss's
-    // id is written, or finds the payout ended.
-    throw new Error(`Payout ${payout.id} has no Toss id yet`);
-  }
+  // Not sent yet, or its answer not yet written: sendPayout writes what
+  // Toss says, and the webhook route syncs again a few minutes on.
+  if (!payout.toss_payout_id || !OPEN_PAYOUT_STATUSES.includes(payout.status))
+    return;
   let item: TossPayout;
   try {
     item = await getPayout(payout.toss_payout_id);

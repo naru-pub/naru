@@ -973,7 +973,7 @@ export interface TemplatePurchases {
   refund_requested_at: Timestamp | null;
   seller_id: string;
   status: ColumnType<import("./market/states").PurchaseStatus, import("./market/states").PurchaseStatus | undefined, import("./market/states").PurchaseStatus>;
-  template_id: string;
+  template_id: string | null;
   template_title: string;
   toss_method: string | null;
   toss_mid: string | null;

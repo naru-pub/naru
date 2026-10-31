@@ -152,7 +152,7 @@ export async function prepareTemplatePurchase(
 export async function acceptTemplatePurchase(
   user: User,
   input: { orderId: unknown; paymentKey: unknown; amount: unknown },
-): Promise<{ purchaseId: string; templateId: string; done: boolean }> {
+): Promise<{ purchaseId: string; templateId: string | null; done: boolean }> {
   const { orderId, paymentKey, amount } = input;
   if (
     typeof orderId !== "string" ||
@@ -201,7 +201,8 @@ export async function acceptTemplatePurchase(
 
 export interface PurchaseSummary {
   id: string;
-  templateId: string;
+  // Null once the template's author deleted their account.
+  templateId: string | null;
   postId: string | null;
   title: string;
   amount: number;
@@ -225,7 +226,7 @@ export async function listPurchases(
 ): Promise<PurchaseSummary[]> {
   let query = db
     .selectFrom("template_purchases as tp")
-    .innerJoin("board_templates as t", "t.id", "tp.template_id")
+    .leftJoin("board_templates as t", "t.id", "tp.template_id")
     .leftJoin("board_posts as p", (join) =>
       join.onRef("p.id", "=", "t.post_id").on("p.deleted_at", "is", null),
     )

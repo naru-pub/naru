@@ -54,8 +54,12 @@ const { assertCanUseTemplate } =
   require("@/lib/market/access") as typeof import("@/lib/market/access");
 const { createDuePayouts, sellerEarnings, syncPayout } =
   require("@/lib/market/payouts") as typeof import("@/lib/market/payouts");
-const { runMarketMaintenance } =
+const { handleMarketJob, runMarketMaintenance } =
   require("@/lib/market/market-jobs") as typeof import("@/lib/market/market-jobs");
+const { deleteUserRow } =
+  require("@/lib/account-deletion") as typeof import("@/lib/account-deletion");
+const { deletePost } =
+  require("@/lib/board/posts") as typeof import("@/lib/board/posts");
 
 // The template marketplace against a disposable, migrated database
 // (scripts/test-payments-db.sh), Toss mocked at lib/payments/toss.
@@ -719,6 +723,189 @@ integration("template marketplace", () => {
       .set({ updated_at: new Date(Date.now() + 1000) })
       .execute();
     expect(await createDuePayouts(new Date(Date.now() + 2000))).toBe(1);
+  });
+
+  test("an author with sales can still delete their account; the purchases stay", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const buyer = await makeUser();
+    const { purchaseId } = await buy(buyer, templateId);
+
+    await db.transaction().execute((trx) => deleteUserRow(trx, author.id));
+
+    const purchase = await db
+      .selectFrom("template_purchases")
+      .select(["template_id", "template_title", "status", "seller_id"])
+      .where("id", "=", purchaseId)
+      .executeTakeFirstOrThrow();
+    expect(purchase).toMatchObject({
+      template_id: null,
+      template_title: "포트폴리오",
+      status: "done",
+    });
+    const [listed] = await listPurchases(buyer);
+    expect(listed).toMatchObject({ id: purchaseId, templateId: null });
+  });
+
+  test("an order whose template went with its author is let go, not charged", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const buyer = await makeUser();
+    const order = await prepareTemplatePurchase(buyer, templateId);
+    await db.transaction().execute((trx) => deleteUserRow(trx, author.id));
+    await acceptTemplatePurchase(buyer, {
+      orderId: order.orderId,
+      paymentKey: `pk-${order.orderId}`,
+      amount: order.amount,
+    });
+    await runDueJobs();
+    expect(toss.confirmPayment).not.toHaveBeenCalled();
+    const purchase = await db
+      .selectFrom("template_purchases")
+      .select("status")
+      .executeTakeFirstOrThrow();
+    expect(purchase.status).toBe("expired");
+  });
+
+  test("a second order approved alongside the first is refunded", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const buyer = await makeUser();
+    const second = await prepareTemplatePurchase(buyer, templateId);
+    await buy(buyer, templateId);
+    // As if its approval had gone through at the same moment: charged,
+    // with the answer not yet written.
+    await db
+      .updateTable("template_purchases")
+      .set({
+        toss_payment_key: `pk-${second.orderId}`,
+        charge_attempted_at: new Date(),
+      })
+      .where("order_id", "=", second.orderId)
+      .execute();
+    toss.getPaymentByOrderId.mockResolvedValueOnce(
+      approved(second.orderId, 5000),
+    );
+    toss.cancelPayment.mockResolvedValueOnce({
+      ...approved(second.orderId, 5000),
+      status: "CANCELED",
+    });
+    const { id } = await db
+      .selectFrom("template_purchases")
+      .select("id")
+      .where("order_id", "=", second.orderId)
+      .executeTakeFirstOrThrow();
+    await enqueueJob(db, { kind: "confirm_template_purchase", purchaseId: id });
+    await runDueJobs();
+
+    expect(toss.cancelPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flow: "market",
+        paymentKey: `pk-${second.orderId}`,
+      }),
+    );
+    const statuses = await db
+      .selectFrom("template_purchases")
+      .select(["order_id", "status"])
+      .execute();
+    expect(statuses).toContainEqual({
+      order_id: second.orderId,
+      status: "canceled",
+    });
+    expect(statuses.filter((row) => row.status === "done")).toHaveLength(1);
+  });
+
+  test("an author can't delete a sold template's post", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    const { post_id: postId } = await db
+      .selectFrom("board_templates")
+      .select("post_id")
+      .where("id", "=", templateId)
+      .executeTakeFirstOrThrow();
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const { order } = await buy(await makeUser(), templateId);
+    await expect(deletePost(author, postId)).rejects.toThrow(
+      "산 사람이 있는 템플릿",
+    );
+
+    // Once the only sale is refunded, it can go.
+    const { id: purchaseId } = await db
+      .selectFrom("template_purchases")
+      .select("id")
+      .executeTakeFirstOrThrow();
+    toss.getPaymentByOrderId.mockResolvedValueOnce({
+      ...approved(order.orderId, 5000),
+      status: "CANCELED",
+    });
+    await enqueueJob(db, { kind: "reconcile_template_purchase", purchaseId });
+    await runDueJobs();
+    await expect(deletePost(author, postId)).resolves.toMatchObject({
+      templateId,
+    });
+  });
+
+  test("a refund before its payout is sent takes the payout back without Toss", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const { order, purchaseId } = await buy(await makeUser(), templateId);
+    await age(purchaseId, 11);
+    expect(await createDuePayouts()).toBe(1);
+
+    toss.getPaymentByOrderId.mockResolvedValueOnce({
+      ...approved(order.orderId, 5000),
+      status: "CANCELED",
+    });
+    // Ahead of the payout's own task, still queued.
+    await handleMarketJob({ kind: "reconcile_template_purchase", purchaseId });
+    await runDueJobs();
+
+    expect(toss.requestPayouts).not.toHaveBeenCalled();
+    expect(toss.cancelPayout).not.toHaveBeenCalled();
+    const payout = await db
+      .selectFrom("seller_payouts")
+      .select("status")
+      .executeTakeFirstOrThrow();
+    expect(payout.status).toBe("canceled");
+    expect(
+      await db.selectFrom("payment_events").select("kind").execute(),
+    ).not.toContainEqual({ kind: "template_refund_after_payout" });
+  });
+
+  test("a payout Toss rejects in its answer is tried again the next day", async () => {
+    const author = await makeUser();
+    const templateId = await makeTemplate(author);
+    await makeSeller(author);
+    await setTemplatePrice(author, templateId, 5000);
+    const sale = await buy(await makeUser(), templateId);
+    await age(sale.purchaseId, 11);
+    toss.requestPayouts.mockImplementationOnce(async ([input]) => [
+      {
+        ...input,
+        id: "FPA_8",
+        payoutDate: input.payoutDate!,
+        requestedAt: "2026-11-02T10:00:00+09:00",
+        status: "REJECTED",
+        error: { code: "INVALID_PAYOUT_DATE", message: "휴일입니다" },
+      } as TossPayout,
+    ]);
+    await createDuePayouts();
+    await runDueJobs();
+    const [payout] = await db
+      .selectFrom("seller_payouts")
+      .selectAll()
+      .execute();
+    expect(payout).toMatchObject({ status: "failed", toss_payout_id: "FPA_8" });
+    expect(await createDuePayouts()).toBe(1);
   });
 
   test("a template applied after buying is not refunded", async () => {

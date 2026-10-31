@@ -98,18 +98,23 @@ async function settle(purchaseId: string, payment: TossPaymentResult) {
   };
   switch (payment.status) {
     case "DONE":
-      await db
-        .updateTable("template_purchases")
-        .set({
-          ...provider,
-          status: "done",
-          paid_at: payment.approvedAt
-            ? new Date(payment.approvedAt)
-            : new Date(),
-        })
-        .where("id", "=", purchaseId)
-        .where("status", "=", "pending")
-        .execute();
+      try {
+        await db
+          .updateTable("template_purchases")
+          .set({
+            ...provider,
+            status: "done",
+            paid_at: payment.approvedAt
+              ? new Date(payment.approvedAt)
+              : new Date(),
+          })
+          .where("id", "=", purchaseId)
+          .where("status", "=", "pending")
+          .execute();
+      } catch (error) {
+        if (!isSecondPurchase(error)) throw error;
+        return refundSecondPurchase(purchaseId, payment);
+      }
       return;
     case "CANCELED":
     case "PARTIAL_CANCELED":
@@ -148,6 +153,36 @@ async function settle(purchaseId: string, payment: TossPaymentResult) {
   }
 }
 
+// template_purchases_one_done_idx: the buyer has this template already.
+function isSecondPurchase(error: unknown): boolean {
+  const { code, constraint } = (error ?? {}) as {
+    code?: string;
+    constraint?: string;
+  };
+  return code === "23505" && constraint === "template_purchases_one_done_idx";
+}
+
+// Two tabs' orders approved at once: the one that found the template
+// already bought is charged back.
+async function refundSecondPurchase(
+  purchaseId: string,
+  payment: TossPaymentResult,
+): Promise<void> {
+  const outcome = await cancelOrder({
+    flow: "market",
+    paymentKey: payment.paymentKey,
+    cancelReason: "이미 산 템플릿의 중복 결제",
+  });
+  if (outcome.kind === "canceled") return settle(purchaseId, outcome.payment);
+  const found = await lookupOrder(payment.orderId, "market");
+  if (found.kind === "found" && found.payment.status !== "DONE") {
+    return settle(purchaseId, found.payment);
+  }
+  throw new Error(
+    `Second purchase ${purchaseId} is charged and not yet refunded: ${describeTossError(outcome.error)}`,
+  );
+}
+
 async function confirmPurchase(purchaseId: string): Promise<void> {
   const purchase = await loadPurchase(purchaseId);
   if (purchase.status !== "pending") return;
@@ -162,15 +197,18 @@ async function confirmPurchase(purchaseId: string): Promise<void> {
       return;
     }
   }
-  // Bought meanwhile in another tab: not approving lets Toss expire the
-  // authentication without charging the card.
-  const owned = await db
-    .selectFrom("template_purchases")
-    .select("id")
-    .where("template_id", "=", purchase.template_id)
-    .where("buyer_id", "=", purchase.buyer_id)
-    .where("status", "=", "done")
-    .executeTakeFirst();
+  // Bought meanwhile in another tab, or gone with its author's account:
+  // not approving lets Toss expire the authentication without charging the
+  // card. Two tabs approved at once are caught in settle.
+  const owned =
+    purchase.template_id === null ||
+    (await db
+      .selectFrom("template_purchases")
+      .select("id")
+      .where("template_id", "=", purchase.template_id)
+      .where("buyer_id", "=", purchase.buyer_id)
+      .where("status", "=", "done")
+      .executeTakeFirst());
   if (owned) {
     if (purchase.charge_attempted_at)
       throw new Error(`Superseded purchase ${purchaseId} is unresolved`);

@@ -18,7 +18,8 @@ authors are paid out through Toss's 지급대행 (payouts) API
    (`confirm_template_purchase`, run by the payment worker) approves the
    payment for the recorded amount. Purchases are recorded in
    `template_purchases`, with 나루's fee (`MARKET_FEE_PERCENT`, 20%) fixed
-   at order time.
+   at order time. If two tabs' orders for the same template are approved
+   at once, the second is refunded.
 3. **Access.** A paid template can be applied, and updated to newer
    versions, by its author, its buyers, and anyone who applied it while it
    was free (`lib/market/access.ts`). A purchase stops counting once its
@@ -26,7 +27,11 @@ authors are paid out through Toss's 지급대행 (payouts) API
    refunded doesn't count either. The check runs in the board's apply,
    plan and update paths. Version files (`_templates/<id>/v<n>/…`) are
    stored in the private bucket (`lib/site-code-bucket.ts`), so they can't
-   be fetched from `r2.<domain>`. Preview images stay public.
+   be fetched from `r2.<domain>`. Preview images stay public. Once a
+   template has buyers, its author can't delete its post, since that would
+   take what they paid for; only a board admin can take it down. An
+   author who deletes their account takes their templates with them; the
+   purchases stay on record by title (`template_id` becomes null).
 4. **Refund.** A buyer can request a refund within `REFUND_WINDOW_DAYS` (7)
    days, as long as they have not applied the template and it has not been
    paid out. Digital content that has been used can't be withdrawn
@@ -34,8 +39,9 @@ authors are paid out through Toss's 지급대행 (payouts) API
    cancels the payment. A refund made from the Toss dashboard arrives as a
    `PAYMENT_STATUS_CHANGED` webhook and is reconciled. If that sale is
    already in a payout Toss hasn't started (`REQUESTED`), the payout is
-   canceled and its other sales go in the next one; past that, operators
-   get a `template_refund_after_payout` alert to settle with the seller.
+   canceled (in place if it hasn't been sent to Toss yet) and its other
+   sales go in the next one; past that, operators get a
+   `template_refund_after_payout` alert to settle with the seller.
 5. **Payout.** The `market-payouts` maintenance job runs daily at 10:00 KST.
    For each seller whose Toss status allows payouts (`PARTIALLY_APPROVED`,
    `APPROVED`), it adds up sales older than `PAYOUT_HOLD_DAYS` (10) that
@@ -48,8 +54,9 @@ authors are paid out through Toss's 지급대행 (payouts) API
    (a public holiday, a balance not yet settled), the row is marked failed
    and its purchases are released for the next run. A payout Toss took and
    the bank then turned down waits a week, or until the seller changes
-   their account. A payout whose task gave up before Toss took it is sent
-   again by the daily job, under the same idempotency key. The
+   their account; one Toss rejects in its answer is tried the next day. A
+   payout whose task gave up before Toss took it is sent again by the
+   daily job, under the same idempotency key. The
    `payout.changed` and `seller.changed` webhooks are treated only as
    notices (a payout is matched by Toss's id or by `refPayoutId`): the
    tasks (`sync_payout`, `sync_seller`) fetch the payout or seller from

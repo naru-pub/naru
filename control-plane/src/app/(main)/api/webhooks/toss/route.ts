@@ -30,6 +30,8 @@ type Delivery = Omit<WebhookLogEntry, "httpStatus" | "durationMs">;
 // Durably enqueue follow-up work and acknowledge within Toss's 10-second
 // budget. Absurd consumers perform reconciliation outside this request.
 const LOOKUP_TIMEOUT_MS = 5000;
+// A payout.changed ahead of sendPayout's answer: synced once that is written.
+const PAYOUT_ANSWER_WAIT_MS = 5 * 60 * 1000;
 
 function eventTypeOf(body: unknown): string {
   const eventType =
@@ -158,11 +160,11 @@ export async function POST(request: NextRequest) {
     if (event.type === "payout-changed") {
       delivery.subject = event.payoutId;
       // By refPayoutId too: the delivery can beat sendPayout's write of
-      // Toss's id, which syncPayout waits for.
+      // Toss's id, so that sync waits a few minutes for it.
       const ref = parseUuid(event.refPayoutId);
       const payout = await db
         .selectFrom("seller_payouts")
-        .select("id")
+        .select(["id", "toss_payout_id"])
         .where((eb) =>
           eb.or([
             eb("toss_payout_id", "=", event.payoutId),
@@ -171,10 +173,13 @@ export async function POST(request: NextRequest) {
         )
         .executeTakeFirst();
       if (!payout) return respond(200, "ignored: unknown payout");
-      const job = await enqueueJob(db, {
-        kind: "sync_payout",
-        payoutId: payout.id,
-      });
+      const job = await enqueueJob(
+        db,
+        { kind: "sync_payout", payoutId: payout.id },
+        payout.toss_payout_id
+          ? {}
+          : { runAt: new Date(Date.now() + PAYOUT_ANSWER_WAIT_MS) },
+      );
       return respond(200, `sync job ${job} for payout ${payout.id}`);
     }
     if (event.type === "seller-changed") {
