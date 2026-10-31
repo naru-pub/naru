@@ -105,8 +105,8 @@ export default function McpConsent({
             ))}
           </fieldset>
           <p className="text-sm text-muted-foreground">
-            앱은 사이트 파일과 데이터베이스만 다루며, 계정 설정과 결제에는 닿지
-            않습니다. 데이터베이스 문서에는 방문자가 쓴 글이 있어, 앱이 그 글에
+            앱은 사이트 파일과 데이터베이스만 다루며, 계정 설정과 결제는 다룰 수
+            없습니다. 데이터베이스 문서에는 방문자가 쓴 글이 있어, 앱이 그 글에
             휘둘릴 수 있으니 필요할 때만 허용하세요.{" "}
             <Link href="/account" className="underline">
               계정

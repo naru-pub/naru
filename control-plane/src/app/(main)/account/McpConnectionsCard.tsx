@@ -96,7 +96,7 @@ export default function McpConnectionsCard({
             </Link>{" "}
             기능입니다.
             {connections.length > 0 &&
-              " 서포터 기간이 끝나면 다시 서포터가 될 때까지 연결된 앱이 사이트에 닿지 못합니다."}
+              " 서포터 기간이 끝나면 다시 서포터가 될 때까지 연결된 앱은 사이트를 읽거나 고칠 수 없습니다."}
           </p>
         )}
         {connections.length > 0 && (
