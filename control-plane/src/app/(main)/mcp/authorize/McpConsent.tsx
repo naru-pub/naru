@@ -29,7 +29,11 @@ export default function McpConsent({
   account: string;
   entitled: boolean;
 }) {
-  const [kept, setKept] = useState<Scope[]>(scopes);
+  // The database starts unchecked: its documents hold what visitors wrote,
+  // which a model able to change the site could be steered by.
+  const [kept, setKept] = useState<Scope[]>(
+    scopes.filter((scope) => scope !== "database"),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -101,7 +105,9 @@ export default function McpConsent({
             ))}
           </fieldset>
           <p className="text-sm text-muted-foreground">
-            앱은 사이트 파일만 다루며, 계정 설정과 결제에는 닿지 않습니다.{" "}
+            앱은 사이트 파일과 데이터베이스만 다루며, 계정 설정과 결제에는 닿지
+            않습니다. 데이터베이스 문서에는 방문자가 쓴 글이 있어, 앱이 그 글에
+            휘둘릴 수 있으니 필요할 때만 허용하세요.{" "}
             <Link href="/account" className="underline">
               계정
             </Link>

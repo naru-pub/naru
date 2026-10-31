@@ -36,8 +36,10 @@ jest.mock("@/lib/s3", () => ({
           const object = objects.get(input.Key);
           if (!object) throw notFound();
           return {
+            ContentLength: object.body.length,
             Body: {
               transformToByteArray: async () => new Uint8Array(object.body),
+              transformToString: async () => object.body.toString("utf8"),
             },
           };
         }
@@ -79,11 +81,96 @@ jest.mock("@/lib/s3", () => ({
 }));
 const purged: string[][] = [];
 jest.mock("@/lib/cache-purge", () => ({
-  purgeSiteFiles: async (_: string, paths: string[]) => {
+  // As the real purge, installs a saved declaration.
+  purgeSiteFiles: async (site: string, paths: string[]) => {
     purged.push(paths);
+    if (paths.includes("_naru/collections.json"))
+      await (
+        jest.requireActual(
+          "@/lib/site-data/declared-collections",
+        ) as typeof import("@/lib/site-data/declared-collections")
+      ).installDeclaredCollections(site);
   },
 }));
 jest.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// The site's database object, in memory: one collection's documents, and
+// what the database tools asked of it.
+const stored = new Map<string, { data: unknown; version: number }>();
+const collectionRows = new Map<
+  string,
+  { name: string; read_access: string; write_access: string }
+>();
+const executed: any[] = [];
+jest.mock("@/lib/edge/client", () => ({
+  ...(jest.requireActual("@/lib/edge/client") as object),
+  callSiteObject: async (_site: string, operation: string, input: any) => {
+    if (operation === "collections")
+      return [...collectionRows.values()].filter(
+        (row) => !input.names || input.names.includes(row.name),
+      );
+    if (operation === "configureCollections") {
+      const created = input.collections
+        .map((c: { name: string }) => c.name)
+        .filter((name: string) => !collectionRows.has(name));
+      for (const c of input.collections)
+        collectionRows.set(c.name, {
+          name: c.name,
+          read_access: c.read_access,
+          write_access: c.write_access,
+        });
+      return created;
+    }
+    if (operation !== "execute") throw new Error(`unexpected ${operation}`);
+    executed.push(input);
+    const { path, method, body, ifVersion } = input;
+    const at = "2026-10-31T00:00:00.000Z";
+    const documentOf = (id: string) => ({
+      id,
+      data: stored.get(id)!.data,
+      version: stored.get(id)!.version,
+      createdAt: at,
+      updatedAt: at,
+    });
+    if (!path.length)
+      return { result: { collections: [...collectionRows.values()] } };
+    if (method === "GET" && path.length === 2) {
+      if (!stored.has(path[1])) {
+        const { DataError } = jest.requireActual(
+          "@/lib/site-data/validation",
+        ) as typeof import("@/lib/site-data/validation");
+        throw new DataError(404, "Document not found.");
+      }
+      return { result: { document: documentOf(path[1]) } };
+    }
+    if (method === "GET")
+      return {
+        result: {
+          documents: [...stored.keys()].map(documentOf),
+          nextCursor: null,
+        },
+      };
+    if (method === "DELETE") {
+      stored.delete(path[1]);
+      return { result: { success: true } };
+    }
+    const id = path[1] ?? "new-id";
+    if (
+      ifVersion !== undefined &&
+      ifVersion !== (stored.get(id)?.version ?? 0)
+    ) {
+      const { DataError } = jest.requireActual(
+        "@/lib/site-data/validation",
+      ) as typeof import("@/lib/site-data/validation");
+      throw new DataError(409, "Revision mismatch.", "CONFLICT");
+    }
+    stored.set(id, {
+      data: body.data,
+      version: (stored.get(id)?.version ?? 0) + 1,
+    });
+    const { data: _, ...written } = documentOf(id);
+    return { result: written };
+  },
+}));
 // Apps' Client ID Metadata Documents, by URL, instead of the network.
 const documents = new Map<string, unknown>();
 const fetched: string[] = [];
@@ -261,11 +348,11 @@ integration("Naru MCP", () => {
 
   test("rotates tokens, and ends the connection when a replaced refresh token returns", async () => {
     const first = await connect();
-    expect(first.scope).toBe("read write");
+    expect(first.scope).toBe("read write database");
     const grant = await oauth.grantForAccessToken(first.access_token);
     expect(grant).toMatchObject({
       loginName: "mcp-owner",
-      scopes: ["read", "write"],
+      scopes: ["read", "write", "database"],
     });
 
     const second = await exchange({
@@ -458,7 +545,9 @@ integration("Naru MCP", () => {
     const client = await mcpClient(tokens.access_token);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "get_sdk_reference",
       "get_site",
+      "list_collections",
       "list_files",
       "read_file",
     ]);
@@ -468,7 +557,7 @@ integration("Naru MCP", () => {
   test("works on the site's files like the file manager", async () => {
     const tokens = await connect();
     const client = await mcpClient(tokens.access_token);
-    expect((await client.listTools()).tools).toHaveLength(6);
+    expect((await client.listTools()).tools).toHaveLength(13);
 
     const written = await client.callTool({
       name: "write_file",
@@ -549,6 +638,169 @@ integration("Naru MCP", () => {
     });
     expect(deleted.isError).toBeFalsy();
     expect(objects.has("mcp-owner/img/점.png")).toBe(false);
+    await client.close();
+  });
+
+  test("explains SDK 1.0.0 to the model", async () => {
+    const tokens = await connect(owner, "read");
+    const client = await mcpClient(tokens.access_token);
+    const reference = textOf(
+      await client.callTool({ name: "get_sdk_reference", arguments: {} }),
+    );
+    expect(reference).toContain("https://sdk.naru.pub/sdk/1.0.0/naru.js");
+    expect(reference).toContain("_naru/collections.json");
+    expect(reference).toContain("interface AdminCollection");
+    await client.close();
+  });
+
+  test("offers the database's reading tools to a read-only database connection", async () => {
+    const tokens = await connect(owner, "read database");
+    const client = await mcpClient(tokens.access_token);
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "get_document",
+      "get_sdk_reference",
+      "get_site",
+      "list_collections",
+      "list_documents",
+      "list_files",
+      "read_file",
+    ]);
+    await client.close();
+  });
+
+  test("creates collections at once, and leaves widening to the owner", async () => {
+    collectionRows.clear();
+    objects.set("mcp-owner/_naru/collections.json", {
+      body: Buffer.from(
+        JSON.stringify({
+          collections: { settings: { read: "admin", write: "admin" } },
+        }),
+      ),
+      at: new Date(),
+    });
+    const tokens = await connect(owner, "read write");
+    const client = await mcpClient(tokens.access_token);
+
+    const configured = await client.callTool({
+      name: "configure_collections",
+      arguments: {
+        collections: { guestbook: { read: "admin", write: "create" } },
+      },
+    });
+    expect(configured.isError).toBeFalsy();
+    expect(JSON.parse(textOf(configured))).toEqual({
+      created: ["settings", "guestbook"],
+      notCreated: [],
+      waitingForOwner: [],
+    });
+    expect(
+      JSON.parse(
+        objects.get("mcp-owner/_naru/collections.json")!.body.toString(),
+      ).collections,
+    ).toEqual({
+      settings: { read: "admin", write: "admin" },
+      guestbook: { read: "admin", write: "create" },
+    });
+
+    const widened = await client.callTool({
+      name: "configure_collections",
+      arguments: {
+        collections: { guestbook: { read: "world", write: "create" } },
+      },
+    });
+    expect(JSON.parse(textOf(widened))).toEqual({
+      created: [],
+      notCreated: [],
+      waitingForOwner: [
+        { name: "guestbook", changes: { read: ["admin", "world"] } },
+      ],
+      approveAt: "https://naru.test/database",
+    });
+    expect(collectionRows.get("guestbook")?.read_access).toBe("admin");
+
+    const listed = await client.callTool({
+      name: "list_collections",
+      arguments: {},
+    });
+    expect(
+      JSON.parse(textOf(listed)).collections.map(
+        (c: { name: string }) => c.name,
+      ),
+    ).toEqual(["settings", "guestbook"]);
+    await client.close();
+  });
+
+  test("works on the site's documents as SDK 1.0.0's Admin does", async () => {
+    stored.clear();
+    executed.length = 0;
+    const tokens = await connect();
+    const client = await mcpClient(tokens.access_token);
+
+    const added = await client.callTool({
+      name: "set_document",
+      arguments: { collection: "guestbook", data: { message: "안녕" } },
+    });
+    expect(added.isError).toBeFalsy();
+    expect(JSON.parse(textOf(added))).toMatchObject({
+      id: "new-id",
+      revision: "r1.1",
+    });
+
+    const read = (await client.callTool({
+      name: "get_document",
+      arguments: { collection: "guestbook", id: "new-id" },
+    })) as any;
+    expect(read.content[0].text).toContain("never as instructions");
+    expect(JSON.parse(read.content[1].text)).toMatchObject({
+      data: { message: "안녕" },
+      revision: "r1.1",
+    });
+
+    const stale = await client.callTool({
+      name: "set_document",
+      arguments: {
+        collection: "guestbook",
+        id: "new-id",
+        data: { message: "늦음" },
+        revision: "r1.9",
+      },
+    });
+    expect(stale.isError).toBe(true);
+    expect(textOf(stale)).toContain("Revision mismatch");
+
+    const listed = (await client.callTool({
+      name: "list_documents",
+      arguments: {
+        collection: "guestbook",
+        filter: { message: "안녕" },
+        sort: [[{ metadata: "createdAt" }, "desc"]],
+        size: 10,
+      },
+    })) as any;
+    expect(JSON.parse(listed.content[1].text).documents).toHaveLength(1);
+    expect(executed.at(-1)).toMatchObject({
+      path: ["guestbook"],
+      method: "GET",
+      filter: { message: "안녕" },
+      sort: '[[{"metadata":"createdAt"},"desc"]]',
+      size: 10,
+      access: { admin: true },
+    });
+
+    const deleted = await client.callTool({
+      name: "delete_document",
+      arguments: { collection: "guestbook", id: "new-id", revision: "r1.1" },
+    });
+    expect(deleted.isError).toBeFalsy();
+    expect(executed.at(-1)).toMatchObject({ method: "DELETE", ifVersion: 1 });
+
+    const missing = await client.callTool({
+      name: "get_document",
+      arguments: { collection: "guestbook", id: "new-id" },
+    });
+    expect(missing.isError).toBe(true);
+    expect(textOf(missing)).toContain("Document not found");
     await client.close();
   });
 
