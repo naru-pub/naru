@@ -648,6 +648,8 @@ integration("Naru MCP", () => {
       await client.callTool({ name: "get_sdk_reference", arguments: {} }),
     );
     expect(reference).toContain("https://sdk.naru.pub/sdk/1.0.0/naru.js");
+    expect(reference).toContain('createNaru({ site: "mcp-owner" })');
+    expect(reference).not.toContain("createNaru()");
     expect(reference).toContain("_naru/collections.json");
     expect(reference).toContain("interface AdminCollection");
     await client.close();

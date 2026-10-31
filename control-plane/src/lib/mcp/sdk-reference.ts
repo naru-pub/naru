@@ -47,12 +47,12 @@ A Naru site's pages store and read JSON documents in the site's own database. A 
 \`\`\`html
 <script type="module">
   import { createNaru } from "${SDK_URL}/1.0.0/naru.js";
-  const naru = createNaru();
+  const naru = createNaru({ site: "${site}" });
   const { documents } = await naru.collection("posts").list();
 </script>
 \`\`\`
 
-On the site's own pages createNaru() needs no options; elsewhere pass { site: "${site}" }.
+Always pass { site: "${site}" }. Without it the SDK finds the site only from a ${site}.naru.pub address, so the same page throws a TypeError on the site's custom domain or a local preview.
 
 ## Collections
 
