@@ -296,7 +296,7 @@ export default async function PostPage({
                       <p className="text-xs text-muted-foreground">
                         한 번 사면 새 버전도 계속 받아요. 구매 후{" "}
                         {REFUND_WINDOW_DAYS}일 안에, 적용하기 전에만 환불할 수
-                        있어요. 적용하면 파일을 받은 것이라 환불할 수 없어요.
+                        있어요.
                       </p>
                     </>
                   )}
