@@ -47,7 +47,7 @@ import {
 const VERSION = "1.0.0";
 
 function instructions(site: Site) {
-  return `This server is one Naru site: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts static websites: every file is served as it is at <site address>/<path>, with no build step and no server-side code. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are the site's private configuration, never served (for example _naru/collections.json, which declares the site's database collections). Pages store data in the site's database with the Naru Data SDK 1.0.0, imported from ${SDK_URL}/1.0.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css.`;
+  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts static websites: every file is served as it is at <site address>/<path>, with no build step and no server-side code. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are the site's private configuration, never served (for example _naru/collections.json, which declares the site's database collections). Pages store data in the site's database with the Naru Data SDK 1.0.0, imported from ${SDK_URL}/1.0.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css.`;
 }
 
 const text = (value: unknown): CallToolResult => ({
@@ -113,7 +113,7 @@ const READ = {
 export function naruMcpServer(grant: McpGrant, entitled: boolean) {
   const site: Site = { userId: grant.userId, loginName: grant.loginName };
   const server = new McpServer(
-    { name: "naru", title: "Naru", version: VERSION },
+    { name: "naru", title: "Naru (나루)", version: VERSION },
     { instructions: instructions(site) },
   );
   const canWrite = grant.scopes.includes("write");

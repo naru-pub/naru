@@ -649,7 +649,11 @@ integration("Naru MCP", () => {
     );
     expect(reference).toContain("https://sdk.naru.pub/sdk/1.0.0/naru.js");
     expect(reference).toContain('createNaru({ site: "mcp-owner" })');
-    expect(reference).not.toContain("createNaru()");
+    // The guide people read on /docs/1.0.0/database, as it is.
+    expect(reference).toContain("## 02 · 컬렉션과 공개 범위");
+    expect(reference).toContain("](https://naru.test/database)");
+    expect(reference).not.toMatch(/= createNaru\(\)/);
+    expect(reference).not.toContain("{{");
     expect(reference).toContain("_naru/collections.json");
     expect(reference).toContain("interface AdminCollection");
     await client.close();

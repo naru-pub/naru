@@ -1,21 +1,19 @@
 import type { Metadata } from "next";
 import { ALLOWED_FILE_EXTENSIONS } from "@/lib/const";
-import { MarkdownHelp } from "../HelpPage";
-import { loadHelp } from "../markdown";
+import { HelpGuide, helpGuide } from "../HelpPage";
 
 // The guide is page.md beside this file.
-const document = () =>
-  loadHelp("files", {
-    extensions: ALLOWED_FILE_EXTENSIONS.map(
-      (extension) => `\`${extension}\``,
-    ).join(", "),
-  });
+const values = () => ({
+  extensions: ALLOWED_FILE_EXTENSIONS.map(
+    (extension) => `\`${extension}\``,
+  ).join(", "),
+});
 
 export function generateMetadata(): Metadata {
-  const { pageTitle, description } = document();
+  const { pageTitle, description } = helpGuide("files", values());
   return { title: pageTitle, description };
 }
 
 export default function FilesHelp() {
-  return <MarkdownHelp current="files" document={document()} />;
+  return <HelpGuide current="files" values={values()} />;
 }

@@ -1,11 +1,13 @@
 import reference from "@/lib/sdk-reference/1.0.0.json";
 import { SDK_URL } from "@/lib/const";
 import { DECLARATION_PATH } from "@/lib/site-data/declared-collections";
+import { readGuide } from "@/lib/guide-markdown";
 import { naruOrigin } from "./oauth";
 
 // Naru Data SDK 1.0.0 as Naru MCP's get_sdk_reference gives it to a model:
-// how a page loads and uses it, then the generated reference that
-// /docs/sdk/1.0.0 draws (scripts/generate-sdk-reference.mjs), as Markdown.
+// what only these tools need, the guides people read on /docs/1.0.0 as they
+// are (docs/_guides/1.0.0/*.md, one source for both), then the generated
+// reference that /docs/sdk/1.0.0 draws (scripts/generate-sdk-reference.mjs).
 
 type Span = { type: string; value: string };
 type Block =
@@ -39,72 +41,45 @@ function entry({ name, kind, signature, summary, members }: Entry) {
   return parts.join("\n\n");
 }
 
-function guide(site: string) {
+// What only a model building pages through these tools needs; the rest is
+// the guide people read.
+function preface(site: string) {
   return `# Naru Data SDK 1.0.0
 
-A Naru site's pages store and read JSON documents in the site's own database. A page imports the SDK from Naru; there is nothing to install or build:
-
-\`\`\`html
-<script type="module">
-  import { createNaru } from "${SDK_URL}/1.0.0/naru.js";
-  const naru = createNaru({ site: "${site}" });
-  const { documents } = await naru.collection("posts").list();
-</script>
-\`\`\`
-
-Always pass { site: "${site}" }. Without it the SDK finds the site only from a ${site}.naru.pub address, so the same page throws a TypeError on the site's custom domain or a local preview.
-
-## Collections
-
-A collection holds documents: an id and one JSON value (at most 64 KiB). Collection names and document ids are 1–64 letters, digits, _ or -. Each collection says who may read and write it:
-
-- read "admin": only the signed-in owner; "world": anyone, with get, list, count and pages.
-- write "admin": only the signed-in owner; "create": anyone may add new documents (a guestbook) but not change them; "world": anyone may set and delete any document (rarely wanted).
-
-A site declares the collections its pages need in ${DECLARATION_PATH}, which the configure_collections tool writes. Naru creates the missing ones at once, with the access declared; a change to an existing collection's access waits for the owner's approval on ${naruOrigin()}/database:
-
-\`\`\`json
-{
-  "collections": {
-    "guestbook": { "read": "world", "write": "create" },
-    "settings": { "read": "admin", "write": "admin" }
-  }
-}
-\`\`\`
-
-Each collection also takes optional "unique" and "indexes", lists of field names.
-
-## The owner's sign-in
-
-naru.auth.signIn({ collections }) sends the site's owner to Naru to sign in, and naru.auth.session() on the page they return to gives an Admin client that reads and writes those collections whatever their access. The owner first lists the admin page's address and its collections under 웹사이트 관리자 로그인 on ${naruOrigin()}/database.
-
-## Writes and conflicts
-
-set(id, data) replaces the whole document. Pass { condition: { revision } } to write only if it hasn't changed since it was read, or { condition: { absent: true } } to write only a new one; otherwise the write fails with NaruError code CONFLICT. admin.batch() commits up to 100 sets and deletes across collections, all or none.
-
-## Lists
-
-filter compares top-level fields by value or with { gt, gte, lt, lte }, at most 5 conditions, all of which must hold. sort is one or two [field, "asc" | "desc"] pairs, where a field is a name or { metadata: "createdAt" }; the default is by id. Pages hold up to 100 documents; follow nextCursor with after.
+A Naru site's pages store and read JSON documents in the site's own database with this SDK, imported from ${SDK_URL}/1.0.0/naru.js; there is nothing to install or build. The guides below are the ones people read on naru.pub, in Korean, with this site's name, "${site}", in their examples. Links in them are on ${naruOrigin()}.
 
 ## Building with these tools
 
-A guestbook: configure_collections with { "guestbook": { "read": "world", "write": "create" } }, then a page whose form calls naru.collection("guestbook").add({ name, message, at: new Date().toISOString() }) and lists the entries with list({ sort: [[{ metadata: "createdAt" }, "desc"]] }). Visitors can add entries but not change or delete them. Show what visitors wrote with textContent, never innerHTML.
-
-A blog: configure_collections with { "posts": { "read": "world", "write": "admin", "indexes": ["date"] } }, then an index page that lists posts sorted by date and a post page that reads ?id= from its address and get()s that post. Only the owner writes posts: through set_document when this connection may write documents, or through an admin page with naru.auth.signIn({ collections: ["posts"] }), whose address the owner lists on ${naruOrigin()}/database.
-
-Comments on posts work like a guestbook: one "comments" collection with "write": "create", each comment naming its post, listed with filter: { post: id }.
-
-After saving pages, give the owner the page's address to try it.
-
-## Reference
-`;
+- Always create the client as createNaru({ site: "${site}" }). Without it the SDK finds the site only from a ${site}.naru.pub address, so the page throws on the site's custom domain or a local preview.
+- Declare the collections a page needs with configure_collections rather than asking the owner to make them on /database: it writes ${DECLARATION_PATH}, and a new collection is created at once with the access given. A change to an existing collection's access waits for the owner's approval.
+- A guestbook: { "guestbook": { "read": "world", "write": "create" } }, a form that add()s { name, message }, and a list sorted by [[{ metadata: "createdAt" }, "desc"]].
+- A blog: { "posts": { "read": "world", "write": "admin", "indexes": ["date"] } }, an index page listing posts by date, and a post page that reads ?id= from its address and get()s that post. Only the owner writes posts: through set_document when this connection may write documents, or through an admin page with naru.auth.signIn (section 03 of the database guide).
+- Comments: a "comments" collection with "write": "create", each comment naming its post, listed with filter: { postId }.
+- Show what visitors wrote with textContent, never innerHTML.
+- After saving pages, give the owner the page's address to try it.`;
 }
 
-/** The SDK 1.0.0 guide and reference, for the site `site`. */
+/** A guide as Markdown, its site-relative links made absolute. */
+function guideText(topic: "database" | "media", site: string) {
+  const guide = readGuide(`docs/_guides/1.0.0/${topic}.md`, { site });
+  return [
+    `# ${guide.title}`,
+    guide.lead,
+    ...guide.sections.map(
+      ({ title, markdown }) => `## ${title}\n\n${markdown}`,
+    ),
+  ]
+    .join("\n\n")
+    .replace(/\]\(\//g, `](${naruOrigin()}/`);
+}
+
+/** The SDK 1.0.0 guides and reference, for the site `site`. */
 export function sdkReference(site: string) {
   return [
-    guide(site),
+    preface(site),
+    guideText("database", site),
+    guideText("media", site),
+    "# Reference",
     ...(reference.entries as Entry[]).map(entry),
-    `Documented in full, in Korean, at ${naruOrigin()}/docs/1.0.0/database and ${naruOrigin()}/docs/sdk/1.0.0.`,
   ].join("\n\n");
 }

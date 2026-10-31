@@ -1,16 +1,15 @@
 import type { Metadata } from "next";
 import { mcpResource } from "@/lib/mcp/oauth";
-import { MarkdownHelp } from "../HelpPage";
-import { loadHelp } from "../markdown";
+import { HelpGuide, helpGuide } from "../HelpPage";
 
 // The guide is page.md beside this file.
-const document = () => loadHelp("mcp", { mcp_url: mcpResource() });
+const values = () => ({ mcp_url: mcpResource() });
 
 export function generateMetadata(): Metadata {
-  const { pageTitle, description } = document();
+  const { pageTitle, description } = helpGuide("mcp", values());
   return { title: pageTitle, description };
 }
 
 export default function McpHelp() {
-  return <MarkdownHelp current="mcp" document={document()} />;
+  return <HelpGuide current="mcp" values={values()} />;
 }

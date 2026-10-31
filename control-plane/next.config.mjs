@@ -46,9 +46,12 @@ const nextConfig = {
     ];
   },
   serverExternalPackages: ["@node-rs/argon2"],
-  // Help guides read their Markdown at render (help/markdown.ts).
+  // Guides read their Markdown at render (lib/guide-markdown.ts), and Naru
+  // MCP's get_sdk_reference reads the SDK guides on every call.
   outputFileTracingIncludes: {
     "/help/*": ["./src/app/(main)/help/**/*.md"],
+    "/docs/**/*": ["./src/app/(main)/docs/_guides/**/*.md"],
+    "/mcp": ["./src/app/(main)/docs/_guides/**/*.md"],
   },
   images: {
     remotePatterns: [

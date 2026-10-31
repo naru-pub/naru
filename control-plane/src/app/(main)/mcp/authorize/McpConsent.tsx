@@ -66,12 +66,10 @@ export default function McpConsent({
         연결하려고 합니다.
       </p>
       <p className="text-sm text-muted-foreground">
-        {identity ? (
+        {identity && (
           <>
             앱 정보는 <code>{identity}</code>에서 확인했습니다.{" "}
           </>
-        ) : (
-          <>앱 이름은 앱이 직접 밝힌 것입니다. </>
         )}
         연결이 끝나면 <code>{host}</code>(으)로 돌아갑니다. 쓰려던 앱의 주소인지
         확인하세요.

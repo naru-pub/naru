@@ -31,3 +31,16 @@ export default function Code({
     </figure>
   );
 }
+
+const isLanguage = (value: string): value is Language =>
+  Object.hasOwn(LANGUAGE_LABELS, value);
+
+/**
+ * The same block as HTML, for Markdown guides' code fences; a fence names
+ * its language as ```html, and one that names none is JavaScript.
+ */
+export function codeHtml(code: string, info: string) {
+  const language = isLanguage(info) ? info : "javascript";
+  const label = LANGUAGE_LABELS[language];
+  return `<figure class="${styles.block} min-w-0 overflow-hidden rounded-lg border"><figcaption class="border-b px-4 py-2 text-xs text-muted-foreground">${label}</figcaption><pre class="overflow-x-auto p-4 text-sm leading-7 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" tabindex="0" aria-label="${label} 코드 예제"><code class="language-${language}">${highlight(code.replace(/\n$/, ""), language)}</code></pre></figure>`;
+}
