@@ -41,6 +41,36 @@ export function listsSiteCode(prefix: string): boolean | "only" {
   return "_naru/".startsWith(inside);
 }
 
+// A template version's files, `_templates/<id>/v<n>/` (lib/board/preview),
+// are private as well: only the control plane reads them, when a template is
+// applied, so they needn't be public. Its preview images beside them stay
+// public.
+const TEMPLATE_FILE = /^_templates\/[^/]+\/v\d+\//;
+
+/** Whether `key` of the site bucket is kept in the private one. */
+export const isPrivateKey = (key: string) =>
+  isSiteCode(key) || TEMPLATE_FILE.test(key);
+
+function listsTemplateFiles(prefix: string): boolean | "only" {
+  if (!prefix.startsWith("_templates/"))
+    return "_templates/".startsWith(prefix);
+  const rest = prefix.slice("_templates/".length);
+  const slash = rest.indexOf("/");
+  if (slash < 0) return true;
+  const inside = rest.slice(slash + 1);
+  if (/^v\d+\//.test(inside)) return "only";
+  return /^(v\d*)?$/.test(inside);
+}
+
+/** Whether a listing under `prefix` could find private keys, as listsSiteCode. */
+export function listsPrivate(prefix: string): boolean | "only" {
+  const code = listsSiteCode(prefix);
+  const templates = listsTemplateFiles(prefix);
+  if (code === "only" || templates === "only")
+    return code === true || templates === true ? true : "only";
+  return code || templates;
+}
+
 function decodedKey(path: string) {
   try {
     return decodeURIComponent(path);
@@ -71,10 +101,10 @@ export function siteCodeRouting(buckets: Buckets) {
         const source = (input.CopySource as string).replace(/^\//, "");
         const slash = source.indexOf("/");
         const key = decodedKey(source.slice(slash + 1).split("?")[0]);
-        if (source.slice(0, slash) === site && isSiteCode(key))
+        if (source.slice(0, slash) === site && isPrivateKey(key))
           return withInput({
             CopySource: `${buckets.private()}${source.slice(slash)}`,
-            ...(input.Bucket === site && isSiteCode(input.Key)
+            ...(input.Bucket === site && isPrivateKey(input.Key)
               ? { Bucket: buckets.private() }
               : {}),
           });
@@ -85,7 +115,7 @@ export function siteCodeRouting(buckets: Buckets) {
         return listBoth(buckets, input, withInput);
       if (context.commandName === "DeleteObjectsCommand")
         return deleteBoth(buckets, input, withInput);
-      if (typeof input.Key === "string" && isSiteCode(input.Key))
+      if (typeof input.Key === "string" && isPrivateKey(input.Key))
         return withInput({ Bucket: buckets.private() });
       return next(args);
     };
@@ -96,7 +126,7 @@ async function listBoth(
   input: Record<string, any>,
   withInput: (changes: Record<string, unknown>) => ReturnType<Next>,
 ) {
-  const reach = listsSiteCode(input.Prefix ?? "");
+  const reach = listsPrivate(input.Prefix ?? "");
   const token: string | undefined = input.ContinuationToken;
   if (!reach) return withInput({});
   if (reach === "only")
@@ -116,13 +146,12 @@ async function listBoth(
   ): Awaited<ReturnType<Next>> => {
     const output = result.output;
     const contents = (output.Contents ?? []).filter(
-      ({ Key }: any) => isSiteCode(Key) === code,
+      ({ Key }: any) => isPrivateKey(Key) === code,
     );
     const prefixes = (output.CommonPrefixes ?? []).filter(({ Prefix }: any) =>
       code
-        ? !Prefix.startsWith("_naru-runtime/") &&
-          listsSiteCode(Prefix) !== false
-        : !isSiteCode(Prefix),
+        ? !Prefix.startsWith("_naru-runtime/") && listsPrivate(Prefix) !== false
+        : !isPrivateKey(Prefix),
     );
     return {
       ...result,
@@ -209,9 +238,9 @@ async function deleteBoth(
   withInput: (changes: Record<string, unknown>) => ReturnType<Next>,
 ) {
   const objects: { Key: string }[] = input.Delete?.Objects ?? [];
-  const code = objects.filter(({ Key }) => isSiteCode(Key));
+  const code = objects.filter(({ Key }) => isPrivateKey(Key));
   if (!code.length) return withInput({});
-  const files = objects.filter(({ Key }) => !isSiteCode(Key));
+  const files = objects.filter(({ Key }) => !isPrivateKey(Key));
   const inPrivate = await withInput({
     Bucket: buckets.private(),
     Delete: { ...input.Delete, Objects: code },

@@ -63,7 +63,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   are allowed. The limits are 200 files and 20 MiB, so publishing and
   applying each fit in one request of R2 copies.
 - **Publishing takes a snapshot.** The files are copied to
-  `_templates/<template_id>/v<version>/` in the site bucket. Login names match
+  `_templates/<template_id>/v<version>/` in the site bucket, which the S3
+  client keeps in the private bucket like site code. Login names match
   `^[a-z0-9]+(-[a-z0-9]+)*$`, so no one's site can collide with that prefix.
   Later edits to the author's site don't change the template. "새 버전
   올리기" (publish a new version) on the edit page takes another snapshot,

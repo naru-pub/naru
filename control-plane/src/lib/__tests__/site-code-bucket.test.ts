@@ -12,7 +12,9 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "stream";
 import {
+  isPrivateKey,
   isSiteCode,
+  listsPrivate,
   listsSiteCode,
   siteCodeRouting,
 } from "@/lib/site-code-bucket";
@@ -206,6 +208,32 @@ describe("which keys are site code", () => {
   ])("listing %j reaches site code: %s", (prefix, expected) => {
     expect(listsSiteCode(prefix)).toBe(expected);
   });
+
+  // A template version's files are private too; its previews are not.
+  test.each([
+    ["_templates/t1/v3/index.html", true],
+    ["_templates/t1/v12/css/a.css", true],
+    ["_templates/t1/v3.png", false],
+    ["_templates/t1/preview", false],
+    ["alice/_naru/routes.js", true],
+    ["alice/index.html", false],
+  ])("%s is private: %s", (key, expected) => {
+    expect(isPrivateKey(key)).toBe(expected);
+  });
+
+  test.each([
+    ["", true],
+    ["_templates/", true],
+    ["_templates/t1/", true],
+    ["_templates/t1/v3", true],
+    ["_templates/t1/v3/", "only"],
+    ["_templates/t1/preview", false],
+    ["_templates/t1/v3.png", false],
+    ["alice/_naru/", "only"],
+    ["alice/blog/", false],
+  ])("listing %j reaches private keys: %s", (prefix, expected) => {
+    expect(listsPrivate(prefix)).toBe(expected);
+  });
 });
 
 test("writes, reads and deletes site code in the private bucket only", async () => {
@@ -235,6 +263,46 @@ test("writes, reads and deletes site code in the private bucket only", async () 
     new DeleteObjectCommand({ Bucket: SITE, Key: "alice/_naru/queries/a.js" }),
   );
   expect(keys(PRIVATE)).toEqual([]);
+});
+
+test("keeps template versions' files private, beside public previews", async () => {
+  buckets.get(SITE)!.set("alice/index.html", "page");
+  // Snapshotting a site into a version, then applying it to another site.
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: SITE,
+      CopySource: `${SITE}/alice/index.html`,
+      Key: "_templates/t1/v1/index.html",
+    }),
+  );
+  await client.send(
+    new PutObjectCommand({
+      Bucket: SITE,
+      Key: "_templates/t1/v1.png",
+      Body: "png",
+    }),
+  );
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: SITE,
+      CopySource: `${SITE}/_templates/t1/v1/index.html`,
+      Key: "bob/index.html",
+    }),
+  );
+  expect(keys(SITE)).toEqual([
+    "_templates/t1/v1.png",
+    "alice/index.html",
+    "bob/index.html",
+  ]);
+  expect(keys(PRIVATE)).toEqual(["_templates/t1/v1/index.html"]);
+
+  const listed = await client.send(
+    new ListObjectsV2Command({ Bucket: SITE, Prefix: "_templates/t1/" }),
+  );
+  expect(listed.Contents?.map((object) => object.Key)).toEqual([
+    "_templates/t1/v1.png",
+    "_templates/t1/v1/index.html",
+  ]);
 });
 
 test("leaves other buckets alone", async () => {

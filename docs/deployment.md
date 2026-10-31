@@ -124,8 +124,9 @@ what Naru keeps for itself beside the sites, `_naru-runtime/<site>/`
 another bucket, `naru-private`, which no public domain serves
 (`PRIVATE_FILES`, `S3_PRIVATE_BUCKET_NAME`, `R2_PRIVATE_BUCKET`). The control
 plane names the site bucket for `_naru/` like any of a site's files; its S3
-client sends those keys to the private one (`site-code-bucket.ts`). What
-else lives in the site bucket either is public on purpose (`_templates/`,
+client sends those keys to the private one (`site-code-bucket.ts`). Template
+versions' files, `_templates/<id>/v<n>/`, go there the same way. What else
+lives in the site bucket either is public on purpose (template previews,
 screenshots) or hides behind a random key:
 home directory exports are `__exports/<128-bit token>/<login>-export.zip`,
 reached through the presigned link in their email, and GitHub deploys stage
