@@ -17,15 +17,16 @@ How the server meets them: [design/naru-mcp.md](design/naru-mcp.md).
 ## Before submitting
 
 - [x] **Privacy policy covers MCP.** `/privacy` lists MCP connections in
-      sections 1, 3 and 4, effective 2026-10-30, a week after it was posted
-      as its section 12 promises. See [Privacy policy additions](#privacy-policy-additions).
+      sections 1, 3 and 4, and since 2026-11-09 the database documents they
+      can reach, a week after it was posted as its section 12 promises. See
+      [Privacy policy additions](#privacy-policy-additions).
 - [ ] **Reviewer account.** A production account comped the supporter plan
       (`/admin/users/<login>`), with a few pages, a stylesheet, an image and a
       `_naru/collections.json`, so every tool has something to work on.
 - [ ] **Tested in Claude.** Add `https://naru.pub/mcp` as a
       [custom connector](https://claude.com/docs/connectors/building/testing.md)
       in Claude, sign in, and
-      call all six tools from a conversation; the portal's Test & launch step
+      call all fourteen tools from a conversation; the portal's Test & launch step
       asks you to confirm it. Also load the plugin in Claude Code with
       `claude --plugin-dir ~/Git/naru-claude-plugin` and run `/mcp`.
 
@@ -38,46 +39,62 @@ How the server meets them: [design/naru-mcp.md](design/naru-mcp.md).
 
 ### Tools
 
-Synced from the server; all six have a title and an annotation:
+Synced from the server; all fourteen have a title and an annotation. The
+directory's page still shows the first six, so sync them again:
 
-| Tool          | Annotation  |
-| ------------- | ----------- |
-| `get_site`    | read-only   |
-| `list_files`  | read-only   |
-| `read_file`   | read-only   |
-| `write_file`  | destructive |
-| `move_file`   | destructive |
-| `delete_file` | destructive |
+| Tool                    | Annotation      |
+| ----------------------- | --------------- |
+| `get_site`              | read-only       |
+| `list_files`            | read-only       |
+| `read_file`             | read-only       |
+| `get_sdk_reference`     | read-only       |
+| `list_collections`      | read-only       |
+| `list_documents`        | read-only       |
+| `get_document`          | read-only       |
+| `configure_collections` | not destructive |
+| `write_file`            | destructive     |
+| `move_file`             | destructive     |
+| `delete_file`           | destructive     |
+| `delete_folder`         | destructive     |
+| `set_document`          | destructive     |
+| `delete_document`       | destructive     |
 
 ### Listing
 
 - Name: `Naru`
-- One-liner (≤ 200): `Read, edit and publish the pages and files of your Naru personal website (naru.pub).`
+- One-liner (≤ 200): `Build and edit your Naru website (naru.pub) from a conversation: change its pages and files, add images, and add a guestbook or blog backed by the site's database.`
 - Description (≤ 2,000):
 
   > Naru (naru.pub) hosts personal websites: a site at <name>.naru.pub or on
   > your own domain, served exactly as you upload it. The Naru connector lets
-  > Claude work on your site's files directly. Claude can show you what's on
-  > your site, read any page, write new pages or rewrite existing ones, add
-  > images and stylesheets, move and rename files, and delete what you no
-  > longer need. Every change is published the moment it's made, at the
+  > Claude work on your site directly. Claude can show you what's on your
+  > site, read any page, write new pages or rewrite existing ones, add images
+  > and stylesheets, move and rename files, and delete files and folders you
+  > no longer need. Every change is published the moment it's made, at the
   > same address visitors use.
   >
+  > Claude can also build pages that save data, such as a guestbook, a blog
+  > or comments: it reads the Naru Data SDK's guide, sets up collections in
+  > your site's database and writes the pages. New collections are created
+  > at once; other changes to an existing collection wait for your approval
+  > on naru.pub/database.
+  >
   > The connector reaches one site, the one belonging to the Naru account you
-  > sign in with, and only its files: not your account settings, billing,
-  > domains or site database. When you connect, you choose whether Claude may
-  > only read your site or also change it. You can see every connected app
-  > and disconnect it at any time on naru.pub/account.
+  > sign in with: its files and its database, not your account settings,
+  > billing or domains. When you connect, you choose whether Claude may only
+  > read your site or also change it. Database documents, which can hold what
+  > your visitors wrote, are a separate permission that stays off unless you
+  > turn it on. You can see every connected app and disconnect it at any time
+  > on naru.pub/account.
   >
   > Use it to start a homepage from nothing, restyle the one you have, add a
-  > page for a new project, or fix what's broken. Pages can also save data,
-  > such as a guestbook or comments, with the Naru Data SDK.
+  > page for a new project, or fix what's broken.
   >
   > Requires a Naru account on the supporter plan.
 
 - Categories: pick the closest of what the portal offers, such as
   Productivity, Design or Developer tools.
-- Documentation URL: `https://naru.pub/docs/mcp`
+- Documentation URL: `https://naru.pub/help/mcp`
 - Privacy policy URL: `https://naru.pub/privacy`
 - Support contact: `hello@naru.pub`
 - Icon: `control-plane/public/logo.png` (270 × 270 PNG)
@@ -86,8 +103,8 @@ Synced from the server; all six have a title and an annotation:
 ### Use cases
 
 - Primary use cases: create or restyle a personal homepage; add and edit
-  pages; upload images; reorganize files; add a guestbook or comments with the
-  Naru Data SDK.
+  pages; upload images; reorganize files; add a guestbook, blog or comments
+  with the Naru Data SDK; read and tidy what the site's database holds.
 - What users need: a Naru account (free sign-up at naru.pub) on the supporter
   plan (₩1,000 a month, or a free trial when one is open).
 - Reads and writes data.
@@ -118,14 +135,21 @@ Fill in the account once it exists; the credentials go only in the portal.
 > 1. In Claude, add the connector and select Connect. naru.pub opens.
 > 2. Sign in with the test account below. The page is in Korean: 아이디 is the
 >    username field and 비밀번호 the password.
-> 3. On the MCP 연결 page, leave both permissions ticked and select 연결
->    (Connect). Claude is now connected to the account's site,
+> 3. On the MCP 연결 page, leave the two ticked permissions, also tick the
+>    third (데이터베이스 문서, database documents, off by default) and select
+>    연결 (Connect). Claude is now connected to the account's site,
 >    https://<login>.naru.pub.
 > 4. Try: "What's on my Naru site?" (get_site, list_files), "Show me
 >    index.html" (read_file), "Add a page about.html linked from the home
 >    page" (write_file), "Rename about.html to me.html" (move_file), "Delete
 >    me.html" (delete_file). Changes appear at the site's address at once.
-> 5. naru.pub/account lists the connection under MCP 연결, where 연결 끊기
+> 5. Try the database: "Add a guestbook to my Naru site in a guestbook folder"
+>    (get_sdk_reference, configure_collections, write_file), "Which collections
+>    does my site have?" (list_collections), "Add a guestbook entry saying
+>    hello" (set_document), "Show me the guestbook's entries" (list_documents,
+>    get_document), "Delete that entry" (delete_document), "Remove the
+>    guestbook" (delete_folder).
+> 6. naru.pub/account lists the connection under MCP 연결, where 연결 끊기
 >    (Disconnect) ends it.
 >
 > Username: `<login>` · Password: `<password>`
@@ -149,11 +173,12 @@ more checks. The listing details come from `plugin.json` and the README.
 
 - Reads or stores personal data: **Reads and stores.** The connector reads
   the user's site files and saves what Claude writes to them, and personal
-  homepages hold names and contact details. It doesn't reach the site
-  database or its visitors' data.
+  homepages hold names and contact details. If the user allows database
+  documents, it also reads and changes those, which can hold what the site's
+  visitors wrote.
 - Sends data to services other than its declared connectors: **No.**
-- Retains data received from Claude: **Longer.** Written files are the
-  user's website until they delete them; the connection record lasts until
+- Retains data received from Claude: **Longer.** Written files and documents
+  are the user's website until they delete them; the connection record lasts until
   they disconnect.
 - Intended for users under 18: **No.** It's for Claude users, who must be 18
   or older; Naru itself accepts sign-ups from 14.
@@ -174,13 +199,14 @@ acknowledgments.
 ## Privacy policy additions
 
 Added to `control-plane/src/app/(main)/privacy/page.tsx` on 2026-10-23,
-effective 2026-10-30:
+effective 2026-10-30, and extended to the site database on 2026-11-02,
+effective 2026-11-09:
 
-**1. 수집하는 개인정보**, a new row:
+**1. 처리하는 개인정보와 목적**, a new row:
 
-| 구분               | 항목                                                                                                                     | 목적                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| MCP 연결 (사용 시) | 연결한 앱의 이름과 앱 정보 주소·돌아갈 주소, 허용한 권한, 연결한 시각과 마지막으로 쓴 시각, 접근 토큰과 갱신 토큰의 해시 | 이용자가 연결한 앱이 사이트 파일을 읽고 고칠 수 있게 하고, 연결 목록을 보여주고 끊을 수 있게 함 |
+| 구분               | 항목                                                                                                                     | 목적                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| MCP 연결 (사용 시) | 연결한 앱의 이름과 앱 정보 주소·돌아갈 주소, 허용한 권한, 연결한 시각과 마지막으로 쓴 시각, 접근 토큰과 갱신 토큰의 해시 | 이용자가 연결한 앱이 사이트 파일과 데이터베이스를 읽고 고칠 수 있게 하고, 연결 목록을 보여주고 끊을 수 있게 함 |
 
 **3. 보유 기간과 파기**, a new item:
 
@@ -191,6 +217,8 @@ effective 2026-10-30:
 **4. 제3자 제공**, a new paragraph:
 
 > 이용자가 MCP로 연결한 앱(예: Claude)에는 이용자가 허용한 범위에서 사이트
-> 정보와 파일이 전달됩니다. 이는 이용자의 요청에 따른 전달이며, 그 앱이
-> 받은 정보는 그 앱 제공자의 개인정보 처리방침에 따라 처리됩니다. 나루는
-> 이용자와 그 앱 사이의 대화 내용을 받지 않습니다.
+> 정보와 파일, 데이터베이스 컬렉션 설정이 전달되고, 데이터베이스 문서를 따로
+> 허용하면 그 문서도 전달됩니다. 문서에는 사이트 방문자가 쓴 내용이 들어 있을
+> 수 있습니다. 이는 이용자의 요청에 따른 전달이며, 그 앱이 받은 정보는 그 앱
+> 제공자의 개인정보 처리방침에 따라 처리됩니다. 나루는 이용자와 그 앱 사이의
+> 대화 내용을 받지 않습니다.
