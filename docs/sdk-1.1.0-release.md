@@ -63,7 +63,8 @@ desktop app's browser. All of these passed:
 - A visitor's query and `subscribe()`, and a mutation refused with
   `AUTH_REQUIRED`, its Korean message and no `cause`.
 - Owner and member sign-in, each kept across a reload, and each sign-out ending
-  only its own session, with the other still signed in until its turn.
+  its session. Signing the member out left the owner signed in; the reverse was
+  not tried.
 - As each of them: a query, a mutation, `subscribe()`'s first answer and its
   update after the mutation, and an upload whose URL loads.
 
