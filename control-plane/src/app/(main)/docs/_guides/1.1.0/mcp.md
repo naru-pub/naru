@@ -9,3 +9,5 @@ A Naru site's pages store and read data in the site's own database with this SDK
 - Only the owner writes to a collection with "write": "admin", such as a blog's posts: through set_document when this connection may write documents, or through an admin page with naru.auth.signIn (section 05 of the database guide).
 - Save site code's files with write_file: _naru/migrations/*.sql create the tables, and pages call _naru/queries/ and _naru/mutations/ with query() and mutate(). Saving installs them, and write_file says when it couldn't. No tool here calls them, so give the owner the page to try.
 - After saving pages, give the owner the page's address to try it.
+- If you can run commands on the owner's computer, test site code before saving it: `npx @naru-pub/dev <folder> --site {{site}}` runs the pages and _naru/ locally. Saving with write_file is still what publishes them. See {{origin}}/docs/dev. Without a shell, skip this.
+- Pages import the SDK from its URL. Use the npm package @naru-pub/sdk only in a project that already has a bundler.

@@ -98,10 +98,12 @@ pnpm dev
 
 Naru 데이터 SDK를 쓰는 사이트를 실제 edge Worker로 로컬에서 실행합니다.
 사이트 개발자는 Naru 체크아웃 없이 npm 패키지로 씁니다
-([naru-dev/README.md](../naru-dev/README.md)):
+([naru-dev/README.md](../naru-dev/README.md)). neo-avocado처럼 빌드하는 사이트는
+`pnpm build` 뒤 결과 폴더(`dist`)를 넘기고, 빌드가 지우지 않도록 데이터는
+`--state`로 그 밖에 둡니다:
 
 ```bash
-npx @naru-pub/dev ~/Git/neo-avocado --site neo-avocado
+npx @naru-pub/dev ~/Git/neo-avocado/dist --site neo-avocado --state ~/Git/neo-avocado/.naru-dev
 ```
 
 이 체크아웃의 코드로 돌리려면 `edge/`와 `control-plane/`에서 `pnpm install`을
@@ -109,12 +111,13 @@ npx @naru-pub/dev ~/Git/neo-avocado --site neo-avocado
 먼저 묶습니다):
 
 ```bash
-cd control-plane && pnpm naru-dev ~/Git/neo-avocado --site neo-avocado
+cd control-plane && pnpm naru-dev ~/Git/neo-avocado/dist --site neo-avocado --state ~/Git/neo-avocado/.naru-dev
 ```
 
 http://localhost:4000 에서 사이트 파일, SDK, 데이터 API를 함께 제공하고,
 운영자·회원 로그인은 한 번의 클릭으로 끝납니다. `_naru/`를 고치면 바로 다시
-게시합니다. 데이터는 사이트 폴더의 `.naru-dev/`에 남습니다. 자세한 내용은
+게시합니다. `--state`를 주지 않으면 데이터는 사이트 폴더의 `.naru-dev/`에
+남습니다. 자세한 내용은
 [sdk-v1-api.md](sdk-v1-api.md#local-development-naru-dev)를 참고하세요.
 
 패키지(`naru-dev/`)는 `pnpm install`(그 폴더와 `edge/`) 뒤 `pnpm build`로
