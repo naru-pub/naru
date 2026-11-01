@@ -34,9 +34,10 @@ function overLimit(grantId: string) {
 
 /**
  * The largest request, which the transport counts as it arrives and answers
- * with 413 past, before parsing it: named here so that no SDK upgrade moves it.
+ * with 413 past, before parsing it: room for write_file's largest file as
+ * base64, 13.4 MiB, and its JSON around it.
  */
-const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
 function unauthorized(tokenGiven: boolean) {
   // RFC 9728 §5.1: where the app learns how to sign in.

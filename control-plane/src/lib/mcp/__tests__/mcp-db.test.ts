@@ -544,7 +544,7 @@ integration("Naru MCP", () => {
   });
 
   describe("the request size cap", () => {
-    const cap = 4 * 1024 * 1024;
+    const cap = 16 * 1024 * 1024;
     const post = (token: string, init: RequestInit) =>
       route.POST(
         new Request("https://naru.test/mcp", {
@@ -601,6 +601,25 @@ integration("Naru MCP", () => {
       });
       // Not a JSON-RPC message, which is the server's to say: past the cap.
       expect(response.status).toBe(400);
+    });
+
+    test("leaves room for the largest file, as base64", async () => {
+      const tokens = await connect(owner, "write");
+      const client = await mcpClient(tokens.access_token);
+      const result: any = await client.callTool({
+        name: "write_file",
+        arguments: {
+          path: "largest.png",
+          content: Buffer.alloc(10 * 1024 * 1024, 7).toString("base64"),
+          encoding: "base64",
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      await client.callTool({
+        name: "delete_file",
+        arguments: { path: "largest.png" },
+      });
+      await client.close();
     });
   });
 
