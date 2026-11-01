@@ -52,6 +52,21 @@ in CI. The browser fixture (`tests/browser/`) loads 1.0.0 only, so 1.1.0's stora
 member sign-in and live connections have no browser check here.
 
 The live acceptance pass was not run before the freeze, at the owner's
-instruction, as it was not for 1.0.0: owner and member sign-in, reload, sign-out,
-a query, a mutation, `subscribe()` and an upload have not been checked on a
-deployed site against this release's final files.
+instruction, as it was not for 1.0.0.
+
+## Live acceptance, after the freeze
+
+Run on 2026-11-01 against the frozen files, from a temporary page on
+`limeburst.net` (a custom domain) that imported `/sdk/1.1.0/naru.js`, in the
+desktop app's browser. All of these passed:
+
+- A visitor's query and `subscribe()`, and a mutation refused with
+  `AUTH_REQUIRED`, its Korean message and no `cause`.
+- Owner and member sign-in, each kept across a reload, and each sign-out ending
+  only its own session, with the other still signed in until its turn.
+- As each of them: a query, a mutation, `subscribe()`'s first answer and its
+  update after the mutation, and an upload whose URL loads.
+
+Not covered: the member was the owner's own Naru account, and it ran in one
+browser, so a second tab, a closed and reopened browser, membership approval
+and banning were not checked.
