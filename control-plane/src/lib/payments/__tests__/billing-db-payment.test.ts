@@ -43,6 +43,27 @@ jest.mock("@/lib/email", () => ({
 }));
 
 jest.mock("@/lib/auth", () => ({ validateRequest: jest.fn() }));
+// The routes and jobs wait 5 or 10 s for a busy account; the tests that find
+// one busy would sit out the whole wait, 40 s of this file's run. A second is
+// enough for every lock these tests release while something waits.
+jest.mock("@/lib/payments/account-lock", () => {
+  const actual = jest.requireActual<
+    typeof import("@/lib/payments/account-lock")
+  >("@/lib/payments/account-lock");
+  return {
+    ...actual,
+    withAccountLock: <T>(
+      userId: string,
+      opts: { waitMs: number },
+      fn: () => Promise<T>,
+    ) =>
+      actual.withAccountLock(
+        userId,
+        { waitMs: Math.min(opts.waitMs, 1000) },
+        fn,
+      ),
+  };
+});
 jest.mock("@/lib/operator-alerts", () => ({
   operatorAlertsConfigured: () => true,
   sendOperatorAlert: jest.fn(async () => {}),

@@ -3,6 +3,9 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig = {
   // The Dockerfile's web image runs .next/standalone/server.js.
   output: "standalone",
+  // Type-checked by `pnpm typecheck`, CI's typecheck job, which a deploy
+  // waits for like the image build; here it would hold up the image by ~20s.
+  typescript: { ignoreBuildErrors: true },
   // Old addresses, for links and bookmarks: the GitHub deploys page was
   // /deploys, the MCP guide /docs/mcp.
   async redirects() {

@@ -8,6 +8,7 @@
     "build": "node scripts/build-sdk.mjs --check && node scripts/copy-monaco.mjs && next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "next typegen && tsc --noEmit --incremental false",
     "sdk-reference": "node scripts/generate-sdk-reference.mjs",
     "sdk-reference:check": "node scripts/generate-sdk-reference.mjs --check",
     "sdk:build": "node scripts/build-sdk.mjs",

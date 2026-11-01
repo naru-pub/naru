@@ -70,6 +70,26 @@ jobs:
           tag=git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
           scripts/smoke-test-images.sh "$image:$tag" "$image-jobs:$tag"
 
+  # TypeScript over the control plane, with the route types Next generates.
+  # next build skips it (next.config.mjs) so that the image is not held up;
+  # like the tests, it is part of the run a deploy checks.
+  typecheck:
+    defaults:
+      run:
+        working-directory: control-plane
+    permissions:
+      contents: read
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Same pnpm as the Dockerfile.
+      - run: npm install --global pnpm@11.5.2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
   # The payment tests: unit tests, then the database tests against a throwaway
   # PostgreSQL cluster the script starts itself. Part of the run a deploy
   # checks, so a payment regression never reaches the server.
@@ -85,13 +105,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # The PostgreSQL server binaries, installed in the background while the
+      # dependencies are; "Wait for PostgreSQL" waits for it, failing with
+      # apt's log if it failed.
+      - name: Start installing PostgreSQL
+        run: |
+          {
+            status=0
+            sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-18 postgresql-18-cron postgresql-18-hll || status=$?
+            echo "$status" >"$RUNNER_TEMP/postgresql.status"
+          } >"$RUNNER_TEMP/postgresql.log" 2>&1 &
       # Same pnpm as the Dockerfile.
       - run: npm install --global pnpm@11.5.2
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:payments
       # Only the server binaries are needed; the script runs its own cluster
       # on a private socket.
-      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-18 postgresql-18-cron postgresql-18-hll
+      - name: Wait for PostgreSQL
+        timeout-minutes: 5
+        run: |
+          while [[ ! -f "$RUNNER_TEMP/postgresql.status" ]]; do sleep 1; done
+          if [[ "$(cat "$RUNNER_TEMP/postgresql.status")" != 0 ]]; then
+            cat "$RUNNER_TEMP/postgresql.log"
+            exit 1
+          fi
       - run: pnpm test:payments:db
         env:
           NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
@@ -116,6 +153,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      # The PostgreSQL server binaries, installed in the background while the
+      # dependencies are; "Wait for PostgreSQL" waits for it, failing with
+      # apt's log if it failed.
+      - name: Start installing PostgreSQL
+        run: |
+          {
+            status=0
+            sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-18 postgresql-18-hll || status=$?
+            echo "$status" >"$RUNNER_TEMP/postgresql.status"
+          } >"$RUNNER_TEMP/postgresql.log" 2>&1 &
       # Same pnpm as the Dockerfile.
       - run: npm install --global pnpm@11.5.2
       - run: pnpm install --frozen-lockfile
@@ -127,7 +174,14 @@ jobs:
       - run: pnpm sdk-reference:check
       - run: pnpm test:data
       - run: pnpm test:node
-      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends postgresql-18 postgresql-18-hll
+      - name: Wait for PostgreSQL
+        timeout-minutes: 5
+        run: |
+          while [[ ! -f "$RUNNER_TEMP/postgresql.status" ]]; do sleep 1; done
+          if [[ "$(cat "$RUNNER_TEMP/postgresql.status")" != 0 ]]; then
+            cat "$RUNNER_TEMP/postgresql.log"
+            exit 1
+          fi
       # Site databases are Durable Objects: the database suites start the
       # edge Worker under `wrangler dev` (scripts/with-edge-worker.sh).
       - run: pnpm install --frozen-lockfile
@@ -136,7 +190,11 @@ jobs:
       - run: pnpm test
         working-directory: edge
       # The committed metered QuickJS is what quickjs/meter makes of the
-      # installed variant's WebAssembly.
+      # installed variant's WebAssembly. The meter's build is kept between
+      # runs: compiled from nothing, it takes ~20s.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: edge/quickjs/meter -> target
       - run: pnpm check:meter
         working-directory: edge
       - run: pnpm test:board
