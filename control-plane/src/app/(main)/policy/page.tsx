@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function GuidelinesPage() {
   return (
-    <PolicyPage title="커뮤니티 가이드라인" effectiveDate="2026년 10월 18일">
+    <PolicyPage title="커뮤니티 가이드라인" effectiveDate="2026년 11월 1일">
       <p>
         나루는 누구나 자신만의 작은 공간을 띄울 수 있는 인디웹 호스팅입니다.
         서로의 공간을 존중하고, 모두가 안심하고 머물 수 있는 곳이 되도록 아래
@@ -92,6 +92,17 @@ export default function GuidelinesPage() {
             게시판에 템플릿을 공유하면 CC0으로 누구나 자유롭게 쓸 수 있게
             됩니다. 다른 사람의 저작물이 들어 있지 않은지 확인해 주세요.
           </li>
+        </PolicyList>
+      </PolicySection>
+
+      <PolicySection title="손코딩과 AI">
+        <p>
+          나루는 한 줄씩 코드를 짜는 분도, AI와 함께 만드는 분도 모두 응원하고
+          환영합니다.
+        </p>
+        <PolicyList>
+          <li>AI로 만든 것은 그렇다고 밝혀주세요.</li>
+          <li>다른 사람의 작품을 흉내 내지 말아주세요.</li>
         </PolicyList>
       </PolicySection>
 
