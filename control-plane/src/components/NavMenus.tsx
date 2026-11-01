@@ -15,7 +15,6 @@ import {
   Heart,
   Images,
   LogOut,
-  MessageSquare,
   Settings,
   ShieldCheck,
   User,
@@ -247,25 +246,11 @@ export function AccountMenu({
             공개 설정
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/board/notifications" className="flex items-center gap-2">
-            <Bell size={16} />
-            게시판 알림
-          </Link>
-        </DropdownMenuItem>
         {paymentOperator && (
           <DropdownMenuItem asChild>
             <Link href="/admin" className="flex items-center gap-2">
               <ShieldCheck size={16} />
               운영
-            </Link>
-          </DropdownMenuItem>
-        )}
-        {paymentOperator && (
-          <DropdownMenuItem asChild>
-            <Link href="/admin/board" className="flex items-center gap-2">
-              <MessageSquare size={16} />
-              게시판 관리
             </Link>
           </DropdownMenuItem>
         )}
