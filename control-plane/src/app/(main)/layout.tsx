@@ -136,6 +136,7 @@ export default async function RootLayout({
                           </span>
                         </NavLink>
                       )}
+                      <NavLink href="/help">도움말</NavLink>
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1">
