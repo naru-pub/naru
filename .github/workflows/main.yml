@@ -274,27 +274,13 @@ jobs:
       - run: sdk/scripts/check-package.sh "$RUNNER_TEMP/sdk"
 
   # @naru-pub/dev (naru-dev/), as a developer installs it: built and packed
-  # as npm would publish it, the tarball installed in an empty folder outside
-  # the checkout, and its smoke test run there (the command on a fixture
-  # site's pages, query, mutation, route and collection, and the testing
-  # API), on Linux and macOS, on the oldest Node it supports and the current
-  # LTS. publish-naru-dev.yml runs the same before publishing.
-  naru-dev-package:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-26.04-arm, macos-15]
-        node: [20, 24]
+  # once, as npm would publish it and as publish-naru-dev.yml does, ...
+  naru-dev-tarball:
     permissions:
       contents: read
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@v4
-      # The installed package runs on matrix.node; the build on 24.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-      - run: echo "NARU_DEV_SMOKE_NODE=$(command -v node)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -305,4 +291,46 @@ jobs:
         working-directory: naru-dev
       - run: pnpm typecheck
         working-directory: naru-dev
-      - run: naru-dev/scripts/check-package.sh "$RUNNER_TEMP/naru-dev"
+      - run: npm pack --silent --pack-destination .
+        working-directory: naru-dev
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naru-dev-tarball
+          path: naru-dev/naru-pub-dev-*.tgz
+          retention-days: 7
+
+  # ... then the tarball installed in an empty folder outside the checkout,
+  # and its smoke test run there (the command on a fixture site's pages,
+  # query, mutation, route and collection, and the testing API), on every
+  # platform workerd ships a binary for, on the oldest Node it supports and
+  # the current LTS.
+  naru-dev-package:
+    needs: naru-dev-tarball
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-26.04-arm
+          - ubuntu-26.04
+          - macos-15
+          - macos-15-intel
+          - windows-2025
+        node: [20, 24]
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Windows runners check out CRLF otherwise, which bash can't run.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: naru-dev-tarball
+          path: naru-dev-tarball
+      - run: naru-dev/scripts/check-package.sh "$PWD"/naru-dev-tarball/*.tgz

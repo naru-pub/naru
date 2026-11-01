@@ -6,7 +6,7 @@
 //   node test/smoke.mjs     here, or wherever @naru-pub/dev is installed
 //                           (CI copies test/ beside an installed tarball)
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cp, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -53,6 +53,19 @@ async function serve() {
     await new Promise((done) => setTimeout(done, 100));
   }
 }
+/**
+ * Windows has no SIGTERM: a kill there would end the command at once and leave
+ * its workerd running, so the whole tree goes, and no clean exit is expected.
+ */
+const end = (child) =>
+  process.platform === "win32"
+    ? spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"])
+    : child.kill("SIGTERM");
+const stopped = async ({ child, exited }) => {
+  end(child);
+  const code = await exited;
+  if (process.platform !== "win32") assert.equal(code, 0);
+};
 const call = async (origin, kind, name, args, headers = {}) => {
   const response = await fetch(`${origin}/api/data/v1/smoke/${kind}/${name}`, {
     method: "POST",
@@ -167,14 +180,12 @@ try {
   });
 
   await timed("data kept across a restart", async () => {
-    naru.child.kill("SIGTERM");
-    assert.equal(await naru.exited, 0);
+    await stopped(naru);
     naru = await serve();
     assert.deepEqual(await call(naru.origin, "_query", "notes:list"), [
       { id: 1, text: "hi", author: null },
     ]);
-    naru.child.kill("SIGTERM");
-    assert.equal(await naru.exited, 0);
+    await stopped(naru);
   });
 
   await timed("the testing API", async () => {
@@ -236,6 +247,6 @@ try {
   });
   console.log("naru-dev smoke test passed");
 } finally {
-  naru?.child.kill("SIGTERM");
-  await rm(scratch, { recursive: true, force: true });
+  if (naru) end(naru.child);
+  await rm(scratch, { recursive: true, force: true, maxRetries: 10 });
 }

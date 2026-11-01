@@ -11,9 +11,9 @@ npx @naru-pub/dev ./site --site demo
 # naru-dev: demo at http://localhost:4000/
 ```
 
-Requires Node.js 20 or later, on macOS or Linux (arm64 or x64), where it is
-tested. [workerd](https://www.npmjs.com/package/workerd), which it runs,
-also ships a Windows x64 binary, but naru-dev is not tested there.
+Requires Node.js 20 or later, on macOS or Linux (arm64 or x64) or Windows
+(x64): the platforms [workerd](https://www.npmjs.com/package/workerd), which
+it runs, ships a binary for, and where naru-dev is tested.
 
 ## Install
 
