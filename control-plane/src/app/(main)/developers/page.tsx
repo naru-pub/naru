@@ -29,8 +29,8 @@ const TOOLS = [
   {
     href: `${REPOSITORY}/sdk`,
     title: "@naru-pub/sdk",
-    note: `${SDK_VERSION}-dev`,
-    command: "npm install @naru-pub/sdk@dev",
+    note: SDK_VERSION,
+    command: "npm install @naru-pub/sdk",
     summary: "번들러와 타입 검사를 쓸 때",
   },
   {
@@ -159,13 +159,6 @@ export default async function DevelopersPage() {
             <p className="text-lg leading-relaxed text-muted-foreground">
               사이트 코드(_naru/)와 Data SDK로 템플릿을 만들어 나누는 사람을
               위한 곳이에요. 빈 폴더에서 공개한 템플릿까지 세 단계예요.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              SDK {SDK_VERSION}은 아직 만드는 중이라 바뀔 수 있어요. 안정 버전은{" "}
-              <Link href="/docs/1.0.0/database" className={LINK}>
-                1.0.0
-              </Link>
-              이에요.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

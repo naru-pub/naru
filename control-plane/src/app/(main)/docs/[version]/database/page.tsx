@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import Stable from "../../_guides/1.0.0/database";
-import Development from "../../_guides/1.1.0/database";
+import Previous from "../../_guides/1.0.0/database";
+import Latest from "../../_guides/1.1.0/database";
 import { DOC_VERSIONS, isDocsVersion } from "../../versions";
 export function generateStaticParams() {
   return DOC_VERSIONS.map((version) => ({ version }));
@@ -21,5 +21,5 @@ export default async function Page({
 }) {
   const { version } = await params;
   if (!isDocsVersion(version)) notFound();
-  return version === "1.0.0" ? <Stable /> : <Development />;
+  return version === "1.0.0" ? <Previous /> : <Latest />;
 }

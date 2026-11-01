@@ -21,7 +21,7 @@ export default function DocsNav({
         aria-label="SDK 버전"
       >
         <span>SDK 버전</span>
-        {DOC_VERSIONS.filter((value) => value !== "1.1.0").map((value) => (
+        {DOC_VERSIONS.map((value) => (
           <a
             key={value}
             href={guidePath(value, current)}
@@ -32,7 +32,7 @@ export default function DocsNav({
                 : "text-muted-foreground"
             }
           >
-            {value} · {value === "1.0.0" ? "안정" : "개발 중"}
+            {value} · {value === "1.0.0" ? "이전" : "최신"}
           </a>
         ))}
       </div>

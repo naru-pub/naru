@@ -1,8 +1,7 @@
 /**
  * Naru Data SDK 1.1.0: browser SDK for data owned by one Naru site: 1.0.0's
  * collections, with the site's own tables reached through its queries and
- * mutations, live queries, and its members. This release is still under
- * active development.
+ * mutations, live queries, and its members.
  * @packageDocumentation
  */
 

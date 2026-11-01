@@ -64,7 +64,7 @@ export default {
 The package's version is the SDK's: `1.1.0` is `/sdk/1.1.0/naru.js`. While
 an SDK version is still being built, the file Naru serves at its address
 can change and a published package cannot, so it is published as
-prereleases, `1.1.0-dev.1` and on, under the dist-tag `dev`.
+prereleases, `<version>-dev.1` and on, under the dist-tag `dev`.
 
 ## Publishing
 

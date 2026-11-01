@@ -20,10 +20,8 @@ seconds fails as `UNAVAILABLE` (`97f028b6`).
 
 It was not tagged, and the live acceptance pass below was not run before the
 freeze, nor the browser fixture; the unit and integration suites were. The `1` alias
-names 1.0.0 (`sdk/aliases.json`). 1.1.0, a new design that is not compatible
-with 1.0.0, is served only at `/sdk/1.1.0/`, mutable until the owner freezes
-it; the checklist below applies to it in turn, with its own version in place
-of 1.0.0, except that it does not move the `1` alias.
+names 1.0.0 (`sdk/aliases.json`). 1.1.0 was frozen in its turn: see
+[sdk-1.1.0-release.md](sdk-1.1.0-release.md).
 
 What follows is the checklist as it stood before the freeze. Keep the fixed
 `https://naru.pub` control-plane origin and versioned SDK URL; do not restore

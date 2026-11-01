@@ -12,10 +12,10 @@ const naru = createNaru({ site: "alice" });
 `site` may be omitted (or empty) on a `*.naru.pub` site. The module's matching
 TypeScript declarations are at `https://sdk.naru.pub/sdk/1/naru.d.ts`.
 
-`/sdk/1/` stays on stable 1.0.0, whose bytes are frozen. The public `/docs`
-guides also describe 1.0.0. SDK 1.1.0 remains in development; its members,
-site code (queries, mutations, routes and live queries) and newer APIs require
-importing `/sdk/1.1.0/naru.js` explicitly. Its collections are 1.0.0's.
+`/sdk/1/` stays on 1.0.0. SDK 1.1.0, which the public `/docs` guides describe,
+is frozen too; its members, site code (queries, mutations, routes and live
+queries) and newer APIs require importing `/sdk/1.1.0/naru.js` explicitly. Its
+collections are 1.0.0's.
 
 ## Start with reading
 

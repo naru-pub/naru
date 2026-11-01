@@ -1,6 +1,6 @@
 {
   "name": "@naru-pub/sdk",
-  "version": "1.1.0-dev.1",
+  "version": "1.1.0",
   "description": "The Naru Data SDK: a Naru site's collections, queries, mutations, live queries and members, from its pages; and the types of its site code.",
   "license": "AGPL-3.0-only",
   "homepage": "https://naru.pub/docs/sdk/1.1.0",

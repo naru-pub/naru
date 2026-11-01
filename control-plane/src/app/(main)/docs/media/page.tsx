@@ -1,1 +1,1 @@
-export { default, metadata } from "../_guides/1.0.0/media";
+export { default, metadata } from "../_guides/1.1.0/media";
