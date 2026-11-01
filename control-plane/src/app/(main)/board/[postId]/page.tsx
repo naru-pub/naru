@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
 import { isBoardAdmin } from "@/lib/board/access";
-import { LICENSES, POST_KIND_LABELS, formatBytes } from "@/lib/board/constants";
+import { LICENSES, formatBytes } from "@/lib/board/constants";
 import { getPost } from "@/lib/board/posts";
 import { listReplies, markPostNotificationsRead } from "@/lib/board/replies";
 import {
@@ -115,15 +115,11 @@ export default async function PostPage({
             aria-label="위치"
             className="flex gap-2 text-xs text-muted-foreground"
           >
-            <Link href="/board" className="text-primary hover:underline">
-              게시판
-            </Link>
-            <span>/</span>
             <Link
-              href={`/board?kind=${post.kind}`}
+              href={post.kind === "template" ? "/templates" : "/board"}
               className="text-primary hover:underline"
             >
-              {POST_KIND_LABELS[post.kind]}
+              {post.kind === "template" ? "템플릿" : "게시판"}
             </Link>
           </nav>
 
@@ -258,7 +254,7 @@ export default async function PostPage({
                         <>
                           {" · "}
                           <Link
-                            href="/templates"
+                            href="/templates/installed"
                             className="font-bold text-primary underline"
                           >
                             v{install.latest.version}로 업데이트
@@ -415,7 +411,6 @@ export default async function PostPage({
                     </div>
                   </section>
                 )}
-
               </>
             )}
           </aside>

@@ -1,16 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { tabLinkClass } from "@/components/ui/tab-link";
 import { validateRequest } from "@/lib/auth";
-import {
-  POST_KINDS,
-  POST_KIND_LABELS,
-  isPostKind,
-  type PostKind,
-  type PostSort,
-} from "@/lib/board/constants";
+import { type PostSort } from "@/lib/board/constants";
 import { listPopularTemplatePosts, listPosts } from "@/lib/board/posts";
 import { countUnreadNotifications } from "@/lib/board/replies";
 import { PostRow } from "./_components/PostRow";
@@ -19,7 +13,7 @@ import { Thumbnail, postThumbnailUrl } from "./_components/Thumbnail";
 
 export const metadata: Metadata = {
   title: "게시판 · 나루",
-  description: "나루 사람들의 사이트, 템플릿, 그리고 이야기.",
+  description: "나루 사람들의 사이트와 이야기.",
 };
 
 const SORT_LABELS: Record<PostSort, string> = {
@@ -27,19 +21,11 @@ const SORT_LABELS: Record<PostSort, string> = {
   new: "새 글순",
   applied: "적용 많은순",
 };
+const SORTS: PostSort[] = ["activity", "new"];
 
-// `database` filters templates to those that use the site database; the
-// database docs link to it.
-function boardHref(
-  kind: PostKind | null,
-  sort: PostSort,
-  page = 1,
-  database = false,
-) {
+function boardHref(sort: PostSort, page = 1) {
   const params = new URLSearchParams();
-  if (kind) params.set("kind", kind);
   if (sort !== "activity") params.set("sort", sort);
-  if (database && kind === "template") params.set("database", "1");
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/board?${query}` : "/board";
@@ -56,18 +42,21 @@ export default async function BoardPage({
   }>;
 }) {
   const params = await searchParams;
-  const kind = isPostKind(params.kind) ? params.kind : null;
-  const sorts: PostSort[] =
-    kind === "template" ? ["activity", "new", "applied"] : ["activity", "new"];
-  const sort = sorts.includes(params.sort as PostSort)
+  // Templates moved to /templates; older links and the database docs still
+  // come here, with the filters that page reads.
+  if (params.kind === "template") {
+    const { kind: _kind, ...rest } = params;
+    const query = new URLSearchParams(rest).toString();
+    redirect(query ? `/templates?${query}` : "/templates");
+  }
+  const sort = SORTS.includes(params.sort as PostSort)
     ? (params.sort as PostSort)
     : "activity";
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
-  const database = kind === "template" && params.database === "1";
 
   const { user } = await validateRequest();
   const [{ posts, hasMore }, popular, unread] = await Promise.all([
-    listPosts({ kind, sort, page, usesDatabase: database }),
+    listPosts({ kind: "site", sort, page }),
     listPopularTemplatePosts(4),
     user ? countUnreadNotifications(user.id) : null,
   ]);
@@ -79,11 +68,11 @@ export default async function BoardPage({
           <div className="space-y-1">
             <h1 className="text-3xl font-bold text-foreground">게시판</h1>
             <p className="text-sm text-muted-foreground">
-              나루 사람들의 사이트, 템플릿, 그리고 이야기.
+              나루 사람들의 사이트와 이야기.
             </p>
           </div>
           <Button asChild>
-            <Link href={kind ? `/board/new?kind=${kind}` : "/board/new"}>
+            <Link href="/board/new">
               <Plus aria-hidden="true" />새 글 쓰기
             </Link>
           </Button>
@@ -91,47 +80,12 @@ export default async function BoardPage({
 
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
           <section className="min-w-0 flex-1 border-2 border-line bg-card">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-2">
-              <nav
-                aria-label="글 종류"
-                className="flex min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
-                {[null, ...POST_KINDS].map((value) => (
-                  <Link
-                    key={value ?? "all"}
-                    href={boardHref(
-                      value,
-                      value === "template"
-                        ? sort
-                        : sort === "applied"
-                          ? "activity"
-                          : sort,
-                    )}
-                    aria-current={value === kind ? "page" : undefined}
-                    className={tabLinkClass(value === kind)}
-                  >
-                    {value ? POST_KIND_LABELS[value] : "전체"}
-                  </Link>
-                ))}
-              </nav>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border px-2">
               <nav aria-label="정렬" className="flex gap-3 px-2 py-2 text-xs">
-                {kind === "template" && (
-                  <Link
-                    href={boardHref(kind, sort, 1, !database)}
-                    aria-pressed={database}
-                    className={
-                      database
-                        ? "font-bold text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }
-                  >
-                    {database ? "✓ " : ""}데이터베이스 사용
-                  </Link>
-                )}
-                {sorts.map((value) => (
+                {SORTS.map((value) => (
                   <Link
                     key={value}
-                    href={boardHref(kind, value, 1, database)}
+                    href={boardHref(value)}
                     aria-current={value === sort ? "true" : undefined}
                     className={
                       value === sort
@@ -157,7 +111,7 @@ export default async function BoardPage({
               <div className="flex justify-center gap-4 border-t border-border p-4 text-sm">
                 {page > 1 && (
                   <Link
-                    href={boardHref(kind, sort, page - 1, database)}
+                    href={boardHref(sort, page - 1)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     ← 이전
@@ -166,7 +120,7 @@ export default async function BoardPage({
                 <span className="text-foreground">{page}</span>
                 {hasMore && (
                   <Link
-                    href={boardHref(kind, sort, page + 1, database)}
+                    href={boardHref(sort, page + 1)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     다음 →
@@ -237,7 +191,7 @@ export default async function BoardPage({
                   ))}
                 </ul>
                 <Link
-                  href="/board?kind=template&sort=applied"
+                  href="/templates"
                   className="block px-4 py-3 text-sm text-primary hover:underline"
                 >
                   템플릿 모두 보기 →
@@ -257,8 +211,10 @@ export default async function BoardPage({
                 <p>
                   <strong className="text-foreground">템플릿</strong> — 내
                   폴더를 템플릿으로 공유하면, 다른 사람이 버튼 한 번으로 자기
-                  사이트에 적용할 수 있어요. 새 템플릿은 연합우주 팔로워에게도
-                  알려져요.
+                  사이트에 적용할 수 있어요.{" "}
+                  <Link href="/templates" className="text-primary underline">
+                    템플릿 둘러보기
+                  </Link>
                 </p>
                 <p>
                   <strong className="text-foreground">답글</strong> — 답글에

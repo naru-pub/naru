@@ -26,6 +26,13 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   screenshot run renders a site with a live `site` post even when it isn't
   discoverable. A
   `template` post carries files.
+- **Where they're listed**: `/board` lists `site` posts, and `/templates` lists
+  templates as a grid (`/board?kind=template` redirects there with its filters).
+  A template's page is still `/board/[postId]`.
+- **Seller interest**: every template is free. `/templates/sell` asks who would
+  like to sell one and for about how much (`template_seller_interest`, one
+  answer per person, gone with their account), read at
+  `/admin/seller-interest`. Nothing else about selling exists yet.
 - **Plain text.** Posts and replies are never parsed as HTML or Markdown. A
   blank line starts a new paragraph, and web addresses become links
   (`BoardText`).
@@ -195,7 +202,7 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   install (`board_template_installs`: the folder, the version, every file it
   wrote with its ETag then, and `notify`: whether it is told of new
   versions).
-  `/templates` lists a person's installs and offers newer versions. An update
+  `/templates/installed` lists a person's installs and offers newer versions. An update
   works out each file: the template's own files (ETag unchanged since
   install) are replaced or deleted, files the owner changed are backed up and
   replaced (or kept, where the new version drops them), the owner's own files
@@ -203,18 +210,18 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   are left. Everything it replaces or deletes goes to `/.backup/<stamp>/`
   first; if Naru refuses the new site code, it all goes back and the install
   stays on its version. Nothing updates an install by itself: the owner
-  does, from `/templates`. (Automatic updates were removed, and their queued
+  does, from `/templates/installed`. (Automatic updates were removed, and their queued
   tasks cancelled, by migration `1792915929515`.) Publishing a version tells
   each person with an install that has `notify` on ("새 버전이 나오면 알려
-  주기", a checkbox when applying and on `/templates`) through a board
+  주기", a checkbox when applying and on `/templates/installed`) through a board
   notification
   (`board_notifications.reason = 'template_version'`, migration
   `1792911506464`): one per person and version, replacing their unread one of
   an earlier version, never the author's own. `/board/notifications` lists
-  them beside replies, linking to `/templates`, and opening `/templates`
+  them beside replies, linking to `/templates/installed`, and opening `/templates/installed`
   reads them. The 템플릿 link in the navigation counts the installs with a
   newer version waiting (`installCounts`). An install with `notify` off is
-  never told, and `/templates` does not offer it new versions until it is
+  never told, and `/templates/installed` does not offer it new versions until it is
   turned back on. Disconnecting an install forgets it and its files stay,
   now the owner's own; or, with `removeFiles` ("템플릿 파일 지우고 연결
   끊기"), the files still exactly as it wrote them (by the ETags it
@@ -227,14 +234,17 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 
 ## Routes
 
-| page                                | what                                                     |
-| ----------------------------------- | -------------------------------------------------------- |
-| `/board`                            | list; `?kind=`, `?sort=activity\|new\|applied`, `?page=` |
-| `/board/new`                        | compose; `?kind=`                                        |
-| `/board/[postId]`                   | post, template panel and apply dialog, reply tree        |
-| `/board/[postId]/edit`              | edit; publish a new template version                     |
-| `/board/[postId]/replies/[replyId]` | a reply and everything under it (permalink)              |
-| `/board/notifications`              | my reply and template version notifications              |
+| page                                | what                                                         |
+| ----------------------------------- | ------------------------------------------------------------ |
+| `/board`                            | list; `?kind=`, `?sort=activity\|new`, `?page=`              |
+| `/templates`                        | template grid; `?database=1`, `?sort=applied\|new`, `?page=` |
+| `/templates/sell`                   | tell 나루 you'd like to sell templates                       |
+| `/templates/installed`              | my installed templates and their updates                     |
+| `/board/new`                        | compose; `?kind=`                                            |
+| `/board/[postId]`                   | post, template panel and apply dialog, reply tree            |
+| `/board/[postId]/edit`              | edit; publish a new template version                         |
+| `/board/[postId]/replies/[replyId]` | a reply and everything under it (permalink)                  |
+| `/board/notifications`              | my reply and template version notifications                  |
 
 Every API route takes JSON only, including DELETE, and refuses cross-origin
 requests (`readJson`):

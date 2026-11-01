@@ -20,12 +20,17 @@ export function HomeBoard({ posts }: { posts: HomePost[] }) {
     <section className="min-w-0 flex-1 flex flex-col border-2 border-line bg-card">
       <div className="flex items-end justify-between gap-3 border-b border-border px-2 sm:px-4">
         <h2 className="px-2 py-3 font-bold">템플릿 / 사이트 자랑</h2>
-        <Link
-          href="/board"
-          className="mb-3 shrink-0 whitespace-nowrap text-sm font-medium text-link underline-offset-4 hover:underline"
-        >
-          더 보기 →
-        </Link>
+        <div className="mb-3 flex shrink-0 gap-3 whitespace-nowrap text-sm font-medium text-link">
+          <Link
+            href="/templates"
+            className="underline-offset-4 hover:underline"
+          >
+            템플릿 →
+          </Link>
+          <Link href="/board" className="underline-offset-4 hover:underline">
+            사이트 →
+          </Link>
+        </div>
       </div>
       <div className="p-4 sm:p-6 flex-1 flex flex-col">
         <BoardPosts posts={posts} />

@@ -927,6 +927,15 @@ export interface SupporterTrialWindows {
   starts_at: Timestamp;
 }
 
+export interface TemplateSellerInterest {
+  created_at: Generated<Timestamp>;
+  description: string;
+  id: Generated<string>;
+  price_range: import("./board/seller-interest-options").SellerInterestPrice;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface TossCalls {
   created_at: Generated<Timestamp>;
   duration_ms: number;
@@ -1085,6 +1094,7 @@ export interface DB {
   subscriptions: Subscriptions;
   supporter_trial_windows: SupporterTrialWindows;
   supporter_trials: SupporterTrials;
+  template_seller_interest: TemplateSellerInterest;
   toss_calls: TossCalls;
   toss_webhook_deliveries: TossWebhookDeliveries;
   toss_window_outcomes: TossWindowOutcomes;

@@ -47,6 +47,7 @@ export default async function AdminLayout({
         { href: "/admin/usage", label: "사용량" },
         { href: "/admin/board", label: "게시판" },
         { href: "/admin/templates", label: "템플릿 적용" },
+        { href: "/admin/seller-interest", label: "판매 관심" },
       ],
     },
     {

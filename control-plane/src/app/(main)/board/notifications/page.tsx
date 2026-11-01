@@ -43,7 +43,7 @@ export default async function NotificationsPage() {
                 <Link
                   href={
                     n.reason === "template_version"
-                      ? "/templates"
+                      ? "/templates/installed"
                       : `/board/${n.postId}#reply-${n.replyId}`
                   }
                   className="block space-y-1 p-4 hover:bg-accent"
