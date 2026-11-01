@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import type { RenderedGuide } from "@/lib/guide-markdown";
 
-// The frame the help pages and the SDK guides share: navigation, a header,
-// a table of contents, and the sections.
+// The frame the guides share: navigation, a header, a table of contents, and
+// the sections.
 
 export function GuideSection({
   id,
@@ -31,7 +31,7 @@ export function GuideFrame({
   children,
 }: {
   nav: ReactNode;
-  // Shown above the title, e.g. "NARU / HELP / FILES".
+  // Shown above the title, e.g. "NARU / DOCS / FILES".
   crumb: string;
   title: string;
   lead: ReactNode;

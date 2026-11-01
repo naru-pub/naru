@@ -554,7 +554,7 @@ export default function FileExplorer({
           {/* A new tab, so unsaved edits here stay. */}
           <Button variant="ghost" size="icon" className="size-8" asChild>
             <a
-              href="/help/files"
+              href="/docs/files"
               target="_blank"
               rel="noopener"
               title="파일 편집기 도움말"
