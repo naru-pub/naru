@@ -2,6 +2,7 @@
   "name": "@naru-pub/dev",
   "version": "1.1.0",
   "description": "Run and test a Naru site locally: its pages, the Data SDK and _naru/ on the real edge Worker, with one-click sign-in.",
+  "author": "Jihyeok Seo <ji@hyeok.org>",
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/naru-pub/naru/tree/main/naru-dev#readme",
   "repository": {
