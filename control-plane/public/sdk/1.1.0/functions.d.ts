@@ -1,7 +1,7 @@
 /**
  * What Naru hands a site's own code (SDK 1.1.0): queries in
  * `_naru/queries/`, mutations in `_naru/mutations/` and routes in
- * `_naru/routes/`, run on Naru over the tables `_naru/migrations/*.sql`
+ * `_naru/routes.js`, run on Naru over the tables `_naru/migrations/*.sql`
  * create. For type checking only; nothing here exists at run time.
  *
  * ```ts
@@ -163,3 +163,44 @@ export type Mutation<Args = Json, Result = Json> = (
   ctx: MutationCtx,
   args: Args,
 ) => Result | Promise<Result>;
+
+/** What a route is asked. */
+export interface RouteRequest {
+  /** The path as asked, still percent-encoded. */
+  path: string;
+  /** The subdomain or custom domain it was asked on, such as `https://alice.naru.pub`. */
+  origin: string;
+  /** The query string's values, the last of a repeated name. */
+  query: Record<string, string>;
+}
+/**
+ * What a route answers: a string of HTML, a body of one of these types, one
+ * of the site's files with `head` added to its `<head>` when it is HTML, or a
+ * redirect to a path or an `https://` URL. `status` is 200–599 (a redirect's
+ * 301, 302, 303, 307 or 308, by default 302); `cache` the seconds (0–300) the
+ * edge may keep the page, by default 0.
+ */
+export type RouteAnswer =
+  | string
+  | ({ status?: number; cache?: number } & (
+      | {
+          body: string;
+          type:
+            | "text/html"
+            | "text/plain"
+            | "text/css"
+            | "text/calendar"
+            | "text/xml"
+            | "application/xml"
+            | "application/rss+xml"
+            | "application/atom+xml"
+            | "application/json";
+        }
+      | { file: string; head?: string }
+      | { redirect: string }
+    ));
+/** `export default async function (ctx, request)` in `_naru/routes.js`. */
+export type Route = (
+  ctx: QueryCtx,
+  request: RouteRequest,
+) => RouteAnswer | Promise<RouteAnswer>;

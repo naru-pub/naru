@@ -5,12 +5,18 @@
 1.0.0 was frozen on 2026-10-12, at the owner's instruction, when 1.1.0 (site
 members) was started from a copy of it. Its last change removed the
 development notice from its header. It is no longer in `VERSIONS` in
-`scripts/build-sdk.mjs`, so these are its bytes for good:
+`scripts/build-sdk.mjs`. These are its bytes, which `tests/frozen-sdk.test.mjs`
+checks:
 
 ```
-b126e994c1d32c8a23b8b69e1bfcf725d65418eeda3d81b501c3b2f8fc6b60e3  public/sdk/1.0.0/naru.js
+05abcdc23b8afe915ffae6262f46b0478c470a1a0cc29947fad1dc6f9c9e47bf  public/sdk/1.0.0/naru.js
 834f017bbc2fed42e002fcdf2d8dce4b29298cdd62c9c79e7912d2ac2c396b08  public/sdk/1.0.0/naru.d.ts
 ```
+
+`naru.js` was `b126e994…` when frozen. It was changed by hand twice on
+2026-10-15, for Naru's own moves rather than new behavior a site asks for: data
+requests went to `sdk.naru.pub` (`d94a8866`), and a request unanswered after 15
+seconds fails as `UNAVAILABLE` (`97f028b6`).
 
 It was not tagged, and the live acceptance pass below was not run before the
 freeze, nor the browser fixture; the unit and integration suites were. The `1` alias

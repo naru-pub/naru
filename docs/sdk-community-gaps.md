@@ -25,7 +25,8 @@ is historical; the gaps it lists are now addressed this way:
   callers as a `NaruError` whose `details` carries the app's own reason.
 - Realtime (#8): live queries (`subscribe()`) keep a query's answer current,
   re-run when a mutation writes a table it read, replacing polling.
-- Server-rendered pages: `_naru/routes/` for link previews and feeds.
+- Server-rendered pages: `_naru/routes.json` and `_naru/routes.js` for link
+  previews and feeds.
 - SDK 1.1.0 uploads return IDs; the owner deletes uploads, members' included,
   in the control panel's media library. Naru records which collection documents
   name an upload, and searches the site's tables for upload URLs and IDs when

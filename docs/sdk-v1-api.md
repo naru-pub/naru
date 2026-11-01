@@ -694,7 +694,7 @@ returns a string of HTML, or one of `{ body, type }` (a page or text such as a f
 each with an optional `status` and `cache`, the seconds (0–300) the edge may
 keep the page. Escape what goes into HTML yourself. A route that fails is
 answered with a short error page; while the site's database cannot be
-reached, its files answer instead.
+reached, its files answer instead. `functions.d.ts` types it as `Route`.
 
 ## Live queries (1.1.0)
 

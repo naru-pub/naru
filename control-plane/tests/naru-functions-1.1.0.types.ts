@@ -6,6 +6,8 @@ import type {
   MutationCtx,
   Query,
   QueryCtx,
+  Route,
+  RouteAnswer,
 } from "../public/sdk/1.1.0/functions.js";
 import type * as Sdk from "../public/sdk/1.1.0/naru.js";
 
@@ -60,5 +62,26 @@ export async function check(ctx: QueryCtx, { id }: { id: number }) {
   return ctx.passwords.verify("pw", rows[0].hash, `post:${id}`);
 }
 const asMutation: MutationCtx extends QueryCtx ? true : false = true;
+
+// A route reads as a query does, and answers each way the edge accepts.
+export const route: Route = async (
+  ctx,
+  { path, origin, query },
+): Promise<RouteAnswer> => {
+  // @ts-expect-error Only a mutation notifies.
+  await ctx.notify(["m-1"], { title: "t" });
+  if (path === "/") return "<p>home</p>";
+  if (path === "/feed.xml")
+    return { body: "<rss/>", type: "application/rss+xml", cache: 60 };
+  if (path === "/old") return { redirect: "/new", status: 301 };
+  // @ts-expect-error A body says its type.
+  if (path === "/bad") return { body: "x" };
+  // @ts-expect-error Only these types are served.
+  if (path === "/js") return { body: "x", type: "text/javascript" };
+  return {
+    file: "post.html",
+    head: `<meta property="og:url" content="${origin}${path}${query.q ?? ""}">`,
+  };
+};
 
 export const checks = { sameJson, sameCodes, asMutation };
