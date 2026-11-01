@@ -95,7 +95,7 @@ export default function GuidelinesPage() {
         </PolicyList>
       </PolicySection>
 
-      <PolicySection title="손코딩과 AI">
+      <PolicySection title="AI 정책">
         <p>
           나루는 한 줄씩 코드를 짜는 분도, AI와 함께 만드는 분도 모두 응원하고
           환영합니다.
