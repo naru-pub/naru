@@ -63,7 +63,7 @@ export function SellerInterestForm({
       </div>
       <div className="flex flex-col items-start gap-2">
         <Label htmlFor="seller-interest-price">
-          한 템플릿에 얼마쯤 받고 싶나요?
+          템플릿의 판매 가격대는 어떻게 되나요?
         </Label>
         <Select
           id="seller-interest-price"
