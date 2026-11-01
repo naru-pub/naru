@@ -3,8 +3,8 @@
 # main.yml's sdk-package job checks it, and that very tarball is staged, with
 # provenance, for a maintainer to approve with 2FA. A prerelease (1.1.0-dev.N,
 # an SDK version still being built) goes under the dist-tag "dev", as npm
-# requires of a prerelease. Needs the NPM_TOKEN secret (sdk/README.md,
-# "Publishing").
+# requires of a prerelease. Signs in to npm as this workflow, by trusted
+# publishing (sdk/README.md, "Publishing").
 name: publish-sdk
 on:
   push:
@@ -15,7 +15,8 @@ jobs:
   publish:
     permissions:
       contents: read
-      # npm provenance: the tarball is signed as built here, from this commit.
+      # npm trusted publishing and provenance: the tarball is staged by this
+      # workflow and signed as built here, from this commit.
       id-token: write
     runs-on: ubuntu-26.04-arm
     steps:
@@ -37,5 +38,3 @@ jobs:
           tag=latest
           [[ "${GITHUB_REF_NAME#sdk-v}" == *-* ]] && tag=dev
           npm stage publish "$RUNNER_TEMP"/sdk/naru-pub-sdk-*.tgz --provenance --access public --tag "$tag"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

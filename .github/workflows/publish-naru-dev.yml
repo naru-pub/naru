@@ -1,8 +1,8 @@
 # Stages @naru-pub/dev (naru-dev/) on npm when a tag dev-v<version> is pushed,
 # <version> being naru-dev/package.json's: the package is built, packed and
 # checked as main.yml's naru-dev-package job checks it, and that very tarball
-# is staged, with provenance, for a maintainer to approve with 2FA. Needs the
-# NPM_TOKEN secret (naru-dev/README.md, "Publishing").
+# is staged, with provenance, for a maintainer to approve with 2FA. Signs in to
+# npm as this workflow, by trusted publishing (naru-dev/README.md, "Publishing").
 name: publish-naru-dev
 on:
   push:
@@ -13,7 +13,8 @@ jobs:
   publish:
     permissions:
       contents: read
-      # npm provenance: the tarball is signed as built here, from this commit.
+      # npm trusted publishing and provenance: the tarball is staged by this
+      # workflow and signed as built here, from this commit.
       id-token: write
     runs-on: ubuntu-26.04-arm
     steps:
@@ -39,5 +40,3 @@ jobs:
       - run: naru-dev/scripts/check-package.sh "$RUNNER_TEMP/naru-dev"
       - name: Stage the checked tarball
         run: npm stage publish "$RUNNER_TEMP"/naru-dev/naru-pub-dev-*.tgz --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

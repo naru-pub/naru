@@ -72,10 +72,16 @@ From the Naru repository (maintainers): run `pnpm sdk:build` in
 `control-plane/` if the SDK changed, set `version` in `sdk/package.json`
 (`scripts/build.mjs` refuses a release of an SDK version still being built,
 and a prerelease of a frozen one), commit, and push a tag `sdk-v<version>`;
-`.github/workflows/publish-sdk.yml` checks and stages it with the
-`NPM_TOKEN` secret, and it goes live once approved with 2FA (`npm stage
-approve <stage-id>`, or the Staged Packages tab on npmjs.com).
-`scripts/check-package.sh <dir>` does the same check locally.
+`.github/workflows/publish-sdk.yml` checks and stages it, and it goes live once
+approved with 2FA (`npm stage approve <stage-id>`, or the Staged Packages tab on
+npmjs.com). `scripts/check-package.sh <dir>` does the same check locally.
+
+The workflow signs in to npm by trusted publishing, with no token. Before its
+first release, within the 2 days npm gives a new trust to be used:
+
+```bash
+npm trust github @naru-pub/sdk --repo naru-pub/naru --file publish-sdk.yml --allow-stage-publish
+```
 
 ## License
 
