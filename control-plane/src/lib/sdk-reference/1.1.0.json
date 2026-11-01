@@ -880,15 +880,15 @@
             },
             {
               "type": "text",
-              "value": ". Naru's English account of what went wrong, for developers, is "
+              "value": ". "
             },
             {
               "type": "code",
-              "value": "error.cause.message"
+              "value": "cause"
             },
             {
               "type": "text",
-              "value": "."
+              "value": " is a network failure's original error. What Naru answered is in the browser's network tab."
             }
           ]
         }

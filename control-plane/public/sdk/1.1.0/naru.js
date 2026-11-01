@@ -11,8 +11,8 @@
  *
  * `message` is a short Korean sentence a visitor can read, so a page may show
  * it as is (`status.textContent = error.message`): a query's or mutation's
- * own `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
- * what went wrong, for developers, is `error.cause.message`.
+ * own `ctx.fail` message, or Naru's wording for `code`. `cause` is a network
+ * failure's original error. What Naru answered is in the browser's network tab.
  */
 export class NaruError extends Error {
   constructor(message, code, cause) {
@@ -34,33 +34,22 @@ const WORDS = {
   UNAVAILABLE: "나루에 연결하지 못했습니다. 잠시 뒤에 다시 해 주세요.",
 };
 
-/**
- * A NaruError worded for visitors (`words`, or the code's), keeping Naru's
- * English `account` of it, and what caused that, as the cause.
- */
-function naruError(code, account, { words, cause } = {}) {
-  return new NaruError(
-    words ?? WORDS[code],
-    code,
-    new Error(account, cause === undefined ? undefined : { cause }),
-  );
+/** A NaruError worded for visitors (`words`, or the code's). */
+function naruError(code, { words, cause } = {}) {
+  return new NaruError(words ?? WORDS[code], code, cause);
 }
 
 /** The NaruError for what the server answered: `error` with its HTTP `status`. */
 function failure(status, error) {
   const code = errorCode(status, error?.code);
-  const account =
-    typeof error?.message === "string"
-      ? error.message
-      : `Database request failed (HTTP ${status}).`;
   // Site code's ctx.fail message is already written for visitors. A
   // value a unique field already holds is no concurrent change, as other
   // conflicts are: it is worded on its own.
   const unique = error?.details?.unique;
-  const failed = naruError(code, account, {
+  const failed = naruError(code, {
     words:
-      error?.site === true
-        ? account
+      error?.site === true && typeof error.message === "string"
+        ? error.message
         : code === "CONFLICT" && typeof unique === "string"
           ? `이미 쓰이고 있는 값입니다(${unique}). 다른 값으로 해 주세요.`
           : undefined,
@@ -211,13 +200,7 @@ async function request(
   } catch (cause) {
     // The caller's own abort; a timeout (TimeoutError) is Naru's silence.
     if (cause?.name === "AbortError") throw cause;
-    throw naruError(
-      "UNAVAILABLE",
-      cause?.name === "TimeoutError"
-        ? "Naru did not answer in time."
-        : "Naru is unavailable.",
-      { cause },
-    );
+    throw naruError("UNAVAILABLE", { cause });
   } finally {
     // Also when the response was lost: the write may still have landed.
     if (method !== "GET") for (const path of touches) written.add(path);
@@ -233,10 +216,7 @@ async function request(
   // A proxy or challenge page can answer 200 with HTML. Handing that back as
   // an empty result would make a missing document look like a present one.
   if (result === null || typeof result !== "object")
-    throw naruError(
-      "UNAVAILABLE",
-      `The data API did not answer with JSON (HTTP ${response.status}).`,
-    );
+    throw naruError("UNAVAILABLE");
   return result;
 }
 
@@ -521,7 +501,7 @@ function media(root, send) {
         );
       } catch (cause) {
         if (cause?.name === "AbortError") throw cause;
-        throw naruError("UNAVAILABLE", "File upload failed.", {
+        throw naruError("UNAVAILABLE", {
           words: "파일을 올리지 못했습니다. 다시 해 주세요.",
           cause,
         });
@@ -530,11 +510,9 @@ function media(root, send) {
       // hour. Storage refusing the bytes (an expired authorization, say) is
       // fixed by uploading again, which authorizes afresh.
       if (!upload.ok)
-        throw naruError(
-          "UNAVAILABLE",
-          `File upload failed (HTTP ${upload.status}).`,
-          { words: "파일을 올리지 못했습니다. 다시 해 주세요." },
-        );
+        throw naruError("UNAVAILABLE", {
+          words: "파일을 올리지 못했습니다. 다시 해 주세요.",
+        });
       report({ phase: "finishing" });
       const finished = await send(
         `${root}/_files/${segment(authorization.id)}`,
@@ -600,7 +578,7 @@ function credential(place, token, expiresAt) {
   const send = async (url, init) => {
     if (signedOut || Date.now() >= expiresAt) {
       forget(place, token);
-      throw naruError("AUTH_REQUIRED", "Sign in again.");
+      throw naruError("AUTH_REQUIRED");
     }
     try {
       return await request(url, { ...init, token, renew });
@@ -954,11 +932,11 @@ async function returned(context, place, exchange) {
   );
   sessionStorage.removeItem(`${place.key}:pending`);
   if (!(Date.now() - pending.startedAt < 10 * 60 * 1000))
-    throw naruError("AUTH_REQUIRED", "Sign-in expired.", {
+    throw naruError("AUTH_REQUIRED", {
       words: "로그인 시간이 지났습니다. 다시 로그인해 주세요.",
     });
   if (denied !== null)
-    throw naruError("ACCESS_DENIED", "Sign-in was denied.", {
+    throw naruError("ACCESS_DENIED", {
       words: "로그인하지 않았습니다.",
     });
   const startedAt = Date.now();

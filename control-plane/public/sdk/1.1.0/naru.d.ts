@@ -48,8 +48,8 @@ export type NaruErrorCode =
  *
  * `message` is a short Korean sentence a visitor can read, so a page may show
  * it as is (`status.textContent = error.message`): a query's or mutation's
- * own `ctx.fail` message, or Naru's wording for `code`. Naru's English account of
- * what went wrong, for developers, is `error.cause.message`.
+ * own `ctx.fail` message, or Naru's wording for `code`. `cause` is a network
+ * failure's original error. What Naru answered is in the browser's network tab.
  */
 export declare class NaruError extends Error {
   private constructor();

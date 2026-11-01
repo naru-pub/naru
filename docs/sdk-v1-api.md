@@ -912,10 +912,10 @@ try {
 
 A query's or mutation's `ctx.fail` message is used as written; every other failure
 gets Naru's wording for its code (`AUTH_REQUIRED`: "로그인이 필요합니다. 다시
-로그인해 주세요."). The wording may change. Naru's English account of what went
-wrong, for developers, is `error.cause.message`, and a network failure's
-original error is `error.cause.cause`. In 1.0.0 `error.message` is that English
-account and a network failure's original error is `error.cause`. Only the SDK creates `NaruError`s; check
+로그인해 주세요."). The wording may change. A network failure's original error is
+`error.cause`. What Naru answered, in English, is in the browser's network tab,
+as is why site code failed. In 1.0.0 `error.message` is that English account.
+Only the SDK creates `NaruError`s; check
 them with `instanceof`. There is no `retryable` flag and no automatic retry:
 a lost response can mean a write succeeded, so retrying `add()` can duplicate
 it. Reconcile a failed write before trying again.

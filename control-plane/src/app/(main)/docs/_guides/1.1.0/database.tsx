@@ -282,10 +282,9 @@ export default function DatabaseDocs() {
               <p>
                 실패하면 <code>error.message</code>를 그대로 화면에 띄워도
                 되도록, 나루의 오류는 한국어로, 사이트 코드의{" "}
-                <code>ctx.fail</code>은 사이트가 쓴 말 그대로 옵니다. 무엇이 왜
-                실패했는지 개발자를 위한 설명은 <code>error.cause.message</code>
-                에, 처리를 나눌 값은 <code>error.code</code>와{" "}
-                <code>error.details</code>에 있습니다.
+                <code>ctx.fail</code>은 사이트가 쓴 말 그대로 옵니다. 처리를
+                나눌 값은 <code>error.code</code>와 <code>error.details</code>에
+                있습니다.
               </p>
             </Section>
 
@@ -1518,10 +1517,9 @@ await member.mutate("board:write",
                 실패하면 <code>NaruError</code>를 던집니다. 방문자에게는{" "}
                 <code>error.message</code>를 보여 주세요. 나루의 오류는 한국어로
                 적혀 있고, 사이트 코드의 <code>ctx.fail</code>은 그 메시지
-                그대로입니다. 무엇이 왜 실패했는지 개발자를 위한 자세한 설명은{" "}
-                <code>error.cause.message</code>에 영어로 있으니, 막히면
-                콘솔에서 확인하세요. 처리를 나눌 때는 <code>code</code>를
-                쓰세요.
+                그대로입니다. 무엇이 왜 실패했는지 자세한 설명은 영어로 응답에
+                있으니, 막히면 브라우저 개발자 도구의 네트워크 탭에서
+                확인하세요. 처리를 나눌 때는 <code>code</code>를 쓰세요.
               </p>
               <Table
                 head={["code", "뜻"]}
@@ -1571,7 +1569,6 @@ await member.mutate("board:write",
   await naru.collection("guestbook").add({ message });
 } catch (error) {
   status.textContent = error.message; // 예: "요청이 너무 많습니다. 잠시 뒤에 다시 해 주세요."
-  console.error(error.cause?.message); // 개발자를 위한 자세한 설명
 }`}</Code>
             </Section>
           </article>

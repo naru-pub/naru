@@ -391,13 +391,12 @@ test("site code's failure is a NaruError with the server's code", async () => {
         { status: 400 },
       ),
     );
-    // Code that threw is Naru's failure, worded for visitors; the server's
-    // account stays for the developer.
+    // Code that threw is Naru's failure, worded for visitors.
     await assert.rejects(member.mutate("shop:buy"), (error) => {
       assert.equal(error.name, "NaruError");
       assert.equal(error.code, "INVALID_REQUEST");
       assert.equal(error.message, "요청을 처리할 수 없습니다.");
-      assert.equal(error.cause.message, "Function failed: Error: sold out");
+      assert.equal(error.cause, undefined);
       return true;
     });
   });
