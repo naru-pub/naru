@@ -1,5 +1,5 @@
 ---
-title: AI 앱에게 홈페이지 맡기기
+title: AI와 함께 홈페이지 만들기
 pageTitle: MCP 연결 | 나루
 description: MCP를 지원하는 앱에서 나루 사이트의 파일과 데이터베이스를 다루는 방법
 path: MCP
