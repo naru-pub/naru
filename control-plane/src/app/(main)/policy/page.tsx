@@ -102,7 +102,7 @@ export default function GuidelinesPage() {
         </p>
         <PolicyList>
           <li>AI로 만든 것은 그렇다고 밝혀주세요.</li>
-          <li>다른 사람의 작품을 흉내 내지 말아주세요.</li>
+          <li>다른 사람의 창작물을 흉내 내지 말아주세요.</li>
         </PolicyList>
       </PolicySection>
 
