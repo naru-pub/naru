@@ -22,6 +22,7 @@ const NEW_TEMPLATE = "/board/new?kind=template";
 const REFERENCE = [
   { href: GUIDE, title: "데이터베이스 가이드" },
   { href: `/docs/${SDK_VERSION}/media`, title: "미디어 가이드" },
+  { href: "/docs/dev", title: "로컬 개발 가이드" },
   { href: `/docs/sdk/${SDK_VERSION}`, title: "SDK 레퍼런스" },
 ];
 
@@ -265,9 +266,9 @@ export default async function DevelopersPage() {
                   code={NARU_DEV}
                 />
                 <p className="text-sm">
-                  <a href={`${REPOSITORY}/naru-dev`} className={LINK}>
-                    naru-dev 설명서 →
-                  </a>
+                  <Link href="/docs/dev" className={LINK}>
+                    로컬 개발 가이드 →
+                  </Link>
                 </p>
               </Step>
               <Step number={3} title="템플릿으로 공개해요">

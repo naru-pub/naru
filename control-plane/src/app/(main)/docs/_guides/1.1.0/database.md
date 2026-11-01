@@ -727,7 +727,7 @@ export async function add(ctx, { post, text }) {
 
 `ctx`의 타입은 [functions.d.ts](https://sdk.naru.pub/sdk/1.1.0/functions.d.ts)에
 모두 적혀 있습니다. 내려받아 `_naru/types/`에 두고 JSDoc으로 쓰면 편집기가
-`ctx`를 알아봅니다. 로컬 개발 서버 naru-dev로 사이트를 돌리면 마이그레이션이
+`ctx`를 알아봅니다. 로컬 개발 서버 [naru-dev](/docs/dev)로 사이트를 돌리면 마이그레이션이
 만든 테이블마다 행의 타입을 `_naru/types/database.d.ts`에 써 줍니다.
 
 ```
