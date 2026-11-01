@@ -35,6 +35,7 @@ export interface PostSummary {
     // Set when the author uploaded a preview of their own.
     customPreviewAt: Date | null;
     usesDatabase: boolean;
+    price: number;
   } | null;
 }
 
@@ -73,6 +74,7 @@ function summaryQuery() {
       "lr.login_name as last_reply_login_name",
       "t.id as template_id",
       "t.apply_count",
+      "t.price",
       "v.version",
       "v.preview_rendered_at",
       "t.preview_updated_at",
@@ -107,6 +109,7 @@ function toSummary(row: SummaryRow): PostSummary {
           previewRenderedAt: row.preview_rendered_at,
           customPreviewAt: row.preview_updated_at,
           usesDatabase: row.uses_database,
+          price: row.price ?? 0,
         }
       : null,
   };
@@ -118,12 +121,16 @@ export async function listPosts(options: {
   page: number;
   // Only templates whose latest version uses the database.
   usesDatabase?: boolean;
+  // Only templates that are free, or that have a price.
+  price?: "free" | "paid" | null;
 }): Promise<{ posts: PostSummary[]; hasMore: boolean }> {
   let query = summaryQuery();
   if (options.kind) query = query.where("p.kind", "=", options.kind);
   if (options.usesDatabase) {
     query = query.where(sql<boolean>`${usesDatabase}`);
   }
+  if (options.price === "free") query = query.where("t.price", "=", 0);
+  if (options.price === "paid") query = query.where("t.price", ">", 0);
 
   if (options.sort === "applied" && options.kind === "template") {
     query = query.orderBy("t.apply_count", "desc").orderBy("p.id", "desc");

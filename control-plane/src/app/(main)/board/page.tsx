@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { tabLinkClass } from "@/components/ui/tab-link";
@@ -27,19 +28,12 @@ const SORT_LABELS: Record<PostSort, string> = {
   new: "새 글순",
   applied: "적용 많은순",
 };
+const SORTS: PostSort[] = ["activity", "new"];
 
-// `database` filters templates to those that use the site database; the
-// database docs link to it.
-function boardHref(
-  kind: PostKind | null,
-  sort: PostSort,
-  page = 1,
-  database = false,
-) {
+function boardHref(kind: PostKind | null, sort: PostSort, page = 1) {
   const params = new URLSearchParams();
   if (kind) params.set("kind", kind);
   if (sort !== "activity") params.set("sort", sort);
-  if (database && kind === "template") params.set("database", "1");
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/board?${query}` : "/board";
@@ -56,18 +50,22 @@ export default async function BoardPage({
   }>;
 }) {
   const params = await searchParams;
+  // Templates are browsed at /templates; older links and the database docs
+  // still come here, with the filters that page reads.
+  if (params.kind === "template") {
+    const { kind: _kind, ...rest } = params;
+    const query = new URLSearchParams(rest).toString();
+    redirect(query ? `/templates?${query}` : "/templates");
+  }
   const kind = isPostKind(params.kind) ? params.kind : null;
-  const sorts: PostSort[] =
-    kind === "template" ? ["activity", "new", "applied"] : ["activity", "new"];
-  const sort = sorts.includes(params.sort as PostSort)
+  const sort = SORTS.includes(params.sort as PostSort)
     ? (params.sort as PostSort)
     : "activity";
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
-  const database = kind === "template" && params.database === "1";
 
   const { user } = await validateRequest();
   const [{ posts, hasMore }, popular, unread] = await Promise.all([
-    listPosts({ kind, sort, page, usesDatabase: database }),
+    listPosts({ kind, sort, page }),
     listPopularTemplatePosts(4),
     user ? countUnreadNotifications(user.id) : null,
   ]);
@@ -99,14 +97,11 @@ export default async function BoardPage({
                 {[null, ...POST_KINDS].map((value) => (
                   <Link
                     key={value ?? "all"}
-                    href={boardHref(
-                      value,
+                    href={
                       value === "template"
-                        ? sort
-                        : sort === "applied"
-                          ? "activity"
-                          : sort,
-                    )}
+                        ? "/templates"
+                        : boardHref(value, sort)
+                    }
                     aria-current={value === kind ? "page" : undefined}
                     className={tabLinkClass(value === kind)}
                   >
@@ -115,23 +110,10 @@ export default async function BoardPage({
                 ))}
               </nav>
               <nav aria-label="정렬" className="flex gap-3 px-2 py-2 text-xs">
-                {kind === "template" && (
-                  <Link
-                    href={boardHref(kind, sort, 1, !database)}
-                    aria-pressed={database}
-                    className={
-                      database
-                        ? "font-bold text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }
-                  >
-                    {database ? "✓ " : ""}데이터베이스 사용
-                  </Link>
-                )}
-                {sorts.map((value) => (
+                {SORTS.map((value) => (
                   <Link
                     key={value}
-                    href={boardHref(kind, value, 1, database)}
+                    href={boardHref(kind, value)}
                     aria-current={value === sort ? "true" : undefined}
                     className={
                       value === sort
@@ -157,7 +139,7 @@ export default async function BoardPage({
               <div className="flex justify-center gap-4 border-t border-border p-4 text-sm">
                 {page > 1 && (
                   <Link
-                    href={boardHref(kind, sort, page - 1, database)}
+                    href={boardHref(kind, sort, page - 1)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     ← 이전
@@ -166,7 +148,7 @@ export default async function BoardPage({
                 <span className="text-foreground">{page}</span>
                 {hasMore && (
                   <Link
-                    href={boardHref(kind, sort, page + 1, database)}
+                    href={boardHref(kind, sort, page + 1)}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     다음 →
@@ -237,7 +219,7 @@ export default async function BoardPage({
                   ))}
                 </ul>
                 <Link
-                  href="/board?kind=template&sort=applied"
+                  href="/templates"
                   className="block px-4 py-3 text-sm text-primary hover:underline"
                 >
                   템플릿 모두 보기 →

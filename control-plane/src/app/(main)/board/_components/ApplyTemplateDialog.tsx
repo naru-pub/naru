@@ -315,7 +315,7 @@ export function ApplyTemplateDialog({
                   <p key={blocker}>{blocker}</p>
                 ))}
                 <p className="text-xs text-muted-foreground">
-                  <Link href="/templates" className="underline">
+                  <Link href="/templates/installed" className="underline">
                     설치한 템플릿
                   </Link>
                   {" · "}
@@ -646,7 +646,7 @@ export function ApplyTemplateDialog({
             </div>
             <p className="text-xs text-muted-foreground">
               새 버전이 나오면{" "}
-              <Link href="/templates" className="underline">
+              <Link href="/templates/installed" className="underline">
                 설치한 템플릿
               </Link>
               에서 업데이트할 수 있어요. 직접 고친 파일은 업데이트할 때 보관해

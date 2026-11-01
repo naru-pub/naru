@@ -16,11 +16,11 @@ import type {
   UpdateProgress,
   DisconnectProgress,
 } from "@/lib/board/updates";
-import { boardRequest, boardStream } from "../board/_components/api";
+import { boardRequest, boardStream } from "../../board/_components/api";
 import {
   TemplateProgress,
   type TemplateProgressStep,
-} from "../board/_components/TemplateProgress";
+} from "../../board/_components/TemplateProgress";
 
 const ACTIONS: Record<UpdateAction, { label: string; className: string }> = {
   create: { label: "+ 새 파일", className: "text-success" },

@@ -680,6 +680,21 @@ integration("board", () => {
       expect(ids).toContain(withData.postId);
       expect(ids).toContain(withCode.postId);
       expect(ids).not.toContain(plain.postId);
+
+      await db
+        .updateTable("board_templates")
+        .set({ price: 5000 })
+        .where("post_id", "=", plain.postId)
+        .execute();
+      const priced = async (price: "free" | "paid") =>
+        (
+          await listPosts({ kind: "template", sort: "new", page: 1, price })
+        ).posts.map((post) => post.id);
+      expect(await priced("paid")).toEqual([plain.postId]);
+      expect(await priced("free")).toEqual(
+        expect.arrayContaining([withData.postId, withCode.postId]),
+      );
+      expect(await priced("free")).not.toContain(plain.postId);
     });
 
     test("applies into a folder and backs up what it overwrites", async () => {

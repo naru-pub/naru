@@ -106,21 +106,25 @@ export default async function RootLayout({
                     <div className="order-last -mx-3 flex w-[calc(100%+1.5rem)] items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] md:order-none md:-mx-1 md:w-auto md:flex-1 md:justify-end [&::-webkit-scrollbar]:hidden">
                       <NavLink href="/board">게시판</NavLink>
                       {user && <NavLink href="/files">파일</NavLink>}
-                      {installs && installs.installed > 0 && (
-                        <NavLink href="/templates">
-                          <span className="inline-flex items-center gap-1.5">
-                            템플릿
-                            {installs.updatable > 0 && (
-                              <span
-                                className="bg-primary px-1.5 font-mono text-xs leading-5 text-primary-foreground"
-                                aria-label={`새 버전 ${installs.updatable}개`}
-                              >
-                                {installs.updatable}
-                              </span>
-                            )}
-                          </span>
-                        </NavLink>
-                      )}
+                      <NavLink
+                        href={
+                          installs && installs.updatable > 0
+                            ? "/templates/installed"
+                            : "/templates"
+                        }
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          템플릿
+                          {installs && installs.updatable > 0 && (
+                            <span
+                              className="bg-primary px-1.5 font-mono text-xs leading-5 text-primary-foreground"
+                              aria-label={`새 버전 ${installs.updatable}개`}
+                            >
+                              {installs.updatable}
+                            </span>
+                          )}
+                        </span>
+                      </NavLink>
                       {entitlement?.hasPaidFeatures ? (
                         <SupporterMenu
                           analytics={features.has("analytics")}

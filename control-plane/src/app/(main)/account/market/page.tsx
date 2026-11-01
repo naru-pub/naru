@@ -194,7 +194,7 @@ export default async function MarketAccountPage() {
               <p className="text-sm text-muted-foreground">
                 아직 산 템플릿이 없어요.{" "}
                 <Link
-                  href="/board?kind=template"
+                  href="/templates"
                   className="text-primary underline"
                 >
                   템플릿 둘러보기

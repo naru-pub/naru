@@ -139,7 +139,11 @@ export default async function PostPage({
             </Link>
             <span>/</span>
             <Link
-              href={`/board?kind=${post.kind}`}
+              href={
+                post.kind === "template"
+                  ? "/templates"
+                  : `/board?kind=${post.kind}`
+              }
               className="text-primary hover:underline"
             >
               {POST_KIND_LABELS[post.kind]}
@@ -313,7 +317,7 @@ export default async function PostPage({
                         <>
                           {" · "}
                           <Link
-                            href="/templates"
+                            href="/templates/installed"
                             className="font-bold text-primary underline"
                           >
                             v{install.latest.version}로 업데이트
