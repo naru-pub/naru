@@ -9,3 +9,6 @@ allowBuilds:
 onlyBuiltDependencies:
   - esbuild
   - workerd
+# Miniflare's HTTP client, past advisories, within its major version.
+overrides:
+  "undici@7": "^7.30.1"
