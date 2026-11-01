@@ -94,7 +94,7 @@ directory's page still shows the first six, so sync them again:
 
 - Categories: pick the closest of what the portal offers, such as
   Productivity, Design or Developer tools.
-- Documentation URL: `https://naru.pub/help/mcp`
+- Documentation URL: `https://naru.pub/docs/mcp`
 - Privacy policy URL: `https://naru.pub/privacy`
 - Support contact: `hello@naru.pub`
 - Icon: `control-plane/public/logo.png` (270 × 270 PNG)
