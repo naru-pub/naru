@@ -31,6 +31,19 @@ const PERKS = [
     description:
       "GitHub 저장소에 올린 내용을 나루 웹사이트로 자동으로 배포하실 수 있습니다.",
   },
+  {
+    emoji: "🤖",
+    title: "MCP 연결",
+    description: (
+      <>
+        Claude, ChatGPT 같은 AI 앱을 연결해 대화하며 웹사이트의 파일과
+        데이터베이스를 다루실 수 있습니다.{" "}
+        <a href="/help/mcp" className="underline underline-offset-4">
+          연결 방법 보기
+        </a>
+      </>
+    ),
+  },
 ];
 
 export function SupportPerks() {
