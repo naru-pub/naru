@@ -54,7 +54,10 @@ const nextConfig = {
   outputFileTracingIncludes: {
     "/help/*": ["./src/app/(main)/help/**/*.md"],
     "/docs/**/*": ["./src/app/(main)/docs/_guides/**/*.md"],
-    "/mcp": ["./src/app/(main)/docs/_guides/**/*.md"],
+    "/mcp": [
+      "./src/app/(main)/docs/_guides/**/*.md",
+      "./public/sdk/1.1.0/functions.d.ts",
+    ],
   },
   images: {
     remotePatterns: [

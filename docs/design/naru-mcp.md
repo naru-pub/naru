@@ -14,7 +14,7 @@ the file manager's extensions, `index.html` never deleted or moved, the site
 title from `index.html`, edit stats, and the cache purge, which also installs
 `_naru/` declarations and site code. Its database's collections, through
 `_naru/collections.json`, and with the `database` scope its documents, as
-SDK 1.0.0 gives them to the signed-in owner (`lib/mcp/site-database.ts`,
+the SDK gives them to the signed-in owner (`lib/mcp/site-database.ts`,
 the control panel's path: `executeData` as the owner). Nothing else: no
 account settings, billing, custom domains or site code calls.
 
@@ -32,7 +32,7 @@ address to try.
 | `move_file`             | `write`              | move or rename; refuses to overwrite                                                             |
 | `delete_file`           | `write`              | delete one file                                                                                  |
 | `delete_folder`         | `write`              | delete a folder's files, given the count `list_files` showed                                     |
-| `get_sdk_reference`     | none                 | SDK 1.0.0: the `/docs/1.0.0` database and media guides, and the generated reference              |
+| `get_sdk_reference`     | none                 | SDK 1.1.0: the `/docs/1.1.0` database and media guides, and the generated reference              |
 | `list_collections`      | `read`               | collections, their access, the database's usage                                                  |
 | `configure_collections` | `write`              | declare collections in `_naru/collections.json` and install it                                   |
 | `list_documents`        | `database`           | a page of documents: filter, sort, size, after                                                   |
@@ -42,13 +42,13 @@ address to try.
 
 A connection without `write` isn't offered the tools that change files,
 collections or documents. `get_sdk_reference` is public documentation, answered whatever
-the account's plan, so a model writes pages for the SDK version Naru serves
-as stable. It is the guides people read on `/docs/1.0.0`, as they are and
-in Korean (`docs/_guides/1.0.0/*.md`, the one source for both), with the
+the account's plan, so a model writes pages for the newest SDK version Naru
+has frozen. It is the guides people read on `/docs/1.1.0`, as they are and
+in Korean (`docs/_guides/1.1.0/*.md`, the one source for both), with the
 connected site's name in their examples and their links made absolute,
 after a short English part on what only these tools need (always
-`createNaru({ site })`, `configure_collections`) and before the generated
-reference. Other tool text is in English, for the models that read it, and
+`createNaru({ site })`, `configure_collections`, site code saved with
+`write_file`) and before the generated reference and `functions.d.ts`. Other tool text is in English, for the models that read it, and
 says only what Naru is (나루, so a request in Korean finds the server).
 
 ### Collections

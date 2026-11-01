@@ -726,21 +726,24 @@ integration("Naru MCP", () => {
     await client.close();
   });
 
-  test("explains SDK 1.0.0 to the model", async () => {
+  test("explains SDK 1.1.0 to the model", async () => {
     const tokens = await connect(owner, "read");
     const client = await mcpClient(tokens.access_token);
     const reference = textOf(
       await client.callTool({ name: "get_sdk_reference", arguments: {} }),
     );
-    expect(reference).toContain("https://sdk.naru.pub/sdk/1.0.0/naru.js");
+    expect(reference).toContain("https://sdk.naru.pub/sdk/1.1.0/naru.js");
+    expect(reference).not.toContain("sdk/1.0.0/");
     expect(reference).toContain('createNaru({ site: "mcp-owner" })');
-    // The guide people read on /docs/1.0.0/database, as it is.
-    expect(reference).toContain("## 02 · 컬렉션과 공개 범위");
+    // The guide people read on /docs/1.1.0/database, as it is.
+    expect(reference).toContain("## 04 · 컬렉션과 공개 범위");
+    expect(reference).toContain("## 09 · 사이트 코드");
     expect(reference).toContain("](https://naru.test/database)");
     expect(reference).not.toMatch(/= createNaru\(\)/);
     expect(reference).not.toContain("{{");
     expect(reference).toContain("_naru/collections.json");
     expect(reference).toContain("interface AdminCollection");
+    expect(reference).toContain("export interface MutationCtx");
     await client.close();
   });
 
@@ -822,7 +825,7 @@ integration("Naru MCP", () => {
     await client.close();
   });
 
-  test("works on the site's documents as SDK 1.0.0's Admin does", async () => {
+  test("works on the site's documents as the SDK's Admin does", async () => {
     stored.clear();
     executed.length = 0;
     const tokens = await connect();

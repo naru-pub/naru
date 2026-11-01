@@ -38,7 +38,7 @@ import {
 } from "./site-files";
 
 // Naru MCP's tools (docs/design/naru-mcp.md): the connected account's site,
-// its address and its files, the Data SDK 1.0.0 its pages use and its
+// its address and its files, the Data SDK 1.1.0 its pages use and its
 // collections, enough for an agent to build a guestbook or a blog; with the
 // database scope also the documents, which visitors may have written. A
 // connection without the write scope is not offered the tools that change
@@ -49,7 +49,7 @@ import {
 const VERSION = "1.0.0";
 
 function instructions(site: Site) {
-  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts static websites: every file is served as it is at <site address>/<path>, with no build step and no server-side code. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are the site's private configuration, never served (for example _naru/collections.json, which declares the site's database collections). Pages store data in the site's database with the Naru Data SDK 1.0.0, imported from ${SDK_URL}/1.0.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css. To remove something from the site, such as a guestbook, delete its files (delete_folder for a folder), take out the links and code that use it from the other pages (read the remaining pages for links to it). Collections and their documents can't be deleted here: tell the owner they can delete them at ${naruOrigin()}/database.`;
+  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts websites: every file is served as it is at <site address>/<path>, with no build step. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are never served: the site's configuration (such as _naru/collections.json, which declares its database collections) and the code Naru runs for it (_naru/migrations/, _naru/queries/, _naru/mutations/ and _naru/routes.js, over its own SQL tables). Pages store data in the site's database with the Naru Data SDK 1.1.0, imported from ${SDK_URL}/1.1.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css. To remove something from the site, such as a guestbook, delete its files (delete_folder for a folder), take out the links and code that use it from the other pages (read the remaining pages for links to it). Collections and their documents can't be deleted here: tell the owner they can delete them at ${naruOrigin()}/database.`;
 }
 
 const text = (value: unknown): CallToolResult => ({
@@ -168,7 +168,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
     {
       title: "Get Naru Data SDK reference",
       description:
-        "How the site's pages use the Naru Data SDK 1.0.0: loading it, collections and their access, _naru/collections.json, the owner's sign-in, writes and lists, and the full API reference. Read it before writing a page that stores data.",
+        "How the site's pages use the Naru Data SDK 1.1.0: loading it, collections and their access, _naru/collections.json, the owner's sign-in, writes and lists, members, the site's own tables, queries, mutations, live queries and routes, and the full API reference. Read it before writing a page that stores data.",
       annotations: READ,
     },
     // Public documentation: open to a connection whatever its plan.

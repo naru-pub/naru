@@ -16,14 +16,14 @@ import {
   type Site,
 } from "./site-files";
 
-// A site's database as Naru MCP's tools reach it: what SDK 1.0.0 gives the
+// A site's database as Naru MCP's tools reach it: what the SDK gives the
 // site's signed-in owner (Admin), its collections and their documents, by
 // the same path as the control panel's /database (site-data/service.ts).
 // Revisions go out and come back as the SDK's opaque strings. Collections
 // change only through the site's declaration, so what would open one wider
 // still waits for the owner on /database (declared-collections.ts).
 
-/** `{ revision }` or `{ absent: true }`, as SDK 1.0.0's WriteCondition. */
+/** `{ revision }` or `{ absent: true }`, as the SDK's WriteCondition. */
 export type WriteCondition = { revision: string } | { absent: true };
 
 function ifVersion(condition: WriteCondition | undefined) {
