@@ -91,7 +91,7 @@ MCP(Model Context Protocol)는 AI 앱이 다른 서비스를 쓸 수 있게 하�
 
 ## 04 · 한도 {#limits}
 
-- 파일 하나는 10 MB까지, [파일 편집기](/help/files#limits)와 같은 형식만 올릴
+- 파일 하나는 10 MB까지, [파일 편집기](/docs/files#limits)와 같은 형식만 올릴
   수 있어요.
 - `read_file`은 1 MB까지의 텍스트와 이미지를 돌려줘요. 그보다 큰 파일은 주소만
   알려 줘요.

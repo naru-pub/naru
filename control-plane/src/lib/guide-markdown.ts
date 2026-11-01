@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import MarkdownIt from "markdown-it";
 
-// Guides written in Markdown: the help pages (help/<topic>/page.md) and the
-// SDK guides (docs/_guides/<version>/<topic>.md), which Naru MCP also gives
+// Guides written in Markdown: the manual (docs/_guides/<topic>.md) and the SDK
+// guides (docs/_guides/<version>/<topic>.md), which Naru MCP also gives
 // models as they are (lib/mcp/sdk-reference.ts).
 //
 //   ---

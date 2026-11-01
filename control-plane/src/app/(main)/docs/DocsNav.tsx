@@ -1,5 +1,8 @@
 import { DOC_VERSIONS, guidePath, type DocsVersion } from "./versions";
 
+// Only the SDK's guides have versions to switch between.
+const VERSIONED = ["database", "media", "sdk"];
+
 export default function DocsNav({
   current,
   version = "1.0.0",
@@ -8,16 +11,18 @@ export default function DocsNav({
   version?: DocsVersion;
 }) {
   const links = [
-    ["/developers", "개발자", "developers"],
+    ["/docs", "도움말", "home"],
+    ["/docs/files", "파일 편집기", "files"],
+    ["/docs/mcp", "MCP 연결", "mcp"],
     [guidePath(version, "database"), "데이터베이스", "database"],
     [guidePath(version, "media"), "미디어", "media"],
     [guidePath(version, "sdk"), `SDK ${version}`, "sdk"],
     ["/docs/dev", "로컬 개발", "dev"],
-    ["/help/mcp", "MCP 연결", "mcp"],
+    ["/developers", "개발자", "developers"],
   ] as const;
   return (
     <nav aria-label="문서" className="mb-10">
-      {current !== "dev" && (
+      {VERSIONED.includes(current) && (
         <div
           className="mb-4 flex flex-wrap items-center gap-3 text-sm"
           aria-label="SDK 버전"

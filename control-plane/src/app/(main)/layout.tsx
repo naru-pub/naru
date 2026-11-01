@@ -137,7 +137,7 @@ export default async function RootLayout({
                           <PixelHeart />
                         </NavLink>
                       )}
-                      <NavLink href="/help">도움말</NavLink>
+                      <NavLink href="/docs">도움말</NavLink>
                     </div>
 
                     <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">

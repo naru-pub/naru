@@ -7,13 +7,13 @@ const nextConfig = {
   // waits for like the image build; here it would hold up the image by ~20s.
   typescript: { ignoreBuildErrors: true },
   // Old addresses, for links and bookmarks: the GitHub deploys page was
-  // /deploys, the MCP guide /docs/mcp. /docs has no page: /developers is the
-  // docs' home.
+  // /deploys, the manual /help.
   async redirects() {
     return [
       { source: "/deploys", destination: "/github", permanent: true },
-      { source: "/docs/mcp", destination: "/help/mcp", permanent: true },
-      { source: "/docs", destination: "/developers", permanent: true },
+      { source: "/help", destination: "/docs", permanent: true },
+      { source: "/help/files", destination: "/docs/files", permanent: true },
+      { source: "/help/mcp", destination: "/docs/mcp", permanent: true },
     ];
   },
   async headers() {
@@ -54,7 +54,6 @@ const nextConfig = {
   // Guides read their Markdown at render (lib/guide-markdown.ts), and Naru
   // MCP's get_sdk_reference reads the SDK guides on every call.
   outputFileTracingIncludes: {
-    "/help/*": ["./src/app/(main)/help/**/*.md"],
     "/docs/**/*": ["./src/app/(main)/docs/_guides/**/*.md"],
     "/mcp": ["./src/app/(main)/docs/_guides/**/*.md"],
   },
