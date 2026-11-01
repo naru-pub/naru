@@ -24,6 +24,11 @@ const GROUPS = [
         summary:
           "AI 앱을 연결해서 말로 부탁해 홈페이지 파일을 고쳐요. 서포터 기능.",
       },
+      {
+        href: "/docs/templates#users",
+        title: "템플릿 쓰기",
+        summary: "설치한 템플릿을 업데이트해도 내가 바꾼 것을 남겨요.",
+      },
     ],
   },
   {
@@ -50,7 +55,7 @@ const GROUPS = [
         summary: "naru-dev로 사이트를 내 컴퓨터에서 돌려 보고 시험해요.",
       },
       {
-        href: "/developers",
+        href: "/docs/templates",
         title: "템플릿 만들기",
         summary: "빈 폴더에서 공개한 템플릿까지 세 단계로 가요.",
       },

@@ -18,6 +18,7 @@ export default function DocsNav({
     [guidePath(version, "media"), "미디어", "media"],
     [guidePath(version, "sdk"), `SDK ${version}`, "sdk"],
     ["/docs/dev", "로컬 개발", "dev"],
+    ["/docs/templates", "템플릿", "templates"],
     ["/developers", "개발자", "developers"],
   ] as const;
   return (
