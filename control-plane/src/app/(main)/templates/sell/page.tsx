@@ -6,7 +6,7 @@ import { SellerInterestForm } from "./SellerInterestForm";
 
 export const metadata: Metadata = {
   title: "템플릿 판매 관심 · 나루",
-  description: "나루에서 템플릿을 팔아 보고 싶다면 알려 주세요.",
+  description: "나루에서 템플릿을 판매하고 싶다면 알려 주세요.",
 };
 
 export default async function SellerInterestPage() {
@@ -24,7 +24,7 @@ export default async function SellerInterestPage() {
           >
             ← 템플릿
           </Link>
-          <h1 className="text-2xl font-bold">템플릿을 팔아 보고 싶나요?</h1>
+          <h1 className="text-2xl font-bold">템플릿을 판매하고 싶나요?</h1>
           <p className="text-sm leading-relaxed text-muted-foreground">
             지금 나루의 템플릿은 모두 무료예요. 유료 판매를 열지는 아직 정하지
             않았고, 얼마나 많은 분이 원하는지 먼저 들어 보고 있어요. 소식이

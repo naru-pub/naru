@@ -49,7 +49,7 @@ export function SellerInterestForm({
     >
       <div className="space-y-2">
         <Label htmlFor="seller-interest-description">
-          어떤 템플릿을 팔고 싶나요?
+          어떤 템플릿을 판매하고 싶나요?
         </Label>
         <Textarea
           id="seller-interest-description"

@@ -37,7 +37,7 @@ export default async function SellerInterestPage() {
       <div className="space-y-1">
         <h2 className="text-xl font-bold">판매 관심</h2>
         <p className="text-sm text-muted-foreground">
-          템플릿을 팔아 보고 싶다고 알려 준 {answers.length}명, 최근 순서.
+          템플릿을 판매하고 싶다고 알려 준 {answers.length}명, 최근 순서.
         </p>
       </div>
       <Card>

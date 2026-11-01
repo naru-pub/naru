@@ -168,7 +168,7 @@ export default async function TemplatesPage({
 
         <section className="flex flex-wrap items-center justify-between gap-3 border-2 border-line bg-card p-4">
           <div className="space-y-1">
-            <h2 className="font-bold">템플릿을 팔아 보고 싶나요?</h2>
+            <h2 className="font-bold">템플릿을 판매하고 싶나요?</h2>
             <p className="text-sm text-muted-foreground">
               지금은 모든 템플릿이 무료예요. 유료 판매에 관심이 있다면 알려
               주세요.
