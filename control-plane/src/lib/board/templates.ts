@@ -902,6 +902,10 @@ export interface ApplicationPlan {
   // Whether the site's database may be reset for this: site code, and the
   // database feature.
   canResetDatabase: boolean;
+  // The site's migrations this version doesn't write, whoever left them (a
+  // disconnected template's stay, updates.ts). Resetting the database takes
+  // them too: they are history no more, and would run after this version's.
+  staleMigrations: string[];
 }
 
 function normalizeTarget(value: unknown): string {
@@ -1049,6 +1053,12 @@ export async function planApplication(
     replaces,
     migrationConflicts: conflicts,
     canResetDatabase: version.site_code && hasDatabase,
+    staleMigrations: version.site_code
+      ? [...existing].filter(
+          (path) =>
+            isMigration(path) && !planned.some((file) => file.path === path),
+        )
+      : [],
   };
 }
 
@@ -1155,11 +1165,12 @@ async function applyLocked(
     );
   if (plan.migrationConflicts.length > 0 && !reset)
     throw new BoardError(409, plan.migrationConflicts[0]);
-  // With the database reset, the replaced template's migrations are history
-  // no more, and go with its other files.
-  const removed = replaces
-    ? [...replaces.remove, ...(reset ? replaces.migrations : [])]
-    : [];
+  // With the database reset, the site's other migrations are history no
+  // more, and go with the replaced template's other files.
+  const removed = [
+    ...(replaces?.remove ?? []),
+    ...(reset ? plan.staleMigrations : []),
+  ];
   // Site code is put back on failure, so its backups are always kept.
   const keepBackup = plan.siteCode || input.backup !== false;
   const overwritten = plan.files

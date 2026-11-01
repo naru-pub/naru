@@ -394,7 +394,9 @@ export function ApplyTemplateDialog({
                         마이그레이션, 컬렉션을 모두 지우고 이 템플릿의
                         마이그레이션을 처음부터 적용해요. 지우기 전에 복원
                         지점을 남기고, 적용에 실패하면 그 지점으로 되돌려요.
-                        파일과 업로드, 회원 가입은 그대로예요.
+                        {step.plan.staleMigrations.length > 0 &&
+                          ` 사이트에 있는 다른 마이그레이션 파일 ${step.plan.staleMigrations.length}개도 /.backup/에 보관하고 지워요.`}{" "}
+                        다른 파일과 업로드, 회원 가입은 그대로예요.
                       </span>
                     </span>
                   </label>

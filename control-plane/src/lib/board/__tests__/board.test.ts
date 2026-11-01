@@ -1111,6 +1111,57 @@ integration("board", () => {
       }
     });
 
+    test("resetting the database takes the migrations a disconnected template left", async () => {
+      const author = await member();
+      const { postId } = await template(author, "s/", [
+        "index.html",
+        "_naru/migrations/0001_core.sql",
+      ]);
+      const version = await latestVersion(postId);
+      const site = await member();
+      // No install holds these, and they would run after 0001_core.sql.
+      const left = `${site.loginName}/_naru/migrations/0001_schema.sql`;
+      put(left, "text/plain");
+      put(`${site.loginName}/_naru/migrations/0001_core.sql`, "text/plain");
+      const plan = await planApplication(site, version.id, "");
+      expect(plan.replaces).toBeNull();
+      expect(plan.staleMigrations).toEqual([
+        "_naru/migrations/0001_schema.sql",
+      ]);
+
+      const input = {
+        targetPath: "",
+        backup: true,
+        createCollections: true,
+      };
+      // Without the reset they are the database's history, and stay.
+      await applyTemplate(site, version.id, input);
+      expect(bucket.has(left)).toBe(true);
+
+      // Refused after the reset: they come back.
+      storageMock.purgeSiteFiles.mockImplementationOnce(async () => {
+        throw new DataError(422, "migration failed", "INVALID_REQUEST");
+      });
+      await expect(
+        applyTemplate(site, version.id, {
+          ...input,
+          resetDatabase: site.loginName,
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(bucket.has(left)).toBe(true);
+
+      const applied = await applyTemplate(site, version.id, {
+        ...input,
+        resetDatabase: site.loginName,
+      });
+      expect(bucket.has(left)).toBe(false);
+      expect(
+        bucket.has(
+          `${site.loginName}/${applied.backupPath}_naru/migrations/0001_schema.sql`,
+        ),
+      ).toBe(true);
+    });
+
     test("publishing site code records the tables its migrations make, tried on the edge", async () => {
       const author = await member();
       put(`${author.loginName}/tb/index.html`);
