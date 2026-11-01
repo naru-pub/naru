@@ -5,7 +5,7 @@ import aliases from "../../control-plane/sdk/aliases.json";
 // API. Nothing else serves it: not the Worker on Cloudflare (index.ts), and
 // naru.pub/sdk/ is a 404 (control-plane src/proxy.ts).
 // The files are the committed control-plane/public/sdk/, copied beside the
-// Worker as workerd's sdk-files service (edge/seoul/build.mjs); /sdk/1/ stays on stable 1.0.0 as configured
+// Worker as workerd's sdk-files service (edge/seoul/build.mjs); /sdk/1/ names the newest 1.x release as configured
 // in control-plane/sdk/aliases.json.
 
 export interface SdkEnv {

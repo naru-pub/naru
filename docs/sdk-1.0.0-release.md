@@ -20,7 +20,7 @@ seconds fails as `UNAVAILABLE` (`97f028b6`).
 
 It was not tagged, and the live acceptance pass below was not run before the
 freeze, nor the browser fixture; the unit and integration suites were. The `1` alias
-names 1.0.0 (`sdk/aliases.json`). 1.1.0 was frozen in its turn: see
+named 1.0.0 until 1.1.0 was frozen in its turn and it moved there: see
 [sdk-1.1.0-release.md](sdk-1.1.0-release.md).
 
 What follows is the checklist as it stood before the freeze. Keep the fixed

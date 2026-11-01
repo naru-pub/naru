@@ -28,6 +28,11 @@ freeze; a later raise leaves them out of date, not wrong to rely on.
 
 ## What differs from 1.0.0
 
+`/sdk/1/` moved from 1.0.0 to 1.1.0 at the freeze, so these reach sites that
+import it within a day (`Cache-Control` in `edge/src/sdk.ts`); a site pinned to
+`/sdk/1.0.0/` keeps 1.0.0. Pointing `sdk/aliases.json` back and releasing naru-sdk
+undoes it.
+
 1.0.0 code compiles unchanged against 1.1.0, and 1.0.0's test suite runs against
 both (`tests/naru-data-sdk-1.1.0.test.mjs`). Its behavior differs here:
 

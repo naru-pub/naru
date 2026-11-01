@@ -34,7 +34,7 @@ queries (its built-in WebSocket).
 ## Bundled or loaded from Naru
 
 Bundled, a site keeps the SDK it was built with until it is built again.
-Loaded from `sdk.naru.pub`, it gets the SDK's fixes as Naru serves them, and
+Loaded from `sdk.naru.pub`, at `/sdk/1/` it gets the SDK's fixes as Naru serves them, and either way
 [naru-dev](https://www.npmjs.com/package/@naru-pub/dev) can point it at your machine. To keep that
 while importing from the package, mark it external and give it the address
 of the installed version, for example in Vite:

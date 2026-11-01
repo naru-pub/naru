@@ -32,8 +32,8 @@ describe("paths", () => {
   test("names a release's files, through its line's alias too", () => {
     expect(sdkAsset("/sdk/1.1.0/naru.js")).toBe("/1.1.0/naru.js");
     expect(sdkAsset("/sdk/1.0.0/naru.js")).toBe("/1.0.0/naru.js");
-    expect(sdkAsset("/sdk/1/naru.js")).toBe("/1.0.0/naru.js");
-    expect(sdkAsset("/sdk/1/naru.d.ts")).toBe("/1.0.0/naru.d.ts");
+    expect(sdkAsset("/sdk/1/naru.js")).toBe("/1.1.0/naru.js");
+    expect(sdkAsset("/sdk/1/naru.d.ts")).toBe("/1.1.0/naru.d.ts");
   });
 
   test("names nothing else", () => {
@@ -55,13 +55,13 @@ describe("serving", () => {
   test("serves the module as a cross-origin, revalidated script", async () => {
     const response = await get("/sdk/1/naru.js");
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("export const createNaru = 0;");
+    expect(await response.text()).toBe("export const createNaru = 1;");
     expect(Object.fromEntries(response.headers)).toMatchObject({
       "content-type": "text/javascript; charset=utf-8",
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff",
       "cache-control": SDK_CACHE,
-      etag: '"/1.0.0/naru.js"',
+      etag: '"/1.1.0/naru.js"',
     });
   });
 
@@ -79,7 +79,7 @@ describe("serving", () => {
 
   test("answers a revalidation with 304", async () => {
     const response = await get("/sdk/1/naru.js", {
-      headers: { "If-None-Match": '"/1.0.0/naru.js"' },
+      headers: { "If-None-Match": '"/1.1.0/naru.js"' },
     });
     expect(response.status).toBe(304);
     expect(response.headers.get("cache-control")).toBe(SDK_CACHE);
