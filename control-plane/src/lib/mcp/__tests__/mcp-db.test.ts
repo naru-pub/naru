@@ -543,6 +543,67 @@ integration("Naru MCP", () => {
     );
   });
 
+  describe("the request size cap", () => {
+    const cap = 4 * 1024 * 1024;
+    const post = (token: string, init: RequestInit) =>
+      route.POST(
+        new Request("https://naru.test/mcp", {
+          method: "POST",
+          ...init,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            ...init.headers,
+          },
+        }),
+      );
+
+    test("refuses a request that says it's too large, without reading it", async () => {
+      const tokens = await connect(owner, "read");
+      const body = new ReadableStream({
+        pull() {
+          throw new Error("read");
+        },
+      });
+      const response = await post(tokens.access_token, {
+        body,
+        duplex: "half",
+        headers: { "Content-Length": String(cap + 1) },
+      } as RequestInit);
+      expect(response.status).toBe(413);
+      expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    });
+
+    test("stops reading a chunked request at the cap", async () => {
+      const tokens = await connect(owner, "read");
+      const chunk = new Uint8Array(1024 * 1024);
+      let sent = 0;
+      const body = new ReadableStream({
+        pull(controller) {
+          sent += chunk.byteLength;
+          controller.enqueue(chunk);
+        },
+      });
+      const response = await post(tokens.access_token, {
+        body,
+        duplex: "half",
+      } as RequestInit);
+      expect(response.status).toBe(413);
+      // Stops soon after the cap, rather than reading on without end.
+      expect(sent).toBeLessThan(cap + 8 * chunk.byteLength);
+    });
+
+    test("passes a request at the cap on to the server", async () => {
+      const tokens = await connect(owner, "read");
+      const response = await post(tokens.access_token, {
+        body: `${" ".repeat(cap - 2)}{}`,
+      });
+      // Not a JSON-RPC message, which is the server's to say: past the cap.
+      expect(response.status).toBe(400);
+    });
+  });
+
   test("offers a read-only connection only the reading tools", async () => {
     const tokens = await connect(owner, "read");
     const client = await mcpClient(tokens.access_token);

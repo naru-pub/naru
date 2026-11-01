@@ -32,6 +32,12 @@ function overLimit(grantId: string) {
   return window.count > REQUESTS_PER_MINUTE;
 }
 
+/**
+ * The largest request, which the transport counts as it arrives and answers
+ * with 413 past, before parsing it: named here so that no SDK upgrade moves it.
+ */
+const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
+
 function unauthorized(tokenGiven: boolean) {
   // RFC 9728 §5.1: where the app learns how to sign in.
   const challenge = [
@@ -67,6 +73,7 @@ export async function POST(request: Request) {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
+    maxRequestBodySize: MAX_REQUEST_BYTES,
   });
   try {
     await server.connect(transport);
