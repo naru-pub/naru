@@ -23,7 +23,10 @@ export default async function TemplatesPage() {
           <h1 className="text-2xl font-bold">설치한 템플릿</h1>
           <p className="text-sm text-muted-foreground">
             새 버전이 나오면 여기서 업데이트해요. 템플릿이 설치한 파일만 바뀌고,
-            직접 고친 파일은 보관해 둬요.
+            직접 고친 파일은 보관해 둬요.{" "}
+            <Link href="/docs/using-templates#updates" className="underline">
+              자세히 보기
+            </Link>
           </p>
         </div>
         {installs.length === 0 ? (

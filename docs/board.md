@@ -196,8 +196,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   updates and disconnecting never write, back up or remove a file in it,
   whatever an older install recorded (`installFileStates`, `planUpdate`).
   So a template can load `/_owner/style.css` or `script.js` after its own,
-  and what the owner keeps there outlasts every update; /developers says
-  so for authors.
+  and what the owner keeps there outlasts every update; /docs/templates
+  says so for authors, and /docs/using-templates for owners.
 - **Installs and updates** (`lib/board/updates.ts`): applying records an
   install (`board_template_installs`: the folder, the version, every file it
   wrote with its ETag then, and `notify`: whether it is told of new

@@ -5,7 +5,7 @@ import { LATEST_VERSION } from "./versions";
 
 // The manual for people using Naru, _guides/<topic>.md: not tied to an SDK
 // version, and its code is addresses and shortcuts, so it isn't highlighted.
-type Topic = "files" | "mcp";
+type Topic = "files" | "mcp" | "using-templates";
 
 /** The guide, with the values its {{names}} take. */
 export const userGuide = (topic: Topic, values: Record<string, string> = {}) =>

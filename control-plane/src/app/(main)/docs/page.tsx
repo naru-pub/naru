@@ -25,9 +25,10 @@ const GROUPS = [
           "AI 앱을 연결해서 말로 부탁해 홈페이지 파일을 고쳐요. 서포터 기능.",
       },
       {
-        href: "/docs/templates#users",
+        href: "/docs/using-templates",
         title: "템플릿 쓰기",
-        summary: "설치한 템플릿을 업데이트해도 내가 바꾼 것을 남겨요.",
+        summary:
+          "템플릿을 적용하고, 내 것으로 고치고, 업데이트하고, 연결을 끊어요.",
       },
     ],
   },
