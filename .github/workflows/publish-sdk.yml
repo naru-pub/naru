@@ -1,9 +1,10 @@
-# Publishes @naru-pub/sdk (sdk/) to npm when a tag sdk-v<version> is pushed,
+# Stages @naru-pub/sdk (sdk/) on npm when a tag sdk-v<version> is pushed,
 # <version> being sdk/package.json's: the package is packed and checked as
-# main.yml's sdk-package job checks it, and that very tarball is published,
-# with provenance. A prerelease (1.1.0-dev.N, an SDK version still being
-# built) goes out under the dist-tag "dev", as npm requires of a prerelease.
-# Needs the NPM_TOKEN secret (sdk/README.md, "Publishing").
+# main.yml's sdk-package job checks it, and that very tarball is staged, with
+# provenance, for a maintainer to approve with 2FA. A prerelease (1.1.0-dev.N,
+# an SDK version still being built) goes under the dist-tag "dev", as npm
+# requires of a prerelease. Needs the NPM_TOKEN secret (sdk/README.md,
+# "Publishing").
 name: publish-sdk
 on:
   push:
@@ -31,10 +32,10 @@ jobs:
             exit 1
           fi
       - run: sdk/scripts/check-package.sh "$RUNNER_TEMP/sdk"
-      - name: Publish the checked tarball
+      - name: Stage the checked tarball
         run: |
           tag=latest
           [[ "$GITHUB_REF_NAME" == *-* ]] && tag=dev
-          npm publish "$RUNNER_TEMP"/sdk/naru-pub-sdk-*.tgz --provenance --access public --tag "$tag"
+          npm stage publish "$RUNNER_TEMP"/sdk/naru-pub-sdk-*.tgz --provenance --access public --tag "$tag"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

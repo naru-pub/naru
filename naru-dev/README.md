@@ -145,9 +145,10 @@ server; `naru-dev --version` names the Naru commit a release was built from.
 
 From the Naru repository (maintainers): set `version` in
 `naru-dev/package.json`, commit, and push a tag `dev-v<version>`;
-`.github/workflows/publish-naru-dev.yml` builds, checks and publishes it
-with the `NPM_TOKEN` secret. `scripts/check-package.sh <dir>` does the
-same check locally.
+`.github/workflows/publish-naru-dev.yml` builds, checks and stages it with
+the `NPM_TOKEN` secret, and it goes live once approved with 2FA (`npm stage
+approve <stage-id>`, or the Staged Packages tab on npmjs.com).
+`scripts/check-package.sh <dir>` does the same check locally.
 
 ## License
 
