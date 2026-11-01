@@ -67,6 +67,9 @@ links: [데이터베이스 제어판 열기 →](/database) [데이터베이스 
 </script>
 ```
 
+방문자가 쓴 글을 화면에 보여 줄 때는 이 예제처럼 `textContent`를 쓰세요.
+`innerHTML`에 넣으면 글 속에 숨긴 스크립트가 실행될 수 있습니다.
+
 ## 02 · 나루가 일하는 방식 {#ideas}
 
 나루의 데이터베이스는 서버 없이 정적 웹사이트에 데이터를 더합니다. 그 대신
@@ -87,7 +90,7 @@ links: [데이터베이스 제어판 열기 →](/database) [데이터베이스 
 | 모양         | 문서마다 JSON 하나                         | `_naru/migrations/`의 SQL로 만든 SQLite 테이블         |
 | 읽고 쓰는 길 | 페이지가 SDK의 `collection(이름)`으로 바로 | 사이트의 [쿼리와 뮤테이션](#code)을 거쳐서만           |
 | 누가 정하나  | 컬렉션마다 하나의 공개 범위                | 사이트 코드가 부른 사람을 보고 정합니다                |
-| 알맞은 곳    | 블로그 글, 방명록, 문의함, 설정            | 회원 게시판, 댓글, 포인트, 상점처럼 규칙이 있는 데이터 |
+| 알맞은 곳    | 블로그 글, 방명록, 문의함, 익명 댓글, 설정 | 회원 글과 댓글, 포인트, 상점처럼 규칙이 있는 데이터    |
 
 둘은 서로 섞이지 않습니다. 사이트 코드의 SQL은 컬렉션을 읽을 수 없고, 컬렉션의
 SDK는 테이블을 읽을 수 없습니다. 한 사이트에서 둘을 함께 써도 됩니다.
@@ -865,6 +868,10 @@ naru
   .list({
     sort: [["date", "desc"]],
   });
+// 글 페이지: post.html?id=hello
+const id = new URLSearchParams(location.search)
+  .get("id");
+const post = await naru.collection("posts").get(id);
 ```
 
 ### 방명록
@@ -874,6 +881,10 @@ guestbook · 읽기 누구나 / 쓰기 누구나 생성만
 ```js
 naru.collection("guestbook")
   .add({ name, message });
+naru.collection("guestbook")
+  .list({
+    sort: [[{ metadata: "createdAt" }, "desc"]],
+  });
 ```
 
 ### 비공개 문의 받기
@@ -911,11 +922,13 @@ await posts.set(id, { ...post.data, cover: image.url },
   { condition: { revision: post.revision } });
 ```
 
-### 특정 글의 댓글
+### 특정 글의 익명 댓글
 
 comments · 읽기 누구나 / 쓰기 누구나 생성만
 
 ```js
+naru.collection("comments")
+  .add({ postId: "hello", name, message });
 naru
   .collection("comments")
   .list({

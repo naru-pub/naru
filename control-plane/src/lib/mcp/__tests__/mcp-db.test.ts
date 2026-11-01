@@ -735,6 +735,12 @@ integration("Naru MCP", () => {
     expect(reference).toContain("https://sdk.naru.pub/sdk/1.1.0/naru.js");
     expect(reference).not.toContain("sdk/1.0.0/");
     expect(reference).toContain('createNaru({ site: "mcp-owner" })');
+    // What only these tools need, before the guides.
+    expect(reference.indexOf("## Building with these tools")).toBeLessThan(
+      reference.indexOf("## 01 · 빠른 시작"),
+    );
+    expect(reference).toContain("Links in them are on https://naru.test.");
+    expect(reference).toContain("configure_collections");
     // The guide people read on /docs/1.1.0/database, as it is.
     expect(reference).toContain("## 04 · 컬렉션과 공개 범위");
     expect(reference).toContain("## 09 · 사이트 코드");

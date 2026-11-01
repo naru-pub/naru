@@ -1,14 +1,13 @@
 import reference from "@/lib/sdk-reference/1.1.0.json";
-import { SDK_URL } from "@/lib/const";
-import { DECLARATION_PATH } from "@/lib/site-data/declared-collections";
-import { readGuide } from "@/lib/guide-markdown";
+import { readGuide, readMarkdown } from "@/lib/guide-markdown";
 import { naruOrigin } from "./oauth";
 
 // Naru Data SDK 1.1.0 as Naru MCP's get_sdk_reference gives it to a model:
-// what only these tools need, the guides people read on /docs/1.1.0 as they
-// are (docs/_guides/1.1.0/*.md, one source for both), the generated reference
-// that /docs/sdk/1.1.0 draws (scripts/generate-sdk-reference.mjs), then the
-// types of site code, functions.d.ts as sites fetch it.
+// what only these tools need (docs/_guides/1.1.0/mcp.md, which no page shows),
+// the guides people read on /docs/1.1.0 as they are (database.md and media.md
+// beside it, one source for both), the generated reference that /docs/sdk/1.1.0
+// draws (scripts/generate-sdk-reference.mjs), then the types of site code,
+// functions.d.ts as sites fetch it.
 
 type Span = { type: string; value: string };
 type Block =
@@ -42,25 +41,6 @@ function entry({ name, kind, signature, summary, members }: Entry) {
   return parts.join("\n\n");
 }
 
-// What only a model building pages through these tools needs; the rest is
-// the guide people read.
-function preface(site: string) {
-  return `# Naru Data SDK 1.1.0
-
-A Naru site's pages store and read data in the site's own database with this SDK, imported from ${SDK_URL}/1.1.0/naru.js; there is nothing to install or build. The guides below are the ones people read on naru.pub, in Korean, with this site's name, "${site}", in their examples. Links in them are on ${naruOrigin()}.
-
-## Building with these tools
-
-- Always create the client as createNaru({ site: "${site}" }). Without it the SDK finds the site only from a ${site}.naru.pub address, so the page throws on the site's custom domain or a local preview.
-- Declare the collections a page needs with configure_collections rather than asking the owner to make them on /database: it writes ${DECLARATION_PATH}, and a new collection is created at once with the access given. A change to an existing collection's access waits for the owner's approval.
-- A guestbook: { "guestbook": { "read": "world", "write": "create" } }, a form that add()s { name, message }, and a list sorted by [[{ metadata: "createdAt" }, "desc"]].
-- A blog: { "posts": { "read": "world", "write": "admin", "indexes": ["date"] } }, an index page listing posts by date, and a post page that reads ?id= from its address and get()s that post. Only the owner writes posts: through set_document when this connection may write documents, or through an admin page with naru.auth.signIn (section 05 of the database guide).
-- Anonymous comments: a "comments" collection with "write": "create", each comment naming its post, listed with filter: { postId }.
-- Use collections when the access settings are enough: a guestbook, a blog the owner writes, a contact form, anonymous comments. Use site code over the site's own tables when rules depend on who is calling: members' posts and comments, points, a shop (sections 08 to 11 of the database guide). Save its files with write_file: _naru/migrations/*.sql create the tables, and pages call _naru/queries/ and _naru/mutations/ with query() and mutate(). Saving installs them, and write_file says when it couldn't. No tool here calls them, so give the owner the page to try.
-- Show what visitors wrote with textContent, never innerHTML.
-- After saving pages, give the owner the page's address to try it.`;
-}
-
 /** A guide as Markdown, its site-relative links made absolute. */
 function guideText(topic: "database" | "media", site: string) {
   const guide = readGuide(`docs/_guides/1.1.0/${topic}.md`, { site });
@@ -78,7 +58,10 @@ function guideText(topic: "database" | "media", site: string) {
 /** The SDK 1.1.0 guides and reference, for the site `site`. */
 export function sdkReference(site: string) {
   return [
-    preface(site),
+    readMarkdown("docs/_guides/1.1.0/mcp.md", {
+      site,
+      origin: naruOrigin(),
+    }).trim(),
     guideText("database", site),
     guideText("media", site),
     "# Reference",

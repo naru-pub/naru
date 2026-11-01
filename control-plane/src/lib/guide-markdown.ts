@@ -65,25 +65,31 @@ const HEADING = /^## (.+?) \{#([a-z0-9-]+)\}\s*$/;
 const sources = new Map<string, string>();
 
 /**
- * The guide at `file`, relative to src/app/(main), with its {{names}} filled
+ * The text of `file`, relative to src/app/(main), with its {{names}} filled
  * in. Each file is read once a process.
  */
-export function readGuide(
+export function readMarkdown(
   file: string,
   values: Record<string, string> = {},
-): Guide {
+): string {
   if (!sources.has(file))
     sources.set(
       file,
       readFileSync(join(process.cwd(), "src/app/(main)", file), "utf8"),
     );
-  const source = sources
-    .get(file)!
-    .replace(/\{\{(\w+)\}\}/g, (match, name: string) => {
-      if (!Object.hasOwn(values, name))
-        throw new Error(`${file}: no value for {{${name}}}`);
-      return values[name];
-    });
+  return sources.get(file)!.replace(/\{\{(\w+)\}\}/g, (match, name: string) => {
+    if (!Object.hasOwn(values, name))
+      throw new Error(`${file}: no value for {{${name}}}`);
+    return values[name];
+  });
+}
+
+/** The guide at `file`, as readMarkdown reads it, in its parts. */
+export function readGuide(
+  file: string,
+  values: Record<string, string> = {},
+): Guide {
+  const source = readMarkdown(file, values);
   const front = /^---\n([\s\S]*?)\n---\n/.exec(source);
   if (!front) throw new Error(`${file} has no front matter`);
   const fields = Object.fromEntries(
