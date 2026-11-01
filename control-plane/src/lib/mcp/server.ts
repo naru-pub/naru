@@ -20,8 +20,10 @@ import {
   listDocuments,
   setDocument,
 } from "./site-database";
+import { pageWarnings } from "./page-warnings";
 import {
   deleteFile,
+  deleteFolder,
   FileError,
   filePath,
   fileUrl,
@@ -47,7 +49,7 @@ import {
 const VERSION = "1.0.0";
 
 function instructions(site: Site) {
-  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts static websites: every file is served as it is at <site address>/<path>, with no build step and no server-side code. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are the site's private configuration, never served (for example _naru/collections.json, which declares the site's database collections). Pages store data in the site's database with the Naru Data SDK 1.0.0, imported from ${SDK_URL}/1.0.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css.`;
+  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts static websites: every file is served as it is at <site address>/<path>, with no build step and no server-side code. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are the site's private configuration, never served (for example _naru/collections.json, which declares the site's database collections). Pages store data in the site's database with the Naru Data SDK 1.0.0, imported from ${SDK_URL}/1.0.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css. To remove something from the site, such as a guestbook, delete its files (delete_folder for a folder), take out the links and code that use it from the other pages (read the remaining pages for links to it). Collections and their documents can't be deleted here: tell the owner they can delete them at ${naruOrigin()}/database.`;
 }
 
 const text = (value: unknown): CallToolResult => ({
@@ -511,7 +513,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
     {
       title: "Write file",
       description:
-        "Creates a file or replaces it whole, and publishes it at once. Text goes as it is; images, fonts and audio go as base64. Folders are made as needed.",
+        "Creates a file or replaces it whole, and publishes it at once. Text goes as it is; images, fonts and audio go as base64. Folders are made as needed. For a page or script, warnings name Naru mistakes in it to fix: createNaru without { site }, or a collection the site doesn't have.",
       inputSchema: {
         path: z
           .string()
@@ -544,11 +546,14 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         const path = filePath(value);
         const body = Buffer.from(content, encoding ?? "utf8");
         const result = await writeFile(site, path, body);
+        const warnings =
+          encoding === "base64" ? [] : await pageWarnings(site, path, content);
         return text({
           path,
           created: result.created,
           size: result.size,
           url: fileUrl(site, path),
+          ...(warnings.length && { warnings }),
         });
       },
     ),
@@ -603,6 +608,42 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
       await deleteFile(site, path);
       return text({ deleted: path });
     }),
+  );
+
+  server.registerTool(
+    "delete_folder",
+    {
+      title: "Delete folder",
+      description:
+        "Deletes a folder and every file in it. It can't be undone. List the folder with list_files first and give how many files it has; a different count refuses, so only what was seen is deleted.",
+      inputSchema: {
+        folder: z
+          .string()
+          .max(1000)
+          .describe(
+            "The folder relative to the site's root, such as guestbook.",
+          ),
+        fileCount: z
+          .number()
+          .int()
+          .positive()
+          .describe("How many files list_files showed in the folder."),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    tool(
+      entitled,
+      async ({ folder, fileCount }: { folder: string; fileCount: number }) => {
+        const path = folderPath(folder);
+        const deleted = await deleteFolder(site, path, fileCount);
+        return text({ deleted: path, files: deleted });
+      },
+    ),
   );
 
   return server;

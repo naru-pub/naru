@@ -23,21 +23,22 @@ guestbook, a blog or comments on their site, start to finish: read how the
 SDK works, declare the collections, write the pages, and give them the
 address to try.
 
-| Tool                    | Scope                | Does                                                                                |
-| ----------------------- | -------------------- | ----------------------------------------------------------------------------------- |
-| `get_site`              | `read`               | address, title, last change, plan end, file limits                                  |
-| `list_files`            | `read`               | files under a folder, at most 2000                                                  |
-| `read_file`             | `read`               | text and images up to 1 MB; others by address                                       |
-| `write_file`            | `write`              | create or replace a file (utf8 or base64)                                           |
-| `move_file`             | `write`              | move or rename; refuses to overwrite                                                |
-| `delete_file`           | `write`              | delete one file                                                                     |
-| `get_sdk_reference`     | none                 | SDK 1.0.0: the `/docs/1.0.0` database and media guides, and the generated reference |
-| `list_collections`      | `read`               | collections, their access, the database's usage                                     |
-| `configure_collections` | `write`              | declare collections in `_naru/collections.json` and install it                      |
-| `list_documents`        | `database`           | a page of documents: filter, sort, size, after                                      |
-| `get_document`          | `database`           | one document, with its revision                                                     |
-| `set_document`          | `database` + `write` | set (or add, without an id), on a revision or absent                                |
-| `delete_document`       | `database` + `write` | delete, on a revision                                                               |
+| Tool                    | Scope                | Does                                                                                             |
+| ----------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| `get_site`              | `read`               | address, title, last change, plan end, file limits                                               |
+| `list_files`            | `read`               | files under a folder, at most 2000                                                               |
+| `read_file`             | `read`               | text and images up to 1 MB; others by address                                                    |
+| `write_file`            | `write`              | create or replace a file (utf8 or base64); warns of createNaru without site, missing collections |
+| `move_file`             | `write`              | move or rename; refuses to overwrite                                                             |
+| `delete_file`           | `write`              | delete one file                                                                                  |
+| `delete_folder`         | `write`              | delete a folder's files, given the count `list_files` showed                                     |
+| `get_sdk_reference`     | none                 | SDK 1.0.0: the `/docs/1.0.0` database and media guides, and the generated reference              |
+| `list_collections`      | `read`               | collections, their access, the database's usage                                                  |
+| `configure_collections` | `write`              | declare collections in `_naru/collections.json` and install it                                   |
+| `list_documents`        | `database`           | a page of documents: filter, sort, size, after                                                   |
+| `get_document`          | `database`           | one document, with its revision                                                                  |
+| `set_document`          | `database` + `write` | set (or add, without an id), on a revision or absent                                             |
+| `delete_document`       | `database` + `write` | delete, on a revision                                                                            |
 
 A connection without `write` isn't offered the tools that change files,
 collections or documents. `get_sdk_reference` is public documentation, answered whatever

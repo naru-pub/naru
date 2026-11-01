@@ -53,6 +53,9 @@ jest.mock("@/lib/s3", () => ({
         case "DeleteObjectCommand":
           objects.delete(input.Key);
           return {};
+        case "DeleteObjectsCommand":
+          for (const { Key } of input.Delete.Objects) objects.delete(Key);
+          return {};
         case "CopyObjectCommand": {
           const source = decodeURIComponent(
             input.CopySource.slice(input.CopySource.indexOf("/") + 1),
@@ -557,7 +560,7 @@ integration("Naru MCP", () => {
   test("works on the site's files like the file manager", async () => {
     const tokens = await connect();
     const client = await mcpClient(tokens.access_token);
-    expect((await client.listTools()).tools).toHaveLength(13);
+    expect((await client.listTools()).tools).toHaveLength(14);
 
     const written = await client.callTool({
       name: "write_file",
@@ -638,6 +641,88 @@ integration("Naru MCP", () => {
     });
     expect(deleted.isError).toBeFalsy();
     expect(objects.has("mcp-owner/img/점.png")).toBe(false);
+    await client.close();
+  });
+
+  test("deletes a folder only when the count given matches", async () => {
+    const tokens = await connect();
+    const client = await mcpClient(tokens.access_token);
+    for (const path of ["guestbook/index.html", "guestbook/style.css"])
+      objects.set(`mcp-owner/${path}`, {
+        body: Buffer.from("x"),
+        at: new Date(),
+      });
+    objects.set("mcp-owner/guestbook-old.html", {
+      body: Buffer.from("x"),
+      at: new Date(),
+    });
+
+    const wrong = await client.callTool({
+      name: "delete_folder",
+      arguments: { folder: "guestbook", fileCount: 1 },
+    });
+    expect(wrong.isError).toBe(true);
+    expect(textOf(wrong)).toContain("has 2 files, not 1");
+    expect(objects.has("mcp-owner/guestbook/index.html")).toBe(true);
+
+    const root = await client.callTool({
+      name: "delete_folder",
+      arguments: { folder: "/", fileCount: 3 },
+    });
+    expect(textOf(root)).toContain("can't be deleted");
+
+    const deleted = await client.callTool({
+      name: "delete_folder",
+      arguments: { folder: "guestbook/", fileCount: 2 },
+    });
+    expect(JSON.parse(textOf(deleted))).toEqual({
+      deleted: "guestbook/",
+      files: 2,
+    });
+    expect(objects.has("mcp-owner/guestbook/index.html")).toBe(false);
+    expect(objects.has("mcp-owner/guestbook-old.html")).toBe(true);
+    expect(purged).toContainEqual([
+      "guestbook/index.html",
+      "guestbook/style.css",
+    ]);
+    objects.delete("mcp-owner/guestbook-old.html");
+    await client.close();
+  });
+
+  test("warns of createNaru without site and missing collections on write", async () => {
+    collectionRows.clear();
+    const tokens = await connect();
+    const client = await mcpClient(tokens.access_token);
+    const write = async (path: string, content: string) =>
+      JSON.parse(
+        textOf(
+          await client.callTool({
+            name: "write_file",
+            arguments: { path, content },
+          }),
+        ),
+      );
+
+    const bare = await write(
+      "blog/index.html",
+      `<script type="module">
+        const naru = createNaru();
+        naru.collection("posts").list();
+      </script>`,
+    );
+    expect(bare.warnings).toEqual([
+      'createNaru() without { site } breaks on a custom domain. Use createNaru({ site: "mcp-owner" }).',
+      "The site has no collection posts. Create it with configure_collections, or change the page.",
+    ]);
+
+    const good = await write(
+      "about/index.html",
+      `<script type="module">createNaru({ site: "mcp-owner" });</script>`,
+    );
+    expect(good.warnings).toBeUndefined();
+    expect((await write("notes.txt", "createNaru()")).warnings).toBeUndefined();
+    for (const path of ["blog/index.html", "about/index.html", "notes.txt"])
+      objects.delete(`mcp-owner/${path}`);
     await client.close();
   });
 

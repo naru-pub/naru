@@ -1,6 +1,7 @@
 import {
   CopyObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -234,6 +235,53 @@ export async function deleteFile(site: Site, path: string) {
     }),
   );
   await afterChange(site, [path]);
+}
+
+/**
+ * Deletes every file in `folder` ("a/b/"), as the file manager deletes a
+ * folder, when it holds the `expected` number the caller listed: what's
+ * deleted is what the caller saw.
+ */
+export async function deleteFolder(
+  site: Site,
+  folder: string,
+  expected: number,
+) {
+  if (!folder) throw new FileError("The whole site can't be deleted.");
+  await assertWritable(site);
+  const home = `${getUserHomeDirectory(site.loginName)}/`;
+  const keys: string[] = [];
+  let token: string | undefined;
+  do {
+    const page = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: process.env.S3_BUCKET_NAME!,
+        Prefix: `${home}${folder}`,
+        ContinuationToken: token,
+      }),
+    );
+    for (const object of page.Contents ?? [])
+      if (object.Key) keys.push(object.Key);
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+  if (!keys.length) throw new FileError(`${folder} has no files.`);
+  if (keys.length !== expected)
+    throw new FileError(
+      `${folder} has ${keys.length} files, not ${expected}. List them with list_files and check what would go before deleting.`,
+    );
+  // DeleteObjects takes at most 1000 keys.
+  for (let i = 0; i < keys.length; i += 1000)
+    await s3Client.send(
+      new DeleteObjectsCommand({
+        Bucket: process.env.S3_BUCKET_NAME!,
+        Delete: { Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })) },
+      }),
+    );
+  await afterChange(
+    site,
+    keys.map((key) => key.slice(home.length)),
+  );
+  return keys.length;
 }
 
 export async function moveFile(site: Site, from: string, to: string) {
