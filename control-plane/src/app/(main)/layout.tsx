@@ -15,6 +15,7 @@ import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 import { servedCustomDomains } from "@/lib/edge/domains";
 import { installCounts } from "@/lib/board/updates";
+import { countUnreadNotifications } from "@/lib/board/replies";
 import {
   getUserEntitlement,
   PLAN_FEATURES,
@@ -23,7 +24,9 @@ import {
 import {
   AccountMenu,
   NavLink,
+  NotificationsLink,
   PixelHeart,
+  SiteLink,
   SupporterMenu,
 } from "@/components/NavMenus";
 
@@ -50,6 +53,7 @@ export default async function RootLayout({
   // The installed-templates page, for people who installed one, with how
   // many of their templates have a new version waiting.
   const installs = user ? await installCounts(user.id) : null;
+  const unread = user ? await countUnreadNotifications(user.id) : null;
   const customDomain = user
     ? (await servedCustomDomains(user.id))
         .filter((d) => d.resolves)
@@ -79,11 +83,12 @@ export default async function RootLayout({
               <nav className="relative bg-card border-b-2 border-line">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                   {/* On a phone the links drop to a second row under the
-                    logo and account controls. */}
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 pt-2 md:h-16 md:flex-nowrap md:py-0">
+                    logo and account controls. Each link's active bar sits
+                    on the nav's bottom rule. */}
+                  <div className="flex flex-wrap items-stretch gap-x-2 md:h-16 md:flex-nowrap md:gap-x-8">
                     <Link
                       href="/"
-                      className="flex h-12 shrink-0 items-center gap-2.5 group"
+                      className="flex h-14 shrink-0 items-center gap-2.5 group md:h-auto"
                     >
                       <Image
                         src="/logo.png"
@@ -103,22 +108,20 @@ export default async function RootLayout({
 
                     {/* The scroller clips, so its padding (offset by the
                       negative margin) leaves room for the focus outline. */}
-                    <div className="order-last -mx-3 flex w-[calc(100%+1.5rem)] items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] md:order-none md:-mx-1 md:w-auto md:flex-1 md:justify-end [&::-webkit-scrollbar]:hidden">
+                    <div className="order-last -mx-4 flex h-11 w-[calc(100%+2rem)] items-stretch gap-0.5 overflow-x-auto border-t border-border px-2 pt-px [scrollbar-width:none] sm:-mx-6 sm:w-[calc(100%+3rem)] sm:px-4 md:order-none md:mx-0 md:h-auto md:w-auto md:border-0 md:px-0 md:pt-0 [&::-webkit-scrollbar]:hidden">
                       <NavLink href="/board">게시판</NavLink>
                       {user && <NavLink href="/files">파일</NavLink>}
                       {installs && installs.installed > 0 && (
                         <NavLink href="/templates">
-                          <span className="inline-flex items-center gap-1.5">
-                            템플릿
-                            {installs.updatable > 0 && (
-                              <span
-                                className="bg-primary px-1.5 font-mono text-xs leading-5 text-primary-foreground"
-                                aria-label={`새 버전 ${installs.updatable}개`}
-                              >
-                                {installs.updatable}
-                              </span>
-                            )}
-                          </span>
+                          템플릿
+                          {installs.updatable > 0 && (
+                            <span
+                              className="bg-primary px-1.5 font-mono text-xs leading-5 text-primary-foreground"
+                              aria-label={`새 버전 ${installs.updatable}개`}
+                            >
+                              {installs.updatable}
+                            </span>
+                          )}
                         </NavLink>
                       )}
                       {entitlement?.hasPaidFeatures ? (
@@ -130,64 +133,48 @@ export default async function RootLayout({
                         />
                       ) : (
                         <NavLink href="/supporter">
-                          <span className="inline-flex items-center gap-1.5">
-                            서포터
-                            <PixelHeart />
-                          </span>
+                          서포터
+                          <PixelHeart />
                         </NavLink>
                       )}
                       <NavLink href="/help">도움말</NavLink>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
                       {user ? (
-                        <AccountMenu
-                          loginName={user.loginName}
-                          paymentOperator={PAYMENT_OPERATOR_USERS.has(
-                            user.loginName,
-                          )}
-                        />
+                        <>
+                          <SiteLink url={siteUrl!} />
+                          <NotificationsLink unread={unread?.count ?? 0} />
+                          <ModeToggle
+                            variant="ghost"
+                            className="h-11 w-11 hover:bg-accent"
+                          />
+                          <AccountMenu
+                            loginName={user.loginName}
+                            paymentOperator={PAYMENT_OPERATOR_USERS.has(
+                              user.loginName,
+                            )}
+                          />
+                        </>
                       ) : (
                         <>
+                          <ModeToggle
+                            variant="ghost"
+                            className="h-11 w-11 hover:bg-accent"
+                          />
                           <NavLink href="/login">로그인</NavLink>
                           <Link
                             href="/signup"
-                            className="press mx-1 whitespace-nowrap border-2 border-line bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
+                            className="press mx-1 whitespace-nowrap border-2 border-line bg-primary px-3 py-1.5 text-[15px] font-semibold text-primary-foreground md:px-4"
                           >
                             회원가입
                           </Link>
                         </>
                       )}
-                      <ModeToggle />
                     </div>
                   </div>
                 </div>
 
-                {user && (
-                  <div className="border-t border-border bg-accent">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
-                      <p className="font-mono text-sm flex items-center gap-2 whitespace-nowrap overflow-x-auto">
-                        <span className="text-muted-foreground select-none">
-                          {user.loginName}@naru:~$
-                        </span>
-                        <span className="text-muted-foreground select-none">
-                          open
-                        </span>
-                        <Link
-                          href={siteUrl!}
-                          target="_blank"
-                          className="text-link font-medium underline-offset-4 hover:underline"
-                        >
-                          {siteUrl}
-                        </Link>
-                        <span
-                          aria-hidden="true"
-                          className="inline-block w-2 h-4 bg-primary animate-pulse motion-reduce:animate-none"
-                        />
-                      </p>
-                    </div>
-                  </div>
-                )}
                 {/* useSearchParams needs a Suspense boundary to keep static
                   pages static. */}
                 <Suspense fallback={null}>

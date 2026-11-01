@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   BadgeCheck,
+  ArrowUpRight,
   BarChart3,
   Bell,
+  ChevronDown,
   Database,
   Github,
   Globe2,
@@ -29,7 +32,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const TRIGGER_CLASS =
-  "inline-flex min-h-10 items-center whitespace-nowrap px-2 sm:px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground";
+  "inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap px-3 md:px-3.5 text-[15px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground";
+
+// The section the page is in: a bar along the nav's bottom rule.
+const ACTIVE_CLASS =
+  "font-bold text-foreground shadow-[inset_0_-4px_0_hsl(var(--primary))]";
+
+function useActive(prefixes: string[]) {
+  const pathname = usePathname();
+  return prefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
 
 // A top-level item in the site's nav bar; the menus share its look.
 export function NavLink({
@@ -39,8 +53,13 @@ export function NavLink({
   href: string;
   children: React.ReactNode;
 }) {
+  const active = useActive([href]);
   return (
-    <Link href={href} className={TRIGGER_CLASS}>
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`${TRIGGER_CLASS} ${active ? ACTIVE_CLASS : ""}`}
+    >
       {children}
     </Link>
   );
@@ -130,11 +149,16 @@ export function SupporterMenu({
     },
   ];
 
+  const active = useActive(["/supporter", ...items.map((item) => item.href)]);
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className={`${TRIGGER_CLASS} gap-1.5`}>
+      <DropdownMenuTrigger
+        className={`${TRIGGER_CLASS} ${active ? ACTIVE_CLASS : ""}`}
+      >
         서포터
         <PixelHeart />
+        <ChevronDown size={14} strokeWidth={2.5} aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel className="flex items-center gap-2">
@@ -193,7 +217,18 @@ export function AccountMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className={TRIGGER_CLASS}>계정</DropdownMenuTrigger>
+      <DropdownMenuTrigger
+        className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap sm:px-3 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent data-[state=open]:bg-accent"
+      >
+        <User size={20} aria-hidden className="mx-2.5 sm:hidden" />
+        <span className="sr-only sm:not-sr-only">{loginName}</span>
+        <ChevronDown
+          size={14}
+          strokeWidth={2.5}
+          aria-hidden
+          className="hidden sm:block"
+        />
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel className="flex items-center gap-2">
           <User size={16} />
@@ -243,5 +278,53 @@ export function AccountMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+// The person's own site, opened in a new tab: its address on a wide screen,
+// a globe on a phone.
+export function SiteLink({ url }: { url: string }) {
+  const host = url.replace(/^https?:\/\//, "");
+  return (
+    <a
+      href={url}
+      target="_blank"
+      aria-label={`내 사이트 ${host} 열기`}
+      className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 text-foreground transition-colors hover:bg-accent lg:min-h-9 lg:border-2 lg:border-line lg:px-3"
+    >
+      <Globe size={20} className="lg:hidden" aria-hidden />
+      <span className="hidden max-w-60 truncate font-mono text-[13px] lg:inline">
+        {host}
+      </span>
+      <ArrowUpRight
+        size={14}
+        strokeWidth={2.5}
+        className="hidden lg:block"
+        aria-hidden
+      />
+    </a>
+  );
+}
+
+// Board notifications, with how many are unread.
+export function NotificationsLink({ unread }: { unread: number }) {
+  const active = useActive(["/board/notifications"]);
+  return (
+    <Link
+      href="/board/notifications"
+      aria-label={unread > 0 ? `알림 ${unread}개` : "알림"}
+      aria-current={active ? "page" : undefined}
+      className="relative inline-flex h-11 w-11 items-center justify-center text-foreground transition-colors hover:bg-accent"
+    >
+      <Bell size={20} aria-hidden />
+      {unread > 0 && (
+        <span
+          aria-hidden
+          className="absolute right-1.5 top-1.5 min-w-4 border-2 border-line bg-sun px-0.5 text-center font-mono text-[10px] font-medium leading-3 text-sun-foreground"
+        >
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
+    </Link>
   );
 }
