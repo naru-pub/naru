@@ -12,7 +12,11 @@ MCP(Model Context Protocol)는 AI 앱이 다른 서비스를 쓸 수 있게 하�
 
 ## 01 · 연결하기 {#connect}
 
-1. 앱의 MCP 서버(커넥터) 추가 화면에 아래 주소를 넣으세요.
+1. 쓰는 앱에 MCP 서버로 아래 주소를 추가하세요. 추가하는 방법은 앱마다 달라요.
+   [Claude](https://support.claude.com/ko/articles/11175166),
+   [Claude Code](https://code.claude.com/docs/ko/mcp),
+   [ChatGPT](https://help.openai.com/ko-kr/articles/12584461-connecting-custom-mcp-servers-in-chatgpt)의
+   안내를 보세요.
 
    ```
    {{mcp_url}}
