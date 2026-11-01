@@ -35,7 +35,7 @@ jobs:
       - name: Stage the checked tarball
         run: |
           tag=latest
-          [[ "$GITHUB_REF_NAME" == *-* ]] && tag=dev
+          [[ "${GITHUB_REF_NAME#sdk-v}" == *-* ]] && tag=dev
           npm stage publish "$RUNNER_TEMP"/sdk/naru-pub-sdk-*.tgz --provenance --access public --tag "$tag"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
