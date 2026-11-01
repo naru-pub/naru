@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import reference from "@/lib/sdk-reference/1.1.0.json";
 import { SDK_URL } from "@/lib/const";
 import { DECLARATION_PATH } from "@/lib/site-data/declared-collections";
@@ -77,14 +75,6 @@ function guideText(topic: "database" | "media", site: string) {
     .replace(/\]\(\//g, `](${naruOrigin()}/`);
 }
 
-/** What sites fetch as functions.d.ts. It's frozen, so read once a process. */
-let functionTypes: string | undefined;
-const siteCodeTypes = () =>
-  (functionTypes ??= readFileSync(
-    join(process.cwd(), "public/sdk/1.1.0/functions.d.ts"),
-    "utf8",
-  ).trim());
-
 /** The SDK 1.1.0 guides and reference, for the site `site`. */
 export function sdkReference(site: string) {
   return [
@@ -94,6 +84,6 @@ export function sdkReference(site: string) {
     "# Reference",
     ...(reference.entries as Entry[]).map(entry),
     "# Site code's types (functions.d.ts)",
-    `\`\`\`ts\n${siteCodeTypes()}\n\`\`\``,
+    `\`\`\`ts\n${reference.functions.trim()}\n\`\`\``,
   ].join("\n\n");
 }

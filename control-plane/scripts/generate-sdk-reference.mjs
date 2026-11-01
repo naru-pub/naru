@@ -381,7 +381,13 @@ async function build(version) {
 
   const output = join(root, "src", "lib", "sdk-reference", `${version}.json`);
   // No timestamp: regenerating unchanged declarations must produce no diff.
-  const contents = `${JSON.stringify({ version, entries }, null, 2)}\n`;
+  // Site code's types, as Naru MCP gives them to a model: the image leaves
+  // out public/sdk/, so they travel here. 1.0.0 has none.
+  const functions = await readFile(
+    join(root, "public", "sdk", version, "functions.d.ts"),
+    "utf8",
+  ).catch(() => undefined);
+  const contents = `${JSON.stringify({ version, entries, functions }, null, 2)}\n`;
 
   if (check) {
     // Compared here rather than with `git diff`, which ignores a file that has
