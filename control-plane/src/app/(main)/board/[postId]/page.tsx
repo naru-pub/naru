@@ -129,6 +129,15 @@ export default async function PostPage({
                 <KindBadge kind={post.kind} />
                 <span>{formatRelative(post.createdAt)}</span>
                 {post.editedAt && <span>(고침)</span>}
+                {template?.tags.map((tag) => (
+                  <Link
+                    key={tag}
+                    href={`/templates?tag=${encodeURIComponent(tag)}`}
+                    className="bg-accent px-1.5 py-0.5 text-accent-foreground hover:underline"
+                  >
+                    {tag}
+                  </Link>
+                ))}
               </div>
               <h1 className="break-words text-2xl font-bold sm:text-3xl">
                 <PostTitle title={post.title} />

@@ -60,6 +60,7 @@ import {
 } from "./site-code";
 import { recordVersionTables } from "./version-tables";
 import { withSiteLock } from "./site-lock";
+import { validateTags } from "./tags";
 import { assertCanPost, validatePostBody, validateTitle } from "./posts";
 import {
   getTemplatePreviewUrl,
@@ -310,6 +311,7 @@ export interface PublishTemplateInput {
   body: unknown;
   slug: unknown;
   license: unknown;
+  tags?: unknown;
   licenseAccepted: unknown;
   files: unknown;
   collections: unknown;
@@ -394,6 +396,7 @@ export async function publishTemplatePost(
       `${LICENSES[license].name} 라이선스로 공개하는 데 동의해 주세요.`,
     );
   }
+  const tags = validateTags(input.tags);
   const source = validateSource(input.source);
   const github =
     source === "github"
@@ -434,6 +437,7 @@ export async function publishTemplatePost(
             user_id: user.id,
             slug,
             license,
+            tags,
             source: "github",
             github_repository: github.repository,
             github_ref: github.ref,
@@ -466,6 +470,7 @@ export async function publishTemplatePost(
         user_id: user.id,
         slug,
         license,
+        tags,
       })
       .returning("id")
       .executeTakeFirstOrThrow();
@@ -649,6 +654,22 @@ export async function removeTemplatePreview(
  * Where a template's new versions come from: its author's site (each "새 버전
  * 올리기"), or a GitHub Actions workflow on `repository` and `ref`.
  */
+export async function setTemplateTags(
+  user: User,
+  templateId: string,
+  input: unknown,
+): Promise<void> {
+  const template = await findLiveTemplate(templateId);
+  if (template.user_id !== user.id) {
+    throw new BoardError(403, "내 템플릿만 고칠 수 있어요.");
+  }
+  await db
+    .updateTable("board_templates")
+    .set({ tags: validateTags(input) })
+    .where("id", "=", templateId)
+    .execute();
+}
+
 export async function setTemplateSource(
   user: User,
   templateId: string,
@@ -702,6 +723,7 @@ export interface TemplateDetail {
   id: string;
   slug: string;
   license: License;
+  tags: string[];
   applyCount: number;
   source: TemplateSource;
   github: GitHubSource | null;
@@ -738,6 +760,7 @@ export async function getTemplateForPost(
       "t.id",
       "t.slug",
       "t.license",
+      "t.tags",
       "t.apply_count",
       "t.latest_version_id",
       "t.source",
@@ -785,6 +808,7 @@ export async function getTemplateForPost(
     id: template.id,
     slug: template.slug,
     license: template.license,
+    tags: template.tags,
     applyCount: template.apply_count,
     source: template.source,
     github:

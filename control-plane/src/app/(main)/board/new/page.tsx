@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { listTemplateTags } from "@/lib/board/posts";
 import { redirect } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
 import { isPostKind } from "@/lib/board/constants";
@@ -34,7 +35,10 @@ export default async function NewPostPage({
     );
   }
 
-  const collections = await listCollections(user);
+  const [collections, popularTags] = await Promise.all([
+    listCollections(user),
+    listTemplateTags(10),
+  ]);
 
   return (
     <div className="bg-background min-h-screen p-4 sm:p-6">
@@ -48,6 +52,7 @@ export default async function NewPostPage({
         <NewPostForm
           initialKind={isPostKind(params.kind) ? params.kind : "site"}
           collections={collections.map((c) => c.name)}
+          tagSuggestions={popularTags.map(({ tag }) => tag)}
         />
       </main>
     </div>

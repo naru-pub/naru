@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
       body: body.body,
       slug: body.slug,
       license: body.license,
+      tags: body.tags,
       licenseAccepted: body.licenseAccepted,
       files: body.files,
       collections: body.collections,

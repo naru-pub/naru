@@ -26,9 +26,16 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   screenshot run renders a site with a live `site` post even when it isn't
   discoverable. A
   `template` post carries files.
-- **Where they're listed**: `/board` lists `site` posts, and `/templates` lists
-  templates as a grid (`/board?kind=template` redirects there with its filters).
-  A template's page is still `/board/[postId]`.
+- **Where they're listed**: `/board` lists `site` posts, and `/templates` is the
+  template store (`/board?kind=template` redirects there with its filters). With
+  no query it shows shelves: popular, new, and using a database. Any of `q`,
+  `tag`, `database`, `files`, `sort` or `page` turns it into one filtered list. A
+  template's page is still `/board/[postId]`.
+- **Tags**: authors tag their own templates, up to three, when publishing or from
+  the edit page (`PUT /api/board/templates/[id]/tags`). There is no fixed list.
+  `src/lib/board/tags.ts` keeps one spelling (no spaces, no leading `#`, lower
+  case), and the form offers the tags already in use. They belong to the
+  template, not to a version.
 - **Seller interest**: every template is free. `/templates/sell` asks who would
   like to sell one and for about how much (`template_seller_interest`, one
   answer per person, gone with their account), read at
@@ -234,17 +241,17 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 
 ## Routes
 
-| page                                | what                                                         |
-| ----------------------------------- | ------------------------------------------------------------ |
-| `/board`                            | list; `?kind=`, `?sort=activity\|new`, `?page=`              |
-| `/templates`                        | template grid; `?database=1`, `?sort=applied\|new`, `?page=` |
-| `/templates/sell`                   | tell 나루 you'd like to sell templates                       |
-| `/templates/installed`              | my installed templates and their updates                     |
-| `/board/new`                        | compose; `?kind=`                                            |
-| `/board/[postId]`                   | post, template panel and apply dialog, reply tree            |
-| `/board/[postId]/edit`              | edit; publish a new template version                         |
-| `/board/[postId]/replies/[replyId]` | a reply and everything under it (permalink)                  |
-| `/board/notifications`              | my reply and template version notifications                  |
+| page                                | what                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `/board`                            | list; `?kind=`, `?sort=activity\|new`, `?page=`                                  |
+| `/templates`                        | store; `?q=`, `?tag=`, `?database=1`, `?files=1`, `?sort=applied\|new`, `?page=` |
+| `/templates/sell`                   | tell 나루 you'd like to sell templates                                           |
+| `/templates/installed`              | my installed templates and their updates                                         |
+| `/board/new`                        | compose; `?kind=`                                                                |
+| `/board/[postId]`                   | post, template panel and apply dialog, reply tree                                |
+| `/board/[postId]/edit`              | edit; publish a new template version                                             |
+| `/board/[postId]/replies/[replyId]` | a reply and everything under it (permalink)                                      |
+| `/board/notifications`              | my reply and template version notifications                                      |
 
 Every API route takes JSON only, including DELETE, and refuses cross-origin
 requests (`readJson`):
@@ -256,6 +263,7 @@ requests (`readJson`):
 - `POST /api/board/templates/[id]/versions`
 - `POST /api/board/template-versions/[id]/apply/plan`, `POST …/apply`
 - `PUT /api/board/templates/[id]/source`
+- `PUT /api/board/templates/[id]/tags`
 - `GET /api/board/installs`, `PATCH`/`DELETE /api/board/installs/[id]`,
   `POST …/update/plan`, `POST …/update`
 - `POST /api/board/notifications/read`

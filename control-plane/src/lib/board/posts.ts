@@ -12,6 +12,7 @@ import {
 } from "./constants";
 import { BoardError } from "./errors";
 import { assertUnderHourlyLimit } from "./limits";
+import { normalizeTag } from "./tags";
 
 export interface PostSummary {
   id: string;
@@ -34,6 +35,7 @@ export interface PostSummary {
     // Set when the author uploaded a preview of their own.
     customPreviewAt: Date | null;
     usesDatabase: boolean;
+    tags: string[];
   } | null;
 }
 
@@ -72,6 +74,7 @@ function summaryQuery() {
       "lr.login_name as last_reply_login_name",
       "t.id as template_id",
       "t.apply_count",
+      "t.tags",
       "v.version",
       "v.preview_rendered_at",
       "t.preview_updated_at",
@@ -106,23 +109,51 @@ function toSummary(row: SummaryRow): PostSummary {
           previewRenderedAt: row.preview_rendered_at,
           customPreviewAt: row.preview_updated_at,
           usesDatabase: row.uses_database,
+          tags: row.tags ?? [],
         }
       : null,
   };
 }
 
-export async function listPosts(options: {
+interface PostFilters {
   kind: PostKind | null;
-  sort: PostSort;
-  page: number;
-  // Only templates whose latest version uses the database.
+  // Only templates whose latest version does, or doesn't, use the database.
   usesDatabase?: boolean;
-}): Promise<{ posts: PostSummary[]; hasMore: boolean }> {
+  // Only templates with this tag.
+  tag?: string | null;
+  // Words in the title or body, or a template's tag.
+  search?: string | null;
+}
+
+function filtered(options: PostFilters) {
   let query = summaryQuery();
   if (options.kind) query = query.where("p.kind", "=", options.kind);
-  if (options.usesDatabase) {
-    query = query.where(sql<boolean>`${usesDatabase}`);
+  if (options.usesDatabase !== undefined) {
+    query = query.where(
+      sql<boolean>`coalesce(${usesDatabase}, false) = ${options.usesDatabase}`,
+    );
   }
+  if (options.tag) {
+    query = query.where(sql<boolean>`t.tags @> array[${options.tag}]::text[]`);
+  }
+  const search = options.search?.trim();
+  if (search) {
+    const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
+    query = query.where((eb) =>
+      eb.or([
+        eb("p.title", "ilike", pattern),
+        eb("p.body", "ilike", pattern),
+        sql<boolean>`t.tags @> array[${normalizeTag(search)}]::text[]`,
+      ]),
+    );
+  }
+  return query;
+}
+
+export async function listPosts(
+  options: PostFilters & { sort: PostSort; page: number },
+): Promise<{ posts: PostSummary[]; hasMore: boolean }> {
+  let query = filtered(options);
 
   if (options.sort === "applied" && options.kind === "template") {
     query = query.orderBy("t.apply_count", "desc").orderBy("p.id", "desc");
@@ -141,6 +172,47 @@ export async function listPosts(options: {
     posts: rows.slice(0, POSTS_PER_PAGE).map(toSummary),
     hasMore: rows.length > POSTS_PER_PAGE,
   };
+}
+
+export async function countPosts(options: PostFilters): Promise<number> {
+  const row = await filtered(options)
+    .clearSelect()
+    .select(sql<number>`count(*)::int`.as("count"))
+    .executeTakeFirstOrThrow();
+  return row.count;
+}
+
+// How many templates there are of each kind.
+export async function countTemplates(): Promise<{
+  all: number;
+  database: number;
+}> {
+  const row = await filtered({ kind: "template" })
+    .clearSelect()
+    .select([
+      sql<number>`count(*)::int`.as("all"),
+      sql<number>`(count(*) filter (where ${usesDatabase}))::int`.as(
+        "database",
+      ),
+    ])
+    .executeTakeFirstOrThrow();
+  return row;
+}
+
+// The tags most templates share.
+export async function listTemplateTags(
+  limit: number,
+): Promise<Array<{ tag: string; count: number }>> {
+  const { rows } = await sql<{ tag: string; count: number }>`
+    select tag, count(*)::int as count
+    from board_templates t
+    join board_posts p on p.id = t.post_id and p.deleted_at is null
+    cross join unnest(t.tags) as tag
+    group by tag
+    order by count desc, tag
+    limit ${limit}
+  `.execute(db);
+  return rows;
 }
 
 // The front page's board card: the newest posts of one kind.

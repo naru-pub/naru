@@ -350,6 +350,7 @@ export interface BoardTemplates {
   preview_updated_at: Timestamp | null;
   slug: string;
   source: ColumnType<"site" | "github", "site" | "github" | undefined>;
+  tags: Generated<string[]>;
   user_id: string;
 }
 

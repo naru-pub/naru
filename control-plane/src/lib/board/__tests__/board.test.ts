@@ -139,7 +139,9 @@ const {
   deletePost,
   getPost,
   listLatestPosts,
+  countPosts,
   listPosts,
+  listTemplateTags,
   setPostLike,
 } = require("../posts") as typeof import("../posts");
 const {
@@ -169,6 +171,7 @@ const {
   removeTemplatePreview,
   setTemplatePreview,
   setTemplateSource,
+  setTemplateTags,
 } = require("../templates") as typeof import("../templates");
 const {
   applyUpdate,
@@ -680,6 +683,65 @@ integration("board", () => {
       expect(ids).toContain(withData.postId);
       expect(ids).toContain(withCode.postId);
       expect(ids).not.toContain(plain.postId);
+
+      const files = await listPosts({
+        kind: "template",
+        sort: "new",
+        page: 1,
+        usesDatabase: false,
+      });
+      const fileIds = files.posts.map((post) => post.id);
+      expect(fileIds).toContain(plain.postId);
+      expect(fileIds).not.toContain(withData.postId);
+      expect(fileIds).not.toContain(withCode.postId);
+    });
+
+    test("an author's tags are tidied, counted, and found", async () => {
+      put("alice/retro/index.html");
+      const tagged = await publish({ tags: [" #자캐 커뮤", "BLOG", "blog"] });
+      const other = await publish();
+      await setTemplateTags(alice, other.templateId, ["blog"]);
+
+      const browse = (options: { tag?: string; search?: string }) =>
+        listPosts({ kind: "template", sort: "new", page: 1, ...options });
+      const summary = (await browse({ tag: "자캐커뮤" })).posts;
+      expect(summary.map((post) => post.id)).toEqual([tagged.postId]);
+      expect(summary[0].template?.tags).toEqual(["자캐커뮤", "blog"]);
+      expect((await browse({ search: "자캐 커뮤" })).posts[0].id).toBe(
+        tagged.postId,
+      );
+      expect(await countPosts({ kind: "template", tag: "blog" })).toBe(2);
+      expect((await listTemplateTags(2))[0]).toEqual({ tag: "blog", count: 2 });
+
+      await expect(
+        setTemplateTags(alice, other.templateId, ["a", "b", "c", "d"]),
+      ).rejects.toThrow("3개까지");
+      await expect(
+        setTemplateTags(alice, other.templateId, ["<b>"]),
+      ).rejects.toThrow("글자와 숫자");
+      await expect(
+        setTemplateTags(bob, other.templateId, ["blog"]),
+      ).rejects.toThrow("내 템플릿만");
+
+      // Tags go with a deleted post.
+      await deletePost(alice, tagged.postId);
+      expect(await listTemplateTags(5)).not.toContainEqual(
+        expect.objectContaining({ tag: "자캐커뮤" }),
+      );
+    });
+
+    test("search takes a title or body, with its wildcards as plain text", async () => {
+      put("alice/retro/index.html");
+      const found = await publish({ title: "달력 100% 블로그" });
+      const browse = (search: string) =>
+        listPosts({ kind: "template", sort: "new", page: 1, search });
+      expect((await browse("100%")).posts.map((p) => p.id)).toContain(
+        found.postId,
+      );
+      expect((await browse("%")).posts.map((p) => p.id)).toEqual([
+        found.postId,
+      ]);
+      expect((await browse("없는 말")).posts).toEqual([]);
     });
 
     test("applies into a folder and backs up what it overwrites", async () => {

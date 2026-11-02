@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
-import { getPost } from "@/lib/board/posts";
+import { getPost, listTemplateTags } from "@/lib/board/posts";
 import { filesStillPresent, getTemplateForPost } from "@/lib/board/templates";
 import { listCollections } from "@/lib/site-data/service";
 import { EditPostForm } from "./EditPostForm";
 import { NewVersionForm } from "./NewVersionForm";
 import { PreviewForm } from "./PreviewForm";
 import { SourceForm } from "./SourceForm";
+import { TagsForm } from "./TagsForm";
 
 export const metadata: Metadata = { title: "글 고치기 · 나루 게시판" };
 
@@ -33,6 +34,7 @@ export default async function EditPostPage({
   const template =
     post.kind === "template" ? await getTemplateForPost(post.id) : null;
   const collections = template ? await listCollections(user) : [];
+  const popularTags = template ? await listTemplateTags(10) : [];
   const latest = template?.versions[0] ?? null;
   const previousFiles =
     template && latest
@@ -55,6 +57,22 @@ export default async function EditPostPage({
           <h1 className="text-2xl font-bold">글 고치기</h1>
         </div>
         <EditPostForm postId={post.id} title={post.title} body={post.body} />
+        {template && (
+          <section className="space-y-4 border-2 border-line p-4">
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold">태그</h2>
+              <p className="text-sm text-muted-foreground">
+                템플릿을 찾는 사람이 태그로 둘러봐요. 어떤 템플릿인지 가장 잘
+                나타내는 말을 3개까지 달아 주세요.
+              </p>
+            </div>
+            <TagsForm
+              templateId={template.id}
+              tags={template.tags}
+              suggestions={popularTags.map(({ tag }) => tag)}
+            />
+          </section>
+        )}
         {template && (
           <section className="space-y-4 border-2 border-line p-4">
             <div className="space-y-1">

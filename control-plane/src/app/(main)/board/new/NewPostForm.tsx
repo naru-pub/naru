@@ -22,6 +22,7 @@ import {
 } from "@/lib/board/constants";
 import { boardRequest, uploadTemplatePreview } from "../_components/api";
 import { PreviewPicker } from "../_components/PreviewPicker";
+import { TagInput } from "../_components/TagInput";
 import { FolderPicker, commonFolder } from "../_components/FolderPicker";
 import CollectionName from "@/components/CollectionName";
 
@@ -37,9 +38,11 @@ function slugFrom(folder: string): string {
 export function NewPostForm({
   initialKind,
   collections,
+  tagSuggestions,
 }: {
   initialKind: PostKind;
   collections: string[];
+  tagSuggestions: string[];
 }) {
   const router = useRouter();
   const [kind, setKind] = useState<PostKind>(initialKind);
@@ -48,6 +51,7 @@ export function NewPostForm({
   const [selection, setSelection] = useState<string[]>([]);
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
   const [license, setLicense] = useState<License>("cc0-1.0");
   const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [chosenCollections, setChosenCollections] = useState<string[]>([]);
@@ -75,6 +79,7 @@ export function NewPostForm({
               title,
               body,
               slug: effectiveSlug,
+              tags,
               license,
               licenseAccepted,
               files: source === "site" ? selection : [],
@@ -229,6 +234,18 @@ export function NewPostForm({
               </p>
             </div>
           )}
+
+          <div className="space-y-2">
+            <label htmlFor="template-tags" className="text-sm font-bold">
+              태그 (3개까지, 달지 않아도 돼요)
+            </label>
+            <TagInput
+              id="template-tags"
+              value={tags}
+              onChange={setTags}
+              suggestions={tagSuggestions}
+            />
+          </div>
 
           <div className="space-y-2">
             <p className="text-sm font-bold">
