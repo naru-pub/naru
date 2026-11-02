@@ -46,13 +46,14 @@ export default async function RootLayout({
   const { user, session } = await validateRequest();
   const entitlement = user ? await getUserEntitlement(user.id) : null;
   const features = new Set<Feature>(entitlement ? featuresOf(entitlement) : []);
-  // Also to an account that lacks only a verified email: /supporter asks for it.
-  const offerTrial =
-    user && !entitlement?.hasPaidFeatures
-      ? ["eligible", "unverified"].includes(
-          (await trialState(db, user.id)).state,
-        )
-      : false;
+  // Also to an account that lacks only a verified email, which /supporter asks
+  // for, and to someone signed out, whom it tells to sign up.
+  const offerTrial = !user
+    ? true
+    : !entitlement?.hasPaidFeatures &&
+      ["eligible", "unverified"].includes(
+        (await trialState(db, user.id)).state,
+      );
   // The address the site is visited at: its custom domain while the edge
   // serves it and its DNS reaches Naru, where the subdomain redirects, chosen
   // as the edge chooses.
