@@ -49,7 +49,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await sql`create table supporter_trials(id serial primary key, user_id integer not null unique references users(id) on delete cascade, email_digest text not null unique, ends_at timestamptz not null)`.execute(
     db,
   );
-  await sql`create table subscriptions(id serial primary key, user_id integer not null unique references users(id) on delete cascade, plan text not null default 'supporter')`.execute(
+  await sql`create table subscriptions(id serial primary key, user_id integer not null unique references users(id) on delete cascade, plan text not null default 'supporter', status text not null default 'active')`.execute(
     db,
   );
   await sql`create table sessions(id text primary key, user_id integer not null references users(id) on delete cascade, expires_at timestamptz not null)`.execute(
