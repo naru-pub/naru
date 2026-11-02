@@ -1,5 +1,6 @@
 import { db } from "@/lib/database";
-import { accessEndsAtOf } from "@/lib/entitlements";
+import { customDomainAccessEndsAt } from "@/lib/entitlements";
+import { isCurrentPlan } from "@/lib/payments/subscriptions";
 import { getHomepageUrl } from "@/lib/site-urls";
 
 // Where the apps open a site: its custom domain when the edge serves one
@@ -24,6 +25,9 @@ export async function siteOrigins(loginNames: string[]) {
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
     .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
+    .leftJoin("subscriptions", (join) =>
+      join.onRef("subscriptions.user_id", "=", "users.id").on(isCurrentPlan),
+    )
     .select([
       "custom_domains.hostname",
       "users.login_name",
@@ -31,6 +35,7 @@ export async function siteOrigins(loginNames: string[]) {
       "users.supporter_until",
       "users.supporter_grace",
       "supporter_trials.ends_at as trial_ends_at",
+      "subscriptions.status as plan_status",
     ])
     .where("users.login_name", "in", [...new Set(loginNames)])
     .where("custom_domains.verified_at", "is not", null)
@@ -42,7 +47,7 @@ export async function siteOrigins(loginNames: string[]) {
   const now = Date.now();
   // Newest first, so the oldest is set last and wins.
   for (const row of rows) {
-    const until = accessEndsAtOf(row);
+    const until = customDomainAccessEndsAt(row);
     if (until === null || until > now)
       origins.set(row.login_name, `https://${row.hostname.toLowerCase()}`);
   }

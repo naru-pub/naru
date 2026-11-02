@@ -11,7 +11,7 @@ type Outcome = { status: "success" | "error"; message: string };
 export default function VerifyEmailPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
-  // Where the verification was asked from — the purchase page — if anywhere.
+  // Where the verification was asked from — /supporter — if anywhere.
   const next = safeNextPath(searchParams.get("next"));
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -82,7 +82,7 @@ export default function VerifyEmailPage() {
               </p>
               <Button asChild className="w-full">
                 {next === "/supporter" ? (
-                  <a href="/supporter">결제 계속하기</a>
+                  <a href="/supporter">서포터 페이지로 이동</a>
                 ) : (
                   <a href="/account">계정 관리로 이동</a>
                 )}

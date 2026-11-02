@@ -1,12 +1,13 @@
 import { db } from "@/lib/database";
-import { accessEndsAtOf } from "@/lib/entitlements";
+import { customDomainAccessEndsAt } from "@/lib/entitlements";
+import { isCurrentPlan } from "@/lib/payments/subscriptions";
 import { CONFIRMATION_MS, replaceEdgeDomains } from "./client";
 
 // The custom domains the edge serves (edge/src/domains.ts): every domain
 // active in Cloudflare and verified, whose owner is paid up, mapped to the
 // owner's site. The owner is paid up through the grace period after the last
-// paid day or through a free trial, or always for a complimentary account, as
-// the proxy decided.
+// paid day or a free trial with a plan waiting on it, or always for a
+// complimentary account, as the proxy decided.
 //
 // The whole table is sent each time, so a domain removed here, or whose owner
 // lapsed, is gone from the edge on the next push. syncEdge pushes it every few
@@ -25,6 +26,9 @@ export async function servedCustomDomains(userId?: string) {
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
     .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
+    .leftJoin("subscriptions", (join) =>
+      join.onRef("subscriptions.user_id", "=", "users.id").on(isCurrentPlan),
+    )
     .select([
       "custom_domains.hostname",
       "users.login_name",
@@ -32,6 +36,7 @@ export async function servedCustomDomains(userId?: string) {
       "users.supporter_until",
       "users.supporter_grace",
       "supporter_trials.ends_at as trial_ends_at",
+      "subscriptions.status as plan_status",
       "custom_domains.dns_resolves",
     ])
     .where("custom_domains.verified_at", "is not", null)
@@ -42,7 +47,7 @@ export async function servedCustomDomains(userId?: string) {
   const rows = await query.execute();
   const now = Date.now();
   return rows.flatMap((row) => {
-    const entitledUntil = accessEndsAtOf(row);
+    const entitledUntil = customDomainAccessEndsAt(row);
     if (entitledUntil !== null && entitledUntil <= now) return [];
     return [
       {

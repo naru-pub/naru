@@ -1,7 +1,8 @@
 import { sql } from "kysely";
 import { db } from "@/lib/database";
 import { deleteCloudflareCustomHostnameIfExists } from "@/lib/customDomains";
-import { accessEndsAtOf } from "@/lib/entitlements";
+import { customDomainAccessEndsAt } from "@/lib/entitlements";
+import { isCurrentPlan } from "@/lib/payments/subscriptions";
 import { pushEdgeDomainsSoon } from "@/lib/edge/domains";
 import { mailRecipient } from "@/lib/payments/payment-mails";
 import { sendCustomDomainReleaseNoticeEmail } from "@/lib/email";
@@ -13,7 +14,7 @@ import { sendCustomDomainReleaseNoticeEmail } from "@/lib/email";
 // Another account may take a released hostname (the custom-domains route).
 //
 // A domain is released, for the first reason that applies:
-//   lapsed:  its owner's paid access, grace and trial ended LAPSED_DAYS ago
+//   lapsed:  its owner's access (customDomainAccessEndsAt) ended LAPSED_DAYS ago
 //   pending: it has not validated within PENDING_DAYS of being added
 //   dns:     its DNS has not reached Naru for DNS_DAYS (lib/edge/domain-dns.ts)
 // and never sooner than NOTICE_DAYS after its owner was told by mail. The
@@ -82,6 +83,10 @@ export async function housekeepingRows(userId?: string) {
   let query = db
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
+    .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
+    .leftJoin("subscriptions", (join) =>
+      join.onRef("subscriptions.user_id", "=", "users.id").on(isCurrentPlan),
+    )
     .select([
       "custom_domains.id",
       "custom_domains.user_id",
@@ -96,12 +101,8 @@ export async function housekeepingRows(userId?: string) {
       "users.supporter_comp",
       "users.supporter_until",
       "users.supporter_grace",
-      (eb) =>
-        eb
-          .selectFrom("supporter_trials")
-          .select((t) => t.fn.max("supporter_trials.ends_at").as("ends_at"))
-          .whereRef("supporter_trials.user_id", "=", "users.id")
-          .as("trial_ends_at"),
+      "supporter_trials.ends_at as trial_ends_at",
+      "subscriptions.status as plan_status",
     ])
     .where("custom_domains.released_at", "is", null)
     .where("users.deleted_at", "is", null);
@@ -119,7 +120,7 @@ export async function housekeepingRows(userId?: string) {
     dnsFailingSince: row.dns_failing_since
       ? new Date(row.dns_failing_since)
       : null,
-    accessEndsAt: accessEndsAtOf(row),
+    accessEndsAt: customDomainAccessEndsAt(row),
     noticeSentAt: row.release_notice_sent_at
       ? new Date(row.release_notice_sent_at)
       : null,

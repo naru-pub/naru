@@ -416,7 +416,7 @@ export async function sendTrialEndingEmail(opts: {
   const supporterUrl = `${process.env.BASE_URL}/supporter`;
   const endsLabel = formatKoreanDateTime(opts.endsAt);
   const next =
-    "체험이 끝나면 유료 기능이 닫히고, 연결한 커스텀 도메인은 30일 뒤 연결이 해제됩니다. 데이터베이스의 데이터는 지워지지 않아 결제하면 다시 쓸 수 있습니다. 계속 이용하시려면 체험이 끝나기 전에 결제해 주세요. 지금 결제해도 남은 체험 기간은 그대로이고, 첫 결제는 체험이 끝난 뒤입니다.";
+    "체험이 끝나면 유료 기능이 닫히고, 데이터베이스를 쓰는 웹사이트의 방문자에게도 데이터 기능이 멈춥니다. 데이터베이스의 데이터는 지워지지 않아 결제하면 다시 쓸 수 있습니다. 계속 이용하시려면 체험이 끝나기 전에 결제해 주세요. 지금 결제해도 남은 체험 기간은 그대로이고, 첫 결제는 체험이 끝난 뒤입니다.";
 
   const message = createMessage({
     from: process.env.FROM_EMAIL || "noreply@naru.pub",

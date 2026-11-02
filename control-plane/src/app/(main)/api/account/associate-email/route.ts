@@ -6,6 +6,7 @@ import {
 import { validateRequest } from "@/lib/auth";
 import { db } from "@/lib/database";
 import { sendVerificationEmail, generateVerificationToken } from "@/lib/email";
+import { safeNextPath } from "@/lib/next-path";
 import { assertJsonContentType } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email } = await request.json();
+    const { email, next } = await request.json();
 
     if (!email) {
       return NextResponse.json(
@@ -82,7 +83,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Send verification email
-    await sendVerificationEmail(email, token);
+    // Asked for from the trial offer: the mail's link continues there.
+    await sendVerificationEmail(email, token, safeNextPath(next));
 
     return NextResponse.json({
       success: true,

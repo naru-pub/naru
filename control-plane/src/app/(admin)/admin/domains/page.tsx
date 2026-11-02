@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/database";
-import { accessEndsAtOf } from "@/lib/entitlements";
+import { customDomainAccessEndsAt } from "@/lib/entitlements";
+import { isCurrentPlan } from "@/lib/payments/subscriptions";
 import {
   releaseSchedule,
   type ReleaseReason,
@@ -69,6 +70,9 @@ export default async function DomainsPage({
     .selectFrom("custom_domains")
     .innerJoin("users", "users.id", "custom_domains.user_id")
     .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
+    .leftJoin("subscriptions", (join) =>
+      join.onRef("subscriptions.user_id", "=", "users.id").on(isCurrentPlan),
+    )
     .select([
       "custom_domains.id",
       "custom_domains.hostname",
@@ -87,6 +91,7 @@ export default async function DomainsPage({
       "users.supporter_until",
       "users.supporter_grace",
       "supporter_trials.ends_at as trial_ends_at",
+      "subscriptions.status as plan_status",
     ])
     .orderBy("custom_domains.created_at", "desc")
     .execute();
@@ -156,7 +161,7 @@ export default async function DomainsPage({
             {shown.map((domain) => {
               const live = isConnected(domain);
               const errors = verificationErrors(domain.verification_errors);
-              const accessEndsAt = accessEndsAtOf(domain);
+              const accessEndsAt = customDomainAccessEndsAt(domain);
               const schedule = domain.released_at
                 ? null
                 : releaseSchedule(

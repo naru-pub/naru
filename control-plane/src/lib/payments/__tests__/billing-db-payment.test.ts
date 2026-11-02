@@ -8206,67 +8206,8 @@ integration("payments against the database", () => {
       require("@/lib/supporter-trial") as typeof import("@/lib/supporter-trial");
     const { userHasFeature } =
       require("@/lib/entitlements") as typeof import("@/lib/entitlements");
-    let windowId: string;
 
-    beforeEach(async () => {
-      await sql`truncate supporter_trial_windows cascade`.execute(db);
-      ({ id: windowId } = await db
-        .insertInto("supporter_trial_windows")
-        .values({
-          starts_at: new Date(Date.now() - DAY),
-          ends_at: new Date(Date.now() + DAY),
-          created_by: "operator",
-        })
-        .returning("id")
-        .executeTakeFirstOrThrow());
-    });
-
-    test("is claimed only while a window is open; ending one keeps its trials", async () => {
-      const early = await makeUser();
-      expect(await trials.trialState(db, early)).toMatchObject({
-        state: "eligible",
-        window: { id: windowId },
-      });
-      await trials.claimTrial(early);
-      // A window with claims stays, as their record.
-      expect(await trials.deleteTrialWindow(windowId)).toBe(false);
-      expect(await trials.endTrialWindow(windowId)).toBe(true);
-      expect(await trials.endTrialWindow(windowId)).toBe(false);
-
-      const late = await makeUser();
-      expect(await trials.trialState(db, late)).toMatchObject({
-        state: "ineligible",
-      });
-      await expect(trials.claimTrial(late)).rejects.toMatchObject({
-        status: 403,
-      });
-      expect((await getUserEntitlement(early)).inTrial).toBe(true);
-
-      // A window that has not opened yet refuses too, and can be removed.
-      await trials.createTrialWindow(
-        {
-          startsAt: new Date(Date.now() + DAY),
-          endsAt: new Date(Date.now() + 2 * DAY),
-          note: "later",
-        },
-        "operator",
-      );
-      expect((await trials.trialState(db, late)).state).toBe("ineligible");
-      const windows = await trials.listTrialWindows();
-      expect(windows.map((w) => [w.note, w.claims])).toEqual([
-        ["later", 0],
-        ["", 1],
-      ]);
-      expect(await trials.deleteTrialWindow(windows[0].id)).toBe(true);
-      expect(
-        trials.parseTrialWindow({
-          startsAt: "2026-11-02",
-          endsAt: "2026-11-01",
-        }),
-      ).toBe("끝은 시작보다 뒤여야 해요.");
-    });
-
-    test("opens the features for 30 days without making a supporter, once per account and address", async () => {
+    test("opens the features but custom domains for a week without making a supporter, once per account and address", async () => {
       const userId = await makeUser();
       expect((await trials.trialState(db, userId)).state).toBe("eligible");
       const before = Date.now();
@@ -8286,7 +8227,8 @@ integration("payments against the database", () => {
         supporterUntil: null,
       });
       expect(entitlement.accessEndsAt).toEqual(endsAt);
-      expect(await userHasFeature(userId, "custom_domains")).toBe(true);
+      expect(await userHasFeature(userId, "database")).toBe(true);
+      expect(await userHasFeature(userId, "custom_domains")).toBe(false);
       // Not paid time: the ledger and supporter_until are untouched.
       const user = await db
         .selectFrom("users")
@@ -8325,11 +8267,11 @@ integration("payments against the database", () => {
         inTrial: false,
         hasPaidFeatures: false,
       });
-      expect(await userHasFeature(userId, "custom_domains")).toBe(false);
+      expect(await userHasFeature(userId, "database")).toBe(false);
       expect((await trials.trialState(db, userId)).state).toBe("ended");
     });
 
-    test("is not for comps, accounts that paid, or unverified addresses", async () => {
+    test("is not for comps or accounts that paid; an unverified account verifies first", async () => {
       const comp = await makeUser();
       await db
         .updateTable("users")
@@ -8349,12 +8291,33 @@ integration("payments against the database", () => {
         years: 1,
         payment: tossPayment("trial-paid-order", 12000),
       });
-      for (const userId of [comp, unverified, paid]) {
+      for (const userId of [comp, paid]) {
         expect((await trials.trialState(db, userId)).state).toBe("ineligible");
         await expect(trials.claimTrial(userId)).rejects.toMatchObject({
           status: 403,
         });
       }
+      // Offered, but it cannot start until the address is verified.
+      expect((await trials.trialState(db, unverified)).state).toBe(
+        "unverified",
+      );
+      await expect(trials.claimTrial(unverified)).rejects.toMatchObject({
+        status: 403,
+      });
+      await db
+        .updateTable("users")
+        .set({ email: null })
+        .where("id", "=", unverified)
+        .execute();
+      expect((await trials.trialState(db, unverified)).state).toBe(
+        "unverified",
+      );
+      await db
+        .updateTable("users")
+        .set({ email: "verified-now@example.test", email_verified_at: new Date() })
+        .where("id", "=", unverified)
+        .execute();
+      expect((await trials.trialState(db, unverified)).state).toBe("eligible");
     });
 
     test("a one-time purchase during a trial starts when it ends", async () => {
@@ -8368,6 +8331,8 @@ integration("payments against the database", () => {
       });
       if (result.state !== "done") throw new Error("not approved");
       expect(result.periodStart).toEqual(endsAt);
+      // Paid time, so custom domains open now.
+      expect(await userHasFeature(userId, "custom_domains")).toBe(true);
       expect(await checkPaymentInvariants()).toEqual({});
     });
 
@@ -8392,6 +8357,49 @@ integration("payments against the database", () => {
       const sub = await currentPlan(userId);
       expect(sub).toMatchObject({ status: "scheduled" });
       expect(new Date(sub.next_billing_at!)).toEqual(endsAt);
+      // Custom domains open now, without waiting for the first charge, and
+      // are served through its grace.
+      expect(await userHasFeature(userId, "custom_domains")).toBe(true);
+      const { servedCustomDomains } =
+        require("@/lib/edge/domains") as typeof import("@/lib/edge/domains");
+      await db
+        .insertInto("custom_domains")
+        .values({
+          user_id: userId,
+          hostname: `waiting-${userId}.example.com`,
+          cloudflare_status: "active",
+          ssl_status: "active",
+          verified_at: new Date(),
+        })
+        .execute();
+      const [served] = await servedCustomDomains(userId);
+      expect(served.entitledUntil).toBeGreaterThan(endsAt.getTime());
+
+      // Canceling the plan before its charge takes them back.
+      await db.transaction().execute((trx) =>
+        endPlan(trx, sub.id, { summary: () => "canceled during the trial" }),
+      );
+      expect(await userHasFeature(userId, "custom_domains")).toBe(false);
+      expect(await userHasFeature(userId, "database")).toBe(true);
+      expect(await servedCustomDomains(userId)).toEqual([]);
+    });
+
+    test("does not serve a custom domain the account already holds", async () => {
+      const { servedCustomDomains } =
+        require("@/lib/edge/domains") as typeof import("@/lib/edge/domains");
+      const userId = await makeUser();
+      await db
+        .insertInto("custom_domains")
+        .values({
+          user_id: userId,
+          hostname: `trial-${userId}.example.com`,
+          cloudflare_status: "active",
+          ssl_status: "active",
+          verified_at: new Date(),
+        })
+        .execute();
+      await trials.claimTrial(userId);
+      expect(await servedCustomDomains(userId)).toEqual([]);
     });
   });
 });

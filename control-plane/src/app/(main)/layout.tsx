@@ -18,7 +18,7 @@ import { installCounts } from "@/lib/board/updates";
 import { countUnreadNotifications } from "@/lib/board/replies";
 import {
   getUserEntitlement,
-  PLAN_FEATURES,
+  featuresOf,
   type Feature,
 } from "@/lib/entitlements";
 import {
@@ -28,7 +28,10 @@ import {
   PixelHeart,
   SiteLink,
   SupporterMenu,
+  TrialNavLink,
 } from "@/components/NavMenus";
+import { db } from "@/lib/database";
+import { TRIAL_DAYS, trialState } from "@/lib/supporter-trial";
 
 export const metadata: Metadata = {
   title: "나루",
@@ -42,11 +45,14 @@ export default async function RootLayout({
 }>) {
   const { user, session } = await validateRequest();
   const entitlement = user ? await getUserEntitlement(user.id) : null;
-  const features = new Set<Feature>(
-    entitlement?.hasPaidFeatures
-      ? (PLAN_FEATURES[entitlement.plan ?? "supporter"] ?? [])
-      : [],
-  );
+  const features = new Set<Feature>(entitlement ? featuresOf(entitlement) : []);
+  // Also to an account that lacks only a verified email: /supporter asks for it.
+  const offerTrial =
+    user && !entitlement?.hasPaidFeatures
+      ? ["eligible", "unverified"].includes(
+          (await trialState(db, user.id)).state,
+        )
+      : false;
   // The address the site is visited at: its custom domain while the edge
   // serves it and its DNS reaches Naru, where the subdomain redirects, chosen
   // as the edge chooses.
@@ -130,6 +136,8 @@ export default async function RootLayout({
                           customDomains={features.has("custom_domains")}
                           githubDeploys={features.has("github_deploys")}
                         />
+                      ) : offerTrial ? (
+                        <TrialNavLink days={TRIAL_DAYS} />
                       ) : (
                         <NavLink href="/supporter">
                           서포터

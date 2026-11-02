@@ -45,6 +45,14 @@ export const PLAN_FEATURES: Record<string, Feature[]> = {
   // To add a richer tier later, add another plan key with its feature list.
 };
 
+// What a free trial opens: the plan's features but custom domains, since
+// Cloudflare bills every hostname until long after a trial ends
+// (lib/custom-domain-housekeeping). A plan started during the trial, whose
+// first charge waits for its end, opens them too.
+export const TRIAL_FEATURES: Feature[] = PLAN_FEATURES.supporter.filter(
+  (feature) => feature !== "custom_domains",
+);
+
 export type UserEntitlement = {
   isSupporter: boolean;
   comp: boolean;
@@ -57,7 +65,9 @@ export type UserEntitlement = {
   /** When a free trial (lib/supporter-trial.ts) ends or ended; null without one. */
   trialEndsAt: Date | null;
   inTrial: boolean;
-  /** Whether the plan's features are open: a supporter, or in a trial. */
+  /** In a trial with a plan whose first charge waits for the trial's end. */
+  planWaitingOnTrial: boolean;
+  /** Whether any of the plan's features are open: a supporter, or in a trial. */
   hasPaidFeatures: boolean;
   /**
    * When the features close, past or future: the later of the payment grace
@@ -70,8 +80,8 @@ export type UserEntitlement = {
 // Resolves a user's current entitlement. A user is a supporter if they have a
 // permanent comp or a paid-through date that has not passed the grace window,
 // when it has one.
-// A free trial opens the same features without making the user a supporter:
-// payment code reads isSupporter, access reads hasPaidFeatures.
+// A free trial opens TRIAL_FEATURES without making the user a supporter:
+// payment code reads isSupporter, access reads hasPaidFeatures and featuresOf.
 export async function getUserEntitlement(
   userId: string,
   executor: Executor = db,
@@ -87,6 +97,7 @@ export async function getUserEntitlement(
       "users.supporter_until as supporterUntil",
       "users.supporter_grace as grace",
       "subscriptions.plan as plan",
+      "subscriptions.status as planStatus",
       "supporter_trials.ends_at as trialEndsAt",
     ])
     .where("users.id", "=", userId)
@@ -104,6 +115,7 @@ export async function getUserEntitlement(
       inPaymentGrace: false,
       trialEndsAt: null,
       inTrial: false,
+      planWaitingOnTrial: false,
       hasPaidFeatures: false,
       accessEndsAt: null,
     };
@@ -141,22 +153,34 @@ export async function getUserEntitlement(
     inPaymentGrace,
     trialEndsAt,
     inTrial,
+    planWaitingOnTrial: inTrial && row.planStatus === "scheduled",
     hasPaidFeatures: isSupporter || inTrial,
     accessEndsAt,
   };
 }
 
+/** The features an entitlement opens. */
+export function featuresOf(entitlement: UserEntitlement): Feature[] {
+  if (entitlement.isSupporter || entitlement.planWaitingOnTrial)
+    return PLAN_FEATURES[entitlement.plan ?? "supporter"] ?? [];
+  return entitlement.inTrial ? TRIAL_FEATURES : [];
+}
+
 /**
- * When an account's features close, epoch ms, from its users columns and its
- * trial's end, for queries over many accounts that cannot resolve each one:
- * null for a comp, whose features do not end; 0 when it never had them.
- * The rule getUserEntitlement's accessEndsAt applies.
+ * When an account's custom domains stop being served, epoch ms, for queries
+ * over many accounts that cannot resolve each one: null for a comp, whose
+ * features do not end; 0 when it never had them. A free trial alone does not
+ * count, since it does not open custom domains. With a plan waiting on it, the
+ * trial's end counts as paid time does, grace included, so the domain is still
+ * served while the first charge settles; a canceled plan or a declined charge
+ * takes the plan out of "scheduled" and closes it at the next sync.
  */
-export function accessEndsAtOf(row: {
+export function customDomainAccessEndsAt(row: {
   supporter_comp: boolean;
   supporter_until: Date | string | null;
   supporter_grace: boolean;
   trial_ends_at: Date | string | null;
+  plan_status: string | null;
 }): number | null {
   if (row.supporter_comp) return null;
   const paid = row.supporter_until
@@ -165,17 +189,18 @@ export function accessEndsAtOf(row: {
         row.supporter_grace,
       ).getTime()
     : 0;
-  const trial = row.trial_ends_at ? new Date(row.trial_ends_at).getTime() : 0;
-  return Math.max(paid, trial);
+  const waiting =
+    row.trial_ends_at && row.plan_status === "scheduled"
+      ? paidAccessEndsAt(new Date(row.trial_ends_at), true).getTime()
+      : 0;
+  return Math.max(paid, waiting);
 }
 
 // Resolves every feature at once. The nav needs the whole set on every page
 // load, and calling userHasFeature per feature would repeat the same
 // entitlement lookup once for each of them.
 export async function getUserFeatures(userId: string): Promise<Set<Feature>> {
-  const ent = await getUserEntitlement(userId);
-  if (!ent.hasPaidFeatures) return new Set();
-  return new Set(PLAN_FEATURES[ent.plan ?? "supporter"] ?? []);
+  return new Set(featuresOf(await getUserEntitlement(userId)));
 }
 
 export async function userHasFeature(
@@ -183,8 +208,7 @@ export async function userHasFeature(
   feature: Feature,
   executor: Executor = db,
 ): Promise<boolean> {
-  const ent = await getUserEntitlement(userId, executor);
-  if (!ent.hasPaidFeatures) return false;
-  const planFeatures = PLAN_FEATURES[ent.plan ?? "supporter"] ?? [];
-  return planFeatures.includes(feature);
+  return featuresOf(await getUserEntitlement(userId, executor)).includes(
+    feature,
+  );
 }

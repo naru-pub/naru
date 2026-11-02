@@ -95,6 +95,58 @@ export function PixelHeart() {
   );
 }
 
+// A 7×7 pixel-art present: bow, lid and a box parted by its ribbon.
+const GIFT_PIXELS = [
+  ".XX.XX.",
+  "..X.X..",
+  "XXXXXXX",
+  ".......",
+  ".XX.XX.",
+  ".XX.XX.",
+  ".XX.XX.",
+];
+
+function PixelGift() {
+  return (
+    <svg
+      viewBox="0 0 7 7"
+      width={14}
+      height={14}
+      shapeRendering="crispEdges"
+      className="shrink-0 fill-destructive"
+      aria-hidden
+    >
+      {GIFT_PIXELS.flatMap((row, y) =>
+        [...row].map((pixel, x) =>
+          pixel === "X" ? (
+            <rect key={`${x},${y}`} x={x} y={y} width={1} height={1} />
+          ) : null,
+        ),
+      )}
+    </svg>
+  );
+}
+
+// The 서포터 link for an account offered a free trial, claimed on /supporter. The bubble sits in the row, since the nav's scroller clips
+// anything that floats outside it, and floating would cover the page; between
+// the phone's own row and a wide screen there is no room for it, so only the
+// present shows. On a phone the bubble takes the name's room, to fit the row.
+export function TrialNavLink({ days }: { days: number }) {
+  return (
+    <NavLink href="/supporter">
+      <span className="max-md:sr-only">서포터</span>
+      <PixelGift />
+      <span className="relative ml-1 whitespace-nowrap border-2 md:max-xl:hidden border-line bg-sun px-1.5 text-xs font-semibold leading-5 text-sun-foreground">
+        <span
+          aria-hidden
+          className="absolute -left-[5px] top-1/2 size-2 -translate-y-1/2 rotate-45 border-b-2 border-l-2 border-line bg-sun"
+        />
+        {days}일 무료 체험
+      </span>
+    </NavLink>
+  );
+}
+
 type ExtensionItem = {
   href: string;
   label: string;
@@ -103,7 +155,8 @@ type ExtensionItem = {
 };
 
 // Supporters get a menu of the paid features with a link to their supporter
-// page; everyone else gets a plain 서포터 link (see the layout).
+// page; everyone else gets a 서포터 link, offering the free trial to an account
+// that may have it (see the layout).
 export function SupporterMenu({
   analytics,
   database,

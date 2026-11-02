@@ -18,7 +18,7 @@ export default async function DomainsPage() {
   }
 
   if (!(await userHasFeature(user.id, "custom_domains"))) {
-    redirect("/account");
+    redirect("/supporter");
   }
 
   const customDomainRows = await db
