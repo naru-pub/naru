@@ -83,7 +83,7 @@ export default async function DeveloperTemplatesPage({
             href="/templates/new"
             className={`${BUTTON} press bg-primary text-primary-foreground`}
           >
-            새 템플릿 공개하기
+            템플릿 등록하기
           </Link>
         </section>
 

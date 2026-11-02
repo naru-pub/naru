@@ -18,7 +18,7 @@ export default function DevGuide() {
     <MarkdownGuide
       guide={rendered}
       nav={<DocsNav current="dev" version={LATEST_VERSION} />}
-      crumb={`NARU / DOCS / ${rendered.path}`}
+      crumb={`NARU / DEVELOPERS / ${rendered.path}`}
       plainCode={false}
     />
   );

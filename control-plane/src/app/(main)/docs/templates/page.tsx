@@ -21,7 +21,7 @@ export default function TemplatesGuide() {
     <MarkdownGuide
       guide={rendered}
       nav={<DocsNav current="templates" version={LATEST_VERSION} />}
-      crumb={`NARU / DOCS / ${rendered.path}`}
+      crumb={`NARU / DEVELOPERS / ${rendered.path}`}
       plainCode={false}
     />
   );

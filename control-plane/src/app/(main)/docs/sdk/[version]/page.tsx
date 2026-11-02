@@ -187,7 +187,7 @@ export default async function SdkReference(props: {
         <DocsNav current="sdk" version={version} />
         <header className="mb-12 max-w-3xl space-y-5">
           <p className="text-sm text-muted-foreground">
-            NARU / DOCS / SDK {version} / REFERENCE
+            NARU / DEVELOPERS / SDK {version} / REFERENCE
           </p>
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
             SDK 레퍼런스

@@ -3,7 +3,7 @@ title: 템플릿을 만들어 나눠 보세요.
 pageTitle: 템플릿 | 나루
 description: 사이트 코드와 Data SDK로 템플릿을 만들어 공개하는 방법, 업데이트해도 남는 것
 path: TEMPLATES
-links: [새 템플릿 공개하기 →](/templates/new) [내 템플릿 →](/developers)
+links: [템플릿 등록하기 →](/templates/new) [내 템플릿 →](/developers)
 ---
 
 사이트 코드(`_naru/`)와 Data SDK로 템플릿을 만들어 나누는 방법이에요. 빈 폴더에서

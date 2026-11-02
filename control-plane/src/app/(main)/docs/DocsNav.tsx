@@ -10,18 +10,24 @@ export default function DocsNav({
   current: string;
   version?: DocsVersion;
 }) {
-  const links = [
+  // People making a homepage and people writing code each see their own guides.
+  const forEveryone = [
     ["/docs", "길잡이", "home"],
     ["/docs/files", "파일 편집기", "files"],
     ["/docs/mcp", "MCP 연결", "mcp"],
     ["/docs/using-templates", "템플릿 쓰기", "using-templates"],
+  ];
+  const forDevelopers = [
+    ["/developers", "개발자", "developers"],
     [guidePath(version, "database"), "데이터베이스", "database"],
     [guidePath(version, "media"), "미디어", "media"],
     [guidePath(version, "sdk"), `SDK ${version}`, "sdk"],
     ["/docs/dev", "로컬 개발", "dev"],
     ["/docs/templates", "템플릿 만들기", "templates"],
-    ["/developers", "개발자", "developers"],
-  ] as const;
+  ];
+  const links = forEveryone.some(([, , key]) => key === current)
+    ? forEveryone
+    : forDevelopers;
   return (
     <nav aria-label="문서" className="mb-10">
       {VERSIONED.includes(current) && (
