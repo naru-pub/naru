@@ -95,54 +95,20 @@ export function PixelHeart() {
   );
 }
 
-// A 7×7 pixel-art present: bow, lid and a box parted by its ribbon.
-const GIFT_PIXELS = [
-  ".XX.XX.",
-  "..X.X..",
-  "XXXXXXX",
-  ".......",
-  ".XX.XX.",
-  ".XX.XX.",
-  ".XX.XX.",
-];
-
-function PixelGift({ className }: { className: string }) {
-  return (
-    <svg
-      viewBox="0 0 7 7"
-      width={14}
-      height={14}
-      shapeRendering="crispEdges"
-      className={`shrink-0 fill-destructive ${className}`}
-      aria-hidden
-    >
-      {GIFT_PIXELS.flatMap((row, y) =>
-        [...row].map((pixel, x) =>
-          pixel === "X" ? (
-            <rect key={`${x},${y}`} x={x} y={y} width={1} height={1} />
-          ) : null,
-        ),
-      )}
-    </svg>
-  );
-}
-
 // The 서포터 link for an account offered a free trial, claimed on /supporter.
 // The bubble sits in the row, since the nav's scroller clips anything that
-// floats outside it, and floating would cover the page. Between the phone's own
-// row and a wide screen there is no room for it, so a present stands in; on a
-// phone its text is shorter, to fit the row.
+// floats outside it, and floating would cover the page. Its text is shorter
+// below a wide screen, and on a tablet it takes the name's room, to fit the row.
 export function TrialNavLink({ days }: { days: number }) {
   return (
     <NavLink href="/supporter">
-      서포터
-      <PixelGift className="hidden md:max-xl:block" />
-      <span className="relative ml-1 whitespace-nowrap border-2 max-md:ml-0 max-md:px-1 md:max-xl:hidden border-line bg-sun px-1.5 text-xs font-semibold leading-5 text-sun-foreground">
+      <span className="md:max-lg:sr-only">서포터</span>
+      <span className="relative ml-1 whitespace-nowrap border-2 max-xl:ml-0 max-xl:px-1 md:max-lg:-ml-2 border-line bg-sun px-1.5 text-xs font-semibold leading-5 text-sun-foreground">
         <span
           aria-hidden
           className="absolute -left-[5px] top-1/2 size-2 -translate-y-1/2 rotate-45 border-b-2 border-l-2 border-line bg-sun"
         />
-        {days}일 무료<span className="max-md:hidden"> 체험</span>
+        {days}일 무료<span className="max-xl:hidden"> 체험</span>
       </span>
     </NavLink>
   );
