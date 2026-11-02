@@ -131,7 +131,7 @@ export default async function TemplatesPage({
             </Button>
           </div>
           <Link
-            href="/board/new?kind=template"
+            href="/templates/new"
             className="flex min-h-11 items-center border-2 border-white px-4 text-sm font-bold text-white hover:bg-white hover:text-black"
           >
             템플릿 등록하기
@@ -139,7 +139,7 @@ export default async function TemplatesPage({
         </form>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-x-10 gap-y-6 px-4 pb-16 pt-6 sm:px-6 lg:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-7xl gap-x-10 gap-y-6 px-4 pb-16 pt-6 sm:px-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
         <aside className="min-w-0 space-y-6 text-sm">
           <nav aria-label="둘러보기">
             <h2 className="mb-1.5 hidden text-xs font-bold text-muted-foreground lg:block">
@@ -181,7 +181,6 @@ export default async function TemplatesPage({
                   설치한 템플릿
                 </SideLink>
               )}
-              <SideLink href="/templates/sell">셀러 수요 조사</SideLink>
             </ul>
           </nav>
 
@@ -224,13 +223,22 @@ export default async function TemplatesPage({
           )}
         </aside>
 
-        <main className="min-w-0">
+        <main className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           {browsing ? (
             <TemplateList filters={filters} page={page} />
           ) : (
             <Shelves empty={counts.all === 0} />
           )}
         </main>
+
+        <nav
+          aria-label="셀러"
+          className="border-t-2 border-line pt-4 text-sm lg:col-start-1 lg:row-start-2"
+        >
+          <ul>
+            <SideLink href="/templates/sell">셀러 수요 조사</SideLink>
+          </ul>
+        </nav>
       </div>
     </div>
   );

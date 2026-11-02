@@ -3,7 +3,7 @@ title: 템플릿을 만들어 나눠 보세요.
 pageTitle: 템플릿 | 나루
 description: 사이트 코드와 Data SDK로 템플릿을 만들어 공개하는 방법, 업데이트해도 남는 것
 path: TEMPLATES
-links: [새 템플릿 공개하기 →](/board/new?kind=template) [내 템플릿 →](/developers)
+links: [새 템플릿 공개하기 →](/templates/new) [내 템플릿 →](/developers)
 ---
 
 사이트 코드(`_naru/`)와 Data SDK로 템플릿을 만들어 나누는 방법이에요. 빈 폴더에서
@@ -64,7 +64,7 @@ npx @naru-pub/dev ./site --site demo
 
 ## 03 · 템플릿으로 공개해요 {#publish}
 
-[게시판에 템플릿 글](/board/new?kind=template)을 쓰고, 내 사이트의 폴더나 GitHub
+[템플릿을 등록](/templates/new)하면서 내 사이트의 폴더나 GitHub
 저장소를 골라요. GitHub에서 공개하면 워크플로가 돌 때마다 새 버전이 올라가고, 커밋
 메시지가 버전 설명이 돼요. `template-owner`에는 내 나루 아이디를 쓰세요. 워크플로는
 [naru-pub/actions](https://github.com/naru-pub/actions)를 써요.

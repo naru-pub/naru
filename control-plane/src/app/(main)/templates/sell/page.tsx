@@ -72,7 +72,7 @@ export default async function SellerInterestPage() {
             </li>
             <li>
               <Link
-                href="/board/new?kind=template"
+                href="/templates/new"
                 className="flex min-h-11 items-center text-primary underline"
               >
                 템플릿 등록하기

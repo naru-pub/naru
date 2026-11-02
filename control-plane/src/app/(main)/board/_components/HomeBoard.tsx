@@ -47,7 +47,7 @@ function BoardPosts({ posts }: { posts: HomePost[] }) {
           아직 공유된 템플릿이나 사이트가 없어요.
         </p>
         <Link
-          href="/board/new?kind=template"
+          href="/templates/new"
           className="text-sm font-medium text-link underline-offset-4 hover:underline"
         >
           내 사이트를 첫 템플릿으로 공유해 보세요 →

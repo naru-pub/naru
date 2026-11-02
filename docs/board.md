@@ -31,6 +31,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   no query it shows shelves: popular, new, and using a database. Any of `q`,
   `tag`, `database`, `files`, `sort` or `page` turns it into one filtered list. A
   template's page is still `/board/[postId]`.
+- **Registering**: a template is registered at `/templates/new`, and a site post
+  written at `/board/new`. Both post to `/api/board/posts`.
 - **Tags**: authors tag their own templates, up to three, when publishing or from
   the edit page (`PUT /api/board/templates/[id]/tags`). There is no fixed list.
   `src/lib/board/tags.ts` keeps one spelling (no spaces, no leading `#`, lower
@@ -247,7 +249,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
 | `/templates`                        | store; `?q=`, `?tag=`, `?database=1`, `?files=1`, `?sort=applied\|new`, `?page=` |
 | `/templates/sell`                   | tell 나루 you'd like to sell templates                                           |
 | `/templates/installed`              | my installed templates and their updates                                         |
-| `/board/new`                        | compose; `?kind=`                                                                |
+| `/board/new`                        | write a site post; `?kind=template` redirects to `/templates/new`                |
+| `/templates/new`                    | register a template                                                              |
 | `/board/[postId]`                   | post, template panel and apply dialog, reply tree                                |
 | `/board/[postId]/edit`              | edit; publish a new template version                                             |
 | `/board/[postId]/replies/[replyId]` | a reply and everything under it (permalink)                                      |

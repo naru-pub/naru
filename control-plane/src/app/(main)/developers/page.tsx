@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 const GUIDE = "/docs/templates";
-const NEW_TEMPLATE = "/board/new?kind=template";
+const NEW_TEMPLATE = "/templates/new";
 
 const PANEL = "border-2 border-line bg-card";
 const LINK = "font-bold text-link underline-offset-4 hover:underline";

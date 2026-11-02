@@ -80,7 +80,7 @@ export default async function DeveloperTemplatesPage({
             </p>
           </div>
           <Link
-            href="/board/new?kind=template"
+            href="/templates/new"
             className={`${BUTTON} press bg-primary text-primary-foreground`}
           >
             새 템플릿 공개하기

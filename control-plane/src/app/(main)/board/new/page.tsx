@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { listTemplateTags } from "@/lib/board/posts";
 import { redirect } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
-import { isPostKind } from "@/lib/board/constants";
-import { listCollections } from "@/lib/site-data/service";
 import { NewPostForm } from "./NewPostForm";
 
 export const metadata: Metadata = { title: "새 글 쓰기 · 나루 게시판" };
@@ -14,9 +11,10 @@ export default async function NewPostPage({
 }: {
   searchParams: Promise<{ kind?: string }>;
 }) {
+  // Templates are registered on their own page; older links still arrive here.
+  if ((await searchParams).kind === "template") redirect("/templates/new");
   const { user } = await validateRequest();
   if (!user) redirect("/login");
-  const params = await searchParams;
 
   if (!user.emailVerifiedAt) {
     return (
@@ -35,11 +33,6 @@ export default async function NewPostPage({
     );
   }
 
-  const [collections, popularTags] = await Promise.all([
-    listCollections(user),
-    listTemplateTags(10),
-  ]);
-
   return (
     <div className="bg-background min-h-screen p-4 sm:p-6">
       <main className="mx-auto max-w-3xl space-y-6">
@@ -49,11 +42,7 @@ export default async function NewPostPage({
           </Link>
           <h1 className="text-2xl font-bold">새 글 쓰기</h1>
         </div>
-        <NewPostForm
-          initialKind={isPostKind(params.kind) ? params.kind : "site"}
-          collections={collections.map((c) => c.name)}
-          tagSuggestions={popularTags.map(({ tag }) => tag)}
-        />
+        <NewPostForm />
       </main>
     </div>
   );
