@@ -130,12 +130,20 @@ export default async function TemplatesPage({
               검색
             </Button>
           </div>
-          <Link
-            href="/templates/sell"
-            className="flex min-h-11 items-center gap-1 text-sm font-medium text-white underline underline-offset-4 hover:no-underline"
-          >
-            템플릿을 판매하고 싶나요? <span aria-hidden="true">→</span>
-          </Link>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Link
+              href="/templates/sell"
+              className="flex min-h-11 items-center gap-1 text-sm font-medium text-white underline underline-offset-4 hover:no-underline"
+            >
+              템플릿을 판매하고 싶나요? <span aria-hidden="true">→</span>
+            </Link>
+            <Link
+              href="/board/new?kind=template"
+              className="flex min-h-11 items-center border-2 border-white px-4 text-sm font-bold text-white hover:bg-white hover:text-black"
+            >
+              템플릿 등록하기
+            </Link>
+          </div>
         </form>
       </div>
 
