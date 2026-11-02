@@ -8,10 +8,8 @@ import { PixelWave } from "@/components/PixelWave";
 import { SiteGrid } from "@/components/SiteGrid";
 import { getHomepageUrl, getRenderedSiteUrl } from "@/lib/site-urls";
 import { validateRequest } from "@/lib/auth";
-import { POST_KINDS } from "@/lib/board/constants";
-import { listLatestPosts, type PostSummary } from "@/lib/board/posts";
-import { postThumbnailUrl } from "./board/_components/Thumbnail";
-import { HomeBoard, type HomePost } from "./board/_components/HomeBoard";
+import { listPopularTemplatePosts } from "@/lib/board/posts";
+import { TemplateCard } from "./templates/TemplateCard";
 
 // A sparkline is drawn server-side as plain SVG. The charts on /open pull in
 // recharts behind "use client", which is far too much JavaScript to put on the
@@ -120,7 +118,7 @@ async function getHeadlineStats() {
 const RECENT_SITES_ON_HOME = 12;
 
 export default async function Home() {
-  const [recentlyRenderedUsers, stats, latestByKind, { user }] =
+  const [recentlyRenderedUsers, stats, popularTemplates, { user }] =
     await Promise.all([
       db
         .selectFrom("users")
@@ -133,24 +131,10 @@ export default async function Home() {
         .limit(RECENT_SITES_ON_HOME)
         .execute(),
       getHeadlineStats(),
-      Promise.all(POST_KINDS.map((kind) => listLatestPosts(kind, 6))),
+      listPopularTemplatePosts(6),
       validateRequest(),
     ]);
 
-  // Plain data for the board card.
-  const toHomePost = (post: PostSummary): HomePost => ({
-    id: post.id,
-    title: post.title,
-    authorLoginName: post.authorLoginName,
-    replyCount: post.replyCount,
-    applyCount: post.template ? post.template.applyCount : null,
-    thumbnailUrl: postThumbnailUrl(post),
-  });
-  const boardPosts = latestByKind
-    .flat()
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .slice(0, 6)
-    .map(toHomePost);
   const heroSites = recentlyRenderedUsers.slice(0, 3);
   const statTiles = [
     {
@@ -348,15 +332,21 @@ export default async function Home() {
         </>
       )}
 
-      <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-16 sm:px-6 lg:px-8">
-        <SectionHeading
-          title="자랑과 템플릿"
-          description="나루 사람들이 만든 사이트와 템플릿."
-          href="/board/new"
-          linkText="+ 내 사이트 자랑하기"
-        />
-        <HomeBoard posts={boardPosts} />
-      </section>
+      {popularTemplates.length > 0 && (
+        <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-16 sm:px-6 lg:px-8">
+          <SectionHeading
+            title="템플릿으로 시작하기"
+            description="마음에 드는 템플릿을 고르면 내 사이트에 바로 적용돼요."
+            href="/templates"
+            linkText="템플릿 모두 보기 →"
+          />
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {popularTemplates.map((post) => (
+              <TemplateCard key={post.id} post={post} />
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="border-y-2 border-line">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-16 sm:px-6 lg:px-8">
