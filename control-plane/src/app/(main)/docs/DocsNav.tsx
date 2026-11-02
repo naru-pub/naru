@@ -11,7 +11,7 @@ export default function DocsNav({
   version?: DocsVersion;
 }) {
   const links = [
-    ["/docs", "도움말", "home"],
+    ["/docs", "길잡이", "home"],
     ["/docs/files", "파일 편집기", "files"],
     ["/docs/mcp", "MCP 연결", "mcp"],
     ["/docs/using-templates", "템플릿 쓰기", "using-templates"],

@@ -39,9 +39,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const id = parsePostId((await params).postId);
   const post = id ? await getPost(id, null) : null;
-  if (!post) return { title: "게시판 · 나루" };
+  if (!post) return { title: "자랑 · 나루" };
   return {
-    title: `${post.title} · 나루 게시판`,
+    title: `${post.title} · 나루`,
     description: post.body.slice(0, 160),
   };
 }
@@ -119,7 +119,7 @@ export default async function PostPage({
               href={post.kind === "template" ? "/templates" : "/board"}
               className="text-primary hover:underline"
             >
-              {post.kind === "template" ? "템플릿" : "게시판"}
+              {post.kind === "template" ? "템플릿" : "자랑"}
             </Link>
           </nav>
 

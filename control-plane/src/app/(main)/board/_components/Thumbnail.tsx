@@ -25,6 +25,7 @@ export function Thumbnail({
   alt,
   className,
   fill = false,
+  sizes = "(max-width: 640px) 100vw, 320px",
 }: {
   url: string | null;
   alt: string;
@@ -32,6 +33,7 @@ export function Thumbnail({
   // On wide screens, grow to the container's height. The 4:3 picture keeps
   // its shape and is centered in the extra space, so nothing is cropped.
   fill?: boolean;
+  sizes?: string;
 }) {
   return (
     <div
@@ -43,7 +45,7 @@ export function Thumbnail({
             src={url}
             alt={alt}
             fill
-            sizes="(max-width: 640px) 100vw, 320px"
+            sizes={sizes}
             className="object-cover object-top"
           />
         ) : (

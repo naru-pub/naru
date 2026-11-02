@@ -5,15 +5,13 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { validateRequest } from "@/lib/auth";
 import { type PostSort } from "@/lib/board/constants";
-import { listPopularTemplatePosts, listPosts } from "@/lib/board/posts";
+import { listPosts } from "@/lib/board/posts";
 import { countUnreadNotifications } from "@/lib/board/replies";
-import { PostRow } from "./_components/PostRow";
-import { PostTitle } from "./_components/PostTitle";
-import { Thumbnail, postThumbnailUrl } from "./_components/Thumbnail";
+import { ShowcaseCard } from "./_components/ShowcaseCard";
 
 export const metadata: Metadata = {
-  title: "게시판 · 나루",
-  description: "나루 사람들의 사이트와 이야기.",
+  title: "자랑 · 나루",
+  description: "나루 사람들이 만든 사이트를 구경해 보세요.",
 };
 
 const SORT_LABELS: Record<PostSort, string> = {
@@ -55,175 +53,105 @@ export default async function BoardPage({
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
 
   const { user } = await validateRequest();
-  const [{ posts, hasMore }, popular, unread] = await Promise.all([
+  const [{ posts, hasMore }, unread] = await Promise.all([
     listPosts({ kind: "site", sort, page }),
-    listPopularTemplatePosts(4),
     user ? countUnreadNotifications(user.id) : null,
   ]);
 
   return (
-    <div className="bg-background min-h-screen p-4 sm:p-6">
+    <div className="bg-background min-h-screen px-4 pb-16 pt-8 sm:px-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-bold text-foreground">게시판</h1>
+            <h1 className="text-3xl font-bold text-foreground">자랑</h1>
             <p className="text-sm text-muted-foreground">
-              나루 사람들의 사이트와 이야기.
+              나루 사람들이 만든 사이트를 구경해 보세요.
             </p>
           </div>
           <Button asChild>
             <Link href="/board/new">
-              <Plus aria-hidden="true" />새 글 쓰기
+              <Plus aria-hidden="true" />내 사이트 자랑하기
             </Link>
           </Button>
         </div>
 
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          <section className="min-w-0 flex-1 border-2 border-line bg-card">
-            <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border px-2">
-              <nav aria-label="정렬" className="flex gap-3 px-2 py-2 text-xs">
-                {SORTS.map((value) => (
-                  <Link
-                    key={value}
-                    href={boardHref(value)}
-                    aria-current={value === sort ? "true" : undefined}
-                    className={
-                      value === sort
-                        ? "font-bold text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }
-                  >
-                    {SORT_LABELS[value]}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            {posts.length === 0 ? (
-              <p className="p-10 text-center text-sm text-muted-foreground">
-                아직 글이 없어요. 첫 글을 써 보세요!
-              </p>
-            ) : (
-              posts.map((post) => <PostRow key={post.id} post={post} />)
+        {unread && unread.count > 0 && (
+          <Link
+            href="/board/notifications"
+            className="block border-2 border-primary bg-primary/5 px-4 py-3 text-sm hover:bg-primary/10"
+          >
+            <span className="font-bold text-primary">
+              {unread.versions === 0
+                ? `새 답글 ${unread.count}개`
+                : `새 알림 ${unread.count}개`}{" "}
+              →
+            </span>
+            {unread.replies > 0 && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                {unread.from.join(", ")} 님이 답글을 달았어요
+              </span>
             )}
-
-            {(page > 1 || hasMore) && (
-              <div className="flex justify-center gap-4 border-t border-border p-4 text-sm">
-                {page > 1 && (
-                  <Link
-                    href={boardHref(sort, page - 1)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    ← 이전
-                  </Link>
-                )}
-                <span className="text-foreground">{page}</span>
-                {hasMore && (
-                  <Link
-                    href={boardHref(sort, page + 1)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    다음 →
-                  </Link>
-                )}
-              </div>
+            {unread.versions > 0 && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                설치한 템플릿의 새 버전이 {unread.versions}개 나왔어요
+              </span>
             )}
-          </section>
+          </Link>
+        )}
 
-          <aside className="w-full space-y-6 lg:w-80 lg:shrink-0">
-            {unread && unread.count > 0 && (
-              <section className="space-y-2 border-2 border-primary bg-primary/5 p-4">
-                <p className="text-xs text-muted-foreground">
-                  {user!.loginName}@naru:~$ notify
-                </p>
-                <Link
-                  href="/board/notifications"
-                  className="block font-bold text-primary hover:underline"
-                >
-                  {unread.versions === 0
-                    ? `새 답글 ${unread.count}개`
-                    : `새 알림 ${unread.count}개`}{" "}
-                  →
-                </Link>
-                {unread.replies > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {unread.from.join(", ")} 님이 답글을 달았어요
-                  </p>
-                )}
-                {unread.versions > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    설치한 템플릿의 새 버전이 {unread.versions}개 나왔어요
-                  </p>
-                )}
-              </section>
+        <nav
+          aria-label="정렬"
+          className="flex gap-5 border-b-2 border-line text-sm"
+        >
+          {SORTS.map((value) => (
+            <Link
+              key={value}
+              href={boardHref(value)}
+              aria-current={value === sort ? "true" : undefined}
+              className={`-mb-0.5 flex min-h-11 items-center border-b-[3px] ${
+                value === sort
+                  ? "border-primary font-bold text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {SORT_LABELS[value]}
+            </Link>
+          ))}
+        </nav>
+
+        {posts.length === 0 ? (
+          <p className="border-2 border-line bg-card p-10 text-center text-sm text-muted-foreground">
+            아직 자랑한 사이트가 없어요. 첫 번째로 자랑해 보세요!
+          </p>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {posts.map((post) => (
+              <ShowcaseCard key={post.id} post={post} />
+            ))}
+          </div>
+        )}
+
+        {(page > 1 || hasMore) && (
+          <div className="flex justify-center gap-4 pt-2 text-sm">
+            {page > 1 && (
+              <Link
+                href={boardHref(sort, page - 1)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                ← 이전
+              </Link>
             )}
-
-            {popular.length > 0 && (
-              <section className="border-2 border-line bg-card">
-                <h2 className="border-b-2 border-line bg-secondary px-4 py-3 font-bold">
-                  인기 템플릿
-                </h2>
-                <ul>
-                  {popular.map((post) => (
-                    <li key={post.id} className="border-b border-border">
-                      <Link
-                        href={`/board/${post.id}`}
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-accent"
-                      >
-                        <Thumbnail
-                          url={postThumbnailUrl(post)}
-                          alt=""
-                          className="w-14 shrink-0"
-                        />
-                        <span className="min-w-0 space-y-1">
-                          <span className="block truncate text-sm font-bold">
-                            <PostTitle title={post.title} />
-                          </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {post.authorLoginName} ·{" "}
-                            <span className="text-primary">
-                              {post.template?.applyCount ?? 0}회 적용
-                            </span>
-                          </span>
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/templates"
-                  className="block px-4 py-3 text-sm text-primary hover:underline"
-                >
-                  템플릿 모두 보기 →
-                </Link>
-              </section>
+            <span className="text-foreground">{page}</span>
+            {hasMore && (
+              <Link
+                href={boardHref(sort, page + 1)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                다음 →
+              </Link>
             )}
-
-            <section className="border-2 border-line bg-card">
-              <h2 className="border-b-2 border-line bg-secondary px-4 py-3 font-bold">
-                게시판 안내
-              </h2>
-              <div className="space-y-3 p-4 text-sm leading-relaxed text-muted-foreground">
-                <p>
-                  <strong className="text-foreground">사이트 자랑</strong> — 내
-                  나루 사이트를 소개해 주세요. 스크린샷은 자동으로 붙어요.
-                </p>
-                <p>
-                  <strong className="text-foreground">템플릿</strong> — 내
-                  폴더를 템플릿으로 공유하면, 다른 사람이 버튼 한 번으로 자기
-                  사이트에 적용할 수 있어요.{" "}
-                  <Link href="/templates" className="text-primary underline">
-                    템플릿 둘러보기
-                  </Link>
-                </p>
-                <p>
-                  <strong className="text-foreground">답글</strong> — 답글에
-                  답글을 달 수 있어요. 글을 쓰려면 이메일 인증이 필요해요.
-                </p>
-              </div>
-            </section>
-          </aside>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

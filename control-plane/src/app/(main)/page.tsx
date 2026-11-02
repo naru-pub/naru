@@ -350,10 +350,10 @@ export default async function Home() {
 
       <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-16 sm:px-6 lg:px-8">
         <SectionHeading
-          title="게시판"
-          description="사이트 자랑, 템플릿, 그리고 이야기."
+          title="자랑과 템플릿"
+          description="나루 사람들이 만든 사이트와 템플릿."
           href="/board/new"
-          linkText="+ 새 글 쓰기"
+          linkText="+ 내 사이트 자랑하기"
         />
         <HomeBoard posts={boardPosts} />
       </section>
@@ -469,7 +469,7 @@ const STEPS = [
     body: "파일을 올리거나 편집기에서 HTML·CSS·JS를 바로 써요. 템플릿으로 시작해도 좋아요.",
   },
   {
-    title: "게시판에 자랑해요",
+    title: "내 사이트를 자랑해요",
     body: "사이트를 소개하면 스크린샷이 자동으로 붙어요.",
   },
 ];

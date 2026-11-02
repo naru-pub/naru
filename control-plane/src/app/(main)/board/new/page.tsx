@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { validateRequest } from "@/lib/auth";
 import { NewPostForm } from "./NewPostForm";
 
-export const metadata: Metadata = { title: "새 글 쓰기 · 나루 게시판" };
+export const metadata: Metadata = { title: "내 사이트 자랑하기 · 나루" };
 
 export default async function NewPostPage({
   searchParams,
@@ -20,9 +20,9 @@ export default async function NewPostPage({
     return (
       <div className="bg-background min-h-screen p-4 sm:p-6">
         <main className="mx-auto max-w-3xl space-y-4 border-2 border-line p-6">
-          <h1 className="text-2xl font-bold">새 글 쓰기</h1>
+          <h1 className="text-2xl font-bold">내 사이트 자랑하기</h1>
           <p className="text-sm text-muted-foreground">
-            게시판에 글을 쓰려면{" "}
+            자랑 글을 쓰려면{" "}
             <Link href="/account" className="text-primary hover:underline">
               계정 설정
             </Link>
@@ -38,9 +38,9 @@ export default async function NewPostPage({
       <main className="mx-auto max-w-3xl space-y-6">
         <div className="space-y-1">
           <Link href="/board" className="text-xs text-primary hover:underline">
-            ← 게시판
+            ← 자랑
           </Link>
-          <h1 className="text-2xl font-bold">새 글 쓰기</h1>
+          <h1 className="text-2xl font-bold">내 사이트 자랑하기</h1>
         </div>
         <NewPostForm />
       </main>

@@ -292,8 +292,8 @@ naru.collection("comments").list({
 });
 ```
 
-바로 시작할 수 있는 사이트가 필요하면 게시판에서
-[데이터베이스를 쓰는 템플릿](/board?kind=template&database=1)을 둘러보세요.
+바로 시작할 수 있는 사이트가 필요하면
+[데이터베이스를 쓰는 템플릿](/templates?database=1)을 둘러보세요.
 
 ## 07 · 한도와 오류 {#errors}
 

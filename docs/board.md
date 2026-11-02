@@ -1,7 +1,8 @@
 # Board (게시판)
 
-A message board with threaded replies at `/board`, where people share their
-sites and templates. A template is a snapshot of a folder from someone's site
+A message board with threaded replies, where people share their sites and
+templates. `/board` is its showcase of sites, called 자랑 on the site: screenshot
+cards, each with the site's address. A template is a snapshot of a folder from someone's site
 that anyone can apply to their own site in one step. The home page (`/`) has
 a board card, 템플릿 / 사이트 자랑, showing the six newest templates and
 showcased sites as pictures. Below them come the ads, the usage notice, and 최근 업데이트된, which shows

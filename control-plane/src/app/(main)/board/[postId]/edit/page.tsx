@@ -11,7 +11,7 @@ import { PreviewForm } from "./PreviewForm";
 import { SourceForm } from "./SourceForm";
 import { TagsForm } from "./TagsForm";
 
-export const metadata: Metadata = { title: "글 고치기 · 나루 게시판" };
+export const metadata: Metadata = { title: "글 고치기 · 나루" };
 
 export default async function EditPostPage({
   params,
@@ -98,7 +98,7 @@ export default async function EditPostPage({
               <h2 className="text-lg font-bold">미리보기 이미지</h2>
               <p className="text-sm text-muted-foreground">
                 {template.customPreview
-                  ? "올린 이미지가 게시판과 글에 보여요. 되돌리면 버전마다 찍는 파일의 스크린샷이 보여요."
+                  ? "올린 이미지가 템플릿 스토어와 글에 보여요. 되돌리면 버전마다 찍는 파일의 스크린샷이 보여요."
                   : "지금은 버전마다 파일의 스크린샷을 찍어요. 사이트의 데이터나 로그인이 있어야 보이는 템플릿은 화면을 담은 이미지를 올려 주세요."}
                 {template.source === "github" &&
                   " 워크플로에서 preview로 이미지를 정해도 돼요."}

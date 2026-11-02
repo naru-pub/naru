@@ -4,8 +4,8 @@ import Link from "next/link";
 // Each row starts on its own line.
 const LINK_ROWS: { href: string; label: string; strong?: boolean }[][] = [
   [
-    { href: "/board", label: "게시판" },
-    { href: "/docs", label: "도움말" },
+    { href: "/board", label: "자랑" },
+    { href: "/docs", label: "길잡이" },
     { href: "/developers", label: "개발자" },
     { href: "/supporter", label: "서포터" },
     { href: "/open", label: "지표" },

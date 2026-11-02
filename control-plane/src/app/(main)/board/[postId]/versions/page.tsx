@@ -16,8 +16,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { postId } = await params;
   const post = ID.test(postId) ? await getPost(postId, null) : null;
-  if (!post) return { title: "게시판 · 나루" };
-  return { title: `${post.title} 버전 기록 · 나루 게시판` };
+  if (!post) return { title: "템플릿 · 나루" };
+  return { title: `${post.title} 버전 기록 · 나루` };
 }
 
 // A template's versions, newest first, with their changelogs.
@@ -46,8 +46,8 @@ export default async function VersionsPage({
           aria-label="위치"
           className="flex flex-wrap gap-2 text-xs text-muted-foreground"
         >
-          <Link href="/board" className="text-primary hover:underline">
-            게시판
+          <Link href="/templates" className="text-primary hover:underline">
+            템플릿
           </Link>
           <span>/</span>
           <Link

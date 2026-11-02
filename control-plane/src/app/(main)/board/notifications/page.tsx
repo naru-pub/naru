@@ -6,7 +6,7 @@ import { listNotifications } from "@/lib/board/replies";
 import { formatRelative } from "../_components/format";
 import { MarkAllReadButton } from "./MarkAllReadButton";
 
-export const metadata: Metadata = { title: "알림 · 나루 게시판" };
+export const metadata: Metadata = { title: "알림 · 나루" };
 
 export default async function NotificationsPage() {
   const { user } = await validateRequest();
@@ -23,7 +23,7 @@ export default async function NotificationsPage() {
               href="/board"
               className="text-xs text-primary hover:underline"
             >
-              ← 게시판
+              ← 자랑
             </Link>
             <h1 className="text-2xl font-bold">알림</h1>
           </div>

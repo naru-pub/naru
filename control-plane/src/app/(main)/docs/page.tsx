@@ -4,7 +4,7 @@ import DocsNav from "./DocsNav";
 import { LATEST_VERSION } from "./versions";
 
 export const metadata: Metadata = {
-  title: "도움말 | 나루",
+  title: "길잡이 | 나루",
   description: "나루 홈페이지를 만들고 꾸미는 방법, 사이트 코드와 SDK 문서",
 };
 
@@ -72,7 +72,7 @@ export default function DocsIndex() {
         <header className="mb-12 max-w-3xl space-y-5">
           <p className="text-sm text-muted-foreground">NARU / DOCS</p>
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-            도움말
+            길잡이
           </h1>
           <p className="text-lg leading-8 text-muted-foreground">
             내 홈페이지를 만들고 꾸미는 방법부터 사이트 코드를 쓰는 방법까지
@@ -105,7 +105,7 @@ export default function DocsIndex() {
         </div>
 
         <div className="mt-10 flex flex-wrap gap-5 text-sm underline underline-offset-4">
-          <Link href="/board">게시판에서 다른 홈페이지 구경하기 →</Link>
+          <Link href="/board">자랑에서 다른 홈페이지 구경하기 →</Link>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ export async function requireVerifiedUser(): Promise<User> {
   if (!user.emailVerifiedAt) {
     throw new BoardError(
       403,
-      "게시판에 글을 쓰려면 계정 설정에서 이메일을 인증해 주세요.",
+      "글을 쓰려면 계정 설정에서 이메일을 인증해 주세요.",
     );
   }
   return user;

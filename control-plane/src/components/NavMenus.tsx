@@ -152,8 +152,10 @@ export function SupporterMenu({
 
   return (
     <DropdownMenu>
+      {/* Closing the menu puts focus back here, even after a click, so
+          focus shows as a fill and not as an outline around the section. */}
       <DropdownMenuTrigger
-        className={`${TRIGGER_CLASS} ${active ? ACTIVE_CLASS : ""}`}
+        className={`${TRIGGER_CLASS} ${active ? ACTIVE_CLASS : ""} focus-visible:bg-accent focus-visible:text-foreground focus-visible:outline-none`}
       >
         서포터
         <PixelHeart />

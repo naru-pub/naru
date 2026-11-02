@@ -53,7 +53,7 @@ export default async function ReplyPage({
           className="flex flex-wrap gap-2 text-xs text-muted-foreground"
         >
           <Link href="/board" className="text-primary hover:underline">
-            게시판
+            자랑
           </Link>
           <span>/</span>
           <Link
