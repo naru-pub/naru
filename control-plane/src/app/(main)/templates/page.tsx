@@ -130,6 +130,12 @@ export default async function TemplatesPage({
               검색
             </Button>
           </div>
+          <Link
+            href="/templates/sell"
+            className="flex min-h-11 items-center gap-1 text-sm font-medium text-white underline underline-offset-4 hover:no-underline"
+          >
+            템플릿을 판매하고 싶나요? <span aria-hidden="true">→</span>
+          </Link>
         </form>
       </div>
 
@@ -226,15 +232,15 @@ export default async function TemplatesPage({
         </main>
 
         <nav
-          aria-label="만드는 사람"
+          aria-label="템플릿 개발자"
           className="text-sm lg:col-start-1 lg:row-start-2 lg:border-t-2 lg:border-line lg:pt-4"
         >
           <h2 className="mb-1.5 text-xs font-bold text-muted-foreground">
-            만드는 사람
+            템플릿 개발자
           </h2>
           <ul>
-            <SideLink href="/board/new?kind=template">템플릿 공유하기</SideLink>
-            <SideLink href="/templates/sell">판매 관심 알리기</SideLink>
+            <SideLink href="/docs/templates">템플릿 개발자 가이드</SideLink>
+            <SideLink href="/board/new?kind=template">템플릿 만들기</SideLink>
           </ul>
         </nav>
       </div>
