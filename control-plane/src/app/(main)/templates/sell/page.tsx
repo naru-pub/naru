@@ -59,6 +59,27 @@ export default async function SellerInterestPage() {
             }
           />
         )}
+        <nav aria-label="템플릿 개발자" className="space-y-2 text-sm">
+          <h2 className="text-lg font-bold">템플릿 개발자</h2>
+          <ul className="space-y-1">
+            <li>
+              <Link
+                href="/docs/templates"
+                className="flex min-h-11 items-center text-primary underline"
+              >
+                템플릿 개발자 가이드
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/board/new?kind=template"
+                className="flex min-h-11 items-center text-primary underline"
+              >
+                템플릿 만들기
+              </Link>
+            </li>
+          </ul>
+        </nav>
       </main>
     </div>
   );

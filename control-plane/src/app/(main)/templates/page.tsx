@@ -139,7 +139,7 @@ export default async function TemplatesPage({
         </form>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-x-10 gap-y-6 px-4 pb-16 pt-6 sm:px-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
+      <div className="mx-auto grid max-w-7xl gap-x-10 gap-y-6 px-4 pb-16 pt-6 sm:px-6 lg:grid-cols-[14rem_minmax(0,1fr)]">
         <aside className="min-w-0 space-y-6 text-sm">
           <nav aria-label="둘러보기">
             <h2 className="mb-1.5 hidden text-xs font-bold text-muted-foreground lg:block">
@@ -223,26 +223,13 @@ export default async function TemplatesPage({
           )}
         </aside>
 
-        <main className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        <main className="min-w-0">
           {browsing ? (
             <TemplateList filters={filters} page={page} />
           ) : (
             <Shelves empty={counts.all === 0} />
           )}
         </main>
-
-        <nav
-          aria-label="템플릿 개발자"
-          className="text-sm lg:col-start-1 lg:row-start-2 lg:border-t-2 lg:border-line lg:pt-4"
-        >
-          <h2 className="mb-1.5 text-xs font-bold text-muted-foreground">
-            템플릿 개발자
-          </h2>
-          <ul>
-            <SideLink href="/docs/templates">템플릿 개발자 가이드</SideLink>
-            <SideLink href="/board/new?kind=template">템플릿 만들기</SideLink>
-          </ul>
-        </nav>
       </div>
     </div>
   );
