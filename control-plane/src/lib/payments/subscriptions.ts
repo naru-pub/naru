@@ -9,6 +9,7 @@ import { db } from "@/lib/database";
 import { retireBillingKey } from "@/lib/payments/billing-keys";
 import type { Executor } from "@/lib/entitlements";
 import { recordPaymentEvent } from "@/lib/payments/payment-events";
+import { RENEWAL_NOTICE_DAYS } from "@/lib/payments/renewal-time";
 
 // A renewal is tried at most once a day. This value is the payment grace window
 // before a subscription becomes past_due and related paid-only resources are
@@ -143,6 +144,67 @@ export async function scheduleSubscriptionStart(
     .where("status", "in", ["incomplete", "scheduled"])
     .executeTakeFirst();
   return Number(result.numUpdatedRows ?? 0) > 0;
+}
+
+// Gives an account the lifetime comp or takes it back; false when the account
+// is gone. Callers hold the account lock.
+//
+// A comp is never charged or told of a renewal, while its plan's date stays
+// where it was. So a comp taken back from a plan due within the notice window,
+// or overdue, would charge it unannounced: the plan moves to the end of the
+// window, a new try with a new notice, and its grace counts from there. Not one
+// with an unresolved order: that must keep its number (renewalAttemptKey), as a
+// new one could charge the card twice.
+export async function setSupporterComp(
+  userId: string,
+  comp: boolean,
+  now = new Date(),
+): Promise<boolean> {
+  return db.transaction().execute(async (trx) => {
+    const user = await trx
+      .selectFrom("users")
+      .select("supporter_comp")
+      .where("id", "=", userId)
+      .where("deleted_at", "is", null)
+      .forNoKeyUpdate()
+      .executeTakeFirst();
+    if (!user) return false;
+    await trx
+      .updateTable("users")
+      .set({ supporter_comp: comp })
+      .where("id", "=", userId)
+      .execute();
+    if (!user.supporter_comp || comp) return true;
+    const due = new Date(
+      now.getTime() + RENEWAL_NOTICE_DAYS * 24 * 60 * 60 * 1000,
+    );
+    await trx
+      .updateTable("subscriptions")
+      .set({
+        current_period_end: due,
+        next_billing_at: due,
+        failed_charge_count: 0,
+        renewal_notice_sent_at: null,
+        payment_grace_notice_sent_at: null,
+        updated_at: now,
+      })
+      .where("user_id", "=", userId)
+      .where("status", "in", ["active", "scheduled"])
+      .where("next_billing_at", "<", due)
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom("payments")
+              .select("payments.id")
+              .whereRef("payments.subscription_id", "=", "subscriptions.id")
+              .where("payments.status", "=", "pending"),
+          ),
+        ),
+      )
+      .execute();
+    return true;
+  });
 }
 
 // A plan still incomplete holds a key only for the signup under way. Once

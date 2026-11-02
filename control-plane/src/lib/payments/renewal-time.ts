@@ -5,6 +5,10 @@
 
 export const RENEWAL_HOUR_KST = 9;
 
+// How long before a renewal is charged the supporter is told by mail
+// (cli/send-billing-notifications).
+export const RENEWAL_NOTICE_DAYS = 3;
+
 // Korea has no daylight saving time, so KST is always UTC+9.
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -85,6 +85,7 @@ const {
   endPlan,
   MAX_PAYMENT_RETRY_ATTEMPTS,
   scheduleSubscriptionStart,
+  setSupporterComp,
 } =
   require("@/lib/payments/subscriptions") as typeof import("@/lib/payments/subscriptions");
 const { applyVerifiedTossPayment } =
@@ -7565,6 +7566,92 @@ integration("payments against the database", () => {
       await chargeDueSubscriptions();
 
       expect(toss.chargeBillingKey).not.toHaveBeenCalled();
+    });
+
+    describe("taking a lifetime comp back", () => {
+      async function compedPlan(nextBillingAt: Date) {
+        const userId = await makeUser(new Date(Date.now() - 90 * DAY));
+        await db
+          .updateTable("users")
+          .set({ supporter_comp: true })
+          .where("id", "=", userId)
+          .execute();
+        const planId = await makeSubscription(userId, {
+          status: "active",
+          currentPeriodEnd: nextBillingAt,
+          nextBillingAt,
+          failedChargeCount: 2,
+          renewalNoticeSentAt: new Date(nextBillingAt.getTime() - 3 * DAY),
+          graceNoticeSentAt: new Date(nextBillingAt.getTime() - DAY),
+        });
+        return { userId, planId };
+      }
+
+      test("moves an overdue plan past a renewal notice instead of charging it", async () => {
+        const { userId, planId } = await compedPlan(
+          new Date(Date.now() - 60 * DAY),
+        );
+        const now = new Date();
+
+        await setSupporterComp(userId, false, now);
+
+        const due = new Date(now.getTime() + 3 * DAY);
+        expect(await subscription(planId)).toMatchObject({
+          status: "active",
+          current_period_end: due,
+          next_billing_at: due,
+          failed_charge_count: 0,
+          renewal_notice_sent_at: null,
+          payment_grace_notice_sent_at: null,
+        });
+        await chargeDueSubscriptions();
+        expect(toss.chargeBillingKey).not.toHaveBeenCalled();
+      });
+
+      test("leaves a billing date beyond the notice window alone", async () => {
+        const nextBillingAt = new Date(Date.now() + 10 * DAY);
+        const { userId, planId } = await compedPlan(nextBillingAt);
+
+        await setSupporterComp(userId, false);
+
+        expect((await subscription(planId)).next_billing_at).toEqual(
+          nextBillingAt,
+        );
+      });
+
+      test("keeps a plan with an unresolved order on its date", async () => {
+        const nextBillingAt = new Date(Date.now() - 60 * DAY);
+        const { userId, planId } = await compedPlan(nextBillingAt);
+        await makePendingPayment({
+          userId,
+          subscriptionId: planId,
+          attemptKey: `comp-back-${planId}`,
+          orderId: `comp-back-${planId}`,
+          amount: 1000,
+        });
+
+        await setSupporterComp(userId, false);
+
+        expect((await subscription(planId)).next_billing_at).toEqual(
+          nextBillingAt,
+        );
+      });
+
+      test("does not move the plan of an account that has no comp", async () => {
+        const nextBillingAt = new Date(Date.now() - 60 * DAY);
+        const { userId, planId } = await compedPlan(nextBillingAt);
+        await db
+          .updateTable("users")
+          .set({ supporter_comp: false })
+          .where("id", "=", userId)
+          .execute();
+
+        await setSupporterComp(userId, false);
+
+        expect((await subscription(planId)).next_billing_at).toEqual(
+          nextBillingAt,
+        );
+      });
     });
 
     test("one subscription's error does not stop the renewal run", async () => {

@@ -1,4 +1,7 @@
-import { renewalChargeAt } from "@/lib/payments/renewal-time";
+import {
+  RENEWAL_NOTICE_DAYS,
+  renewalChargeAt,
+} from "@/lib/payments/renewal-time";
 // Also keeps each renewal notice in payment_mails.
 import { mailRecipient } from "@/lib/payments/payment-mails";
 import { db } from "@/lib/database";
@@ -7,8 +10,6 @@ import {
   sendTrialEndingEmail,
 } from "@/lib/email";
 import { plansOf } from "@/lib/payments/subscriptions";
-
-const RENEWAL_NOTICE_DAYS = 3;
 
 async function main() {
   const now = new Date();

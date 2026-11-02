@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateRequest } from "@/lib/auth";
 import { db } from "@/lib/database";
+import { AccountBusyError, withAccountLock } from "@/lib/payments/account-lock";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
+import { setSupporterComp } from "@/lib/payments/subscriptions";
 import { assertJsonContentType } from "@/lib/utils";
 
 // Operators give an account the supporter plan for free, or take it back:
 // { comp: boolean }. A comp is never charged (the renewal cron skips it), so a
-// plan the account pays for resumes charging from its next billing date once
-// the comp is taken back.
+// plan the account pays for resumes charging once the comp is taken back: on
+// its next billing date, or after a renewal notice when that is too close or
+// has passed (setSupporterComp).
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ loginName: string }> },
@@ -29,17 +32,26 @@ export async function POST(
   }
   if (typeof body?.comp !== "boolean")
     return NextResponse.json({ success: false }, { status: 400 });
+  const comp: boolean = body.comp;
   const loginName = decodeURIComponent((await context.params).loginName);
-  const updated = await db
-    .updateTable("users")
-    .set({ supporter_comp: body.comp })
+  const target = await db
+    .selectFrom("users")
+    .select("id")
     .where("login_name", "=", loginName)
     .where("deleted_at", "is", null)
-    .returning("supporter_comp")
     .executeTakeFirst();
+  if (!target) return NextResponse.json({ success: false }, { status: 404 });
+  let updated;
+  try {
+    updated = await withAccountLock(target.id, { waitMs: 10_000 }, () =>
+      setSupporterComp(target.id, comp),
+    );
+  } catch (error) {
+    if (error instanceof AccountBusyError)
+      return NextResponse.json({ success: false }, { status: 409 });
+    throw error;
+  }
   if (!updated) return NextResponse.json({ success: false }, { status: 404 });
-  console.info(
-    `${user.loginName} set supporter_comp=${body.comp} for ${loginName}`,
-  );
-  return NextResponse.json({ success: true, comp: updated.supporter_comp });
+  console.info(`${user.loginName} set supporter_comp=${comp} for ${loginName}`);
+  return NextResponse.json({ success: true, comp });
 }

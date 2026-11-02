@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
+import { RENEWAL_NOTICE_DAYS } from "@/lib/payments/renewal-time";
 
 // Gives the account the supporter plan for free, or takes it back.
 export function SupporterCompToggle({
@@ -23,7 +24,7 @@ export function SupporterCompToggle({
         title: next ? "서포터 플랜 무료 제공" : "무료 제공 해제",
         description: next
           ? `${loginName} 계정은 결제 없이 서포터 플랜을 계속 이용합니다. 정기 결제가 있으면 무료 제공 동안 청구되지 않습니다.`
-          : `${loginName} 계정의 무료 제공을 끝냅니다. 남은 이용 기한이 없으면 유료 기능이 바로 닫히고, 정기 결제가 있으면 다음 결제일부터 다시 청구됩니다.`,
+          : `${loginName} 계정의 무료 제공을 끝냅니다. 남은 이용 기한이 없으면 유료 기능이 바로 닫힙니다. 정기 결제가 있으면 다음 결제일부터 다시 청구되고, 결제일이 지났거나 ${RENEWAL_NOTICE_DAYS}일 안이면 ${RENEWAL_NOTICE_DAYS}일 뒤로 옮겨 안내 메일을 보낸 다음 청구합니다.`,
         destructive: !next,
       }))
     )
