@@ -1,5 +1,9 @@
 import { db } from "@/lib/database";
 import type { User } from "@/lib/auth";
+import {
+  operatorAlertsConfigured,
+  sendOperatorAlert,
+} from "@/lib/operator-alerts";
 import { BoardError } from "./errors";
 import {
   MAX_SELLER_INTEREST_LENGTH,
@@ -8,8 +12,17 @@ import {
 } from "./seller-interest-options";
 
 // Who would like to sell templates, once that exists. Only a question for
-// now: nothing here lets anyone sell. Operators read the answers at
-// /admin/seller-interest and reach people by their account's email.
+// now: nothing here lets anyone sell. Operators hear of each answer in Discord,
+// read them all at /admin/seller-interest and reach people by their account's
+// email.
+
+// Short enough that the alert's other lines still fit in one Discord message.
+const MAX_ALERT_DESCRIPTION = 1000;
+
+function adminSellerInterestUrl() {
+  const origin = `https://${process.env.NEXT_PUBLIC_DOMAIN || "naru.pub"}`;
+  return new URL("/admin/seller-interest", origin).href;
+}
 
 function isPrice(value: unknown): value is SellerInterestPrice {
   return (
@@ -49,4 +62,15 @@ export async function saveSellerInterest(
       oc.column("user_id").doUpdateSet({ ...values, updated_at: new Date() }),
     )
     .execute();
+
+  if (operatorAlertsConfigured())
+    // Saved either way: a Discord outage does not lose the answer.
+    await sendOperatorAlert({
+      title: `템플릿 판매 관심: ${user.loginName}`,
+      lines: [
+        `가격: ${SELLER_INTEREST_PRICES[input.priceRange]}`,
+        description.slice(0, MAX_ALERT_DESCRIPTION),
+        adminSellerInterestUrl(),
+      ],
+    }).catch((error) => console.error("[seller-interest] Discord:", error));
 }

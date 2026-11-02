@@ -40,8 +40,8 @@ Code: `control-plane/src/lib/board/` (logic), `src/app/(main)/board/` (pages),
   template, not to a version.
 - **Seller interest**: every template is free. `/templates/sell` asks who would
   like to sell one and for about how much (`template_seller_interest`, one
-  answer per person, gone with their account), read at
-  `/admin/seller-interest`. Nothing else about selling exists yet.
+  answer per person, gone with their account), told to the operators' Discord
+  each time it is sent and read at `/admin/seller-interest`. Nothing else about selling exists yet.
 - **Plain text.** Posts and replies are never parsed as HTML or Markdown. A
   blank line starts a new paragraph, and web addresses become links
   (`BoardText`).
