@@ -90,7 +90,7 @@ directory's page still shows the first six, so sync them again:
   > Use it to start a homepage from nothing, restyle the one you have, add a
   > page for a new project, or fix what's broken.
   >
-  > Requires a Naru account on the supporter plan.
+  > Requires a Naru account. The site's database takes the supporter plan.
 
 - Categories: pick the closest of what the portal offers, such as
   Productivity, Design or Developer tools.
@@ -105,8 +105,8 @@ directory's page still shows the first six, so sync them again:
 - Primary use cases: create or restyle a personal homepage; add and edit
   pages; upload images; reorganize files; add a guestbook, blog or comments
   with the Naru Data SDK; read and tidy what the site's database holds.
-- What users need: a Naru account (free sign-up at naru.pub) on the supporter
-  plan (₩1,000 a month, or a free trial when one is open).
+- What users need: a Naru account (free sign-up at naru.pub); for the site's
+  database, the supporter plan (₩1,000 a month, or a free trial).
 - Reads and writes data.
 
 ### Company

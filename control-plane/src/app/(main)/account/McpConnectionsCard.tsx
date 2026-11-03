@@ -90,13 +90,11 @@ export default function McpConnectionsCard({
         </div>
         {!entitled && (
           <p className="text-sm">
-            MCP 연결은{" "}
+            앱이 데이터베이스까지 다루려면{" "}
             <Link href="/supporter" className="underline underline-offset-4">
               서포터 플랜
-            </Link>{" "}
-            기능입니다.
-            {connections.length > 0 &&
-              " 서포터 기간이 끝나면 다시 서포터가 될 때까지 연결된 앱은 사이트를 읽거나 고칠 수 없습니다."}
+            </Link>
+            이 있어야 합니다.
           </p>
         )}
         {connections.length > 0 && (

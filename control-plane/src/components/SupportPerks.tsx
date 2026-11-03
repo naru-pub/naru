@@ -33,11 +33,11 @@ const PERKS = [
   },
   {
     emoji: "🤖",
-    title: "MCP 연결",
+    title: "MCP로 데이터베이스까지",
     description: (
       <>
-        Claude, ChatGPT 같은 AI 앱을 연결해 대화하며 웹사이트의 파일과
-        데이터베이스를 다루실 수 있습니다.{" "}
+        AI 앱 연결은 누구나 쓸 수 있고, 서포터는 앱에게 방명록이나 블로그처럼
+        데이터베이스를 쓰는 기능까지 부탁하실 수 있습니다.{" "}
         <a href="/docs/mcp" className="underline underline-offset-4">
           연결 방법 보기
         </a>

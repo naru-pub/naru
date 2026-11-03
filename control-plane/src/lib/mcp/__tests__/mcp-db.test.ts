@@ -319,7 +319,7 @@ integration("Naru MCP", () => {
     ).rejects.toBeInstanceOf(oauth.ConsentError);
   });
 
-  test("doesn't approve an account without the plan", async () => {
+  test("approves an account without the plan", async () => {
     const client = await register();
     const input = await oauth.authorizeRequest({
       response_type: "code",
@@ -330,7 +330,7 @@ integration("Naru MCP", () => {
     });
     await expect(
       oauth.approveAuthorization(lapsed, input, ["read"]),
-    ).rejects.toThrow("서포터 기능");
+    ).resolves.toContain("code=");
   });
 
   test("spends a code on a wrong verifier", async () => {
@@ -984,7 +984,7 @@ integration("Naru MCP", () => {
     await client.close();
   });
 
-  test("tells an app the plan is needed once the account lapses", async () => {
+  test("keeps files open and the database closed without a plan", async () => {
     const tokens = await connect();
     await db
       .updateTable("users")
@@ -993,9 +993,36 @@ integration("Naru MCP", () => {
       .execute();
     try {
       const client = await mcpClient(tokens.access_token);
-      const result = await client.callTool({ name: "get_site", arguments: {} });
-      expect(result.isError).toBe(true);
-      expect(textOf(result)).toContain("supporter plan");
+      const site = await client.callTool({ name: "get_site", arguments: {} });
+      expect(site.isError).toBeFalsy();
+      expect(textOf(site)).toContain('"databaseOpen": false');
+      expect(client.getInstructions()).toContain("supporter plan");
+
+      const page = await client.callTool({
+        name: "write_file",
+        arguments: { path: "free.html", content: "<p>hello</p>" },
+      });
+      expect(page.isError).toBeFalsy();
+      expect(textOf(page)).not.toContain("warnings");
+
+      const guestbook = await client.callTool({
+        name: "write_file",
+        arguments: {
+          path: "guestbook.html",
+          content: `<script>createNaru({ site: "x" }).collection("guestbook")</script>`,
+        },
+      });
+      expect(guestbook.isError).toBeFalsy();
+      expect(textOf(guestbook)).toContain("supporter plan");
+
+      for (const [name, args] of [
+        ["list_collections", {}],
+        ["configure_collections", { collections: {} }],
+      ] as const) {
+        const result = await client.callTool({ name, arguments: args });
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toContain("supporter plan");
+      }
       await client.close();
     } finally {
       await db

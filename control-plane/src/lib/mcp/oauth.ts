@@ -460,8 +460,6 @@ export async function approveAuthorization(
 ) {
   if (!scopes.length || !scopes.every((scope) => input.scopes.includes(scope)))
     throw new ConsentError("허용할 권한을 골라 주세요.");
-  if (!(await userHasFeature(userId, "mcp")))
-    throw new ConsentError("MCP 연결은 서포터 기능입니다.");
   const code = secret();
   await db
     .insertInto("mcp_auth_codes")

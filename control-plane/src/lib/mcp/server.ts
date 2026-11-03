@@ -6,8 +6,13 @@ import { siteOrigins } from "@/lib/app-api/sites";
 import { ALLOWED_FILE_EXTENSIONS, SDK_URL } from "@/lib/const";
 import { db } from "@/lib/database";
 import { getUserEntitlement } from "@/lib/entitlements";
+import {
+  operatorAlertsConfigured,
+  sendOperatorAlert,
+} from "@/lib/operator-alerts";
 import { DataError } from "@/lib/site-data/validation";
 import { getHomepageUrl } from "@/lib/site-urls";
+import { freeWrite } from "./limits";
 import type { McpGrant } from "./oauth";
 import { naruOrigin } from "./oauth";
 import { sdkReference } from "./sdk-reference";
@@ -20,7 +25,7 @@ import {
   listDocuments,
   setDocument,
 } from "./site-database";
-import { pageWarnings } from "./page-warnings";
+import { databasePlanNeeded, pageWarnings } from "./page-warnings";
 import {
   deleteFile,
   deleteFolder,
@@ -44,12 +49,17 @@ import {
 // connection without the write scope is not offered the tools that change
 // files, collections or documents. Tool text is English, which every
 // MCP app's model reads; it says what Naru is and nothing about who writes.
+// Any account may reach its files (within limits.ts); the database takes the
+// plan, which is where a site that outgrows its files meets it.
 // File mutations affect the publicly served site, so their openWorldHint is true.
 
 const VERSION = "1.0.0";
 
-function instructions(site: Site) {
-  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts websites: every file is served as it is at <site address>/<path>, with no build step. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are never served: the site's configuration (such as _naru/collections.json, which declares its database collections) and the code Naru runs for it (_naru/migrations/, _naru/queries/, _naru/mutations/ and _naru/routes.js, over its own SQL tables). Pages store data in the site's database with the Naru Data SDK 1.1.0, imported from ${SDK_URL}/1.1.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css. To remove something from the site, such as a guestbook, delete its files (delete_folder for a folder), take out the links and code that use it from the other pages (read the remaining pages for links to it). Collections and their documents can't be deleted here: tell the owner they can delete them at ${naruOrigin()}/database.`;
+function instructions(site: Site, entitled: boolean) {
+  const database = entitled
+    ? ""
+    : ` This account has no plan now, so the database isn't open, and pages that store data won't work: tell the owner before building one. ${databasePlanNeeded()}`;
+  return `This server is one Naru (나루) site; when the user says 나루 or Naru, they mean it: ${getHomepageUrl(site.loginName)}, owned by the account "${site.loginName}". Naru hosts websites: every file is served as it is at <site address>/<path>, with no build step. index.html at the root is the home page, and a folder's index.html is that folder's page. Files under _naru/ are never served: the site's configuration (such as _naru/collections.json, which declares its database collections) and the code Naru runs for it (_naru/migrations/, _naru/queries/, _naru/mutations/ and _naru/routes.js, over its own SQL tables). Pages store data in the site's database with the Naru Data SDK 1.1.0, imported from ${SDK_URL}/1.1.0/naru.js and always created as createNaru({ site: "${site.loginName}" }), so pages work on a custom domain too; get_sdk_reference explains it and how to build a guestbook or a blog; configure_collections creates the collections a page needs. Paths are relative to the site's root, such as index.html or css/site.css. To remove something from the site, such as a guestbook, delete its files (delete_folder for a folder), take out the links and code that use it from the other pages (read the remaining pages for links to it). Collections and their documents can't be deleted here: tell the owner they can delete them at ${naruOrigin()}/database.${database}`;
 }
 
 const text = (value: unknown): CallToolResult => ({
@@ -68,17 +78,15 @@ const failure = (message: string): CallToolResult => ({
 
 /**
  * A tool's work, with what can go wrong said to the model: FileError as it is,
- * an account without the plan as such, anything else as Naru's own failure.
+ * an account without what the tool needs as such, anything else as Naru's own
+ * failure.
  */
 function tool<A>(
-  entitled: boolean,
+  open: boolean,
   run: (args: A) => Promise<CallToolResult>,
 ): (args: A) => Promise<CallToolResult> {
   return async (args) => {
-    if (!entitled)
-      return failure(
-        `Naru MCP is part of the Naru supporter plan, which this account doesn't have now. The owner can subscribe at ${naruOrigin()}/supporter.`,
-      );
+    if (!open) return failure(databasePlanNeeded());
     try {
       return await run(args);
     } catch (error) {
@@ -116,7 +124,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
   const site: Site = { userId: grant.userId, loginName: grant.loginName };
   const server = new McpServer(
     { name: "naru", title: "Naru (나루)", version: VERSION },
-    { instructions: instructions(site) },
+    { instructions: instructions(site, entitled) },
   );
   const canWrite = grant.scopes.includes("write");
   const database = grant.scopes.includes("database");
@@ -133,7 +141,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         openWorldHint: false,
       },
     },
-    tool(entitled, async () => {
+    tool(true, async () => {
       const [origins, row, entitlement] = await Promise.all([
         siteOrigins([site.loginName]),
         db
@@ -155,6 +163,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
           ? "no end"
           : (entitlement.accessEndsAt?.toISOString() ?? null),
         canWrite,
+        databaseOpen: entitled,
         limits: {
           maxFileBytes: MAX_FILE_BYTES,
           allowedExtensions: ALLOWED_FILE_EXTENSIONS,
@@ -194,7 +203,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         openWorldHint: false,
       },
     },
-    tool(entitled, async ({ folder }: { folder?: string }) => {
+    tool(true, async ({ folder }: { folder?: string }) => {
       const listed = await listFiles(site, folderPath(folder));
       return text({
         files: listed.files.map((file) => ({
@@ -223,7 +232,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         openWorldHint: false,
       },
     },
-    tool(entitled, async ({ path: value }: { path: string }) => {
+    tool(true, async ({ path: value }: { path: string }) => {
       const path = filePath(value);
       const file = await readFile(site, path);
       if (file.kind === "text") return text(file.text);
@@ -533,7 +542,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
       },
     },
     tool(
-      entitled,
+      true,
       async ({
         path: value,
         content,
@@ -545,15 +554,45 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
       }) => {
         const path = filePath(value);
         const body = Buffer.from(content, encoding ?? "utf8");
+        let overCap: string | null = null;
+        if (!entitled) {
+          const { home_directory_size_bytes: siteBytes } = await db
+            .selectFrom("users")
+            .select("home_directory_size_bytes")
+            .where("id", "=", site.userId)
+            .executeTakeFirstOrThrow();
+          const write = freeWrite(site.userId, body.length, siteBytes ?? 0);
+          if (write.refused !== undefined) {
+            console.warn(`[mcp-limit] ${site.loginName}: ${write.refused}`);
+            return failure(
+              `${write.refused} The owner can lift this at ${naruOrigin()}/supporter.`,
+            );
+          }
+          if (write.over)
+            overCap = `${write.over}, past the limit without a plan. The file was saved, but the owner should know; they can lift it at ${naruOrigin()}/supporter.`;
+          if (write.crossed) {
+            console.warn(`[mcp-limit] ${site.loginName}: ${write.over}`);
+            // In the background: an alert never holds up the owner's write.
+            if (operatorAlertsConfigured())
+              void sendOperatorAlert({
+                title: "MCP 기준 초과",
+                lines: [`${site.loginName}: ${write.over}`],
+              }).catch((error) => Sentry.captureException(error));
+          }
+        }
         const result = await writeFile(site, path, body);
         const warnings =
-          encoding === "base64" ? [] : await pageWarnings(site, path, content);
+          encoding === "base64"
+            ? []
+            : await pageWarnings(site, path, content, entitled);
         return text({
           path,
           created: result.created,
           size: result.size,
           url: fileUrl(site, path),
-          ...(warnings.length && { warnings }),
+          ...((warnings.length || overCap) && {
+            warnings: [...warnings, ...(overCap ? [overCap] : [])],
+          }),
         });
       },
     ),
@@ -576,7 +615,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         openWorldHint: true,
       },
     },
-    tool(entitled, async ({ from, to }: { from: string; to: string }) => {
+    tool(true, async ({ from, to }: { from: string; to: string }) => {
       const source = filePath(from);
       const target = filePath(to);
       await moveFile(site, source, target);
@@ -603,7 +642,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
         openWorldHint: true,
       },
     },
-    tool(entitled, async ({ path: value }: { path: string }) => {
+    tool(true, async ({ path: value }: { path: string }) => {
       const path = filePath(value);
       await deleteFile(site, path);
       return text({ deleted: path });
@@ -637,7 +676,7 @@ export function naruMcpServer(grant: McpGrant, entitled: boolean) {
       },
     },
     tool(
-      entitled,
+      true,
       async ({ folder, fileCount }: { folder: string; fileCount: number }) => {
         const path = folderPath(folder);
         const deleted = await deleteFolder(site, path, fileCount);

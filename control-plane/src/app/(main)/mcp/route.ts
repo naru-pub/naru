@@ -1,6 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { userHasFeature } from "@/lib/entitlements";
 import { CORS, preflight } from "@/lib/mcp/http";
+import { overRequestLimit } from "@/lib/mcp/limits";
 import {
   grantForAccessToken,
   mcpResource,
@@ -13,24 +14,6 @@ import { naruMcpServer } from "@/lib/mcp/server";
 // server made for it, so any control-plane process can take any request and
 // nothing is kept between them. There is no server-to-app stream, so GET and
 // DELETE are refused, as the transport allows.
-
-/** Requests one connection may make a minute, per control-plane process. */
-const REQUESTS_PER_MINUTE = 120;
-const windows = new Map<string, { start: number; count: number }>();
-
-function overLimit(grantId: string) {
-  const now = Date.now();
-  if (windows.size > 10_000)
-    for (const [id, window] of windows)
-      if (now - window.start >= 60_000) windows.delete(id);
-  const window = windows.get(grantId);
-  if (!window || now - window.start >= 60_000) {
-    windows.set(grantId, { start: now, count: 1 });
-    return false;
-  }
-  window.count += 1;
-  return window.count > REQUESTS_PER_MINUTE;
-}
 
 /**
  * The largest request, which the transport counts as it arrives and answers
@@ -61,16 +44,14 @@ export async function POST(request: Request) {
   const match = /^Bearer (\S+)$/i.exec(header);
   const grant = match ? await grantForAccessToken(match[1]) : null;
   if (!grant) return unauthorized(!!match);
-  if (overLimit(grant.grantId))
+  const entitled = await userHasFeature(grant.userId, "database");
+  if (overRequestLimit(grant.userId, entitled))
     return Response.json(
       { error: "rate_limited" },
       { status: 429, headers: { ...CORS, "Retry-After": "60" } },
     );
 
-  const server = naruMcpServer(
-    grant,
-    await userHasFeature(grant.userId, "mcp"),
-  );
+  const server = naruMcpServer(grant, entitled);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

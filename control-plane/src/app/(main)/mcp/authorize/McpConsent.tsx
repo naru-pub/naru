@@ -80,45 +80,42 @@ export default function McpConsent({
           연결이 아니라면 취소하세요.
         </p>
       )}
-      {entitled ? (
-        <>
-          <fieldset className="space-y-3">
-            <legend className="mb-2 font-bold">허용할 일</legend>
-            {scopes.map((scope) => (
-              <div key={scope} className="flex items-center gap-2">
-                <Checkbox
-                  id={`scope-${scope}`}
-                  checked={kept.includes(scope)}
-                  disabled={busy}
-                  onCheckedChange={(checked) =>
-                    setKept(
-                      scopes.filter((s) =>
-                        s === scope ? checked === true : kept.includes(s),
-                      ),
-                    )
-                  }
-                />
-                <Label htmlFor={`scope-${scope}`}>{SCOPE_LABELS[scope]}</Label>
-              </div>
-            ))}
-          </fieldset>
-          <p className="text-sm text-muted-foreground">
-            앱은 사이트 파일과 데이터베이스만 다루며, 계정 설정과 결제는 다룰 수
-            없습니다. 데이터베이스 문서에는 방문자가 쓴 글이 있어, 앱이 그 글에
-            휘둘릴 수 있으니 필요할 때만 허용하세요.{" "}
-            <Link href="/account" className="underline">
-              계정
-            </Link>
-            에서 언제든 연결을 끊을 수 있습니다.
-          </p>
-        </>
-      ) : (
-        <p>
-          MCP 연결은{" "}
+      <fieldset className="space-y-3">
+        <legend className="mb-2 font-bold">허용할 일</legend>
+        {scopes.map((scope) => (
+          <div key={scope} className="flex items-center gap-2">
+            <Checkbox
+              id={`scope-${scope}`}
+              checked={kept.includes(scope)}
+              disabled={busy}
+              onCheckedChange={(checked) =>
+                setKept(
+                  scopes.filter((s) =>
+                    s === scope ? checked === true : kept.includes(s),
+                  ),
+                )
+              }
+            />
+            <Label htmlFor={`scope-${scope}`}>{SCOPE_LABELS[scope]}</Label>
+          </div>
+        ))}
+      </fieldset>
+      <p className="text-sm text-muted-foreground">
+        앱은 사이트 파일과 데이터베이스만 다루며, 계정 설정과 결제는 다룰 수
+        없습니다. 데이터베이스 문서에는 방문자가 쓴 글이 있어, 앱이 그 글에
+        휘둘릴 수 있으니 필요할 때만 허용하세요.{" "}
+        <Link href="/account" className="underline">
+          계정
+        </Link>
+        에서 언제든 연결을 끊을 수 있습니다.
+      </p>
+      {!entitled && (
+        <p className="text-sm">
+          파일은 누구나 다룰 수 있고, 데이터베이스는{" "}
           <Link href="/supporter" className="underline">
             서포터 플랜
-          </Link>{" "}
-          기능입니다.
+          </Link>
+          이 있어야 쓸 수 있습니다.
         </p>
       )}
       {error && (
@@ -127,14 +124,12 @@ export default function McpConsent({
         </p>
       )}
       <div className="flex gap-3">
-        {entitled && (
-          <Button
-            disabled={busy || kept.length === 0}
-            onClick={() => answer(true)}
-          >
-            연결
-          </Button>
-        )}
+        <Button
+          disabled={busy || kept.length === 0}
+          onClick={() => answer(true)}
+        >
+          연결
+        </Button>
         <Button disabled={busy} variant="outline" onClick={() => answer(false)}>
           취소
         </Button>

@@ -1,9 +1,9 @@
 # Naru MCP
 
 Apps that speak the Model Context Protocol connect to an account's site at
-`https://naru.pub/mcp` and read and change its files. It is a supporter
-feature (`mcp` in `lib/entitlements.ts`), like the other automated ways to
-publish (GitHub App and CI deploys). People find it on `/account` and
+`https://naru.pub/mcp` and read and change its files. Any account may, within
+`lib/mcp/limits.ts`; the database's tools take the `database` feature, so a
+site that outgrows its files meets the plan where it needs it. People find it on `/account` and
 `/docs/mcp`; naru.pub doesn't promote it elsewhere.
 
 ## What a connection reaches
@@ -89,8 +89,8 @@ none`); redirect URIs are https, loopback http (RFC 8252 §7.3) or a
    after a day; at most 500 are accepted an hour.
 3. The person opens `/mcp/authorize`, signs in on `/login` if needed, sees
    the app's self-declared name next to the host it returns to, keeps or
-   drops `write`, and approves. Accounts without the feature are pointed to
-   `/supporter`.
+   drops `write`, and approves. Accounts without the database are told it
+   takes `/supporter`.
 4. The app exchanges the code (PKCE S256, 10 minutes, one use) at
    `/api/mcp/oauth/token` for a 1-hour access token and a refresh token.
 
@@ -108,7 +108,8 @@ answer it lost is signed out the same way; the person connects again.
 
 Every request looks the grant up, so revoking on `/account` takes effect at
 once. A grant unused for 30 days can't be refreshed. The account losing the
-plan keeps its grants but every tool answers that the plan is needed.
+plan keeps its grants and its files; the database's tools answer that the
+plan is needed.
 
 ## Transport
 

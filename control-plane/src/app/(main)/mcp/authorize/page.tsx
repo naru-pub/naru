@@ -65,7 +65,7 @@ export default async function McpAuthorizePage({
       loopback={isLoopbackRedirect(input.redirectUri)}
       scopes={input.scopes}
       account={user.loginName}
-      entitled={await userHasFeature(user.id, "mcp")}
+      entitled={await userHasFeature(user.id, "database")}
     />
   );
 }

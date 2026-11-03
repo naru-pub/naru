@@ -20,7 +20,7 @@ export default async function AccountPage() {
   }
   const [mcpConnections, mcpEntitled] = await Promise.all([
     listGrants(user.id),
-    userHasFeature(user.id, "mcp"),
+    userHasFeature(user.id, "database"),
   ]);
 
   return (
