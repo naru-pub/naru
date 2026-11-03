@@ -1,8 +1,8 @@
 ---
 title: AI와 함께 홈페이지 만들기
-pageTitle: MCP 연결 | 나루
+pageTitle: AI 앱 연결 | 나루
 description: MCP를 지원하는 앱에서 나루 사이트의 파일과 데이터베이스를 다루는 방법
-path: MCP
+path: AI
 links: [연결된 앱 보기 →](/account) [서포터 →](/supporter)
 ---
 
@@ -104,6 +104,6 @@ MCP(Model Context Protocol)는 AI 앱이 다른 서비스를 쓸 수 있게 하�
 
 ## 05 · 연결 끊기 {#disconnect}
 
-[계정](/account)의 ‘MCP 연결’에서 앱마다 ‘연결 끊기’를 누르면 그 앱은 바로
+[계정](/account)의 ‘AI 앱 연결’에서 앱마다 ‘연결 끊기’를 누르면 그 앱은 바로
 사이트를 읽거나 고칠 수 없게 돼요. 30일 동안 쓰지 않은 연결은 다시 로그인해야 해요. 서포터
 기간이 끝나면 연결은 그대로 남아 파일을 다룰 수 있지만, 다시 서포터가 될 때까지 데이터베이스는 다룰 수 없어요.

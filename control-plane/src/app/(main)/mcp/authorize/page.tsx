@@ -12,7 +12,7 @@ import {
 import McpConsent from "./McpConsent";
 import { PANEL } from "./panel";
 
-export const metadata: Metadata = { title: "MCP 연결 · 나루" };
+export const metadata: Metadata = { title: "AI 앱 연결 · 나루" };
 
 const FIELDS = [
   "response_type",

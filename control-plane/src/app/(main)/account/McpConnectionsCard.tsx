@@ -69,7 +69,7 @@ export default function McpConnectionsCard({
     <Card className="bg-card border-2 border-line">
       <CardHeader className="border-b border-border">
         <CardTitle className="text-foreground text-xl font-bold flex items-center gap-2">
-          <Plug size={20} /> MCP 연결
+          <Plug size={20} /> AI 앱 연결
         </CardTitle>
       </CardHeader>
       <CardContent className="p-6 space-y-4">

@@ -14,7 +14,7 @@ export default function DocsNav({
   const forEveryone = [
     ["/docs", "길잡이", "home"],
     ["/docs/files", "파일 편집기", "files"],
-    ["/docs/mcp", "MCP 연결", "mcp"],
+    ["/docs/mcp", "AI 앱 연결", "mcp"],
     ["/docs/using-templates", "템플릿 쓰기", "using-templates"],
   ];
   const forDevelopers = [

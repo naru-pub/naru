@@ -60,7 +60,7 @@ export default function McpConsent({
 
   return (
     <div className={PANEL}>
-      <h1 className="text-2xl font-bold">MCP 연결</h1>
+      <h1 className="text-2xl font-bold">AI 앱 연결</h1>
       <p>
         <strong>{appName}</strong>이(가) <strong>{account}</strong>의 사이트에
         연결하려고 합니다.

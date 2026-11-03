@@ -17,7 +17,7 @@ const GUIDES = [
   },
   {
     href: "/docs/mcp",
-    title: "MCP 연결",
+    title: "AI 앱 연결",
     summary: "AI 앱을 연결해서 말로 부탁해 홈페이지 파일을 고쳐요.",
   },
   {

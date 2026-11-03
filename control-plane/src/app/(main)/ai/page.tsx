@@ -122,7 +122,7 @@ export default async function ConnectAiApp() {
             href="/docs/mcp"
             className="text-link underline-offset-4 hover:underline"
           >
-            MCP 길잡이
+            AI 앱 연결 길잡이
           </Link>
           에 있어요.
         </p>
