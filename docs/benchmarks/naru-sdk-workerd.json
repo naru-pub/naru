@@ -1,0 +1,1992 @@
+{
+  "sites1000": {
+    "recordedAt": "2026-11-03T13:39:47.474Z",
+    "boundary": "workerd router and shards over loopback HTTP; no Caddy, TLS, network or control plane; site code from a local bucket",
+    "machine": {
+      "model": "Mac17,2",
+      "cores": 10,
+      "memoryGb": 24
+    },
+    "workerd": "npm's",
+    "node": "v26.12.0",
+    "options": {
+      "sites": 1000,
+      "docs": 100,
+      "shards": 4,
+      "seconds": 8,
+      "levels": [
+        4,
+        16,
+        64,
+        256
+      ]
+    },
+    "seeding": {
+      "sitesPerSecond": 83.8,
+      "databases": 1004,
+      "diskMb": 39,
+      "diskKbPerSite": 40
+    },
+    "scenarios": {
+      "read": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 9929,
+          "latencyMs": {
+            "p50": 0.31,
+            "p95": 0.54,
+            "p99": 0.85,
+            "max": 78.41
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 9929,
+              "p50": 0.31,
+              "p95": 0.54,
+              "p99": 0.85,
+              "max": 78.41
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 79430
+          },
+          "failures": {},
+          "busiestShardCores": 0.43,
+          "shardCores": 1.72,
+          "routerCores": 0.66,
+          "maxShardRssMb": 571,
+          "generatorBusy": 0.13
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 12849,
+          "latencyMs": {
+            "p50": 0.93,
+            "p95": 1.67,
+            "p99": 14.13,
+            "max": 94.85
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 12849,
+              "p50": 0.93,
+              "p95": 1.67,
+              "p99": 14.13,
+              "max": 94.85
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 102792
+          },
+          "failures": {},
+          "busiestShardCores": 0.62,
+          "shardCores": 2.47,
+          "routerCores": 0.8,
+          "maxShardRssMb": 640,
+          "generatorBusy": 0.21
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 10620,
+          "latencyMs": {
+            "p50": 4.48,
+            "p95": 11.77,
+            "p99": 34.94,
+            "max": 182.36
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 10620,
+              "p50": 4.48,
+              "p95": 11.77,
+              "p99": 34.94,
+              "max": 182.36
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 84962
+          },
+          "failures": {},
+          "busiestShardCores": 0.64,
+          "shardCores": 2.55,
+          "routerCores": 0.87,
+          "maxShardRssMb": 651,
+          "generatorBusy": 0.18
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 10339,
+          "latencyMs": {
+            "p50": 20.34,
+            "p95": 47.29,
+            "p99": 129.96,
+            "max": 190.91
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 10339,
+              "p50": 20.34,
+              "p95": 47.29,
+              "p99": 129.96,
+              "max": 190.91
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 82709
+          },
+          "failures": {},
+          "busiestShardCores": 0.6,
+          "shardCores": 2.38,
+          "routerCores": 0.92,
+          "maxShardRssMb": 709,
+          "generatorBusy": 0.16
+        }
+      ],
+      "list": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 4417,
+          "latencyMs": {
+            "p50": 0.72,
+            "p95": 1.65,
+            "p99": 3.61,
+            "max": 67.84
+          },
+          "byKind": {
+            "list": {
+              "requestsPerSecond": 4417,
+              "p50": 0.72,
+              "p95": 1.65,
+              "p99": 3.61,
+              "max": 67.84
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 35339
+          },
+          "failures": {},
+          "busiestShardCores": 0.51,
+          "shardCores": 2.01,
+          "routerCores": 0.5,
+          "maxShardRssMb": 709,
+          "generatorBusy": 0.11
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 4617,
+          "latencyMs": {
+            "p50": 2.44,
+            "p95": 7.53,
+            "p99": 12.9,
+            "max": 485.31
+          },
+          "byKind": {
+            "list": {
+              "requestsPerSecond": 4617,
+              "p50": 2.44,
+              "p95": 7.53,
+              "p99": 12.9,
+              "max": 485.31
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 36939
+          },
+          "failures": {},
+          "busiestShardCores": 0.68,
+          "shardCores": 2.7,
+          "routerCores": 0.63,
+          "maxShardRssMb": 710,
+          "generatorBusy": 0.17
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 6855,
+          "latencyMs": {
+            "p50": 7.37,
+            "p95": 19.17,
+            "p99": 41.22,
+            "max": 244.31
+          },
+          "byKind": {
+            "list": {
+              "requestsPerSecond": 6855,
+              "p50": 7.37,
+              "p95": 19.17,
+              "p99": 41.22,
+              "max": 244.31
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 54840
+          },
+          "failures": {},
+          "busiestShardCores": 0.82,
+          "shardCores": 3.24,
+          "routerCores": 0.75,
+          "maxShardRssMb": 678,
+          "generatorBusy": 0.19
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 9000,
+          "latencyMs": {
+            "p50": 23.54,
+            "p95": 57.31,
+            "p99": 156.14,
+            "max": 310
+          },
+          "byKind": {
+            "list": {
+              "requestsPerSecond": 9000,
+              "p50": 23.54,
+              "p95": 57.31,
+              "p99": 156.14,
+              "max": 310
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 72001
+          },
+          "failures": {},
+          "busiestShardCores": 0.9,
+          "shardCores": 3.58,
+          "routerCores": 0.84,
+          "maxShardRssMb": 675,
+          "generatorBusy": 0.16
+        }
+      ],
+      "read one site": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 7176,
+          "latencyMs": {
+            "p50": 0.41,
+            "p95": 0.86,
+            "p99": 1.65,
+            "max": 167.92
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 7176,
+              "p50": 0.41,
+              "p95": 0.86,
+              "p99": 1.65,
+              "max": 167.92
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 57407
+          },
+          "failures": {},
+          "busiestShardCores": 0.94,
+          "shardCores": 0.94,
+          "routerCores": 0.51,
+          "maxShardRssMb": 672,
+          "generatorBusy": 0.1
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 7251,
+          "latencyMs": {
+            "p50": 1.32,
+            "p95": 2.73,
+            "p99": 17.89,
+            "max": 718.61
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 7251,
+              "p50": 1.32,
+              "p95": 2.73,
+              "p99": 17.89,
+              "max": 718.61
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 58008
+          },
+          "failures": {},
+          "busiestShardCores": 0.88,
+          "shardCores": 1.03,
+          "routerCores": 0.5,
+          "maxShardRssMb": 660,
+          "generatorBusy": 0.08
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 7215,
+          "latencyMs": {
+            "p50": 5.95,
+            "p95": 13.26,
+            "p99": 62.88,
+            "max": 1425.78
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 7215,
+              "p50": 5.95,
+              "p95": 13.26,
+              "p99": 62.88,
+              "max": 1425.78
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 57723
+          },
+          "failures": {},
+          "busiestShardCores": 0.95,
+          "shardCores": 0.95,
+          "routerCores": 0.61,
+          "maxShardRssMb": 661,
+          "generatorBusy": 0.09
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 7629,
+          "latencyMs": {
+            "p50": 16.89,
+            "p95": 39.53,
+            "p99": 1116.83,
+            "max": 1322.7
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 7629,
+              "p50": 16.89,
+              "p95": 39.53,
+              "p99": 1116.83,
+              "max": 1322.7
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 61034
+          },
+          "failures": {
+            "ECONNRESET": 6
+          },
+          "busiestShardCores": 0.98,
+          "shardCores": 0.98,
+          "routerCores": 0.6,
+          "maxShardRssMb": 677,
+          "generatorBusy": 0.09
+        }
+      ],
+      "read direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 14275,
+          "latencyMs": {
+            "p50": 0.2,
+            "p95": 0.42,
+            "p99": 0.58,
+            "max": 132.98
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 14275,
+              "p50": 0.2,
+              "p95": 0.42,
+              "p99": 0.58,
+              "max": 132.98
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 114199
+          },
+          "failures": {},
+          "busiestShardCores": 0.53,
+          "shardCores": 2.11,
+          "routerCores": 0,
+          "maxShardRssMb": 744,
+          "generatorBusy": 0.15
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 15171,
+          "latencyMs": {
+            "p50": 0.65,
+            "p95": 2.11,
+            "p99": 5.65,
+            "max": 159.65
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 15171,
+              "p50": 0.65,
+              "p95": 2.11,
+              "p99": 5.65,
+              "max": 159.65
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 121369
+          },
+          "failures": {},
+          "busiestShardCores": 0.71,
+          "shardCores": 2.81,
+          "routerCores": 0,
+          "maxShardRssMb": 688,
+          "generatorBusy": 0.27
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 22696,
+          "latencyMs": {
+            "p50": 1.62,
+            "p95": 6.84,
+            "p99": 23.66,
+            "max": 175.13
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 22696,
+              "p50": 1.62,
+              "p95": 6.84,
+              "p99": 23.66,
+              "max": 175.13
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 181568
+          },
+          "failures": {},
+          "busiestShardCores": 0.81,
+          "shardCores": 3.22,
+          "routerCores": 0,
+          "maxShardRssMb": 735,
+          "generatorBusy": 0.28
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 25307,
+          "latencyMs": {
+            "p50": 4.9,
+            "p95": 33.59,
+            "p99": 45.45,
+            "max": 195.22
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 25307,
+              "p50": 4.9,
+              "p95": 33.59,
+              "p99": 45.45,
+              "max": 195.22
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 202454
+          },
+          "failures": {
+            "ECONNRESET": 934,
+            "EPIPE": 45
+          },
+          "busiestShardCores": 0.91,
+          "shardCores": 3.6,
+          "routerCores": 0,
+          "maxShardRssMb": 758,
+          "generatorBusy": 0.29
+        }
+      ],
+      "query direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 1970,
+          "latencyMs": {
+            "p50": 1.6,
+            "p95": 3.52,
+            "p99": 5.04,
+            "max": 100.88
+          },
+          "byKind": {
+            "query": {
+              "requestsPerSecond": 1970,
+              "p50": 1.6,
+              "p95": 3.52,
+              "p99": 5.04,
+              "max": 100.88
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 15762
+          },
+          "failures": {},
+          "busiestShardCores": 0.66,
+          "shardCores": 2.59,
+          "routerCores": 0,
+          "maxShardRssMb": 784,
+          "generatorBusy": 0.03
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 3070,
+          "latencyMs": {
+            "p50": 3.99,
+            "p95": 12.56,
+            "p99": 19.33,
+            "max": 69.42
+          },
+          "byKind": {
+            "query": {
+              "requestsPerSecond": 3070,
+              "p50": 3.99,
+              "p95": 12.56,
+              "p99": 19.33,
+              "max": 69.42
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 24557
+          },
+          "failures": {},
+          "busiestShardCores": 0.9,
+          "shardCores": 3.58,
+          "routerCores": 0,
+          "maxShardRssMb": 729,
+          "generatorBusy": 0.06
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 2943,
+          "latencyMs": {
+            "p50": 15.5,
+            "p95": 60.76,
+            "p99": 96.52,
+            "max": 200.39
+          },
+          "byKind": {
+            "query": {
+              "requestsPerSecond": 2943,
+              "p50": 15.5,
+              "p95": 60.76,
+              "p99": 96.52,
+              "max": 200.39
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 23542
+          },
+          "failures": {},
+          "busiestShardCores": 0.97,
+          "shardCores": 3.87,
+          "routerCores": 0,
+          "maxShardRssMb": 698,
+          "generatorBusy": 0.07
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 3399,
+          "latencyMs": {
+            "p50": 62.06,
+            "p95": 185.41,
+            "p99": 251.76,
+            "max": 428.36
+          },
+          "byKind": {
+            "query": {
+              "requestsPerSecond": 3399,
+              "p50": 62.06,
+              "p95": 185.41,
+              "p99": 251.76,
+              "max": 428.36
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 27190
+          },
+          "failures": {},
+          "busiestShardCores": 1,
+          "shardCores": 3.99,
+          "routerCores": 0,
+          "maxShardRssMb": 689,
+          "generatorBusy": 0.07
+        }
+      ],
+      "write direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 8878,
+          "latencyMs": {
+            "p50": 0.32,
+            "p95": 0.8,
+            "p99": 1.35,
+            "max": 166.14
+          },
+          "byKind": {
+            "write": {
+              "requestsPerSecond": 8878,
+              "p50": 0.32,
+              "p95": 0.8,
+              "p99": 1.35,
+              "max": 166.14
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 71027
+          },
+          "failures": {},
+          "busiestShardCores": 0.53,
+          "shardCores": 2.12,
+          "routerCores": 0,
+          "maxShardRssMb": 732,
+          "generatorBusy": 0.13
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 10340,
+          "latencyMs": {
+            "p50": 1.06,
+            "p95": 3.38,
+            "p99": 9,
+            "max": 115.15
+          },
+          "byKind": {
+            "write": {
+              "requestsPerSecond": 10340,
+              "p50": 1.06,
+              "p95": 3.38,
+              "p99": 9,
+              "max": 115.15
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 82719
+          },
+          "failures": {},
+          "busiestShardCores": 0.71,
+          "shardCores": 2.8,
+          "routerCores": 0,
+          "maxShardRssMb": 677,
+          "generatorBusy": 0.23
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 15105,
+          "latencyMs": {
+            "p50": 2.52,
+            "p95": 12.72,
+            "p99": 25.57,
+            "max": 116.76
+          },
+          "byKind": {
+            "write": {
+              "requestsPerSecond": 15105,
+              "p50": 2.52,
+              "p95": 12.72,
+              "p99": 25.57,
+              "max": 116.76
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 120843
+          },
+          "failures": {},
+          "busiestShardCores": 0.79,
+          "shardCores": 3.13,
+          "routerCores": 0,
+          "maxShardRssMb": 599,
+          "generatorBusy": 0.22
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 12704,
+          "latencyMs": {
+            "p50": 13.55,
+            "p95": 55.31,
+            "p99": 128.15,
+            "max": 190.99
+          },
+          "byKind": {
+            "write": {
+              "requestsPerSecond": 12704,
+              "p50": 13.55,
+              "p95": 55.31,
+              "p99": 128.15,
+              "max": 190.99
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 101635
+          },
+          "failures": {},
+          "busiestShardCores": 0.66,
+          "shardCores": 2.62,
+          "routerCores": 0,
+          "maxShardRssMb": 574,
+          "generatorBusy": 0.17
+        }
+      ],
+      "mutation direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 1743,
+          "latencyMs": {
+            "p50": 1.71,
+            "p95": 4.3,
+            "p99": 7.87,
+            "max": 67.63
+          },
+          "byKind": {
+            "mutation": {
+              "requestsPerSecond": 1743,
+              "p50": 1.71,
+              "p95": 4.3,
+              "p99": 7.87,
+              "max": 67.63
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 13941
+          },
+          "failures": {},
+          "busiestShardCores": 0.56,
+          "shardCores": 2.18,
+          "routerCores": 0,
+          "maxShardRssMb": 549,
+          "generatorBusy": 0.04
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 2230,
+          "latencyMs": {
+            "p50": 5.64,
+            "p95": 17.48,
+            "p99": 25.13,
+            "max": 85.03
+          },
+          "byKind": {
+            "mutation": {
+              "requestsPerSecond": 2230,
+              "p50": 5.64,
+              "p95": 17.48,
+              "p99": 25.13,
+              "max": 85.03
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 17840
+          },
+          "failures": {},
+          "busiestShardCores": 0.77,
+          "shardCores": 3.05,
+          "routerCores": 0,
+          "maxShardRssMb": 507,
+          "generatorBusy": 0.06
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 2740,
+          "latencyMs": {
+            "p50": 17.92,
+            "p95": 60.71,
+            "p99": 81.19,
+            "max": 105.72
+          },
+          "byKind": {
+            "mutation": {
+              "requestsPerSecond": 2740,
+              "p50": 17.92,
+              "p95": 60.71,
+              "p99": 81.19,
+              "max": 105.72
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 21917
+          },
+          "failures": {},
+          "busiestShardCores": 0.77,
+          "shardCores": 3.05,
+          "routerCores": 0,
+          "maxShardRssMb": 512,
+          "generatorBusy": 0.06
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 2831,
+          "latencyMs": {
+            "p50": 78.29,
+            "p95": 218.52,
+            "p99": 272.1,
+            "max": 387.72
+          },
+          "byKind": {
+            "mutation": {
+              "requestsPerSecond": 2831,
+              "p50": 78.29,
+              "p95": 218.52,
+              "p99": 272.1,
+              "max": 387.72
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 22646
+          },
+          "failures": {},
+          "busiestShardCores": 0.78,
+          "shardCores": 3.08,
+          "routerCores": 0,
+          "maxShardRssMb": 504,
+          "generatorBusy": 0.05
+        }
+      ],
+      "mix direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 5406,
+          "latencyMs": {
+            "p50": 0.37,
+            "p95": 2.06,
+            "p99": 3.7,
+            "max": 47.09
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 3775,
+              "p50": 0.25,
+              "p95": 1.49,
+              "p99": 2.31,
+              "max": 47.09
+            },
+            "list": {
+              "requestsPerSecond": 662,
+              "p50": 0.45,
+              "p95": 1.72,
+              "p99": 5.54,
+              "max": 45.7
+            },
+            "query": {
+              "requestsPerSecond": 636,
+              "p50": 1.6,
+              "p95": 3.3,
+              "p99": 5.56,
+              "max": 35.72
+            },
+            "write": {
+              "requestsPerSecond": 170,
+              "p50": 0.48,
+              "p95": 1.76,
+              "p99": 2.58,
+              "max": 37.94
+            },
+            "mutation": {
+              "requestsPerSecond": 163,
+              "p50": 1.68,
+              "p95": 3.31,
+              "p99": 4.69,
+              "max": 11.13
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 43247
+          },
+          "failures": {},
+          "busiestShardCores": 0.53,
+          "shardCores": 2.09,
+          "routerCores": 0,
+          "maxShardRssMb": 517,
+          "generatorBusy": 0.08
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 8599,
+          "latencyMs": {
+            "p50": 1.24,
+            "p95": 5.57,
+            "p99": 10.04,
+            "max": 53.92
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 5999,
+              "p50": 0.87,
+              "p95": 4.34,
+              "p99": 8.9,
+              "max": 53.92
+            },
+            "list": {
+              "requestsPerSecond": 1046,
+              "p50": 1.1,
+              "p95": 4.66,
+              "p99": 9.51,
+              "max": 50.49
+            },
+            "query": {
+              "requestsPerSecond": 1034,
+              "p50": 2.89,
+              "p95": 8.74,
+              "p99": 14.11,
+              "max": 52.84
+            },
+            "write": {
+              "requestsPerSecond": 261,
+              "p50": 1.22,
+              "p95": 4.87,
+              "p99": 10,
+              "max": 48.61
+            },
+            "mutation": {
+              "requestsPerSecond": 260,
+              "p50": 2.95,
+              "p95": 8.49,
+              "p99": 14.23,
+              "max": 46.31
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 68795
+          },
+          "failures": {},
+          "busiestShardCores": 0.8,
+          "shardCores": 3.16,
+          "routerCores": 0,
+          "maxShardRssMb": 536,
+          "generatorBusy": 0.14
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 8950,
+          "latencyMs": {
+            "p50": 4.25,
+            "p95": 22.44,
+            "p99": 39.69,
+            "max": 109.06
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 6283,
+              "p50": 3.54,
+              "p95": 19.29,
+              "p99": 32.25,
+              "max": 86.31
+            },
+            "list": {
+              "requestsPerSecond": 1059,
+              "p50": 3.82,
+              "p95": 19.46,
+              "p99": 32.03,
+              "max": 87.75
+            },
+            "query": {
+              "requestsPerSecond": 1069,
+              "p50": 9.69,
+              "p95": 34.88,
+              "p99": 55.07,
+              "max": 109.06
+            },
+            "write": {
+              "requestsPerSecond": 268,
+              "p50": 4.45,
+              "p95": 20.16,
+              "p99": 35.26,
+              "max": 84.26
+            },
+            "mutation": {
+              "requestsPerSecond": 272,
+              "p50": 8.61,
+              "p95": 34.14,
+              "p99": 62.17,
+              "max": 84.34
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 71602
+          },
+          "failures": {},
+          "busiestShardCores": 0.91,
+          "shardCores": 3.61,
+          "routerCores": 0,
+          "maxShardRssMb": 523,
+          "generatorBusy": 0.16
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 9886,
+          "latencyMs": {
+            "p50": 15.91,
+            "p95": 84.78,
+            "p99": 136.28,
+            "max": 311.83
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 6938,
+              "p50": 13.71,
+              "p95": 74.67,
+              "p99": 112.72,
+              "max": 179.1
+            },
+            "list": {
+              "requestsPerSecond": 1185,
+              "p50": 14.09,
+              "p95": 75.33,
+              "p99": 113.12,
+              "max": 173.08
+            },
+            "query": {
+              "requestsPerSecond": 1165,
+              "p50": 34.15,
+              "p95": 131.7,
+              "p99": 183.59,
+              "max": 311.83
+            },
+            "write": {
+              "requestsPerSecond": 297,
+              "p50": 15.71,
+              "p95": 87.02,
+              "p99": 124.2,
+              "max": 165.42
+            },
+            "mutation": {
+              "requestsPerSecond": 300,
+              "p50": 32.26,
+              "p95": 128.29,
+              "p99": 181.09,
+              "max": 290.52
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 79085
+          },
+          "failures": {},
+          "busiestShardCores": 0.96,
+          "shardCores": 3.83,
+          "routerCores": 0,
+          "maxShardRssMb": 540,
+          "generatorBusy": 0.17
+        }
+      ],
+      "zipf mix direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 4697,
+          "latencyMs": {
+            "p50": 0.37,
+            "p95": 2.89,
+            "p99": 5.9,
+            "max": 68.26
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 3291,
+              "p50": 0.25,
+              "p95": 1.76,
+              "p99": 3.81,
+              "max": 67.38
+            },
+            "list": {
+              "requestsPerSecond": 567,
+              "p50": 0.45,
+              "p95": 2.28,
+              "p99": 7.26,
+              "max": 67.35
+            },
+            "query": {
+              "requestsPerSecond": 558,
+              "p50": 1.58,
+              "p95": 4.77,
+              "p99": 9.09,
+              "max": 68.26
+            },
+            "write": {
+              "requestsPerSecond": 142,
+              "p50": 0.49,
+              "p95": 2.2,
+              "p99": 4.64,
+              "max": 67.83
+            },
+            "mutation": {
+              "requestsPerSecond": 140,
+              "p50": 1.62,
+              "p95": 3.89,
+              "p99": 6.76,
+              "max": 12.79
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 37579
+          },
+          "failures": {},
+          "busiestShardCores": 0.55,
+          "shardCores": 1.96,
+          "routerCores": 0,
+          "maxShardRssMb": 499,
+          "generatorBusy": 0.07
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 8456,
+          "latencyMs": {
+            "p50": 1.27,
+            "p95": 5.93,
+            "p99": 10.52,
+            "max": 81.67
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 5923,
+              "p50": 0.88,
+              "p95": 4.99,
+              "p99": 9.51,
+              "max": 78.75
+            },
+            "list": {
+              "requestsPerSecond": 1031,
+              "p50": 1.1,
+              "p95": 5.35,
+              "p99": 9.97,
+              "max": 74.69
+            },
+            "query": {
+              "requestsPerSecond": 989,
+              "p50": 2.54,
+              "p95": 9.08,
+              "p99": 15.12,
+              "max": 81.67
+            },
+            "write": {
+              "requestsPerSecond": 257,
+              "p50": 1.27,
+              "p95": 5.66,
+              "p99": 10.73,
+              "max": 67.35
+            },
+            "mutation": {
+              "requestsPerSecond": 256,
+              "p50": 2.4,
+              "p95": 8.3,
+              "p99": 13.53,
+              "max": 19.84
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 67649
+          },
+          "failures": {},
+          "busiestShardCores": 0.87,
+          "shardCores": 2.96,
+          "routerCores": 0,
+          "maxShardRssMb": 509,
+          "generatorBusy": 0.13
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 9043,
+          "latencyMs": {
+            "p50": 2.47,
+            "p95": 32.51,
+            "p99": 54.58,
+            "max": 114.03
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 6315,
+              "p50": 2.1,
+              "p95": 29.83,
+              "p99": 48.7,
+              "max": 92.91
+            },
+            "list": {
+              "requestsPerSecond": 1077,
+              "p50": 2.28,
+              "p95": 30.11,
+              "p99": 47.64,
+              "max": 91.75
+            },
+            "query": {
+              "requestsPerSecond": 1115,
+              "p50": 4.69,
+              "p95": 46.47,
+              "p99": 74.53,
+              "max": 109.63
+            },
+            "write": {
+              "requestsPerSecond": 258,
+              "p50": 2.5,
+              "p95": 34.05,
+              "p99": 53.67,
+              "max": 90.04
+            },
+            "mutation": {
+              "requestsPerSecond": 279,
+              "p50": 4.04,
+              "p95": 43.08,
+              "p99": 76.63,
+              "max": 114.03
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 72340
+          },
+          "failures": {},
+          "busiestShardCores": 0.98,
+          "shardCores": 3.22,
+          "routerCores": 0,
+          "maxShardRssMb": 509,
+          "generatorBusy": 0.14
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 8636,
+          "latencyMs": {
+            "p50": 3.9,
+            "p95": 173.02,
+            "p99": 293.5,
+            "max": 597.69
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 6051,
+              "p50": 3.38,
+              "p95": 152.07,
+              "p99": 258.95,
+              "max": 370.27
+            },
+            "list": {
+              "requestsPerSecond": 1054,
+              "p50": 3.72,
+              "p95": 149.22,
+              "p99": 250.83,
+              "max": 365.07
+            },
+            "query": {
+              "requestsPerSecond": 1018,
+              "p50": 6.92,
+              "p95": 272.42,
+              "p99": 431.97,
+              "max": 597.69
+            },
+            "write": {
+              "requestsPerSecond": 260,
+              "p50": 4,
+              "p95": 163.67,
+              "p99": 285,
+              "max": 408.89
+            },
+            "mutation": {
+              "requestsPerSecond": 253,
+              "p50": 6.32,
+              "p95": 263.02,
+              "p99": 418.9,
+              "max": 584.27
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 69084
+          },
+          "failures": {},
+          "busiestShardCores": 0.99,
+          "shardCores": 3.21,
+          "routerCores": 0,
+          "maxShardRssMb": 509,
+          "generatorBusy": 0.15
+        }
+      ],
+      "one site mix direct": [
+        {
+          "concurrency": 4,
+          "requestsPerSecond": 3833,
+          "latencyMs": {
+            "p50": 0.77,
+            "p95": 2.35,
+            "p99": 3.91,
+            "max": 74.19
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 2696,
+              "p50": 0.53,
+              "p95": 1.93,
+              "p99": 3.56,
+              "max": 72.86
+            },
+            "list": {
+              "requestsPerSecond": 447,
+              "p50": 0.7,
+              "p95": 2.18,
+              "p99": 7.13,
+              "max": 29.85
+            },
+            "query": {
+              "requestsPerSecond": 454,
+              "p50": 1.73,
+              "p95": 3.15,
+              "p99": 3.98,
+              "max": 74.19
+            },
+            "write": {
+              "requestsPerSecond": 118,
+              "p50": 0.68,
+              "p95": 2.21,
+              "p99": 7.49,
+              "max": 65.35
+            },
+            "mutation": {
+              "requestsPerSecond": 118,
+              "p50": 1.45,
+              "p95": 2.86,
+              "p99": 5.75,
+              "max": 10.56
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 30664
+          },
+          "failures": {},
+          "busiestShardCores": 1,
+          "shardCores": 1,
+          "routerCores": 0,
+          "maxShardRssMb": 510,
+          "generatorBusy": 0.04
+        },
+        {
+          "concurrency": 16,
+          "requestsPerSecond": 3572,
+          "latencyMs": {
+            "p50": 2.59,
+            "p95": 6.45,
+            "p99": 10.72,
+            "max": 3067.2
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 2522,
+              "p50": 2.35,
+              "p95": 4.97,
+              "p99": 9.76,
+              "max": 3067.2
+            },
+            "list": {
+              "requestsPerSecond": 410,
+              "p50": 2.5,
+              "p95": 5.34,
+              "p99": 10.6,
+              "max": 15.48
+            },
+            "query": {
+              "requestsPerSecond": 421,
+              "p50": 5.13,
+              "p95": 8.86,
+              "p99": 14.17,
+              "max": 419.69
+            },
+            "write": {
+              "requestsPerSecond": 109,
+              "p50": 3.09,
+              "p95": 6.19,
+              "p99": 11.43,
+              "max": 72.94
+            },
+            "mutation": {
+              "requestsPerSecond": 111,
+              "p50": 3.9,
+              "p95": 6.68,
+              "p99": 10.67,
+              "max": 12.61
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0.1,
+          "statuses": {
+            "0": 1,
+            "200": 28575
+          },
+          "failures": {
+            "ECONNRESET": 1
+          },
+          "busiestShardCores": 0.96,
+          "shardCores": 1.02,
+          "routerCores": 0,
+          "maxShardRssMb": 507,
+          "generatorBusy": 0.05
+        },
+        {
+          "concurrency": 64,
+          "requestsPerSecond": 3819,
+          "latencyMs": {
+            "p50": 6.87,
+            "p95": 12.44,
+            "p99": 16.18,
+            "max": 87.72
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 2667,
+              "p50": 6.49,
+              "p95": 10.34,
+              "p99": 15.01,
+              "max": 84.23
+            },
+            "list": {
+              "requestsPerSecond": 460,
+              "p50": 6.68,
+              "p95": 11.58,
+              "p99": 15.07,
+              "max": 83.31
+            },
+            "query": {
+              "requestsPerSecond": 460,
+              "p50": 9.97,
+              "p95": 16.26,
+              "p99": 19.4,
+              "max": 87.72
+            },
+            "write": {
+              "requestsPerSecond": 116,
+              "p50": 7.6,
+              "p95": 13.23,
+              "p99": 16.59,
+              "max": 76.18
+            },
+            "mutation": {
+              "requestsPerSecond": 117,
+              "p50": 8.31,
+              "p95": 13.5,
+              "p99": 16.66,
+              "max": 83.75
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 30551
+          },
+          "failures": {},
+          "busiestShardCores": 1.01,
+          "shardCores": 1.01,
+          "routerCores": 0,
+          "maxShardRssMb": 509,
+          "generatorBusy": 0.08
+        },
+        {
+          "concurrency": 256,
+          "requestsPerSecond": 3763,
+          "latencyMs": {
+            "p50": 22.16,
+            "p95": 30.07,
+            "p99": 34.56,
+            "max": 108.25
+          },
+          "byKind": {
+            "read": {
+              "requestsPerSecond": 2638,
+              "p50": 21.72,
+              "p95": 29.17,
+              "p99": 32.96,
+              "max": 104.47
+            },
+            "list": {
+              "requestsPerSecond": 458,
+              "p50": 21.85,
+              "p95": 29.32,
+              "p99": 32.54,
+              "max": 103.34
+            },
+            "query": {
+              "requestsPerSecond": 450,
+              "p50": 25.27,
+              "p95": 33.03,
+              "p99": 38.19,
+              "max": 108.25
+            },
+            "write": {
+              "requestsPerSecond": 108,
+              "p50": 22.88,
+              "p95": 30.46,
+              "p99": 33.93,
+              "max": 105.43
+            },
+            "mutation": {
+              "requestsPerSecond": 109,
+              "p50": 23.36,
+              "p95": 31.94,
+              "p99": 91.16,
+              "max": 105.86
+            }
+          },
+          "refusedPerSecond": 0,
+          "errorsPerSecond": 0,
+          "statuses": {
+            "200": 30101
+          },
+          "failures": {
+            "ECONNRESET": 559,
+            "EPIPE": 73
+          },
+          "busiestShardCores": 1.01,
+          "shardCores": 1.01,
+          "routerCores": 0,
+          "maxShardRssMb": 512,
+          "generatorBusy": 0.1
+        }
+      ]
+    },
+    "noisyNeighbour": {
+      "slowQuery": {
+        "calls": 1580,
+        "p50": 6.35,
+        "p95": 8.11,
+        "p99": 28.14,
+        "max": 101.19,
+        "refusals": {}
+      },
+      "quiet": {
+        "sameShard": {
+          "requestsPerSecond": 8028,
+          "latencyMs": {
+            "p50": 0.4,
+            "p95": 0.59,
+            "p99": 0.79,
+            "max": 92.31
+          }
+        },
+        "otherShard": {
+          "requestsPerSecond": 8034,
+          "latencyMs": {
+            "p50": 0.4,
+            "p95": 0.59,
+            "p99": 0.79,
+            "max": 99.36
+          }
+        }
+      },
+      "loud": {
+        "sameShard": {
+          "requestsPerSecond": 1334,
+          "latencyMs": {
+            "p50": 0.93,
+            "p95": 6.08,
+            "p99": 7.87,
+            "max": 101.64
+          }
+        },
+        "otherShard": {
+          "requestsPerSecond": 8147,
+          "latencyMs": {
+            "p50": 0.38,
+            "p95": 0.63,
+            "p99": 0.88,
+            "max": 110.92
+          }
+        }
+      }
+    },
+    "sitesInMemory": {
+      "freshShardsRssMb": 187,
+      "afterEverySiteRssMb": 668,
+      "kbPerSite": 493,
+      "after30sIdleRssMb": 648,
+      "firstRequest": {
+        "answered": 1000,
+        "p50": 13.54,
+        "p95": 22.28,
+        "p99": 80.71,
+        "max": 88.71
+      }
+    },
+    "backup": {
+      "databases": 1004,
+      "copySeconds": 3.1,
+      "archiveSeconds": 1.7,
+      "archiveMb": 31,
+      "sitesInFiveMinutes": 62359
+    }
+  },
+  "sites10000": {
+    "options": {
+      "sites": 10000,
+      "docs": 10,
+      "shards": 4,
+      "seconds": 5,
+      "levels": [
+        4,
+        16,
+        64,
+        256
+      ]
+    },
+    "seeding": {
+      "sitesPerSecond": 68.7,
+      "databases": 10004,
+      "diskMb": 1472,
+      "diskKbPerSite": 151
+    },
+    "sitesInMemory": {
+      "freshShardsRssMb": 183,
+      "afterEverySiteRssMb": 3189,
+      "kbPerSite": 308,
+      "after30sIdleRssMb": 2440,
+      "firstRequest": {
+        "answered": 10000,
+        "p50": 10.89,
+        "p95": 55.75,
+        "p99": 89.29,
+        "max": 148.2
+      }
+    },
+    "backup": {
+      "databases": 10004,
+      "copySeconds": 33.6,
+      "archiveSeconds": 12.9,
+      "archiveMb": 177,
+      "sitesInFiveMinutes": 64568
+    }
+  },
+  "routerPostCeiling": {
+    "before": {
+      "ephemeralPorts": 16384,
+      "seconds": 60,
+      "requestsPerSecond": 508,
+      "latencyMs": {
+        "p50": 5.19,
+        "p95": 14.04,
+        "p99": 24.82,
+        "max": 10132.77
+      },
+      "statuses": {
+        "200": 30488,
+        "502": 35
+      },
+      "failures": {}
+    },
+    "probeRemoved": {
+      "ephemeralPorts": 16384,
+      "seconds": 60,
+      "requestsPerSecond": 2835,
+      "latencyMs": {
+        "p50": 4.75,
+        "p95": 12.65,
+        "p99": 19.72,
+        "max": 80.27
+      },
+      "statuses": {
+        "200": 170092
+      },
+      "failures": {}
+    },
+    "probeOverFetch": {
+      "ephemeralPorts": 16384,
+      "seconds": 60,
+      "requestsPerSecond": 2807,
+      "latencyMs": {
+        "p50": 4.8,
+        "p95": 12.03,
+        "p99": 20.46,
+        "max": 75.08
+      },
+      "statuses": {
+        "200": 168440
+      },
+      "failures": {}
+    }
+  },
+  "mixThroughRouter": [
+    {
+      "concurrency": 4,
+      "requestsPerSecond": 3839,
+      "latencyMs": {
+        "p50": 0.56,
+        "p95": 2.98,
+        "p99": 5.49,
+        "max": 42.59
+      },
+      "byKind": {
+        "read": {
+          "requestsPerSecond": 2684,
+          "p50": 0.44,
+          "p95": 1.82,
+          "p99": 3.69,
+          "max": 42.44
+        },
+        "list": {
+          "requestsPerSecond": 462,
+          "p50": 0.65,
+          "p95": 2.16,
+          "p99": 5.33,
+          "max": 30.61
+        },
+        "query": {
+          "requestsPerSecond": 461,
+          "p50": 2.15,
+          "p95": 4.68,
+          "p99": 8.34,
+          "max": 42.59
+        },
+        "write": {
+          "requestsPerSecond": 115,
+          "p50": 0.83,
+          "p95": 2.59,
+          "p99": 4.53,
+          "max": 11.32
+        },
+        "mutation": {
+          "requestsPerSecond": 116,
+          "p50": 2.17,
+          "p95": 4.9,
+          "p99": 9.36,
+          "max": 41.95
+        }
+      },
+      "refusedPerSecond": 0,
+      "errorsPerSecond": 0,
+      "statuses": {
+        "200": 30709
+      },
+      "failures": {},
+      "busiestShardCores": 0.51,
+      "shardCores": 2.03,
+      "routerCores": 0.4,
+      "maxShardRssMb": 511,
+      "generatorBusy": 0.09
+    },
+    {
+      "concurrency": 16,
+      "requestsPerSecond": 6247,
+      "latencyMs": {
+        "p50": 1.8,
+        "p95": 6.8,
+        "p99": 13.07,
+        "max": 69.71
+      },
+      "byKind": {
+        "read": {
+          "requestsPerSecond": 4360,
+          "p50": 1.41,
+          "p95": 4.53,
+          "p99": 11.23,
+          "max": 63.6
+        },
+        "list": {
+          "requestsPerSecond": 748,
+          "p50": 1.67,
+          "p95": 5.13,
+          "p99": 11.83,
+          "max": 62.17
+        },
+        "query": {
+          "requestsPerSecond": 757,
+          "p50": 4.36,
+          "p95": 11.67,
+          "p99": 20.59,
+          "max": 69.71
+        },
+        "write": {
+          "requestsPerSecond": 187,
+          "p50": 2.3,
+          "p95": 6.66,
+          "p99": 13.52,
+          "max": 56.12
+        },
+        "mutation": {
+          "requestsPerSecond": 196,
+          "p50": 4.07,
+          "p95": 9.23,
+          "p99": 19.08,
+          "max": 65.06
+        }
+      },
+      "refusedPerSecond": 0,
+      "errorsPerSecond": 0,
+      "statuses": {
+        "200": 49979
+      },
+      "failures": {},
+      "busiestShardCores": 0.78,
+      "shardCores": 3.08,
+      "routerCores": 0.68,
+      "maxShardRssMb": 520,
+      "generatorBusy": 0.15
+    },
+    {
+      "concurrency": 64,
+      "requestsPerSecond": 7049,
+      "latencyMs": {
+        "p50": 6.37,
+        "p95": 24.98,
+        "p99": 50.25,
+        "max": 139.43
+      },
+      "byKind": {
+        "read": {
+          "requestsPerSecond": 4919,
+          "p50": 5.51,
+          "p95": 18.22,
+          "p99": 40.81,
+          "max": 139.43
+        },
+        "list": {
+          "requestsPerSecond": 859,
+          "p50": 5.8,
+          "p95": 18.45,
+          "p99": 36.2,
+          "max": 100.78
+        },
+        "query": {
+          "requestsPerSecond": 855,
+          "p50": 14.29,
+          "p95": 40.63,
+          "p99": 67.26,
+          "max": 104.14
+        },
+        "write": {
+          "requestsPerSecond": 209,
+          "p50": 8.76,
+          "p95": 27.14,
+          "p99": 49.92,
+          "max": 82.45
+        },
+        "mutation": {
+          "requestsPerSecond": 208,
+          "p50": 12.5,
+          "p95": 37.43,
+          "p99": 66.39,
+          "max": 89.06
+        }
+      },
+      "refusedPerSecond": 0,
+      "errorsPerSecond": 0,
+      "statuses": {
+        "200": 56391
+      },
+      "failures": {},
+      "busiestShardCores": 0.87,
+      "shardCores": 3.47,
+      "routerCores": 0.8,
+      "maxShardRssMb": 541,
+      "generatorBusy": 0.16
+    },
+    {
+      "concurrency": 256,
+      "requestsPerSecond": 8451,
+      "latencyMs": {
+        "p50": 23.21,
+        "p95": 80,
+        "p99": 124.09,
+        "max": 248.37
+      },
+      "byKind": {
+        "read": {
+          "requestsPerSecond": 5914,
+          "p50": 20.53,
+          "p95": 58.81,
+          "p99": 104.23,
+          "max": 160.89
+        },
+        "list": {
+          "requestsPerSecond": 1020,
+          "p50": 21.07,
+          "p95": 59.03,
+          "p99": 103.51,
+          "max": 155.27
+        },
+        "query": {
+          "requestsPerSecond": 1015,
+          "p50": 50.24,
+          "p95": 122.38,
+          "p99": 165.48,
+          "max": 248.37
+        },
+        "write": {
+          "requestsPerSecond": 249,
+          "p50": 33.74,
+          "p95": 82.2,
+          "p99": 125.39,
+          "max": 175.31
+        },
+        "mutation": {
+          "requestsPerSecond": 253,
+          "p50": 45.4,
+          "p95": 119.82,
+          "p99": 158.22,
+          "max": 239.58
+        }
+      },
+      "refusedPerSecond": 0,
+      "errorsPerSecond": 0,
+      "statuses": {
+        "200": 67610
+      },
+      "failures": {},
+      "busiestShardCores": 0.95,
+      "shardCores": 3.78,
+      "routerCores": 0.88,
+      "maxShardRssMb": 557,
+      "generatorBusy": 0.15
+    }
+  ]
+}

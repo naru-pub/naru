@@ -67,8 +67,9 @@ before. The router has no objects and no SQLite. It:
 - holds a site's requests for up to 10 seconds while its shard restarts.
   workerd's `fetch` cannot tell a refused connection from one dropped
   mid-request, so a GET is sent again on any failure, and anything else is
-  sent once the shard accepts a connection (a TCP probe first) and never
-  again: a mutation is never run twice.
+  sent once the shard answers `/healthz` (asked over `fetch`'s own
+  connections: a socket for each write ran the machine out of ports) and
+  never again: a mutation is never run twice.
 
 Its 404s are the Worker's: nothing else is served (`/v1/pageviews/` and
 `/v1/domains/` stay on Cloudflare).
@@ -134,3 +135,11 @@ probes `https://origin.sdk.naru.pub/healthz/deep` each minute, and
 `https://naru.pub/api/health` for the control plane apart, and posts to
 Discord when either has failed three minutes in a row, and again when it
 answers: see `docs/database.md`, "When the mini is away".
+
+## Load test
+
+`pnpm loadtest:seoul` builds this and drives the router and shards on the
+machine it runs on, with seeded sites: request kinds at rising concurrency, a
+slow neighbour, memory, first requests and the backup's copy. What it found,
+and what it leaves out (the control plane, above all):
+`docs/benchmarks/naru-sdk-workerd.md`. `seoul/loadtest.mjs` has the options.

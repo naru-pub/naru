@@ -1,17 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-// Which shards accept a connection (the router's probe before a write).
-const down = new Set<string>();
-vi.mock("cloudflare:sockets", () => ({
-  connect: ({ hostname, port }: { hostname: string; port: number }) => {
-    const refused = down.has(`${hostname}:${port}`);
-    const opened = refused
-      ? Promise.reject(new Error("Network connection lost."))
-      : Promise.resolve({});
-    opened.catch(() => {});
-    return { opened, close: async () => {} };
-  },
-}));
 const { default: router } = await import("./router");
 
 const origins = [
@@ -31,18 +19,24 @@ const env = (overrides = "{}") =>
 
 type Answer = (request: Request) => Response | Promise<Response>;
 let answer: Answer;
+// What reached the shards, and in order, those and the router's own /healthz
+// before a write.
 const sent: Request[] = [];
+const asked: string[] = [];
+const down = new Set<string>();
 beforeEach(() => {
   sent.length = 0;
+  asked.length = 0;
   down.clear();
   answer = () => Response.json({ value: null });
   vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
     // Node wants duplex for a streamed body; workerd does not.
     const request = new Request(input, { ...init, duplex: "half" } as never);
-    sent.push(request);
-    const { host } = new URL(request.url);
+    const { host, pathname } = new URL(request.url);
+    asked.push(`${request.method} ${pathname}`);
+    if (pathname !== "/healthz") sent.push(request);
     if (down.has(host)) throw new Error("Network connection lost.");
-    return answer(request);
+    return pathname === "/healthz" ? new Response("ok") : answer(request);
   });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -99,6 +93,16 @@ describe("each site's requests", () => {
   test("without a site go to shard 0", async () => {
     await call("/v1/breakers/other", { method: "POST", body: "{}" });
     expect(sent[0].url).toBe(`${origins[0]}/v1/breakers/other`);
+  });
+});
+
+describe("a write", () => {
+  test("is sent once the shard has answered, and a read at once", async () => {
+    await call("/v1/sites/alpha/execute", { method: "POST", body: "{}" });
+    expect(asked).toEqual(["GET /healthz", "POST /v1/sites/alpha/execute"]);
+    asked.length = 0;
+    await call("/api/data/v1/alpha/posts");
+    expect(asked).toEqual(["GET /api/data/v1/alpha/posts"]);
   });
 });
 

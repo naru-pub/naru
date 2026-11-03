@@ -1,4 +1,3 @@
-import { connect } from "cloudflare:sockets";
 import { serveSdk, type SdkEnv } from "./sdk";
 import {
   mergeUnnotified,
@@ -49,13 +48,17 @@ function shardsOf(env: RouterEnv): Shards {
 
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-/** Whether the shard accepts a connection: refused while it restarts. */
+/**
+ * Whether the shard answers: it does not while it restarts. Asked with fetch,
+ * over the connections fetch keeps, and not with a socket of its own: each
+ * closed socket holds one of the machine's ports for 30 seconds, which at
+ * about 500 writes a second left none for anything on it
+ * (docs/benchmarks/naru-sdk-workerd.md).
+ */
 async function listening(origin: string): Promise<boolean> {
-  const { hostname, port } = new URL(origin);
   try {
-    const socket = connect({ hostname, port: Number(port) || 80 });
-    await socket.opened;
-    await socket.close();
+    // Read to its end, or fetch cannot use the connection again.
+    await (await fetch(`${origin}/healthz`)).arrayBuffer();
     return true;
   } catch {
     return false;
@@ -70,7 +73,7 @@ const IDEMPOTENT = ["GET", "HEAD", "OPTIONS"];
  * workerd's fetch says only "Network connection lost." whether the shard
  * refused the connection or dropped it with the request half done, so:
  * a GET (a read, or a live connection's upgrade) is sent again on any
- * failure; anything else is sent once the shard accepts a connection, and
+ * failure; anything else is sent once the shard answers /healthz, and
  * never again, so a mutation the shard may have run is never run twice.
  * Bodies stream through as they arrive (a dump being restored, too); only
  * the fan-out below reads one first, to send it to every shard.
