@@ -13,13 +13,12 @@ MCP(Model Context Protocol)는 AI 앱이 다른 서비스를 쓸 수 있게 하�
 
 ## 01 · 연결하기 {#connect}
 
-1. 쓰는 앱에 MCP 서버로 아래 주소를 추가하세요. Claude에서는
-   [디렉터리의 나루](https://claude.ai/directory/naru)에서 바로 추가할 수 있어요.
-   추가하는 방법은 앱마다 달라요.
-   [Claude](https://support.claude.com/ko/articles/11175166),
-   [Claude Code](https://code.claude.com/docs/ko/mcp),
-   [ChatGPT](https://help.openai.com/ko-kr/articles/12584461-connecting-custom-mcp-servers-in-chatgpt)의
-   안내를 보세요.
+1. 쓰는 앱에 나루를 추가하세요. Claude에서는
+   [디렉터리의 나루](https://claude.ai/directory/naru)에서, ChatGPT에서는
+   [나루 플러그인](https://chatgpt.com/plugins/plugin_asdk_app_6adb58fcd698819188aea50b247bfed4)에서
+   바로 추가할 수 있어요. 다른 앱에서는 MCP 서버로 아래 주소를 넣으세요. 넣는
+   방법은 앱마다 달라요. [Claude Code](https://code.claude.com/docs/ko/mcp)는
+   이 안내를 보세요.
 
    ```
    {{mcp_url}}
