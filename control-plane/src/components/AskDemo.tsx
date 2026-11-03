@@ -141,7 +141,7 @@ export function AskDemo({ today }: { today: string }) {
           </div>
 
           <BrowserFrame
-            address={<SiteAddress loginName="haru" />}
+            address={<SiteAddress loginName="내이름" />}
             className="flex min-h-[400px] flex-col shadow-hard-lg"
           >
             <div
