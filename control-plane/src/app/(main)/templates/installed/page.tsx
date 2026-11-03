@@ -41,6 +41,17 @@ export default async function TemplatesPage() {
             <InstallCard key={install.id} install={install} />
           ))
         )}
+        {installs.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            색이나 배치를 바꾸고 싶다면{" "}
+            <Link
+              href="/ai"
+              className="text-link underline-offset-4 hover:underline"
+            >
+              AI 앱에게 부탁해 보세요 →
+            </Link>
+          </p>
+        )}
       </main>
     </div>
   );

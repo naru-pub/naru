@@ -40,8 +40,8 @@ function SignedOutSupportCard() {
           아래 유료 기능을 쓰실 수 있습니다 🌱
         </p>
         <p className="text-sm text-muted-foreground">
-          가입하고 이메일을 인증하면 결제 전에 {TRIAL_DAYS}일 동안 커스텀 도메인을
-          제외한 유료 기능을 무료로 체험할 수 있습니다.
+          가입하고 이메일을 인증하면 결제 전에 {TRIAL_DAYS}일 동안 커스텀
+          도메인을 제외한 유료 기능을 무료로 체험할 수 있습니다.
         </p>
 
         <div className="space-y-2">
@@ -88,17 +88,36 @@ function SignedOutSupportCard() {
   );
 }
 
+// Above the page for someone sent here by their AI app, partway through
+// building something that stores data (lib/mcp/page-warnings.ts).
+function DatabaseWanted() {
+  return (
+    <div className="space-y-2 border-2 border-line bg-card p-6 shadow-hard">
+      <h1 className="text-3xl font-bold tracking-tight">
+        거의 다 <span className="highlight">됐어요</span>
+      </h1>
+      <p className="leading-relaxed text-muted-foreground">
+        서포터가 되면 AI 앱이 데이터베이스까지 다룰 수 있어요. 방명록도, 글이
+        쌓이는 블로그도 말로 부탁해서 만들어요. 시작한 뒤 앱에게 이어서 만들어
+        달라고 말해 주세요.
+      </p>
+    </div>
+  );
+}
+
 export default async function SupportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ processing?: string }>;
+  searchParams: Promise<{ processing?: string; for?: string }>;
 }) {
   const { user } = await validateRequest();
+  const databaseWanted = (await searchParams).for === "database";
 
   if (!user) {
     return (
       <div className="bg-background min-h-screen">
         <div className="max-w-4xl mx-auto p-6 space-y-4">
+          {databaseWanted && <DatabaseWanted />}
           <SignedOutSupportCard />
           <SupportPerks />
           <SupportPolicy />
@@ -156,6 +175,7 @@ export default async function SupportPage({
         />
       )}
       <div className="max-w-4xl mx-auto p-6 space-y-4">
+        {databaseWanted && !entitlement.hasPaidFeatures && <DatabaseWanted />}
         {trial.state === "unverified" && (
           <TrialVerifyCard
             days={TRIAL_DAYS}

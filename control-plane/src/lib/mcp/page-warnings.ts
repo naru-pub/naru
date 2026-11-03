@@ -15,7 +15,7 @@ const NO_SITE = /createNaru\(\s*(?:\)|\{(?![^}]*\bsite\b)[^}]*\}\s*\))/;
 
 /** What a model tells the owner of a site without the database feature. */
 export const databasePlanNeeded = () =>
-  `The site's database is part of the Naru supporter plan, which this account doesn't have now; its files need no plan. The owner can start a free trial or subscribe at ${naruOrigin()}/supporter.`;
+  `The site's database is part of the Naru supporter plan, which this account doesn't have now; its files need no plan. The owner can start a free trial or subscribe at ${naruOrigin()}/supporter?for=database.`;
 
 export async function pageWarnings(
   site: Site,

@@ -130,6 +130,16 @@ export default async function RootLayout({
                           </span>
                         )}
                       </NavLink>
+                      {/* A tablet's row has no room left for it. */}
+                      <div className="contents md:max-lg:hidden">
+                        <NavLink href="/ai">
+                          <span
+                            aria-hidden="true"
+                            className="size-2 bg-primary"
+                          />
+                          AI로 만들기
+                        </NavLink>
+                      </div>
                       {entitlement?.hasPaidFeatures ? (
                         <SupporterMenu
                           analytics={features.has("analytics")}

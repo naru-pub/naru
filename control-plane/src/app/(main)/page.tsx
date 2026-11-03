@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import Link from "next/link";
 import Image from "next/image";
 import { AdCard } from "@/components/AdCard";
+import { AskDemo } from "@/components/AskDemo";
 import { BrowserFrame, SiteAddress } from "@/components/BrowserFrame";
 import { PixelWave } from "@/components/PixelWave";
 import { SiteGrid } from "@/components/SiteGrid";
@@ -237,6 +238,15 @@ export default async function Home() {
                   로그인
                 </Link>
               </p>
+              <p className="text-[13px] text-muted-foreground">
+                HTML을 몰라도 괜찮아요.{" "}
+                <Link
+                  href="#ask"
+                  className="text-link underline-offset-4 hover:underline"
+                >
+                  AI 앱에게 말로 부탁해서 만들 수 있어요
+                </Link>
+              </p>
             </form>
           )}
         </div>
@@ -347,6 +357,14 @@ export default async function Home() {
           </ul>
         </section>
       )}
+
+      <div className="border-t-2 border-line bg-card">
+        <AskDemo
+          today={new Date().toLocaleDateString("sv-SE", {
+            timeZone: "Asia/Seoul",
+          })}
+        />
+      </div>
 
       <section className="border-y-2 border-line">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-16 sm:px-6 lg:px-8">
