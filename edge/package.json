@@ -26,5 +26,10 @@
     "acorn": "^8.19.0",
     "aws4fetch": "1.0.20",
     "quickjs-emscripten-core": "0.32.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "undici@7": "^7.30.1"
+    }
   }
 }

@@ -10,5 +10,7 @@ onlyBuiltDependencies:
   - esbuild
   - workerd
 # Miniflare's HTTP client, past advisories, within its major version.
+# Also in package.json, the same: Workers Builds' pnpm 9 reads it only there
+# and refuses the lockfile otherwise; pnpm 11 and later read it only here.
 overrides:
   "undici@7": "^7.30.1"
