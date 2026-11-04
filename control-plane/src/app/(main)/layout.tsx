@@ -23,6 +23,7 @@ import {
 } from "@/lib/entitlements";
 import {
   AccountMenu,
+  MakeMenu,
   NavLink,
   NotificationsLink,
   PixelHeart,
@@ -117,13 +118,7 @@ export default async function RootLayout({
                       negative margin) leaves room for the focus outline. */}
                     <div className="order-last -mx-4 flex h-11 w-[calc(100%+2rem)] items-stretch gap-0.5 overflow-x-auto border-t border-border px-2 pt-px [scrollbar-width:none] sm:-mx-6 sm:w-[calc(100%+3rem)] sm:px-4 md:order-none md:mx-0 md:h-auto md:w-auto md:border-0 md:px-0 md:pt-0 [&::-webkit-scrollbar]:hidden">
                       <NavLink href="/docs">길잡이</NavLink>
-                      {user && (
-                        <NavLink href="/files">
-                          <span className="md:max-lg:hidden">직접 만들기</span>
-                          {/* A tablet's row has room only for the short name. */}
-                          <span className="hidden md:max-lg:inline">파일</span>
-                        </NavLink>
-                      )}
+                      <MakeMenu signedIn={!!user} />
                       <NavLink href="/board">자랑</NavLink>
                       <NavLink href="/templates">
                         템플릿
@@ -136,16 +131,6 @@ export default async function RootLayout({
                           </span>
                         )}
                       </NavLink>
-                      {/* A tablet's row has no room left for it. */}
-                      <div className="contents md:max-lg:hidden">
-                        <NavLink href="/ai">
-                          <span
-                            aria-hidden="true"
-                            className="size-2 bg-primary"
-                          />
-                          AI로 만들기
-                        </NavLink>
-                      </div>
                       {entitlement?.hasPaidFeatures ? (
                         <SupporterMenu
                           analytics={features.has("analytics")}

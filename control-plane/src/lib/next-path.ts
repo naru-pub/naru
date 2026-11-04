@@ -2,6 +2,7 @@
 // email: only these in-app pages, never a URL the link supplies (an open
 // redirect). A path is returned with its query string.
 const RETURN_PATHS = new Set([
+  "/files",
   "/supporter",
   "/database/authorize",
   "/members/sign-in",

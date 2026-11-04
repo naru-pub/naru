@@ -98,12 +98,12 @@ export function PixelHeart() {
 // The 서포터 link for an account offered a free trial, claimed on /supporter.
 // The bubble sits in the row, since the nav's scroller clips anything that
 // floats outside it, and floating would cover the page. Its text is shorter
-// below a wide screen, and on a tablet it takes the name's room, to fit the row.
+// below a wide screen, and on a narrow one it takes the name's room, to fit the row.
 export function TrialNavLink({ days }: { days: number }) {
   return (
     <NavLink href="/supporter">
-      <span className="md:max-lg:sr-only">서포터</span>
-      <span className="relative ml-1 whitespace-nowrap border-2 max-xl:ml-0 max-xl:px-1 md:max-lg:-ml-2 border-line bg-sun px-1.5 text-xs font-semibold leading-5 text-sun-foreground">
+      <span className="max-lg:sr-only">서포터</span>
+      <span className="relative ml-1 whitespace-nowrap border-2 max-xl:ml-0 max-xl:px-1 max-lg:-ml-2 border-line bg-sun px-1.5 text-xs font-semibold leading-5 text-sun-foreground">
         <span
           aria-hidden
           className="absolute -left-[5px] top-1/2 size-2 -translate-y-1/2 rotate-45 border-b-2 border-l-2 border-line bg-sun"
@@ -111,6 +111,37 @@ export function TrialNavLink({ days }: { days: number }) {
         {days}일 무료<span className="max-xl:hidden"> 체험</span>
       </span>
     </NavLink>
+  );
+}
+
+// The two ways to build a site, side by side and neither the default. Someone
+// signed out comes back to the editor after signing up.
+export function MakeMenu({ signedIn }: { signedIn: boolean }) {
+  const active = useActive(["/files", "/ai"]);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={`${TRIGGER_CLASS} ${active ? ACTIVE_CLASS : ""} focus-visible:bg-accent focus-visible:text-foreground focus-visible:outline-none`}
+      >
+        만들기
+        <ChevronDown
+          size={14}
+          strokeWidth={2.5}
+          aria-hidden
+          className="md:max-lg:hidden"
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem asChild>
+          <Link href={signedIn ? "/files" : "/signup?next=/files"}>
+            직접 만들기
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/ai">AI로 만들기</Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -238,9 +269,7 @@ export function AccountMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap sm:px-3 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent data-[state=open]:bg-accent"
-      >
+      <DropdownMenuTrigger className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap sm:px-3 text-[15px] font-semibold text-foreground transition-colors hover:bg-accent data-[state=open]:bg-accent">
         <User size={20} aria-hidden className="mx-2.5 sm:hidden" />
         <span className="sr-only sm:not-sr-only">{loginName}</span>
         <ChevronDown
