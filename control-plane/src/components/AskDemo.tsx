@@ -60,7 +60,7 @@ export function AskDemo({ today }: { today: string }) {
     <section
       id="ask"
       aria-labelledby="ask-heading"
-      className="mx-auto flex max-w-7xl scroll-mt-20 flex-wrap items-center gap-14 px-4 pb-2 pt-16 sm:px-6 lg:px-8"
+      className="mx-auto flex max-w-7xl scroll-mt-20 flex-wrap items-center gap-14 px-4 py-14 sm:px-6 lg:px-8"
     >
       <div className="flex min-w-0 flex-[1_1_400px] flex-col gap-6">
         <p className="flex items-center gap-2.5 text-sm font-medium text-muted-foreground">

@@ -325,42 +325,42 @@ export default async function Home() {
         </p>
       </section>
 
-      <AskDemo
-        today={new Date().toLocaleDateString("sv-SE", {
-          timeZone: "Asia/Seoul",
-        })}
-      />
+      <PixelWave className="mt-14" />
+      <div className="border-b-2 border-line bg-card">
+        <AskDemo
+          today={new Date().toLocaleDateString("sv-SE", {
+            timeZone: "Asia/Seoul",
+          })}
+        />
+      </div>
 
       {recentlyRenderedUsers.length > 0 && (
-        <>
-          <PixelWave className="mt-14" />
-          <section className="border-b-2 border-line bg-card">
-            <div className="mx-auto flex max-w-7xl flex-col gap-7 px-4 py-14 sm:px-6 lg:px-8">
-              <SectionHeading
-                title="방금 고쳐진 사이트들"
-                description="나루 사람들이 지금 가꾸고 있는 공간이에요."
-                href="/sites"
-                linkText="모든 사이트 보기 →"
-              />
-              <SiteGrid users={recentlyRenderedUsers} />
-            </div>
-          </section>
-        </>
+        <section className="mx-auto flex max-w-7xl flex-col gap-7 px-4 py-14 sm:px-6 lg:px-8">
+          <SectionHeading
+            title="방금 고쳐진 사이트들"
+            description="나루 사람들이 지금 가꾸고 있는 공간이에요."
+            href="/sites"
+            linkText="모든 사이트 보기 →"
+          />
+          <SiteGrid users={recentlyRenderedUsers} />
+        </section>
       )}
 
       {popularTemplates.length > 0 && (
-        <section className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-16 sm:px-6 lg:px-8">
-          <SectionHeading
-            title="템플릿으로 시작하기"
-            description="마음에 드는 템플릿을 고르면 내 사이트에 바로 적용돼요."
-            href="/templates"
-            linkText="템플릿 모두 보기 →"
-          />
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {popularTemplates.map((post) => (
-              <TemplateCard key={post.id} post={post} />
-            ))}
-          </ul>
+        <section className="border-t-2 border-line bg-card">
+          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-16 sm:px-6 lg:px-8">
+            <SectionHeading
+              title="템플릿으로 시작하기"
+              description="마음에 드는 템플릿을 고르면 내 사이트에 바로 적용돼요."
+              href="/templates"
+              linkText="템플릿 모두 보기 →"
+            />
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {popularTemplates.map((post) => (
+                <TemplateCard key={post.id} post={post} />
+              ))}
+            </ul>
+          </div>
         </section>
       )}
 
