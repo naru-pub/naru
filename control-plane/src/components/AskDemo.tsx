@@ -60,7 +60,7 @@ export function AskDemo({ today }: { today: string }) {
     <section
       id="ask"
       aria-labelledby="ask-heading"
-      className="mx-auto flex max-w-7xl scroll-mt-20 flex-wrap items-center gap-14 px-4 py-16 sm:px-6 lg:px-8"
+      className="mx-auto flex max-w-7xl scroll-mt-20 flex-wrap items-center gap-14 px-4 pb-2 pt-16 sm:px-6 lg:px-8"
     >
       <div className="flex min-w-0 flex-[1_1_400px] flex-col gap-6">
         <p className="flex items-center gap-2.5 text-sm font-medium text-muted-foreground">
@@ -116,7 +116,7 @@ export function AskDemo({ today }: { today: string }) {
           ))}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(270px,100%),1fr))] items-stretch gap-4">
-          <div className="flex min-h-[400px] flex-col border-2 border-line bg-card">
+          <div className="flex flex-col border-2 md:min-h-[400px] border-line bg-card">
             <div className="flex h-7 items-center justify-between border-b-2 border-line px-3 text-xs font-medium">
               <span>AI 앱</span>
               <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -142,7 +142,7 @@ export function AskDemo({ today }: { today: string }) {
 
           <BrowserFrame
             address={<SiteAddress loginName="내이름" />}
-            className="flex min-h-[400px] flex-col shadow-hard-lg"
+            className="flex flex-col shadow-hard-lg md:min-h-[400px]"
           >
             <div
               className="flex flex-1 flex-col gap-3.5 px-6 py-7 transition-colors"

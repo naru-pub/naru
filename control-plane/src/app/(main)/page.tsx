@@ -325,6 +325,12 @@ export default async function Home() {
         </p>
       </section>
 
+      <AskDemo
+        today={new Date().toLocaleDateString("sv-SE", {
+          timeZone: "Asia/Seoul",
+        })}
+      />
+
       {recentlyRenderedUsers.length > 0 && (
         <>
           <PixelWave className="mt-14" />
@@ -357,14 +363,6 @@ export default async function Home() {
           </ul>
         </section>
       )}
-
-      <div className="border-t-2 border-line bg-card">
-        <AskDemo
-          today={new Date().toLocaleDateString("sv-SE", {
-            timeZone: "Asia/Seoul",
-          })}
-        />
-      </div>
 
       <section className="border-y-2 border-line">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-16 sm:px-6 lg:px-8">
