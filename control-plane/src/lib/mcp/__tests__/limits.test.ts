@@ -43,7 +43,7 @@ describe("writes without a plan", () => {
       expect(freeWrite("a", 1, 0, 0)).toEqual({ over: null, crossed: false });
     const first = freeWrite("a", 1, 0, 0);
     expect(first).toMatchObject({ crossed: true });
-    expect(said(first)).toContain("files through MCP today");
+    expect(said(first)).toContain("files through AI apps today");
     expect(freeWrite("a", 1, 0, 0)).toMatchObject({ crossed: false });
     for (
       let i = FREE_WRITES_PER_DAY + 3;
@@ -62,7 +62,7 @@ describe("writes without a plan", () => {
     });
     const past = freeWrite("a", 1, 0, 0);
     expect(past).toMatchObject({ crossed: true });
-    expect(said(past)).toContain("MB through MCP today");
+    expect(said(past)).toContain("MB through AI apps today");
     const huge = FREE_WRITE_BYTES_PER_DAY * HARD_CAP_FACTOR;
     expect(freeWrite("b", huge + 1, 0, 0).refused).toContain("refused");
     expect(freeWrite("b", huge, 0, 0).refused).toBeUndefined();

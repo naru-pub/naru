@@ -211,7 +211,7 @@ export async function registerClient(body: unknown) {
   const name =
     typeof metadata.client_name === "string" && metadata.client_name.trim()
       ? metadata.client_name.trim().slice(0, MAX_CLIENT_NAME)
-      : "MCP 앱";
+      : "AI 앱";
 
   // Registrations no sign-in followed are dropped after a day, so anyone
   // registering keeps at most a day's worth.

@@ -67,7 +67,7 @@ export default async function ConnectAiApp() {
               <code className="flex h-9 min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap border-2 border-line px-3 font-mono text-sm">
                 {serverUrl}
               </code>
-              <CopyText text={serverUrl} label="MCP 서버 주소" />
+              <CopyText text={serverUrl} label="연결 주소" />
             </div>
           </div>
         </div>

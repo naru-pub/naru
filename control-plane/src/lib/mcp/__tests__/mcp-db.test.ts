@@ -293,7 +293,7 @@ integration("Naru MCP", () => {
       ],
     });
     expect(client.token_endpoint_auth_method).toBe("none");
-    expect(client.client_name).toBe("MCP 앱");
+    expect(client.client_name).toBe("AI 앱");
   });
 
   test("refuses a sign-in to an unregistered redirect or another resource", async () => {

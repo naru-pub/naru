@@ -74,8 +74,9 @@ export default function McpConnectionsCard({
       </CardHeader>
       <CardContent className="p-6 space-y-4">
         <p className="text-muted-foreground leading-relaxed">
-          MCP를 지원하는 앱에서 아래 주소를 추가하면, 그 앱이 내 사이트의 파일을
-          읽고 고칠 수 있습니다.{" "}
+          AI 앱에 나루를 추가하면 그 앱이 내 사이트의 파일을 읽고 고칠 수
+          있습니다. Claude와 ChatGPT에서는 바로 추가할 수 있고, 다른 앱에는 아래
+          주소를 넣으세요.{" "}
           <Link href="/docs/ai" className="underline underline-offset-4">
             자세히
           </Link>

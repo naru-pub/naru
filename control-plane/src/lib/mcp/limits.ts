@@ -87,9 +87,9 @@ export function freeWrite(
     site > FREE_SITE_BYTES * factor
       ? `The site is over ${(FREE_SITE_BYTES * factor) / GB} GB`
       : writes > FREE_WRITES_PER_DAY * factor
-        ? `The site has written over ${FREE_WRITES_PER_DAY * factor} files through MCP today`
+        ? `The site has written over ${FREE_WRITES_PER_DAY * factor} files through AI apps today`
         : dayBytes > FREE_WRITE_BYTES_PER_DAY * factor
-          ? `The site has written over ${(FREE_WRITE_BYTES_PER_DAY * factor) / MB} MB through MCP today`
+          ? `The site has written over ${(FREE_WRITE_BYTES_PER_DAY * factor) / MB} MB through AI apps today`
           : null;
   const hard = past(HARD_CAP_FACTOR);
   if (hard) return { refused: `${hard}, so this write was refused.` };

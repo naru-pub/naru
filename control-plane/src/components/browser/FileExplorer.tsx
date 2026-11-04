@@ -253,7 +253,7 @@ export default function FileExplorer({
         const overwrite = await confirm({
           title: `"${basename(path)}" 파일이 다른 곳에서 변경되었습니다.`,
           description:
-            "연 뒤에 MCP, 앱 또는 다른 탭에서 저장된 버전이 있습니다. 덮어쓰면 그 변경 사항은 사라집니다.",
+            "연 뒤에 AI 앱, 모바일 앱 또는 다른 탭에서 저장된 버전이 있습니다. 덮어쓰면 그 변경 사항은 사라집니다.",
           confirmText: "덮어쓰기",
           destructive: true,
         });

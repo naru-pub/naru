@@ -33,7 +33,7 @@ const PERKS = [
   },
   {
     emoji: "🤖",
-    title: "MCP로 데이터베이스까지",
+    title: "AI 앱으로 데이터베이스까지",
     description: (
       <>
         AI 앱 연결은 누구나 쓸 수 있고, 서포터는 앱에게 방명록이나 블로그처럼
