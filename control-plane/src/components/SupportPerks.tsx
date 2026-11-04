@@ -38,7 +38,7 @@ const PERKS = [
       <>
         AI 앱 연결은 누구나 쓸 수 있고, 서포터는 앱에게 방명록이나 블로그처럼
         데이터베이스를 쓰는 기능까지 부탁하실 수 있습니다.{" "}
-        <a href="/docs/mcp" className="underline underline-offset-4">
+        <a href="/docs/ai" className="underline underline-offset-4">
           연결 방법 보기
         </a>
       </>

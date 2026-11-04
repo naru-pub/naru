@@ -16,7 +16,7 @@ const GUIDES = [
       "첫 페이지 고치기, 이미지 올리기, 저장과 미리보기, 파일 정리와 단축키.",
   },
   {
-    href: "/docs/mcp",
+    href: "/docs/ai",
     title: "AI 앱 연결",
     summary: "AI 앱을 연결해서 말로 부탁해 홈페이지 파일을 고쳐요.",
   },

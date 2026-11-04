@@ -22,7 +22,7 @@ const STEPS = [
 ];
 
 // Where the home page, the editor and the nav send someone to connect an app.
-// /mcp itself is the MCP endpoint; the whole story is the guide at /docs/mcp.
+// /mcp itself is the MCP endpoint; the whole story is the guide at /docs/ai.
 export default async function ConnectAiApp() {
   const { user } = await validateRequest();
   const serverUrl = mcpResource();
@@ -119,7 +119,7 @@ export default async function ConnectAiApp() {
           )}
           무엇을 부탁할 수 있는지는{" "}
           <Link
-            href="/docs/mcp"
+            href="/docs/ai"
             className="text-link underline-offset-4 hover:underline"
           >
             AI 앱 연결 길잡이

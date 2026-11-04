@@ -4,7 +4,7 @@ Apps that speak the Model Context Protocol connect to an account's site at
 `https://naru.pub/mcp` and read and change its files. Any account may, within
 `lib/mcp/limits.ts`; the database's tools take the `database` feature, so a
 site that outgrows its files meets the plan where it needs it. People find it on `/account` and
-`/docs/mcp`; naru.pub doesn't promote it elsewhere.
+`/docs/ai`; naru.pub doesn't promote it elsewhere.
 
 ## What a connection reaches
 

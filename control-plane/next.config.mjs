@@ -7,13 +7,14 @@ const nextConfig = {
   // waits for like the image build; here it would hold up the image by ~20s.
   typescript: { ignoreBuildErrors: true },
   // Old addresses, for links and bookmarks: the GitHub deploys page was
-  // /deploys, the manual /help.
+  // /deploys, the manual /help, the AI guide /docs/mcp.
   async redirects() {
     return [
       { source: "/deploys", destination: "/github", permanent: true },
       { source: "/help", destination: "/docs", permanent: true },
       { source: "/help/files", destination: "/docs/files", permanent: true },
-      { source: "/help/mcp", destination: "/docs/mcp", permanent: true },
+      { source: "/help/mcp", destination: "/docs/ai", permanent: true },
+      { source: "/docs/mcp", destination: "/docs/ai", permanent: true },
     ];
   },
   async headers() {
