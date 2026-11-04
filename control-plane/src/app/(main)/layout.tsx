@@ -117,7 +117,13 @@ export default async function RootLayout({
                       negative margin) leaves room for the focus outline. */}
                     <div className="order-last -mx-4 flex h-11 w-[calc(100%+2rem)] items-stretch gap-0.5 overflow-x-auto border-t border-border px-2 pt-px [scrollbar-width:none] sm:-mx-6 sm:w-[calc(100%+3rem)] sm:px-4 md:order-none md:mx-0 md:h-auto md:w-auto md:border-0 md:px-0 md:pt-0 [&::-webkit-scrollbar]:hidden">
                       <NavLink href="/docs">길잡이</NavLink>
-                      {user && <NavLink href="/files">파일</NavLink>}
+                      {user && (
+                        <NavLink href="/files">
+                          <span className="md:max-lg:hidden">직접 만들기</span>
+                          {/* A tablet's row has room only for the short name. */}
+                          <span className="hidden md:max-lg:inline">파일</span>
+                        </NavLink>
+                      )}
                       <NavLink href="/board">자랑</NavLink>
                       <NavLink href="/templates">
                         템플릿
