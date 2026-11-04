@@ -15,7 +15,11 @@ import {
   type BillingInterval,
 } from "@/lib/payments/toss";
 import { notePaymentEvent, won } from "@/lib/payments/payment-events";
-import { readRefundPayment, RefundError } from "@/lib/payments/refunds";
+import {
+  readRefundPayment,
+  RefundError,
+  releaseRefusedRefund,
+} from "@/lib/payments/refunds";
 import {
   applyVerifiedTossPayment,
   TossPaymentMismatchError,
@@ -28,7 +32,11 @@ import {
 } from "@/lib/payments/payment-reconciliation";
 import { LIVE_SUBSCRIPTION_STATUSES } from "@/lib/payments/payment-states";
 import { endPlan } from "@/lib/payments/subscriptions";
-import { paymentFlowForRecord, paymentOfOtherMid } from "@/lib/payments/toss";
+import {
+  isDefinitiveTossFailure,
+  paymentFlowForRecord,
+  paymentOfOtherMid,
+} from "@/lib/payments/toss";
 import { cancelOrder } from "@/lib/payments/toss-gateway";
 import { isTossTestMode, withTossLab } from "@/lib/payments/toss";
 import { Absurd } from "absurd-sdk";
@@ -439,10 +447,16 @@ async function finishRefund(
   reason: string,
   planRunningBefore: string | null,
 ): Promise<void> {
-  if (!payment.toss_payment_key)
-    throw new RefundError("결제 승인 정보가 없습니다.", 409);
+  // Neither can ever be refunded from here, however often the task retries.
+  if (!payment.toss_payment_key) {
+    await releaseRefusedRefund(db, payment, "결제 승인 정보가 없습니다.");
+    return;
+  }
   const otherMid = paymentOfOtherMid(payment);
-  if (otherMid) throw new RefundError(otherMid.message, 409);
+  if (otherMid) {
+    await releaseRefusedRefund(db, payment, otherMid.message);
+    return;
+  }
 
   let refunded: ReconciliationResult | null = null;
   const canceled = await cancelOrder({
@@ -469,6 +483,17 @@ async function finishRefund(
         canceled.error.code !== "ALREADY_CANCELED_PAYMENT" &&
         canceled.error.code !== "ALREADY_REFUNDING_PAYMENT"
       ) {
+        // A refusal on the merits is final: the request is withdrawn, so the
+        // plan it held back renews again and the supporter can ask again.
+        // Anything else (PROVIDER_ERROR, a 429) is retried by the task.
+        if (isDefinitiveTossFailure(canceled.error)) {
+          await releaseRefusedRefund(
+            db,
+            payment,
+            describeTossError(canceled.error),
+          );
+          return;
+        }
         throw canceled.error;
       }
       // No answer either way. The webhook and the refund sweep will see the

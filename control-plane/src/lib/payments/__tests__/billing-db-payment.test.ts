@@ -3542,6 +3542,72 @@ integration("payments against the database", () => {
       expect(await supporterUntil(userId)).toBeNull();
     });
 
+    test("a refund Toss refuses is withdrawn, so its plan renews and it can be asked again", async () => {
+      const userId = await makeUser();
+      const paymentId = await paidPayment(userId);
+      const periodEnd = new Date(Date.now() - DAY);
+      const subId = await makeSubscription(userId, {
+        status: "active",
+        currentPeriodEnd: periodEnd,
+        nextBillingAt: periodEnd,
+      });
+      toss.cancelPayment.mockRejectedValue(
+        new toss.TossApiError("취소 불가", 403, "NOT_CANCELABLE_PAYMENT"),
+      );
+      // Toss still shows the payment approved: nothing was refunded.
+      toss.getPaymentByOrderId.mockResolvedValue(
+        tossPayment(`refund-order-${userId}`, 12000),
+      );
+
+      await expect(
+        refundPayment({ paymentId, overridePolicy: false, reason: "test" }),
+      ).resolves.toMatchObject({
+        state: "failed",
+        subscriptionCanceled: false,
+      });
+      const row = await db
+        .selectFrom("payments")
+        .select([
+          "refund_requested_at",
+          "refund_subscription_id",
+          "refunded_amount",
+        ])
+        .where("id", "=", paymentId)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({
+        refund_requested_at: null,
+        refund_subscription_id: null,
+        refunded_amount: 0,
+      });
+      expect(
+        await db
+          .selectFrom("payment_events")
+          .select("kind")
+          .where("payment_id", "=", paymentId)
+          .where("kind", "=", "refund_refused")
+          .execute(),
+      ).toHaveLength(1);
+
+      // The plan the request held back renews again. Its order is new to Toss.
+      toss.getPaymentByOrderId.mockRejectedValue(
+        new toss.TossApiError("없음", 404, "NOT_FOUND_PAYMENT"),
+      );
+      await chargeDueSubscriptions(new Date(), { subscriptionIds: [subId] });
+      expect(toss.chargeBillingKey).toHaveBeenCalledTimes(1);
+
+      // And a second request is a new task, not the first one's key.
+      const canceled = tossPayment(`refund-order-${userId}`, 12000, {
+        status: "CANCELED",
+        cancels: [{ cancelAmount: 12000 }],
+      });
+      toss.cancelPayment.mockReset().mockResolvedValue(canceled);
+      toss.getPaymentByOrderId.mockResolvedValue(canceled);
+      await expect(
+        refundPayment({ paymentId, overridePolicy: false, reason: "again" }),
+      ).resolves.toMatchObject({ state: "completed" });
+      expect(toss.cancelPayment).toHaveBeenCalledTimes(1);
+    });
+
     test("a verified cancel response commits refund facts without another lookup", async () => {
       const userId = await makeUser();
       const paymentId = await paidPayment(userId);
@@ -8314,7 +8380,10 @@ integration("payments against the database", () => {
       );
       await db
         .updateTable("users")
-        .set({ email: "verified-now@example.test", email_verified_at: new Date() })
+        .set({
+          email: "verified-now@example.test",
+          email_verified_at: new Date(),
+        })
         .where("id", "=", unverified)
         .execute();
       expect((await trials.trialState(db, unverified)).state).toBe("eligible");
@@ -8376,9 +8445,11 @@ integration("payments against the database", () => {
       expect(served.entitledUntil).toBeGreaterThan(endsAt.getTime());
 
       // Canceling the plan before its charge takes them back.
-      await db.transaction().execute((trx) =>
-        endPlan(trx, sub.id, { summary: () => "canceled during the trial" }),
-      );
+      await db
+        .transaction()
+        .execute((trx) =>
+          endPlan(trx, sub.id, { summary: () => "canceled during the trial" }),
+        );
       expect(await userHasFeature(userId, "custom_domains")).toBe(false);
       expect(await userHasFeature(userId, "database")).toBe(true);
       expect(await servedCustomDomains(userId)).toEqual([]);

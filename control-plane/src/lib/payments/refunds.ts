@@ -1,5 +1,7 @@
 import { AccountBusyError, withAccountLock } from "@/lib/payments/account-lock";
 import { db } from "@/lib/database";
+import type { Executor } from "@/lib/entitlements";
+import { recordPaymentEvent } from "@/lib/payments/payment-events";
 import { enqueueJob } from "@/lib/payments/payment-jobs";
 import { LIVE_SUBSCRIPTION_STATUSES } from "@/lib/payments/payment-states";
 import { isTossTestMode, paymentOfOtherMid } from "@/lib/payments/toss";
@@ -116,13 +118,7 @@ export async function refundProgress(
 ): Promise<RefundProgress> {
   const payment = await readRefundPayment(paymentId);
   if (!payment) throw new RefundError("결제 내역을 찾을 수 없습니다.", 404);
-  const task = payment.refund_requested_at
-    ? await db
-        .selectFrom("absurd.t_payments")
-        .select("state")
-        .where("idempotency_key", "=", `refund:${paymentId}`)
-        .executeTakeFirst()
-    : undefined;
+  const task = await latestRefundTask(paymentId);
   return {
     paymentId,
     amount: payment.amount,
@@ -130,11 +126,69 @@ export async function refundProgress(
       payment.refunded_amount > 0
         ? "completed"
         : !payment.refund_requested_at
-          ? "not_requested"
+          ? // A request Toss refused was released (releaseRefusedRefund):
+            // its task ran and nothing was refunded.
+            task
+            ? "failed"
+            : "not_requested"
           : task?.state === "failed" || task?.state === "cancelled"
             ? "failed"
             : "pending",
   };
+}
+
+// Each request has its own task: Absurd keeps an idempotency key for good, so a
+// request made again after a refusal (releaseRefusedRefund) needs a key the
+// first one did not use. A payment's first request keeps `refund:<payment id>`.
+async function refundTaskKey(
+  paymentId: string,
+  requestedAt: Date,
+): Promise<string> {
+  return (await latestRefundTask(paymentId))
+    ? `refund:${paymentId}:${requestedAt.toISOString()}`
+    : `refund:${paymentId}`;
+}
+
+function latestRefundTask(paymentId: string) {
+  return db
+    .selectFrom("absurd.t_payments")
+    .select("state")
+    .where((eb) =>
+      eb.or([
+        eb("idempotency_key", "=", `refund:${paymentId}`),
+        eb("idempotency_key", "like", `refund:${paymentId}:%`),
+      ]),
+    )
+    .orderBy("enqueue_at", "desc")
+    .limit(1)
+    .executeTakeFirst();
+}
+
+// Toss refused the cancel on its merits, or it cannot be asked at all (no
+// payment key, another MID): nothing was refunded and asking again under the
+// same request would only be refused again. The request is withdrawn, so the
+// plan it held back renews again (dueSubscriptions skips a plan with a refund
+// still open) and the supporter, or an operator, can ask again.
+export async function releaseRefusedRefund(
+  executor: Executor,
+  payment: { id: string; user_id: string },
+  why: string,
+): Promise<boolean> {
+  const released = await executor
+    .updateTable("payments")
+    .set({ refund_requested_at: null, refund_subscription_id: null })
+    .where("id", "=", payment.id)
+    .where("refunded_amount", "=", 0)
+    .where("refund_requested_at", "is not", null)
+    .executeTakeFirst();
+  if (Number(released.numUpdatedRows ?? 0) === 0) return false;
+  await recordPaymentEvent(executor, {
+    kind: "refund_refused",
+    userId: payment.user_id,
+    paymentId: payment.id,
+    summary: `환불이 거절되어 신청을 철회함: ${why}`,
+  });
+  return true;
 }
 
 // HTTP only accepts the request and commits its task. Only the Absurd handler
@@ -232,11 +286,13 @@ async function refundLocked(opts: RefundRequest): Promise<RefundProgress> {
   // Acceptance and its task commit together before touching Toss. Capture
   // the subscription now: recovery must never cancel a later signup.
   if (!payment.refund_requested_at) {
+    const requestedAt = new Date();
+    const taskKey = await refundTaskKey(payment.id, requestedAt);
     await db.transaction().execute(async (trx) => {
       await trx
         .updateTable("payments")
         .set({
-          refund_requested_at: new Date(),
+          refund_requested_at: requestedAt,
           refund_subscription_id: planRunningBefore,
         })
         .where("id", "=", payment.id)
@@ -251,7 +307,7 @@ async function refundLocked(opts: RefundRequest): Promise<RefundProgress> {
             ? { testCode: opts.testCode.slice(0, 100) }
             : {}),
         },
-        { dedupeKey: `refund:${payment.id}` },
+        { dedupeKey: taskKey },
       );
     });
   }
