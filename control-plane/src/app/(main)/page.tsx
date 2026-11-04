@@ -2,7 +2,6 @@ import { db } from "@/lib/database";
 import { sql } from "kysely";
 import Link from "next/link";
 import Image from "next/image";
-import { AdCard } from "@/components/AdCard";
 import { AskDemo } from "@/components/AskDemo";
 import { BrowserFrame, SiteAddress } from "@/components/BrowserFrame";
 import { PixelWave } from "@/components/PixelWave";
@@ -364,7 +363,7 @@ export default async function Home() {
         </section>
       )}
 
-      <section className="border-y-2 border-line">
+      <section className="border-t-2 border-line">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-16 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold tracking-tight">
             나루는 이렇게 써요
@@ -385,7 +384,7 @@ export default async function Home() {
               </li>
             ))}
           </ol>
-          <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-x-8 gap-y-3 border-[1.5px] border-line px-6 py-5 text-sm leading-relaxed">
+          <dl className="grid gap-x-8 gap-y-3 border-t-2 border-border pt-6 text-sm leading-relaxed md:grid-cols-2">
             {RULES.map(([term, text]) => (
               <div key={term}>
                 <dt className="inline font-bold">{term}</dt>
@@ -421,44 +420,6 @@ export default async function Home() {
               </dd>
             </div>
           </dl>
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="allies"
-        className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-14 sm:px-6 lg:px-8"
-      >
-        <div className="flex items-center gap-3">
-          <h2 id="allies" className="text-lg font-bold">
-            동맹 사이트
-          </h2>
-          <span className="inline-flex h-[22px] items-center border-[1.5px] border-current px-1.5 text-xs font-semibold text-muted-foreground">
-            광고
-          </span>
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-4">
-          <AdCard
-            title="오이카페"
-            imageSrc="/ad/8f1572d356a332381c53e1f7e6b77afb0e64f1bdb6a4b46c76a6bb6f5a680a30.png"
-            imageAlt="오이카페 캐릭터"
-            description="2000년대 감성의 웹 그림판. 오에카키로 그리고 넷캔도 즐겨요."
-            href="https://oeee.cafe"
-          />
-          <AdCard
-            title="타이포 블루"
-            imageSrc="/ad/1339fc50a058b6d7f6a782c76d61839262459bd47c8e37c7421cc14b28bbfdba.png"
-            imageAlt="타이포 블루 캐릭터"
-            description="새로운 블로깅 플랫폼. 메일링과 연합우주로 글을 발행해요."
-            href="https://typo.blue"
-          />
-          <AdCard
-            title="이 자리가 비어 있어요"
-            imageSrc="/ad/0c88af5cb6aee0da1e19b8c7f75ee6a1fc11cda46729b5734f4cf2e45c65bede.png"
-            imageAlt="귀여운 고양이"
-            description="광고 문의는 DM으로 부탁드려요."
-            href="https://x.com/naru_pub"
-            vacant
-          />
         </div>
       </section>
     </div>
