@@ -89,15 +89,28 @@ export async function withAccountLock<T>(
 
   let locked = false;
   let broken = false;
+  // A checked-out client has no error listener of its own (pg-pool removes
+  // its idle one on checkout), and the lock's connection sits idle for as
+  // long as fn waits on Toss. Without this, a connection dropped meanwhile — a
+  // restart, a failover, a network blip — emits an unhandled 'error' and
+  // takes the whole process down. The lock went with the connection, so the
+  // client is destroyed on release, and the loss is reported once fn is done.
+  let lost: unknown = null;
+  const onError = (error: unknown) => {
+    lost ??= error;
+    broken = true;
+  };
+  client.on("error", onError);
   try {
     locked = await acquire(client, userId, opts.waitMs);
   } catch (error) {
-    broken = true;
+    client.off("error", onError);
     client.release(true);
     throw error;
   }
   if (!locked) {
-    client.release();
+    client.off("error", onError);
+    client.release(broken);
     throw new AccountBusyError(userId);
   }
 
@@ -106,17 +119,28 @@ export async function withAccountLock<T>(
   try {
     return await held.run(accounts, fn);
   } finally {
-    try {
-      await client.query("select pg_advisory_unlock($1, hashtext($2::text))", [
-        PAYMENTS_LOCK_SPACE,
-        userId,
-      ]);
-    } catch {
-      // A connection that cannot say it unlocked must not go back to the pool
-      // still holding the lock; destroying it drops the lock with it.
-      broken = true;
+    if (!broken) {
+      try {
+        await client.query(
+          "select pg_advisory_unlock($1, hashtext($2::text))",
+          [PAYMENTS_LOCK_SPACE, userId],
+        );
+      } catch {
+        // A connection that cannot say it unlocked must not go back to the
+        // pool still holding the lock; destroying it drops the lock with it.
+        broken = true;
+      }
     }
+    client.off("error", onError);
     client.release(broken);
+    if (lost) {
+      // fn may have run part of its course without the lock. Failing now
+      // would not undo what it did, so the operators are told instead.
+      console.error(
+        `[account-lock] lost the lock for account ${userId} while it was held:`,
+        lost instanceof Error ? lost.message : lost,
+      );
+    }
   }
 }
 
