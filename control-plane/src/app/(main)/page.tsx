@@ -238,7 +238,7 @@ export default async function Home() {
                 </Link>
               </p>
               <p className="text-[13px] text-muted-foreground">
-                HTML을 몰라도 괜찮아요.{" "}
+                코드를 몰라도 괜찮아요.{" "}
                 <Link
                   href="#ask"
                   className="text-link underline-offset-4 hover:underline"
