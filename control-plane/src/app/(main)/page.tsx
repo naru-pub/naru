@@ -327,14 +327,14 @@ export default async function Home() {
 
       <PixelWave className="mt-14" />
       <div className="border-b-2 border-line bg-card">
+        <EditDemo href={user ? "/files" : "/signup?next=/files"} />
+      </div>
+      <div className="border-b-2 border-line">
         <AskDemo
           today={new Date().toLocaleDateString("sv-SE", {
             timeZone: "Asia/Seoul",
           })}
         />
-      </div>
-      <div className="border-b-2 border-line">
-        <EditDemo href={user ? "/files" : "/signup?next=/files"} />
       </div>
 
       {recentlyRenderedUsers.length > 0 && (
