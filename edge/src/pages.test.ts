@@ -167,6 +167,11 @@ describe("pageviews", () => {
     expect(classify(request(nav, "POST"))).toBe("background");
     expect(
       classify(
+        request({ "sec-fetch-mode": "navigate", "sec-fetch-dest": "empty" }),
+      ),
+    ).toBe("navigation");
+    expect(
+      classify(
         request({ "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" }),
       ),
     ).toBe("frame");

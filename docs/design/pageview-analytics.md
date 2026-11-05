@@ -10,10 +10,17 @@ including custom domains, without path/referrer/username rules.
 
 The Worker classifies successful HTML responses using Fetch Metadata:
 
-| Request                                                     | Treatment  |
-| ----------------------------------------------------------- | ---------- |
-| GET, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` | Record     |
-| Anything else                                               | Not logged |
+| Request                                                              | Treatment  |
+| -------------------------------------------------------------------- | ---------- |
+| GET, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`          | Record     |
+| GET, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: empty`             | Record     |
+| Anything else                                                        | Not logged |
+
+`empty` is how Chrome sends a navigation that a site's service worker passes on
+with `fetch(event.request)`; without it, a site with a service worker loses
+nearly all its pageviews. A page's own `fetch` cannot use `navigate`, so this
+admits no background requests. It does admit iframes loaded through a service
+worker, which arrive with the same headers.
 
 Redirects, failed responses, and non-HTML files never enter this pipeline.
 Clients that send no metadata deliberately do not count; this loses older

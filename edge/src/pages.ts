@@ -143,7 +143,11 @@ export function classify(request: Request): RequestKind {
   if (request.method !== "GET") return "background";
   const mode = request.headers.get("sec-fetch-mode");
   const dest = request.headers.get("sec-fetch-dest");
-  if (mode === "navigate" && dest === "document") return "navigation";
+  // A service worker passing a navigation on with fetch(event.request) sends
+  // it as `navigate` with dest `empty` (Chrome); a page's own fetch can't use
+  // `navigate`.
+  if (mode === "navigate" && (dest === "document" || dest === "empty"))
+    return "navigation";
   if (mode === "navigate" && (dest === "iframe" || dest === "frame"))
     return "frame";
   if (mode === null || dest === null) return "unknown";
