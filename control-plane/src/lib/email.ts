@@ -365,7 +365,7 @@ export async function sendSubscriptionRenewalNoticeEmail(opts: {
           <p>${opts.loginName}님, 나루 결제가 곧 자동 갱신됩니다.</p>
           <p><strong>결제 예정일:</strong> ${nextBillingLabel}</p>
           <p><strong>결제 예정 금액:</strong> ${amountLabel}</p>
-          <p>결제를 계속 유지하면 커스텀 도메인 같은 유료 기능을 계속 이용하실 수 있습니다.</p>
+          <p>결제를 계속 유지하면 데이터베이스, 커스텀 도메인, 방문자 현황 같은 유료 기능을 계속 이용하실 수 있습니다.</p>
           <p>
             <a href="${accountUrl}" style="background-color: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
               계정에서 결제 관리
@@ -382,7 +382,7 @@ export async function sendSubscriptionRenewalNoticeEmail(opts: {
         결제 예정일: ${nextBillingLabel}
         결제 예정 금액: ${amountLabel}
 
-        결제를 계속 유지하면 커스텀 도메인 같은 유료 기능을 계속 이용하실 수 있습니다.
+        결제를 계속 유지하면 데이터베이스, 커스텀 도메인, 방문자 현황 같은 유료 기능을 계속 이용하실 수 있습니다.
         원치 않으시면 결제 예정일 전에 결제 페이지에서 정기 결제를 해지할 수 있습니다.
 
         결제 관리: ${accountUrl}
