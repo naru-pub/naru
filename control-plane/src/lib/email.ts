@@ -489,7 +489,7 @@ export async function sendSubscriptionPaymentGraceEmail(opts: {
           <p>${opts.loginName}님, 나루 결제 갱신 결제를 처리하지 못했습니다.</p>
           <p><strong>결제 금액:</strong> ${amountLabel}</p>
           <p><strong>유료 기능 유지 기한:</strong> ${graceEndsLabel}</p>
-          <p>유예 기간 동안 커스텀 도메인 같은 유료 기능은 계속 유지됩니다. 기한 전까지 결제 수단을 다시 등록하거나 결제를 완료하지 못하면 유료 기능이 중단되고 커스텀 도메인이 해제될 수 있습니다.</p>
+          <p>유예 기간 동안 데이터베이스, 커스텀 도메인, 방문자 현황 같은 유료 기능은 계속 유지됩니다. 기한 전까지 결제 수단을 다시 등록하거나 결제를 완료하지 못하면 유료 기능이 중단되고 커스텀 도메인이 해제될 수 있습니다.</p>
           <p>
             <a href="${accountUrl}" style="background-color: #d97706; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
               결제 수단 다시 등록
@@ -505,7 +505,7 @@ export async function sendSubscriptionPaymentGraceEmail(opts: {
         결제 금액: ${amountLabel}
         유료 기능 유지 기한: ${graceEndsLabel}
 
-        유예 기간 동안 커스텀 도메인 같은 유료 기능은 계속 유지됩니다.
+        유예 기간 동안 데이터베이스, 커스텀 도메인, 방문자 현황 같은 유료 기능은 계속 유지됩니다.
         기한 전까지 결제 수단을 다시 등록하거나 결제를 완료하지 못하면 유료 기능이 중단되고 커스텀 도메인이 해제될 수 있습니다.
 
         결제 수단 다시 등록: ${accountUrl}
@@ -893,7 +893,7 @@ export async function sendSubscriptionPastDueEmail(opts: {
       ? null
       : opts.accessEndsAt
         ? `유료 기능은 ${formatKoreanDateTime(opts.accessEndsAt)}까지 유지됩니다. 그 전에 다시 결제하시면 끊기지 않고 이어집니다.`
-        : "커스텀 도메인 같은 유료 기능은 중단되었고, 연결된 커스텀 도메인은 해제될 수 있습니다.";
+        : "데이터베이스, 커스텀 도메인, 방문자 현황 같은 유료 기능은 중단되었고, 연결된 커스텀 도메인은 해제될 수 있습니다.";
   const closing =
     "결제 페이지에서 카드를 다시 등록하면 정기 결제를 다시 시작할 수 있습니다.";
 
