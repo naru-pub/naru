@@ -73,7 +73,7 @@ export function AskDemo({ today }: { today: string }) {
         >
           <span className="highlight">말만</span> 하면
           <br />
-          AI가 고쳐 줘요
+          AI가 만들어 줘요
         </h2>
         <p className="max-w-[30em] text-[17px] leading-relaxed text-muted-foreground">
           쓰던 AI 앱을 나루에 연결하세요. 코드를 몰라도, 대화만으로 내 사이트의
