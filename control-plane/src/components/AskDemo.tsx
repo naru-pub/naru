@@ -71,9 +71,9 @@ export function AskDemo({ today }: { today: string }) {
           id="ask-heading"
           className="text-[clamp(2rem,4vw,3.25rem)] font-bold leading-[1.16] tracking-[-0.035em]"
         >
-          <span className="highlight">말로</span> 부탁하면
+          <span className="highlight">말만</span> 하면
           <br />
-          홈페이지가 바뀌어요
+          AI가 고쳐 줘요
         </h2>
         <p className="max-w-[30em] text-[17px] leading-relaxed text-muted-foreground">
           쓰던 AI 앱을 나루에 연결하세요. 코드를 몰라도, 대화만으로 내 사이트의
