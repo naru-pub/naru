@@ -1,25 +1,22 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { createHash, randomInt } from "crypto";
+import {
+  ONE_TIME_YEAR_AMOUNT,
+  PLAN_AMOUNTS,
+  type BillingInterval,
+} from "@/lib/payments/prices";
+
+export { ONE_TIME_YEAR_AMOUNT, PLAN_AMOUNTS, type BillingInterval };
 
 const TOSS_API = "https://api.tosspayments.com";
 
-export type BillingInterval = "month" | "year";
 export type TossPaymentFlow = "billing" | "one-time";
-
-// Authoritative server-side amounts (KRW). Never trust client-sent amounts.
-export const PLAN_AMOUNTS: Record<BillingInterval, number> = {
-  month: 1000,
-  year: 10000,
-};
 
 export const PLAN_ORDER_NAMES: Record<BillingInterval, string> = {
   month: "나루 결제 (월간)",
   year: "나루 결제 (연간)",
 };
 
-// One-time donation: pay once for 1 year (no auto-renewal). Priced above the
-// recurring annual plan since there's no retention commitment.
-export const ONE_TIME_YEAR_AMOUNT = 12000;
 export const ONE_TIME_YEAR_ORDER_NAME = "나루 결제 (1년, 한 번만 결제)";
 
 // Card-company review (PG 심사) rejects a merchant whose 서비스 제공기간 runs

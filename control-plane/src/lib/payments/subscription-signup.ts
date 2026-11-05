@@ -185,8 +185,8 @@ async function prepareSubscriptionLocked(opts: {
   const { userId, interval } = opts;
 
   // A one-time order the buyer authenticated and left is confirmed by the
-  // reconciler within minutes, and its approval switches off whatever plan
-  // the account has — the one this signup starts included. Settle it first;
+  // reconciler within minutes, but not once a plan runs
+  // (oneTimeOrderSuperseded), so it is settled before this signup starts one;
   // one still being confirmed at Toss makes the signup wait.
   if (!(await settleOneTimeOrders(userId))) {
     return fail(409, PREVIOUS_CHARGE_PENDING_MESSAGE);

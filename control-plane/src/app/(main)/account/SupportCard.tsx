@@ -11,13 +11,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useConfirm } from "@/components/ui/confirm";
+import { ONE_TIME_YEAR_AMOUNT, PLAN_AMOUNTS } from "@/lib/payments/prices";
 import { renewalChargeAt } from "@/lib/payments/renewal-time";
 
 // 카드사 심사는 서비스 제공기간이 1년을 넘는 상품을 허용하지 않으므로, 일회성
-// 일회성 결제는 1년치 한 건만 판매한다. 서버(MAX_PURCHASABLE_ONE_TIME_YEARS)가 같은
+// 결제는 1년치 한 건만 판매한다. 서버(MAX_PURCHASABLE_ONE_TIME_YEARS)가 같은
 // 한도를 강제한다. lib/toss는 crypto를 끌어오므로 여기서 import하지 않는다.
 const ONE_TIME_YEARS = 1;
-const ONE_TIME_AMOUNT = 12000;
+
+const krw = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
+
+// How many whole months of the monthly price the yearly plan saves.
+const YEARLY_FREE_MONTHS = Math.floor(
+  12 - PLAN_AMOUNTS.year / PLAN_AMOUNTS.month,
+);
 
 // Toss reports a closed payment window through failUrl with the same shape as a
 // real failure. These two codes mean the supporter backed out, so they get the
@@ -520,8 +527,8 @@ export default function SupportCard({
                         className="flex-1"
                       >
                         {supportActive
-                          ? "기간 종료 후 월 1,000원"
-                          : "월 1,000원 결제"}
+                          ? `기간 종료 후 월 ${krw(PLAN_AMOUNTS.month)}`
+                          : `월 ${krw(PLAN_AMOUNTS.month)} 결제`}
                       </Button>
                       <Button
                         onClick={() => subscribe("year")}
@@ -529,8 +536,8 @@ export default function SupportCard({
                         className="flex-1"
                       >
                         {supportActive
-                          ? "기간 종료 후 연 10,000원"
-                          : "연 10,000원 결제 (2개월 무료)"}
+                          ? `기간 종료 후 연 ${krw(PLAN_AMOUNTS.year)}`
+                          : `연 ${krw(PLAN_AMOUNTS.year)} 결제${YEARLY_FREE_MONTHS > 0 ? ` (${YEARLY_FREE_MONTHS}개월 무료)` : ""}`}
                       </Button>
                     </div>
                   </>
@@ -547,8 +554,7 @@ export default function SupportCard({
                         variant="outline"
                         className="flex-1"
                       >
-                        {ONE_TIME_AMOUNT.toLocaleString("ko-KR")}원 결제 (1년,
-                        자동 갱신 없음)
+                        {krw(ONE_TIME_YEAR_AMOUNT)} 결제 (1년, 자동 갱신 없음)
                       </Button>
                     </div>
                   </>

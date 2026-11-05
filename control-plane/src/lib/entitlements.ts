@@ -34,7 +34,9 @@ export const FEATURE_LABELS: Record<Feature, string> = {
 
 export const PLAN_FEATURES: Record<string, Feature[]> = {
   supporter: ["custom_domains", "github_deploys", "analytics", "database"],
-  // To add a richer tier later, add another plan key with its feature list.
+  // A plan with other features takes more than a key here: features are read
+  // from the account's newest subscription row, ended or not yet charged, and
+  // paid time (users.supporter_until) does not record which plan bought it.
 };
 
 // What a free trial opens: the plan's features but custom domains, since
