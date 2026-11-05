@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { AskDemo } from "@/components/AskDemo";
 import { BrowserFrame, SiteAddress } from "@/components/BrowserFrame";
+import { EditDemo } from "@/components/EditDemo";
 import { PixelWave } from "@/components/PixelWave";
 import { SiteGrid } from "@/components/SiteGrid";
 import { getHomepageUrl, getRenderedSiteUrl } from "@/lib/site-urls";
@@ -331,6 +332,9 @@ export default async function Home() {
             timeZone: "Asia/Seoul",
           })}
         />
+      </div>
+      <div className="border-b-2 border-line">
+        <EditDemo href={user ? "/files" : "/signup?next=/files"} />
       </div>
 
       {recentlyRenderedUsers.length > 0 && (
