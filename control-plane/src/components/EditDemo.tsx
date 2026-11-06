@@ -141,7 +141,7 @@ export function EditDemo({ href }: { href: string }) {
       <div className="flex min-w-0 flex-[1.25_1_520px] flex-col gap-4">
         <div className="flex min-h-11 flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium text-muted-foreground">
-            이름을 바꾸고 저장해 보세요
+            내용을 바꾸고 저장해 보세요
           </p>
           {changed && (
             <Button
