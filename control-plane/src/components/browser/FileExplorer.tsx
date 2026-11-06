@@ -862,17 +862,6 @@ export default function FileExplorer({
                   <p className="mt-2 text-sm">
                     {mod}P 파일로 이동 · {mod}S 저장
                   </p>
-                  <p className="mt-4 text-sm">
-                    직접 고치는 대신{" "}
-                    <a
-                      href="/ai"
-                      target="_blank"
-                      rel="noopener"
-                      className="text-link underline-offset-4 hover:underline"
-                    >
-                      AI 앱에게 말로 부탁할 수도 있어요 →
-                    </a>
-                  </p>
                 </div>
               </div>
             )}
