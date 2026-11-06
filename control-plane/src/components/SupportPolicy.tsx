@@ -89,12 +89,33 @@ export function SupportPolicy() {
 
         <section className="space-y-2">
           <h3 className="font-bold text-foreground">환불정책</h3>
+          <p className="text-muted-foreground">
+            모든 상품(정기 결제 월간·연간, 일회성 결제)에 같은 기준이 적용되며,
+            환불은 결제 한 건 단위로 이루어집니다.
+          </p>
           <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
             <li>
-              결제일로부터 {REFUND_WINDOW_DAYS}일 이내에는 이유를 묻지 않고 전액
-              환불해 드립니다. 유료 기능을 이미 쓰셨더라도 괜찮습니다. 결제
-              내역에서 직접 신청하시면 바로 처리되며, 사유를 적으실 필요도
-              없습니다.
+              <strong className="text-foreground">
+                결제 일시로부터 {REFUND_WINDOW_DAYS}일 이내: 결제 금액의 100%
+                환불
+              </strong>
+              . 유료 기능을 이미 이용하셨더라도 전액 환불되며, 사유를 묻지
+              않습니다. 결제 내역에서 직접 신청하시면 바로 처리됩니다.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                결제 일시로부터 {REFUND_WINDOW_DAYS}일이 지난 뒤: 환불 불가
+                (0%)
+              </strong>
+              . 남은 이용 기간에 대한 일할·부분 환불도 하지 않으며, 결제하신
+              기간은 만료일까지 그대로 이용하실 수 있습니다.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                예외 &mdash; 나루의 장애나 서비스 중단으로 유료 기능을 이용하지
+                못한 경우: 기간과 관계없이 해당 결제 금액의 100% 환불
+              </strong>
+              . 아래 문의처로 알려주시면 확인 후 처리합니다.
             </li>
             <li>
               환불이 완료되면 해당 결제로 제공된 이용 기간이 취소됩니다. 남은
@@ -107,13 +128,8 @@ export function SupportPolicy() {
               정기 결제는 언제든지 해지할 수 있습니다. 해지하시면 다음 결제부터
               청구되지 않고, 이미 결제하신 기간은 만료일까지 그대로 이용하실 수
               있습니다. 해지는 환불이 아니며, 환불은 결제 내역에서 따로
-              신청합니다. 이미 시작된 기간에 대한 일할 환불은 제공하지 않습니다.
-              환불이 이루어지면 정기 결제도 함께 해지되어 더 이상 결제되지
-              않습니다.
-            </li>
-            <li>
-              나루의 장애나 서비스 중단으로 유료 기능을 이용하지 못한 경우에는
-              기간 경과와 관계없이 환불해 드립니다.
+              신청합니다. 환불이 이루어지면 정기 결제도 함께 해지되어 더 이상
+              결제되지 않습니다.
             </li>
           </ul>
         </section>
@@ -134,8 +150,7 @@ export function SupportPolicy() {
             영업일 기준 3~7일이 더 걸릴 수 있습니다.
           </p>
           <p className="text-muted-foreground">
-            {REFUND_WINDOW_DAYS}일이 지난 뒤의 환불이나, 나루의 장애로 이용하지
-            못하신 경우, 그 밖의 문의는{" "}
+            나루의 장애로 이용하지 못하신 경우의 환불이나 그 밖의 문의는{" "}
             <a
               href="mailto:hello@naru.pub"
               className="text-primary underline hover:text-primary/80"
