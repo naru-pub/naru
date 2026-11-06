@@ -353,27 +353,27 @@ export function ApplyTemplateDialog({
               </label>
             )}
 
-            {step.plan.migrationConflicts.length > 0 && (
-              <div
-                role="alert"
-                className="space-y-1 border-2 border-destructive p-3 text-sm"
-              >
-                <p className="font-bold">
-                  사이트 데이터베이스에 이 템플릿의 마이그레이션을 적용할 수
-                  없어요
-                </p>
-                {step.plan.migrationConflicts.map((conflict) => (
-                  <p key={conflict} className="text-xs text-muted-foreground">
-                    {conflict}
+            {/* With a reset on offer, its option below says why instead. */}
+            {step.plan.migrationConflicts.length > 0 &&
+              !step.plan.canResetDatabase && (
+                <div
+                  role="alert"
+                  className="space-y-1 border-2 border-destructive p-3 text-sm"
+                >
+                  <p className="font-bold">
+                    사이트 데이터베이스에 이 템플릿의 마이그레이션을 적용할 수
+                    없어요
                   </p>
-                ))}
-                {!step.plan.canResetDatabase && (
+                  {step.plan.migrationConflicts.map((conflict) => (
+                    <p key={conflict} className="text-xs text-muted-foreground">
+                      {conflict}
+                    </p>
+                  ))}
                   <p className="text-xs">
                     데이터베이스를 정리한 뒤에 다시 해 주세요.
                   </p>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
             {step.plan.canResetDatabase &&
               (step.plan.migrationConflicts.length > 0 ||
@@ -389,6 +389,22 @@ export function ApplyTemplateDialog({
                       <span className="block font-bold">
                         데이터베이스를 초기화하고 적용하기
                       </span>
+                      {step.plan.migrationConflicts.length > 0 && (
+                        <span className="block space-y-0.5 text-xs">
+                          <span className="block">
+                            지금 데이터베이스에는 이 템플릿의 마이그레이션을
+                            적용할 수 없어서, 초기화해야 적용할 수 있어요.
+                          </span>
+                          {step.plan.migrationConflicts.map((conflict) => (
+                            <span
+                              key={conflict}
+                              className="block text-muted-foreground"
+                            >
+                              {conflict}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                       <span className="block text-xs text-muted-foreground">
                         사이트 데이터베이스의 테이블과 데이터, 적용된
                         마이그레이션, 컬렉션을 모두 지우고 이 템플릿의
