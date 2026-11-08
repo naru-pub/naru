@@ -6579,9 +6579,17 @@ integration("payments against the database", () => {
     });
 
     test("a dead worker's final attempt records its operator event atomically", async () => {
+      const userId = await makeUser();
+      const paymentId = await makePendingPayment({
+        userId,
+        subscriptionId: null,
+        attemptKey: "one_time:1:failed-reconciliation",
+        orderId: "failed-reconciliation",
+        amount: 12000,
+      });
       const id = (await enqueueJob(db, {
-        kind: "thank_you",
-        paymentId: randomUUID(),
+        kind: "reconcile_payment",
+        paymentId,
       }))!;
       await db
         .updateTable("absurd.t_payments")
@@ -6597,10 +6605,11 @@ integration("payments against the database", () => {
       expect((await client.fetchTaskResult(id))?.state).toBe("failed");
       const events = await db
         .selectFrom("payment_events")
-        .select("summary")
+        .select(["summary", "user_id"])
         .where("kind", "=", "job_failed")
         .execute();
       expect(events).toHaveLength(1);
+      expect(events[0].user_id).toBe(userId);
       expect(events[0].summary).toContain(id);
       await runDueJobs();
       expect(
@@ -6725,10 +6734,10 @@ integration("payments against the database", () => {
       expect((await job(id)).state).toBe("failed");
       const events = await db
         .selectFrom("payment_events")
-        .select("kind")
+        .select("user_id")
         .where("kind", "=", "job_failed")
         .execute();
-      expect(events).toHaveLength(1);
+      expect(events).toEqual([{ user_id: null }]);
     });
   });
 
