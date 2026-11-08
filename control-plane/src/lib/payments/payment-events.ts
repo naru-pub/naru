@@ -138,7 +138,8 @@ function digestSubject(
     const [event] = events;
     const label =
       PAYMENT_EVENT_LABELS[event.kind as PaymentEventKind] ?? event.kind;
-    const subject = `${tag} ${event.loginName ?? "(삭제된 계정)"} ${label}: ${event.summary}`;
+    const heading = [tag, event.loginName, label].filter(Boolean).join(" ");
+    const subject = `${heading}: ${event.summary}`;
     return subject.length > 120 ? `${subject.slice(0, 119)}…` : subject;
   }
   const counts = new Map<string, number>();
@@ -213,7 +214,7 @@ export async function sendPaymentEventDigest(
         pending.map((event) => ({
           kind: event.kind,
           loginName: event.user_id
-            ? (loginNames.get(event.user_id) ?? null)
+            ? (loginNames.get(event.user_id) ?? "(삭제된 계정)")
             : null,
           summary: event.summary,
         })),

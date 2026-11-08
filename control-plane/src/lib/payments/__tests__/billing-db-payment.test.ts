@@ -7186,7 +7186,8 @@ integration("payments against the database", () => {
       async function eventAt(
         secondsAgo: number,
         summary: string,
-        kind: "charge_succeeded" | "charge_failed" = "charge_succeeded",
+        kind: "charge_succeeded" | "charge_failed" | "job_failed" =
+          "charge_succeeded",
       ) {
         await db
           .insertInto("payment_events")
@@ -7269,6 +7270,16 @@ integration("payments against the database", () => {
           state: "sent",
           events: 2,
         });
+      });
+
+      test("a job failure without an account omits the account label", async () => {
+        await eventAt(10, "job stopped", "job_failed");
+
+        await sendPaymentEventDigest({ enabled: true, live: true });
+
+        expect(alerts.sendOperatorAlert.mock.calls[0][0].title).toBe(
+          "[나루 결제] 결제 작업 실패: job stopped",
+        );
       });
 
       test("in test mode only failures are posted, marked as tests", async () => {
