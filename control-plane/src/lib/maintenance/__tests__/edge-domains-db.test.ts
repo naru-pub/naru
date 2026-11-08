@@ -37,7 +37,13 @@ integration("edge custom domains", () => {
     const now = Date.now();
     const paid = now + day;
     const users: string[] = [];
-    const user = async (login: string, comp: boolean, until: number | null) => {
+    const user = async (
+      login: string,
+      comp: boolean,
+      until: number | null,
+      // Whether a subscription is still renewing (refreshPaymentGrace).
+      grace = false,
+    ) => {
       const { id } = await db
         .insertInto("users")
         .values({
@@ -45,6 +51,7 @@ integration("edge custom domains", () => {
           password_hash: "x",
           supporter_comp: comp,
           supporter_until: until === null ? null : new Date(until),
+          supporter_grace: grace,
         })
         .returning("id")
         .executeTakeFirstOrThrow();
@@ -60,11 +67,11 @@ integration("edge custom domains", () => {
       );
     try {
       await domain("comp.example", await user("edge-comp", true, null));
-      const paidUser = await user("edge-paid", false, paid);
+      const paidUser = await user("edge-paid", false, paid, true);
       await domain("paid.example", paidUser);
       await domain(
         "grace.example",
-        await user("edge-grace", false, now - 2 * day),
+        await user("edge-grace", false, now - 2 * day, true),
       );
       const expired = await user("edge-expired", false, now - 10 * day);
       await domain("expired.example", expired);
@@ -91,7 +98,7 @@ integration("edge custom domains", () => {
           redirect: false,
         },
       });
-      // Four days of grace after the last paid day.
+      // Four days of grace after the last paid day, its plan renewing.
       expect(
         Math.round((table.domains["paid.example"].entitledUntil! - paid) / day),
       ).toBe(4);

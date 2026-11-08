@@ -261,12 +261,14 @@ export async function movePaidTimeForLab(
 }
 
 // Whether the account's paid time gets the payment grace window after it
-// ends. It does, unless the period it ends with was bought in a store
-// subscription that will not renew (cancelled, or the store gave up on it):
-// the grace is time for a charge to come through, and none is coming. A store
-// that is still retrying (billing_retry) keeps it. Run whenever paid time or
-// a store subscription changes; migration 1792549929453 backfilled the same
-// rule.
+// ends. Only while a subscription is still renewing: a Toss plan active or
+// waiting for its first charge (scheduled), or a store subscription that
+// auto-renews and is active or being retried by the store (billing_retry).
+// The grace is time for a failed renewal to come through; a cancelled plan
+// (a refund cancels it too), a past-due one, or a one-time purchase has no
+// charge coming, so access ends with the paid time. Run, under the account's
+// paid-time lock, whenever paid time or a subscription's status changes;
+// migration 1794096625834 backfilled the same rule.
 export async function refreshPaymentGrace(
   trx: Executor,
   userId: string,
@@ -274,13 +276,15 @@ export async function refreshPaymentGrace(
   await trx
     .updateTable("users")
     .set({
-      supporter_grace: sql<boolean>`not exists (
-        select 1 from store_transactions t
-        join store_subscriptions s on s.id = t.store_subscription_id
-        where t.user_id = users.id
-          and t.revoked_at is null
-          and t.period_end >= users.supporter_until
-          and not (s.auto_renews and s.status in ('active', 'billing_retry'))
+      supporter_grace: sql<boolean>`exists (
+        select 1 from subscriptions s
+        where s.user_id = users.id
+          and s.status in ('active', 'scheduled')
+      ) or exists (
+        select 1 from store_subscriptions s
+        where s.user_id = users.id
+          and s.auto_renews
+          and s.status in ('active', 'billing_retry')
       )`,
     })
     .where("id", "=", userId)

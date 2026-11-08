@@ -356,6 +356,8 @@ export async function moveStoreSubscription(opts: {
     );
     await recomputePaidTime(trx, from);
     if (movedUntil) await extendPaidTime(trx, target.id, movedUntil);
+    // A renewing subscription brings the payment grace with it.
+    else await refreshPaymentGrace(trx, target.id);
 
     const source = await trx
       .selectFrom("users")

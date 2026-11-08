@@ -90,6 +90,8 @@ const {
   require("@/lib/payments/subscriptions") as typeof import("@/lib/payments/subscriptions");
 const { applyVerifiedTossPayment } =
   require("@/lib/payments/payment-facts") as typeof import("@/lib/payments/payment-facts");
+const { refreshPaymentGrace } =
+  require("@/lib/payments/paid-time") as typeof import("@/lib/payments/paid-time");
 const { renewSubscription, enqueueDueRenewals } =
   require("@/lib/payments/subscription-renewals") as typeof import("@/lib/payments/subscription-renewals");
 // Domain renewal tests control the eligibility clock explicitly. Production
@@ -370,6 +372,8 @@ async function makeSubscription(
     })
     .returning("id")
     .executeTakeFirstOrThrow();
+  // As every path that changes a plan's status does.
+  await refreshPaymentGrace(db, userId);
   return row.id;
 }
 
@@ -4907,6 +4911,84 @@ integration("payments against the database", () => {
     });
   });
 
+  describe("the payment grace", () => {
+    const ended = () => new Date(Date.now() - DAY);
+    const grace = async (userId: string) => {
+      const { inPaymentGrace, isSupporter } = await getUserEntitlement(userId);
+      return { inPaymentGrace, isSupporter };
+    };
+
+    test("a one-time purchase has none", async () => {
+      const userId = await makeUser(ended());
+      await refreshPaymentGrace(db, userId);
+      expect(await grace(userId)).toEqual({
+        inPaymentGrace: false,
+        isSupporter: false,
+      });
+    });
+
+    test("a renewing plan has it until it is canceled", async () => {
+      const userId = await makeUser(ended());
+      const subId = await makeSubscription(userId, { status: "active" });
+      expect(await grace(userId)).toEqual({
+        inPaymentGrace: true,
+        isSupporter: true,
+      });
+      await db
+        .transaction()
+        .execute((trx) =>
+          endPlan(trx, subId, { summary: () => "test canceled" }),
+        );
+      expect(await grace(userId)).toEqual({
+        inPaymentGrace: false,
+        isSupporter: false,
+      });
+    });
+
+    test("a scheduled plan has it, a past-due one does not", async () => {
+      const scheduled = await makeUser(ended());
+      await makeSubscription(scheduled, { status: "scheduled" });
+      expect((await grace(scheduled)).inPaymentGrace).toBe(true);
+
+      const pastDue = await makeUser(ended());
+      await makeSubscription(pastDue, { status: "past_due" });
+      expect((await grace(pastDue)).inPaymentGrace).toBe(false);
+    });
+
+    test("a refund cancels the plan and takes the grace with it", async () => {
+      const userId = await makeUser(ended());
+      const subId = await makeSubscription(userId, { status: "active" });
+      const paymentId = await makePendingPayment({
+        userId,
+        subscriptionId: null,
+        attemptKey: `one_time:1:grace-order-${userId}`,
+        orderId: `grace-order-${userId}`,
+        amount: 12000,
+      });
+      await grantOneTimeFixture({
+        userId,
+        amount: 12000,
+        years: 1,
+        payment: tossPayment(`grace-order-${userId}`, 12000),
+        paymentId,
+      });
+      const canceled = tossPayment(`grace-order-${userId}`, 12000, {
+        status: "CANCELED",
+        cancels: [
+          { cancelAmount: 12000, canceledAt: new Date().toISOString() },
+        ],
+      });
+      toss.cancelPayment.mockResolvedValue(canceled);
+      toss.getPaymentByOrderId.mockResolvedValue(canceled);
+      await refundPayment({ paymentId, overridePolicy: false, reason: "test" });
+      expect((await subscription(subId)).status).toBe("canceled");
+      expect(await grace(userId)).toEqual({
+        inPaymentGrace: false,
+        isSupporter: false,
+      });
+    });
+  });
+
   describe("the subscribe flow", () => {
     // A user part-way through signup: prepare has run, Toss has redirected
     // back with an authKey.
@@ -6115,7 +6197,9 @@ integration("payments against the database", () => {
       return subId;
     }
 
-    test("spent retries inside the grace period say when features end", async () => {
+    // A past-due plan is no longer renewing, so it has no payment grace left:
+    // spending the retries early ends the features then.
+    test("spent retries inside the grace period say features have ended", async () => {
       const periodEnd = new Date(Date.now() - 60 * 1000);
       const subId = await dueSince(periodEnd, MAX_PAYMENT_RETRY_ATTEMPTS - 1);
       toss.chargeBillingKey.mockRejectedValue(
@@ -6134,9 +6218,15 @@ integration("payments against the database", () => {
           email: expect.stringMatching(/@example\.com$/),
           amount: 1000,
           reason: "declined",
-          accessEndsAt: addPaymentGrace(periodEnd),
+          accessEndsAt: null,
         }),
       );
+      const { user_id } = await db
+        .selectFrom("subscriptions")
+        .select("user_id")
+        .where("id", "=", subId)
+        .executeTakeFirstOrThrow();
+      expect((await getUserEntitlement(user_id)).isSupporter).toBe(false);
     });
 
     test("a decline after the grace period says features have ended", async () => {
@@ -7242,7 +7332,12 @@ integration("payments against the database", () => {
       const users = [
         comp,
         await makeUser(new Date(Date.now() + 10 * DAY)), // paid
-        await makeUser(new Date(Date.now() - 2 * DAY)), // in grace
+        await (async () => {
+          // In grace: its plan is still renewing.
+          const userId = await makeUser(new Date(Date.now() - 2 * DAY));
+          await makeSubscription(userId, { status: "active" });
+          return userId;
+        })(),
         await makeUser(new Date(Date.now() - 10 * DAY)), // lapsed
         await makeUser(null), // never paid
       ];

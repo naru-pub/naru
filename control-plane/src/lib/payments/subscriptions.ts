@@ -10,6 +10,7 @@ import { retireBillingKey } from "@/lib/payments/billing-keys";
 import type { Executor } from "@/lib/entitlements";
 import { recordPaymentEvent } from "@/lib/payments/payment-events";
 import { RENEWAL_NOTICE_DAYS } from "@/lib/payments/renewal-time";
+import { lockPaidTime, refreshPaymentGrace } from "@/lib/payments/paid-time";
 
 // A renewal is tried at most once a day. This value is the payment grace window
 // before a subscription becomes past_due and related paid-only resources are
@@ -64,6 +65,15 @@ export async function endPlan(
     eventKind?: "subscription_canceled" | "billing_key_deleted";
   },
 ): Promise<EndedPlan | null> {
+  const owner = await trx
+    .selectFrom("subscriptions")
+    .select("user_id")
+    .where("id", "=", planId)
+    .executeTakeFirst();
+  if (!owner) return null;
+  // Users before subscriptions, the lock order grants and refunds take; the
+  // plan's end takes away the payment grace (refreshPaymentGrace).
+  await lockPaidTime(trx, owner.user_id);
   const plan = await trx
     .selectFrom("subscriptions")
     .select(["user_id", "status"])
@@ -85,6 +95,7 @@ export async function endPlan(
       },
     },
   );
+  await refreshPaymentGrace(trx, plan.user_id);
   await recordPaymentEvent(trx, {
     kind: opts.eventKind ?? "subscription_canceled",
     userId: plan.user_id,
@@ -119,14 +130,30 @@ export function paidAccessEndsAt(until: Date, grace: boolean): Date {
 // markers are reset because they may be left over from an earlier, canceled
 // subscription; the renewal notice cron would otherwise skip the reminder
 // owed before this first charge.
+// A scheduled plan is renewing, so the prepaid time it waits on now gets the
+// payment grace (refreshPaymentGrace).
 // Returns false when the subscription stopped waiting for its first charge
 // (the supporter canceled it) before the schedule could be written.
 export async function scheduleSubscriptionStart(
   subscriptionId: string,
   startsAt: Date,
   now = new Date(),
-  executor: Executor = db,
+  executor?: Executor,
 ): Promise<boolean> {
+  if (!executor) {
+    return db
+      .transaction()
+      .execute((trx) =>
+        scheduleSubscriptionStart(subscriptionId, startsAt, now, trx),
+      );
+  }
+  const plan = await executor
+    .selectFrom("subscriptions")
+    .select("user_id")
+    .where("id", "=", subscriptionId)
+    .executeTakeFirst();
+  if (!plan) return false;
+  await lockPaidTime(executor, plan.user_id);
   const result = await executor
     .updateTable("subscriptions")
     .set({
@@ -143,7 +170,9 @@ export async function scheduleSubscriptionStart(
     .where("id", "=", subscriptionId)
     .where("status", "in", ["incomplete", "scheduled"])
     .executeTakeFirst();
-  return Number(result.numUpdatedRows ?? 0) > 0;
+  if (Number(result.numUpdatedRows ?? 0) === 0) return false;
+  await refreshPaymentGrace(executor, plan.user_id);
+  return true;
 }
 
 // Gives an account the lifetime comp or takes it back; false when the account

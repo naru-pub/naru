@@ -29,6 +29,7 @@ import {
 } from "@/lib/payments/subscriptions";
 import { withAccountLock } from "@/lib/payments/account-lock";
 import { renewalCutoff } from "@/lib/payments/renewal-time";
+import { lockPaidTime, refreshPaymentGrace } from "@/lib/payments/paid-time";
 export { RENEWAL_HOUR_KST, renewalCutoff } from "@/lib/payments/renewal-time";
 
 // Renewals are charged at 09:00 KST: the run then charges every subscription
@@ -234,6 +235,10 @@ async function markAttemptFailed(opts: {
         .execute();
     }
 
+    // Going past due takes away the payment grace; users are locked before
+    // subscriptions, the order grants and refunds take.
+    if (opts.nextStatus === "past_due")
+      await lockPaidTime(trx, opts.sub.user_id);
     // A plan stopped since it was read (by a grant of the same order, say)
     // keeps that state; it is not overwritten back to active or past_due.
     const updated = await trx
@@ -257,6 +262,7 @@ async function markAttemptFailed(opts: {
     const wentPastDue =
       Number(updated.numUpdatedRows ?? 0) > 0 && opts.nextStatus === "past_due";
     if (wentPastDue) {
+      await refreshPaymentGrace(trx, opts.sub.user_id);
       await recordPaymentEvent(trx, {
         kind: "past_due",
         userId: opts.sub.user_id,
@@ -338,6 +344,7 @@ async function markPastDueAfterGrace(sub: DueSubscription, now: Date) {
   // Only the period this run saw: a reconciler that granted the order in the
   // meantime moved it on, and that plan is paid, not past due.
   await db.transaction().execute(async (trx) => {
+    await lockPaidTime(trx, sub.user_id);
     const updated = await trx
       .updateTable("subscriptions")
       .set({ status: "past_due", updated_at: now })
@@ -346,6 +353,7 @@ async function markPastDueAfterGrace(sub: DueSubscription, now: Date) {
       .where("current_period_end", "=", new Date(sub.current_period_end!))
       .executeTakeFirst();
     if (Number(updated.numUpdatedRows ?? 0) === 0) return null;
+    await refreshPaymentGrace(trx, sub.user_id);
     await recordPaymentEvent(trx, {
       kind: "past_due",
       userId: sub.user_id,
