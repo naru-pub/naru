@@ -532,6 +532,18 @@ export function getPaymentByOrderId(
   );
 }
 
+export function getPaymentByKey(
+  paymentKey: string,
+  flow: TossPaymentFlow,
+  opts: { timeoutMs?: number } = {},
+) {
+  return tossRequest<TossPaymentResult>(
+    flow,
+    `/v1/payments/${encodeURIComponent(paymentKey)}`,
+    { method: "GET", ...opts },
+  );
+}
+
 // Payment rows predate separate MIDs. The attempt key is the durable flow
 // marker: one-time donations use one_time:*; all other rows are billing-key
 // charges. Keep this mapping in one place so lookup and cancellation use the

@@ -148,6 +148,15 @@ jest.mock("@/lib/payments/toss", () => {
         throw new TypeError("fetch failed");
       },
     ),
+    getPaymentByKey: jest.fn(async (key: string) => {
+      await pause();
+      if (fake.chaos && roll() < 0.1) {
+        throw new TossApiError("server error", 500);
+      }
+      const order = [...fake.orders.values()].find((o) => o.paymentKey === key);
+      if (!order) throw new TossApiError("not found", 404, "NOT_FOUND_PAYMENT");
+      return asPayment(order);
+    }),
     getPaymentByOrderId: jest.fn(async (orderId: string) => {
       await pause();
       if (fake.chaos && roll() < 0.1) {

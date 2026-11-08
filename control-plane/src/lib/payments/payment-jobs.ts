@@ -715,7 +715,9 @@ async function confirmOneTime(paymentId: string): Promise<void> {
     // A previous approval may have succeeded before the ledger committed.
     // Resolve that first, even if the account's eligibility changed meanwhile.
     if (payment.charge_attempted_at) {
-      const found = await lookupOrder(payment.order_id, "one-time");
+      const found = await lookupOrder(payment.order_id, "one-time", {
+        paymentKey: payment.toss_payment_key,
+      });
       if (found.kind === "unknown") throw found.error;
       if (
         found.kind === "found" &&

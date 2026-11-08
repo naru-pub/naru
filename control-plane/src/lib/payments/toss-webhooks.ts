@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import type { TossPaymentFlow } from "@/lib/payments/toss";
 
 export type TossWebhookEvent =
-  | { type: "payment-status-changed"; orderId: string }
+  | { type: "payment-status-changed"; orderId: string; paymentKey?: string }
   | { type: "billing-deleted"; billingKey: string }
   | { type: "ignored" };
 
@@ -29,9 +29,13 @@ export function parseTossWebhook(body: unknown): TossWebhookEvent {
 
   const data = event.data;
   if (!data || typeof data !== "object") return { type: "ignored" };
-  const orderId = (data as Record<string, unknown>).orderId;
+  const { orderId, paymentKey } = data as Record<string, unknown>;
   return typeof orderId === "string"
-    ? { type: "payment-status-changed", orderId }
+    ? {
+        type: "payment-status-changed",
+        orderId,
+        ...(typeof paymentKey === "string" && paymentKey ? { paymentKey } : {}),
+      }
     : { type: "ignored" };
 }
 

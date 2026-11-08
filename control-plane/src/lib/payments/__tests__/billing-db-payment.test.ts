@@ -27,6 +27,7 @@ jest.mock("@/lib/payments/toss", () => {
     chargeBillingKey: jest.fn(),
     confirmPayment: jest.fn(),
     deleteBillingKey: jest.fn(),
+    getPaymentByKey: jest.fn(),
     getPaymentByOrderId: jest.fn(),
     issueBillingKey: jest.fn(),
     listTransactions: jest.fn(),
@@ -531,6 +532,14 @@ integration("payments against the database", () => {
     toss.deleteBillingKey.mockReset();
     toss.deleteBillingKey.mockResolvedValue(undefined);
     toss.issueBillingKey.mockReset();
+    toss.getPaymentByKey.mockReset().mockImplementation(async (key, flow) => {
+      const payment = await db
+        .selectFrom("payments")
+        .select("order_id")
+        .where("toss_payment_key", "=", key)
+        .executeTakeFirstOrThrow();
+      return toss.getPaymentByOrderId(payment.order_id, flow);
+    });
     toss.getPaymentByOrderId.mockRejectedValue(
       new toss.TossApiError("not found", 404, "NOT_FOUND_PAYMENT"),
     );
@@ -1064,6 +1073,86 @@ integration("payments against the database", () => {
       expect(
         await applyVerifiedTossPayment(paymentId, tossPayment(orderId, 12000)),
       ).toMatchObject({ state: "done", granted: true });
+    });
+
+    test("reconciliation expires the bound payment when order lookup points at another key", async () => {
+      const { orderId, paymentId } = await order();
+      const bound = tossPayment(orderId, 12000, { status: "EXPIRED" });
+      await db
+        .updateTable("payments")
+        .set({ toss_payment_key: bound.paymentKey })
+        .where("id", "=", paymentId)
+        .execute();
+      toss.getPaymentByOrderId.mockResolvedValue({
+        ...bound,
+        paymentKey: "other-key",
+      });
+      toss.getPaymentByKey.mockResolvedValue(bound);
+
+      await reconcilePayment(paymentId);
+
+      expect(toss.getPaymentByKey).toHaveBeenCalledWith(
+        bound.paymentKey,
+        "one-time",
+        {},
+      );
+      expect(toss.getPaymentByOrderId).not.toHaveBeenCalled();
+      expect(
+        await db
+          .selectFrom("payments")
+          .select(["status", "toss_payment_key"])
+          .where("id", "=", paymentId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({
+        status: "expired",
+        toss_payment_key: bound.paymentKey,
+      });
+    });
+
+    test("a webhook for another payment key preserves the binding", async () => {
+      const { orderId, paymentId } = await order();
+      const bound = tossPayment(orderId, 12000);
+      await db
+        .updateTable("payments")
+        .set({ toss_payment_key: bound.paymentKey })
+        .where("id", "=", paymentId)
+        .execute();
+      const other = { ...bound, paymentKey: "other-key", status: "DONE" };
+      toss.getPaymentByKey.mockResolvedValue(other);
+
+      const response = await tossWebhook(
+        new NextRequest("http://localhost/api/webhooks/toss", {
+          method: "POST",
+          body: JSON.stringify({
+            eventType: "PAYMENT_STATUS_CHANGED",
+            data: other,
+          }),
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(toss.getPaymentByKey).toHaveBeenCalledWith(
+        "other-key",
+        "one-time",
+        { timeoutMs: 5000 },
+      );
+      const payment = await db
+        .selectFrom("payments")
+        .select(["status", "toss_payment_key"])
+        .where("id", "=", paymentId)
+        .executeTakeFirstOrThrow();
+      expect(payment).toEqual({
+        status: "pending",
+        toss_payment_key: bound.paymentKey,
+      });
+      expect(
+        await db
+          .selectFrom("toss_webhook_deliveries")
+          .select("outcome")
+          .executeTakeFirstOrThrow(),
+      ).toMatchObject({
+        outcome: expect.stringContaining("another payment key"),
+      });
     });
 
     test("repeated responses and reconciliation grant the same order once", async () => {

@@ -5,6 +5,7 @@ import {
   chargeBillingKey,
   confirmPayment,
   deleteBillingKey,
+  getPaymentByKey,
   getPaymentByOrderId,
   isDefinitiveTossFailure,
   issueBillingKey,
@@ -45,14 +46,20 @@ export type LookupOutcome =
 export async function lookupOrder(
   orderId: string,
   flow: TossPaymentFlow,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; paymentKey?: string | null } = {},
 ): Promise<LookupOutcome> {
   try {
     return {
       kind: "found",
-      payment: await (opts.timeoutMs
-        ? getPaymentByOrderId(orderId, flow, opts)
-        : getPaymentByOrderId(orderId, flow)),
+      payment: await (opts.paymentKey
+        ? getPaymentByKey(
+            opts.paymentKey,
+            flow,
+            opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {},
+          )
+        : opts.timeoutMs
+          ? getPaymentByOrderId(orderId, flow, opts)
+          : getPaymentByOrderId(orderId, flow)),
     };
   } catch (error) {
     // Only Toss saying it has no such payment. Other 404s — NOT_FOUND_MERCHANT
@@ -78,8 +85,11 @@ export async function settleOrder(opts: {
   amount: number;
   flow: TossPaymentFlow;
   error: unknown;
+  paymentKey?: string;
 }): Promise<OrderOutcome> {
-  const found = await lookupOrder(opts.orderId, opts.flow);
+  const found = await lookupOrder(opts.orderId, opts.flow, {
+    paymentKey: opts.paymentKey,
+  });
   if (found.kind === "not_found") {
     return isDefinitiveTossFailure(opts.error)
       ? { kind: "declined", error: opts.error, payment: null }
@@ -95,17 +105,18 @@ export async function settleOrder(opts: {
 // match the order (another order id or amount) says nothing about it.
 function readOrder(
   payment: TossPaymentResult,
-  order: { orderId: string; amount: number },
+  order: { orderId: string; amount: number; paymentKey?: string },
   error: unknown,
 ): OrderOutcome {
   if (
     payment.orderId !== order.orderId ||
-    payment.totalAmount !== order.amount
+    payment.totalAmount !== order.amount ||
+    (order.paymentKey != null && payment.paymentKey !== order.paymentKey)
   ) {
     return {
       kind: "unknown",
       error,
-      tossStatus: payment.status ?? null,
+      tossStatus: null,
       sent: true,
     };
   }
@@ -208,7 +219,7 @@ export async function confirmOrder(opts: {
     orderId: opts.orderId,
     amount: opts.amount,
   };
-  const order = { orderId: opts.orderId, amount: opts.amount };
+  const order = params;
   const attempt = async (key: string): Promise<OrderOutcome> => {
     await opts.beforeSend();
     try {

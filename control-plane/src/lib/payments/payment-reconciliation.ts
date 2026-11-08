@@ -90,10 +90,15 @@ async function reconcilePaymentCore(
     payment.subscription_id != null &&
     (payment.attempt_key?.startsWith("subscription_initial:") ?? false);
 
-  const found = await lookupOrder(
-    payment.order_id,
-    paymentFlowForRecord(payment.toss_flow, payment.attempt_key),
-  );
+  const flow = paymentFlowForRecord(payment.toss_flow, payment.attempt_key);
+  let found = await lookupOrder(payment.order_id, flow, {
+    paymentKey: payment.toss_payment_key,
+  });
+  // If Toss no longer finds the key, check whether it knows the order before
+  // treating it as unseen. A different key still fails the identity check.
+  if (found.kind === "not_found" && payment.toss_payment_key) {
+    found = await lookupOrder(payment.order_id, flow);
+  }
   if (found.kind === "unknown") throw found.error;
   if (found.kind === "not_found") {
     // Under the account lock no charge of this order is in flight here, and
@@ -135,7 +140,9 @@ async function reconcilePaymentCore(
 
   if (
     tossPayment.orderId !== payment.order_id ||
-    tossPayment.totalAmount !== payment.amount
+    tossPayment.totalAmount !== payment.amount ||
+    (payment.toss_payment_key &&
+      tossPayment.paymentKey !== payment.toss_payment_key)
   ) {
     throw new Error(`Toss payment mismatch for order ${payment.order_id}`);
   }
@@ -390,6 +397,7 @@ async function recoverLocked(paymentId: string): Promise<RecoveryResult> {
       "toss_flow",
       "attempt_key",
       "toss_mid",
+      "toss_payment_key",
     ])
     .where("id", "=", paymentId)
     .executeTakeFirstOrThrow();
@@ -404,6 +412,7 @@ async function recoverLocked(paymentId: string): Promise<RecoveryResult> {
   const found = await lookupOrder(
     payment.order_id,
     paymentFlowForRecord(payment.toss_flow, payment.attempt_key),
+    { paymentKey: payment.toss_payment_key },
   );
   if (found.kind === "not_found")
     return { state: "not_paid", tossStatus: null };
@@ -411,7 +420,9 @@ async function recoverLocked(paymentId: string): Promise<RecoveryResult> {
   const tossPayment = found.payment;
   if (
     tossPayment.orderId !== payment.order_id ||
-    tossPayment.totalAmount !== payment.amount
+    tossPayment.totalAmount !== payment.amount ||
+    (payment.toss_payment_key &&
+      tossPayment.paymentKey !== payment.toss_payment_key)
   ) {
     throw new RecoveryError(
       `Toss 결제가 주문과 맞지 않습니다 (금액 ${tossPayment.totalAmount}/${payment.amount}).`,

@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
         "attempt_key",
         "toss_flow",
         "toss_mid",
+        "toss_payment_key",
         "user_id",
         "subscription_id",
       ])
@@ -174,10 +175,13 @@ export async function POST(request: NextRequest) {
     const otherMid = paymentOfOtherMid(ledger);
     if (otherMid) return respond(200, `ignored: ${otherMid.message}`);
 
+    const lookupKey = ledger.toss_payment_key
+      ? (event.paymentKey ?? ledger.toss_payment_key)
+      : null;
     const found = await lookupOrder(
       orderId,
       paymentFlowForRecord(ledger.toss_flow, ledger.attempt_key),
-      { timeoutMs: LOOKUP_TIMEOUT_MS },
+      { timeoutMs: LOOKUP_TIMEOUT_MS, paymentKey: lookupKey },
     );
     if (found.kind === "not_found") {
       return respond(200, "ignored: Toss has no such order");
@@ -195,12 +199,28 @@ export async function POST(request: NextRequest) {
     if (
       payment.orderId !== orderId ||
       payment.totalAmount !== ledger.amount ||
-      !sameMid
+      !sameMid ||
+      (lookupKey && payment.paymentKey !== lookupKey)
     ) {
       return respond(
         200,
         `ignored: lookup does not match payment ${ledger.id} (amount ${payment.totalAmount}/${ledger.amount}, mId ${payment.mId}/${ledger.toss_mid})`,
       );
+    }
+
+    if (
+      ledger.toss_payment_key &&
+      payment.paymentKey !== ledger.toss_payment_key
+    ) {
+      const message = `Toss returned another payment key for order ${orderId} (status ${payment.status})`;
+      if (
+        payment.approvedAt ||
+        payment.status === "DONE" ||
+        payment.cancels?.length
+      ) {
+        console.error(`[payments] ${message}; manual review required`);
+      }
+      return respond(200, `ignored: ${message}`);
     }
 
     // A cancel, or an order Toss ended without approving it (ABORTED,
@@ -227,6 +247,13 @@ export async function POST(request: NextRequest) {
         raw: JSON.stringify(payment),
       })
       .where("id", "=", ledger.id)
+      .where("status", "=", "pending")
+      .where((eb) =>
+        eb.or([
+          eb("toss_payment_key", "is", null),
+          eb("toss_payment_key", "=", payment.paymentKey),
+        ]),
+      )
       .execute();
     return respond(200, `payment ${ledger.id} recorded only`);
   } catch (error) {
