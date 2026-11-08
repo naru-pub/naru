@@ -8,21 +8,29 @@ export async function up(db: Kysely<any>): Promise<void> {
     DECLARE
       job jsonb;
       account_id uuid;
+      payment_id uuid;
+      subscription_id uuid;
+      repair_user_id uuid;
     BEGIN
       IF NEW.state = 'failed' AND OLD.state IS DISTINCT FROM NEW.state THEN
         job := NEW.params->'job';
         -- A malformed or missing ID can be why the task failed. Only cast
         -- valid IDs so the alert itself cannot block that state transition.
+        IF pg_input_is_valid(job->>'paymentId', 'uuid') THEN
+          payment_id := (job->>'paymentId')::uuid;
+        END IF;
+        IF pg_input_is_valid(job->>'subscriptionId', 'uuid') THEN
+          subscription_id := (job->>'subscriptionId')::uuid;
+        END IF;
+        IF job->>'kind' = 'repair_entitlement'
+          AND pg_input_is_valid(job->>'userId', 'uuid') THEN
+          repair_user_id := (job->>'userId')::uuid;
+        END IF;
+
         SELECT id INTO account_id FROM users WHERE id = coalesce(
-          (SELECT user_id FROM payments WHERE id = CASE
-            WHEN pg_input_is_valid(job->>'paymentId', 'uuid')
-            THEN (job->>'paymentId')::uuid END),
-          (SELECT user_id FROM subscriptions WHERE id = CASE
-            WHEN pg_input_is_valid(job->>'subscriptionId', 'uuid')
-            THEN (job->>'subscriptionId')::uuid END),
-          CASE WHEN job->>'kind' = 'repair_entitlement'
-            AND pg_input_is_valid(job->>'userId', 'uuid')
-            THEN (job->>'userId')::uuid END
+          (SELECT user_id FROM payments WHERE id = payment_id),
+          (SELECT user_id FROM subscriptions WHERE id = subscription_id),
+          repair_user_id
         ) FOR KEY SHARE;
 
         INSERT INTO payment_events (kind, user_id, summary) VALUES ('job_failed',
