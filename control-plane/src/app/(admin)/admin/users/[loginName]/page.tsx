@@ -19,6 +19,7 @@ import { SUBSCRIPTION_STATUS_LABELS } from "../../_components/metrics";
 import { requireOperator } from "../../_components/requireOperator";
 import { SupporterCompToggle } from "../../_components/SupporterCompToggle";
 import { ImpersonateButton } from "../../_components/ImpersonateButton";
+import { RenameAccountButton } from "../../_components/RenameAccountButton";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 import { MoveStoreSubscriptionButton } from "../../_components/MoveStoreSubscriptionButton";
 import { STORE_LABELS } from "@/lib/payments/store/products";
@@ -68,7 +69,7 @@ export default async function AccountPage({
     .executeTakeFirst();
   if (!user) notFound();
 
-  const [usage, payments, applications, board, storeSubscriptions] =
+  const [usage, payments, applications, board, storeSubscriptions, followers] =
     await Promise.all([
       readAccountUsage(now, user.id),
       db
@@ -134,6 +135,11 @@ export default async function AccountPage({
         .where("user_id", "=", user.id)
         .orderBy("created_at", "desc")
         .execute(),
+      db
+        .selectFrom("followers")
+        .select((eb) => eb.fn.countAll<string>().as("count"))
+        .where("user_id", "=", user.id)
+        .executeTakeFirstOrThrow(),
     ]);
 
   const until = user.supporter_until ? new Date(user.supporter_until) : null;
@@ -167,6 +173,12 @@ export default async function AccountPage({
               loginName={user.login_name}
               comp={user.supporter_comp}
             />
+            {!PAYMENT_OPERATOR_USERS.has(user.login_name) && (
+              <RenameAccountButton
+                loginName={user.login_name}
+                followers={Number(followers.count)}
+              />
+            )}
           </div>
         )}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
