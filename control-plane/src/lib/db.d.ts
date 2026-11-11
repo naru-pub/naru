@@ -770,7 +770,9 @@ export interface SiteDataFiles {
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   upload_expires_at: Timestamp | null;
+  uploader: ColumnType<"owner" | "member" | "visitor", "owner" | "member" | "visitor" | undefined>;
   user_id: string;
+  visitor_address: string | null;
 }
 
 export interface SiteFunctionReleases {
@@ -999,6 +1001,7 @@ export interface Users {
   site_rendered_at: Timestamp | null;
   site_title: string | null;
   site_updated_at: Timestamp | null;
+  site_visitor_uploads: ColumnType<"off" | "images" | "all", "off" | "images" | "all" | undefined>;
   supporter_comp: Generated<boolean>;
   supporter_grace: Generated<boolean>;
   supporter_until: Timestamp | null;

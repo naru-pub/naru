@@ -36,6 +36,15 @@ type MediaFile = {
   unfinished?: boolean;
   /** Until when the unfinished upload's signed address still accepts it. */
   uploadExpiresAt?: string;
+  /** Who uploaded it: the owner, a member, or a visitor signed in to nothing. */
+  uploader?: Uploader;
+};
+type Uploader = "owner" | "member" | "visitor";
+type VisitorUploads = "off" | "images" | "all";
+const UPLOADERS: Record<Uploader, string> = {
+  owner: "소유자",
+  member: "회원",
+  visitor: "방문자",
 };
 type Usage = {
   bytes: number;
@@ -111,6 +120,7 @@ function TypeIcon({ type }: { type: string }) {
 type Library = {
   files: MediaFile[];
   usage: Usage;
+  visitorUploads: VisitorUploads;
 };
 
 async function fetchLibrary(): Promise<Library> {
@@ -128,8 +138,8 @@ async function fetchLibrary(): Promise<Library> {
   } while (cursor);
   // The quota is its own request; it also records every upload again for
   // site SQL's _naru_uploads.
-  const { usage } = await api("?usage=1");
-  return { files, usage };
+  const { usage, visitorUploads } = await api("?usage=1");
+  return { files, usage, visitorUploads };
 }
 
 export default function MediaLibrary() {
@@ -144,6 +154,9 @@ export default function MediaLibrary() {
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("newest");
+  const [uploader, setUploader] = useState<Uploader | "">("");
+  const [visitorUploads, setVisitorUploads] = useState<VisitorUploads>("off");
+  const [savingSetting, setSavingSetting] = useState(false);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
@@ -152,6 +165,7 @@ export default function MediaLibrary() {
   function show(library: Library) {
     setFiles(library.files);
     setUsage(library.usage);
+    setVisitorUploads(library.visitorUploads);
   }
 
   async function refresh() {
@@ -169,9 +183,10 @@ export default function MediaLibrary() {
     const normalized = query.trim().toLocaleLowerCase();
     const result = files.filter(
       (file) =>
-        !normalized ||
-        file.name.toLocaleLowerCase().includes(normalized) ||
-        file.contentType.toLocaleLowerCase().includes(normalized),
+        (!uploader || file.uploader === uploader) &&
+        (!normalized ||
+          file.name.toLocaleLowerCase().includes(normalized) ||
+          file.contentType.toLocaleLowerCase().includes(normalized)),
     );
     result.sort((a, b) => {
       if (sort === "oldest")
@@ -181,7 +196,24 @@ export default function MediaLibrary() {
       return Date.parse(b.createdAt) - Date.parse(a.createdAt);
     });
     return result;
-  }, [files, query, sort]);
+  }, [files, query, sort, uploader]);
+
+  async function changeVisitorUploads(next: VisitorUploads) {
+    const previous = visitorUploads;
+    setVisitorUploads(next);
+    setSavingSetting(true);
+    setError("");
+    try {
+      await api("", "PATCH", { visitorUploads: next });
+    } catch (reason) {
+      setVisitorUploads(previous);
+      setError(
+        reason instanceof Error ? reason.message : "설정을 바꾸지 못했습니다.",
+      );
+    } finally {
+      setSavingSetting(false);
+    }
+  }
 
   function updateUpload(key: string, changes: Partial<UploadState>) {
     setUploads((current) =>
@@ -320,6 +352,41 @@ export default function MediaLibrary() {
         </Card>
       </div>
 
+      <div className="space-y-3 border p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <h3 className="font-semibold">방문자 업로드</h3>
+            <p className="text-sm text-muted-foreground">
+              로그인하지 않은 방문자도 사이트 페이지에서{" "}
+              <code className="bg-muted px-1">naru.media.upload()</code>로
+              파일을 올릴 수 있게 합니다. 한 주소에서 한 시간에 10개, 사이트
+              전체로는 한 시간에 100개까지 받고, 사이트의 저장 공간을 함께
+              씁니다.
+            </p>
+          </div>
+          <Select
+            value={visitorUploads}
+            disabled={busy || savingSetting}
+            onChange={(event) =>
+              void changeVisitorUploads(event.target.value as VisitorUploads)
+            }
+            aria-label="방문자 업로드"
+          >
+            <option value="off">받지 않음</option>
+            <option value="images">이미지만 받기</option>
+            <option value="all">모든 형식 받기</option>
+          </Select>
+        </div>
+        {visitorUploads !== "off" && (
+          <p className="text-xs text-muted-foreground">
+            방문자가 올린 파일은 아래에 &lsquo;방문자&rsquo;로 표시되고,
+            소유자만 지울 수 있습니다. 사이트 SQL의{" "}
+            <code className="bg-muted px-1">_naru_uploads</code>에는 들어가지
+            않습니다.
+          </p>
+        )}
+      </div>
+
       <input
         ref={inputRef}
         className="sr-only"
@@ -402,6 +469,18 @@ export default function MediaLibrary() {
             {visible.length}개
           </span>
           <Select
+            value={uploader}
+            onChange={(event) =>
+              setUploader(event.target.value as Uploader | "")
+            }
+            aria-label="올린 사람"
+          >
+            <option value="">모든 사람</option>
+            <option value="owner">소유자</option>
+            <option value="member">회원</option>
+            <option value="visitor">방문자</option>
+          </Select>
+          <Select
             value={sort}
             onChange={(event) => setSort(event.target.value)}
             aria-label="정렬"
@@ -475,6 +554,7 @@ export default function MediaLibrary() {
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {new Date(file.createdAt).toLocaleString("ko-KR")}
+                  {file.uploader && <> · {UPLOADERS[file.uploader]}</>}
                 </p>
                 {file.unfinished && (
                   <p

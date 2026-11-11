@@ -1,4 +1,6 @@
-export const DOC_VERSIONS = ["1.0.0", "1.1.0"] as const;
+// 1.2.0 is still being built (build-sdk.mjs VERSIONS); LATEST_VERSION, the
+// docs' default, moves to it when it is frozen.
+export const DOC_VERSIONS = ["1.0.0", "1.1.0", "1.2.0"] as const;
 export type DocsVersion = (typeof DOC_VERSIONS)[number];
 export const isDocsVersion = (value: string): value is DocsVersion =>
   DOC_VERSIONS.some((version) => version === value);

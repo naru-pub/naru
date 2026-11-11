@@ -33,6 +33,7 @@ import { up as membersUp } from "@/migrations/1791738861047_add_site_members";
 import { up as verifiedEmailUp } from "@/migrations/1791981028752_site_member_verified_email";
 import { up as supportersOnlyUp } from "@/migrations/1792821018829_site_member_supporters_only";
 import { up as managedMediaUp } from "@/migrations/1791981970276_site_data_files_managed";
+import { up as visitorUploadsUp } from "@/migrations/1794409185877_site_visitor_uploads";
 
 /**
  * The site-data schema of a disposable naru_data_test database. Documents and
@@ -100,6 +101,7 @@ export async function setupTestDatabase({ postgresSiteData = false } = {}) {
   await supportersOnlyUp(db);
   await managedMediaUp(db);
   await mediaDeletionUp(db);
+  await visitorUploadsUp(db);
   // Member sign-in sets the Naru app's consent for the site; a suspended site
   // has no data (site-moderation.ts).
   await naruAppUp(db);

@@ -55,12 +55,14 @@ export default async function MediaPage() {
       <section className="min-w-0 space-y-3 border p-5">
         <h2 className="font-bold">웹 SDK에서 쓰기</h2>
         <p className="text-sm text-muted-foreground">
-          파일 API는 관리자 세션에서만 열립니다. 컬렉션과 달리{" "}
-          <code className="bg-muted px-1">collection</code>만으로는 쓸 수 없고,{" "}
+          파일은{" "}
           <Link href="/database" className="text-primary hover:underline">
             웹사이트 관리자 로그인
           </Link>
-          을 먼저 마쳐야 합니다.
+          이나 회원 로그인 뒤에 올립니다. 위에서 방문자 업로드를 켜면 로그인하지
+          않은 방문자도{" "}
+          <code className="bg-muted px-1">naru.media.upload()</code>(SDK
+          1.2.0)로 올릴 수 있습니다.
         </p>
         <pre className="overflow-x-auto bg-muted p-3 text-sm">
           {`const naru = createNaru();

@@ -1,11 +1,13 @@
 import reference100 from "@/lib/sdk-reference/1.0.0.json";
 import reference110 from "@/lib/sdk-reference/1.1.0.json";
+import reference120 from "@/lib/sdk-reference/1.2.0.json";
 
 /** Every published SDK version that has a generated reference. Add a version
  * here and to scripts/generate-sdk-reference.mjs when one ships. */
 export const REFERENCES = {
   "1.0.0": reference100,
   "1.1.0": reference110,
+  "1.2.0": reference120,
 } as const;
 
 export type Version = keyof typeof REFERENCES;

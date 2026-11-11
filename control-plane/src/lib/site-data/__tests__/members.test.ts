@@ -30,7 +30,13 @@ import {
   previewMemberSignIn,
   revokeMemberToken,
 } from "../member-auth";
-import { executeMedia, MEMBER_UPLOADS_PER_HOUR, mediaStorage } from "../media";
+import {
+  executeMedia,
+  MEMBER_UPLOADS_PER_HOUR,
+  mediaStorage,
+  VISITOR_UPLOADS_PER_HOUR,
+  VISITOR_UPLOADS_PER_SITE_HOUR,
+} from "../media";
 import { mediaDeletionStorage, cleanupDeletedMedia } from "../media-deletion";
 import { setupTestDatabase, teardownTestDatabase } from "./test-database";
 
@@ -1261,6 +1267,229 @@ integration("site members", () => {
       await expect(
         media(bob.accessToken, "POST", [], file),
       ).resolves.toBeDefined();
+    });
+
+    describe("from visitors", () => {
+      // A page's visitor: no token, only an address.
+      const visiting = (
+        method: string,
+        path: string[],
+        body = {},
+        clientIp: string | undefined = "203.0.113.5",
+      ) =>
+        executeMedia({
+          site: "alice",
+          path,
+          method,
+          body,
+          clientIp,
+        }) as Promise<Record<string, any>>;
+      const setting = (visitorUploads: unknown) =>
+        executeMedia({
+          site: "alice",
+          path: [],
+          method: "PATCH",
+          body: { visitorUploads },
+          adminUserId: owner,
+        }) as Promise<Record<string, any>>;
+      const library = async () =>
+        (
+          (await executeMedia({
+            site: "alice",
+            path: [],
+            method: "GET",
+            adminUserId: owner,
+            size: 100,
+          })) as { files: Record<string, any>[] }
+        ).files;
+      // Each test starts with no visitor's upload in the last hour.
+      const forgetRecent = () =>
+        sql`update site_data_files set created_at = created_at - interval '2 hours' where uploader = 'visitor'`.execute(
+          db,
+        );
+      afterEach(async () => {
+        await forgetRecent();
+        await setting("off");
+      });
+
+      test("only where the owner allows them, images unless every type, and only their own unfinished upload", async () => {
+        await expect(visiting("POST", [], file)).rejects.toMatchObject({
+          status: 403,
+          code: "ACCESS_DENIED",
+        });
+        // The owner's switch, from the media library; nothing else is one.
+        await expect(setting("everyone")).rejects.toMatchObject({
+          status: 400,
+        });
+        await expect(
+          executeMedia({
+            site: "alice",
+            path: [],
+            method: "PATCH",
+            body: { visitorUploads: "all" },
+            bearer: { token: (await signIn("bob")).accessToken, origin },
+          }),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(await setting("images")).toEqual({ visitorUploads: "images" });
+        expect(
+          await executeMedia({
+            site: "alice",
+            path: [],
+            method: "GET",
+            adminUserId: owner,
+            usage: true,
+          }),
+        ).toMatchObject({ visitorUploads: "images" });
+
+        await expect(
+          visiting("POST", [], {
+            name: "a.txt",
+            contentType: "text/plain",
+            size: 3,
+          }),
+        ).rejects.toMatchObject({ status: 415 });
+        const started = await visiting("POST", [], file);
+        expect(started).toMatchObject({ id: expect.any(String) });
+        const row = await db
+          .selectFrom("site_data_files")
+          .select(["uploader", "member_id", "visitor_address"])
+          .where("id", "=", started.id)
+          .executeTakeFirstOrThrow();
+        expect(row).toEqual({
+          uploader: "visitor",
+          member_id: null,
+          visitor_address: "203.0.113.5",
+        });
+
+        // A visitor finishes a visitor's unfinished upload, and nothing else.
+        const bob = await signIn("bob");
+        const members = await media(bob.accessToken, "POST", [], file);
+        await expect(visiting("PUT", [members.id])).rejects.toMatchObject({
+          status: 404,
+        });
+        expect(await visiting("PUT", [started.id])).toMatchObject({
+          file: { id: started.id, name: "log.png", contentType: "image/png" },
+        });
+        await expect(visiting("PUT", [started.id])).rejects.toMatchObject({
+          status: 404,
+        });
+        // Listing and deleting stay the owner's.
+        await expect(visiting("GET", [])).rejects.toMatchObject({
+          status: 403,
+        });
+        await expect(visiting("DELETE", [started.id])).rejects.toMatchObject({
+          status: 403,
+        });
+
+        // The library says who uploaded each.
+        const listed = await library();
+        expect(listed.find((f) => f.id === started.id)).toMatchObject({
+          uploader: "visitor",
+        });
+        expect(listed.find((f) => f.id === members.id)).toMatchObject({
+          uploader: "member",
+        });
+
+        // Site SQL's _naru_uploads lists no visitor's upload: there, a null
+        // member is the owner.
+        await callSiteObject("alice", "putFunctions", {
+          site: "alice",
+          folder: "queries",
+          file: "visitorUploads",
+          source: `export async function get(ctx, { id }) {
+            const { rows } = await ctx.sql\`SELECT id FROM _naru_uploads WHERE id = \${id}\`;
+            return rows.length;
+          }`,
+        });
+        await executeMedia({
+          site: "alice",
+          path: [],
+          method: "GET",
+          adminUserId: owner,
+          usage: true,
+        });
+        expect(
+          await executeCall({
+            site: "alice",
+            path: ["visitorUploads:get"],
+            method: "POST",
+            kind: "query",
+            body: { args: { id: started.id } },
+          }),
+        ).toEqual({ result: 0 });
+
+        // Turned off again: an upload already started cannot be finished.
+        const unfinished = await visiting("POST", [], file);
+        await setting("off");
+        await expect(visiting("PUT", [unfinished.id])).rejects.toMatchObject({
+          status: 403,
+          code: "ACCESS_DENIED",
+        });
+        await setting("all");
+        expect(
+          await visiting("POST", [], {
+            name: "a.txt",
+            contentType: "text/plain",
+            size: 3,
+          }),
+        ).toMatchObject({ id: expect.any(String) });
+      });
+
+      test("limited per address, an IPv6 one by its /64, and per site", async () => {
+        await setting("all");
+        const upload = (clientIp: string | undefined) =>
+          visiting("POST", [], file, clientIp);
+        for (let n = 1; n <= VISITOR_UPLOADS_PER_HOUR; n += 1)
+          await upload(`2001:db8:1:2::${n.toString(16)}`);
+        // Another address in the same /64 is the same visitor.
+        const refusal = await upload("2001:db8:1:2:ffff::1").catch(
+          (error) => error,
+        );
+        expect(refusal).toMatchObject({ status: 429, code: "RATE_LIMITED" });
+        expect(refusal.retryAfter).toBeGreaterThan(3000);
+        expect(refusal.retryAfter).toBeLessThanOrEqual(3600);
+        await upload("2001:db8:1:3::1");
+        for (let n = 0; n < VISITOR_UPLOADS_PER_HOUR; n += 1)
+          await upload("192.0.2.1");
+        await expect(upload("192.0.2.1")).rejects.toMatchObject({
+          status: 429,
+        });
+        await upload("192.0.2.2");
+        // Visitors whose address Naru was not told share one limit.
+        for (let n = 0; n < VISITOR_UPLOADS_PER_HOUR; n += 1)
+          await upload(undefined);
+        await expect(upload(undefined)).rejects.toMatchObject({
+          status: 429,
+        });
+        // Deleting does not earn more.
+        const [deleted] = await library();
+        await remove(deleted.id);
+        await expect(upload(undefined)).rejects.toMatchObject({
+          status: 429,
+        });
+        // The owner and members are not counted with visitors.
+        await executeMedia({
+          site: "alice",
+          path: [],
+          method: "POST",
+          body: file,
+          adminUserId: owner,
+        });
+
+        // The site's visitors together: fill the hour from other addresses.
+        const counted = 3 * VISITOR_UPLOADS_PER_HOUR + 2;
+        for (let n = counted; n < VISITOR_UPLOADS_PER_SITE_HOUR; n += 1)
+          await upload(`198.51.100.${n}`);
+        await expect(upload("198.51.100.250")).rejects.toMatchObject({
+          status: 429,
+          code: "RATE_LIMITED",
+        });
+        // An hour on, they are let in again.
+        await forgetRecent();
+        expect(await upload("198.51.100.250")).toMatchObject({
+          id: expect.any(String),
+        });
+      }, 60_000);
     });
   });
 });

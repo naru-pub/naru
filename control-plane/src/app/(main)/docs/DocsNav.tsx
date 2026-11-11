@@ -1,4 +1,9 @@
-import { DOC_VERSIONS, guidePath, type DocsVersion } from "./versions";
+import {
+  DOC_VERSIONS,
+  guidePath,
+  LATEST_VERSION,
+  type DocsVersion,
+} from "./versions";
 
 // Only the SDK's guides have versions to switch between.
 const VERSIONED = ["database", "media", "sdk"];
@@ -47,7 +52,13 @@ export default function DocsNav({
                   : "text-muted-foreground"
               }
             >
-              {value} · {value === "1.0.0" ? "이전" : "최신"}
+              {value} ·{" "}
+              {value === LATEST_VERSION
+                ? "최신"
+                : DOC_VERSIONS.indexOf(value) >
+                    DOC_VERSIONS.indexOf(LATEST_VERSION)
+                  ? "개발 중"
+                  : "이전"}
             </a>
           ))}
         </div>

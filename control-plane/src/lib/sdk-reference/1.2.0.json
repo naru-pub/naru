@@ -1,0 +1,1087 @@
+{
+  "version": "1.2.0",
+  "entries": [
+    {
+      "name": "createNaru",
+      "kind": "function",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "Creates a client bound to one site."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "createNaru(options?: { site?: string }): NaruClient",
+      "parameters": [
+        {
+          "name": "options",
+          "type": "{ site?: string }",
+          "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The owner signed in on this page. Its queries and mutations see "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": " null and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": " true, whatever collections this sign-in approved, and are not counted against the site's budget."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface Admin extends SiteCode, LiveQueries",
+      "extends": [
+        "SiteCode",
+        "LiveQueries"
+      ],
+      "members": [
+        {
+          "name": "media",
+          "optional": false,
+          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      keepOriginal?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "batch",
+          "optional": false,
+          "signature": "batch(\n  writes: readonly (\n    | {\n        collection: string;\n        set: { condition?: WriteCondition; data: unknown; id: string };\n      }\n    | {\n        collection: string;\n        delete: { condition?: { revision: Revision }; id: string };\n      }\n  )[],\n  options?: { signal?: AbortSignal },\n): Promise<\n  ({\n    createdAt: string;\n    id: string;\n    revision: Revision;\n    updatedAt: string;\n  } | null)[]\n>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Commits every write or none. Conditions guard individual documents. Does not retry. Resolves, in the order written, with what each "
+                },
+                {
+                  "type": "code",
+                  "value": "set"
+                },
+                {
+                  "type": "text",
+                  "value": " stored and "
+                },
+                {
+                  "type": "code",
+                  "value": "null"
+                },
+                {
+                  "type": "text",
+                  "value": " for each "
+                },
+                {
+                  "type": "code",
+                  "value": "delete"
+                },
+                {
+                  "type": "text",
+                  "value": "."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "collection",
+          "optional": false,
+          "signature": "collection<T = Json>(name: string): AdminCollection<T>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "signOut",
+          "optional": false,
+          "signature": "signOut(): Promise<void>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "This handle stops working at once, even if the revoke request fails."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "AdminCollection",
+      "kind": "interface",
+      "summary": [],
+      "throws": [],
+      "signature": "interface AdminCollection<T = Json> extends PublicCollection<T>",
+      "extends": [
+        "PublicCollection<T>"
+      ],
+      "members": [
+        {
+          "name": "delete",
+          "optional": false,
+          "signature": "delete(\n  id: string,\n  options?: { condition?: { revision: Revision }; signal?: AbortSignal },\n): Promise<void>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Deleting a missing document succeeds unless a condition was supplied."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "set",
+          "optional": false,
+          "signature": "set(\n  id: string,\n  data: T,\n  options?: { condition?: WriteCondition; signal?: AbortSignal },\n): Promise<Document<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Replaces the whole document or creates it."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Document",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A read or successful write: user data stays separate from server metadata."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface Document<T = Json>",
+      "extends": [],
+      "members": [
+        {
+          "name": "createdAt",
+          "optional": false,
+          "signature": "createdAt: string",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "data",
+          "optional": false,
+          "signature": "data: T",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "id",
+          "optional": false,
+          "signature": "id: string",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "revision",
+          "optional": false,
+          "signature": "revision: Revision",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "updatedAt",
+          "optional": false,
+          "signature": "updatedAt: string",
+          "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "ListOptions",
+      "kind": "interface",
+      "summary": [],
+      "throws": [],
+      "signature": "interface ListOptions",
+      "extends": [],
+      "members": [
+        {
+          "name": "after",
+          "optional": true,
+          "signature": "after?: string | null",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Opaque cursor returned by the preceding page."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "filter",
+          "optional": true,
+          "signature": "filter?: Filter",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "includeTotal",
+          "optional": true,
+          "signature": "includeTotal?: boolean",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "signal",
+          "optional": true,
+          "signature": "signal?: AbortSignal",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "size",
+          "optional": true,
+          "signature": "size?: number",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Default 50; maximum 100."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "sort",
+          "optional": true,
+          "signature": "sort?: Sort",
+          "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Live",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A live query, kept current until closed."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface Live",
+      "extends": [],
+      "members": [
+        {
+          "name": "close",
+          "optional": false,
+          "signature": "close(): void",
+          "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "LiveQueries",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "Live queries: a query's answer, kept current."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface LiveQueries",
+      "extends": [],
+      "members": [
+        {
+          "name": "subscribe",
+          "optional": false,
+          "signature": "subscribe<R = Json>(\n  name: string,\n  args: Json | undefined,\n  onResult: (result: R) => void,\n  options?: { onError(error: NaruError): void },\n): Live",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Runs "
+                },
+                {
+                  "type": "code",
+                  "value": "\"<module/path>:<query>\""
+                },
+                {
+                  "type": "text",
+                  "value": " from the site's "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/queries/"
+                },
+                {
+                  "type": "text",
+                  "value": " as "
+                },
+                {
+                  "type": "code",
+                  "value": "query()"
+                },
+                {
+                  "type": "text",
+                  "value": " does, calls "
+                },
+                {
+                  "type": "code",
+                  "value": "onResult"
+                },
+                {
+                  "type": "text",
+                  "value": " with its answer, and again whenever a write changes a table it read and the answer with it, until closed. After the connection drops it is asked again, so the latest answer arrives once it is back. A failure, now or later, goes to "
+                },
+                {
+                  "type": "code",
+                  "value": "onError"
+                },
+                {
+                  "type": "text",
+                  "value": ". A connection holds at most 20. "
+                },
+                {
+                  "type": "code",
+                  "value": "args"
+                },
+                {
+                  "type": "text",
+                  "value": " left "
+                },
+                {
+                  "type": "code",
+                  "value": "undefined"
+                },
+                {
+                  "type": "text",
+                  "value": " is "
+                },
+                {
+                  "type": "code",
+                  "value": "null"
+                },
+                {
+                  "type": "text",
+                  "value": ", as "
+                },
+                {
+                  "type": "code",
+                  "value": "query()"
+                },
+                {
+                  "type": "text",
+                  "value": "'s are."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Member",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A visitor signed in to this site with their Naru account."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface Member extends SiteCode, LiveQueries",
+      "extends": [
+        "SiteCode",
+        "LiveQueries"
+      ],
+      "members": [
+        {
+          "name": "id",
+          "optional": false,
+          "signature": "id: string",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "This member's ID on this site, the same on every visit: "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.member.id"
+                },
+                {
+                  "type": "text",
+                  "value": " in the site's queries and mutations. It is not their Naru account name."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "media",
+          "optional": false,
+          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      keepOriginal?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "signOut",
+          "optional": false,
+          "signature": "signOut(): Promise<void>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Signs out on every page of this site. This handle stops working at once, even if the revoke request fails."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "NaruClient",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A page's client. Its queries and mutations run as a visitor, signed in to nothing: they see "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": " null and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": " false, are limited per visitor address, and count against the site's budget."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface NaruClient extends SiteCode, LiveQueries",
+      "extends": [
+        "SiteCode",
+        "LiveQueries"
+      ],
+      "members": [
+        {
+          "name": "auth",
+          "optional": false,
+          "signature": "auth: {\n  session(): Promise<Admin | null>;\n  signIn(options?: { collections?: readonly string[] }): Promise<void>;\n}",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "media",
+          "optional": false,
+          "signature": "media: {\n  upload(\n    file: Blob | File,\n    options?: {\n      keepOriginal?: boolean;\n      onProgress?: (\n        progress:\n          | { phase: \"preparing\" }\n          | { loaded: number; phase: \"uploading\"; total: number }\n          | { phase: \"finishing\" },\n      ) => void;\n      signal?: AbortSignal;\n    },\n  ): Promise<{\n    contentType: string;\n    id: string;\n    name: string;\n    size: number;\n    url: string;\n  }>;\n}",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Uploads as a visitor, signed in to nothing, even when signed in (1.2.0)."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "members",
+          "optional": false,
+          "signature": "members: { session(): Promise<Member | null>; signIn(): Promise<void> }",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "collection",
+          "optional": false,
+          "signature": "collection<T = Json>(name: string): PublicCollection<T>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Visitor access, even when signed in."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Page",
+      "kind": "interface",
+      "summary": [],
+      "throws": [],
+      "signature": "interface Page<T = Json>",
+      "extends": [],
+      "members": [
+        {
+          "name": "documents",
+          "optional": false,
+          "signature": "documents: Document<T>[]",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "nextCursor",
+          "optional": false,
+          "signature": "nextCursor: string | null",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "totalCount",
+          "optional": true,
+          "signature": "totalCount?: number",
+          "summary": [],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "PublicCollection",
+      "kind": "interface",
+      "summary": [],
+      "throws": [],
+      "signature": "interface PublicCollection<T = Json>",
+      "extends": [],
+      "members": [
+        {
+          "name": "add",
+          "optional": false,
+          "signature": "add(data: T, options?: { signal?: AbortSignal }): Promise<Document<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "count",
+          "optional": false,
+          "signature": "count(options?: {\n  filter?: Filter;\n  signal?: AbortSignal;\n}): Promise<number>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "How many documents match "
+                },
+                {
+                  "type": "code",
+                  "value": "filter"
+                },
+                {
+                  "type": "text",
+                  "value": ", or the whole collection."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "get",
+          "optional": false,
+          "signature": "get(id: string, options?: { signal?: AbortSignal }): Promise<Document<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "list",
+          "optional": false,
+          "signature": "list(options?: ListOptions): Promise<Page<T>>",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "pages",
+          "optional": false,
+          "signature": "pages(options?: ListOptions): AsyncIterable<Page<T>>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Every page of a query in turn, following "
+                },
+                {
+                  "type": "code",
+                  "value": "nextCursor"
+                },
+                {
+                  "type": "text",
+                  "value": " from "
+                },
+                {
+                  "type": "code",
+                  "value": "after"
+                },
+                {
+                  "type": "text",
+                  "value": " (or the start). Not a snapshot: writes in between can shift later pages."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "SiteCode",
+      "kind": "interface",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "The site's queries and mutations: its own code over its own tables, which its "
+            },
+            {
+              "type": "code",
+              "value": "_naru/migrations/"
+            },
+            {
+              "type": "text",
+              "value": " create. Anyone may call them, signed in or not; the code decides what each caller may see and do from "
+            },
+            {
+              "type": "code",
+              "value": "ctx.member"
+            },
+            {
+              "type": "text",
+              "value": " and "
+            },
+            {
+              "type": "code",
+              "value": "ctx.owner"
+            },
+            {
+              "type": "text",
+              "value": "."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "interface SiteCode",
+      "extends": [],
+      "members": [
+        {
+          "name": "mutate",
+          "optional": false,
+          "signature": "mutate<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Runs an export of "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/mutations/<module/path>.js"
+                },
+                {
+                  "type": "text",
+                  "value": " in one transaction: what it wrote is kept only if it returns, and a throw, "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.fail"
+                },
+                {
+                  "type": "text",
+                  "value": " or a limit changes nothing."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        },
+        {
+          "name": "query",
+          "optional": false,
+          "signature": "query<R = Json>(\n  name: string,\n  args?: Json,\n  options?: { signal?: AbortSignal },\n): Promise<R>",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "Runs "
+                },
+                {
+                  "type": "code",
+                  "value": "\"<module/path>:<name>\""
+                },
+                {
+                  "type": "text",
+                  "value": ", an export of the site's "
+                },
+                {
+                  "type": "code",
+                  "value": "_naru/queries/<module/path>.js"
+                },
+                {
+                  "type": "text",
+                  "value": ", and resolves with what it returned. A query only reads ("
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.sql"
+                },
+                {
+                  "type": "text",
+                  "value": "), so it counts against the caller's read budget."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "NaruError",
+      "kind": "class",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "A Naru operation that could not be completed. Check it with "
+            },
+            {
+              "type": "code",
+              "value": "instanceof"
+            },
+            {
+              "type": "text",
+              "value": "."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "code",
+              "value": "message"
+            },
+            {
+              "type": "text",
+              "value": " is a short Korean sentence a visitor can read, so a page may show it as is ("
+            },
+            {
+              "type": "code",
+              "value": "status.textContent = error.message"
+            },
+            {
+              "type": "text",
+              "value": "): a query's or mutation's own "
+            },
+            {
+              "type": "code",
+              "value": "ctx.fail"
+            },
+            {
+              "type": "text",
+              "value": " message, or Naru's wording for "
+            },
+            {
+              "type": "code",
+              "value": "code"
+            },
+            {
+              "type": "text",
+              "value": ". "
+            },
+            {
+              "type": "code",
+              "value": "cause"
+            },
+            {
+              "type": "text",
+              "value": " is a network failure's original error. What Naru answered is in the browser's network tab."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "class NaruError extends Error",
+      "extends": [
+        "Error"
+      ],
+      "members": [
+        {
+          "name": "code",
+          "optional": false,
+          "signature": "code: NaruErrorCode",
+          "summary": [],
+          "throws": []
+        },
+        {
+          "name": "details",
+          "optional": true,
+          "signature": "details?: Json",
+          "summary": [
+            {
+              "type": "paragraph",
+              "spans": [
+                {
+                  "type": "text",
+                  "value": "The JSON a query or mutation passed as "
+                },
+                {
+                  "type": "code",
+                  "value": "ctx.fail(code, message, details)"
+                },
+                {
+                  "type": "text",
+                  "value": ", such as "
+                },
+                {
+                  "type": "code",
+                  "value": "{ reason: \"sold_out\" }"
+                },
+                {
+                  "type": "text",
+                  "value": "; or, when a member's request is refused because the site has not approved them, "
+                },
+                {
+                  "type": "code",
+                  "value": "{ membership: \"pending\" }"
+                },
+                {
+                  "type": "text",
+                  "value": " or "
+                },
+                {
+                  "type": "code",
+                  "value": "{ membership: \"banned\" }"
+                },
+                {
+                  "type": "text",
+                  "value": "; or, for a "
+                },
+                {
+                  "type": "code",
+                  "value": "CONFLICT"
+                },
+                {
+                  "type": "text",
+                  "value": " because another document already holds a value of one of the collection's unique fields, "
+                },
+                {
+                  "type": "code",
+                  "value": "{ unique: \"<field>\" }"
+                },
+                {
+                  "type": "text",
+                  "value": ". Undefined for every other failure."
+                }
+              ]
+            }
+          ],
+          "throws": []
+        }
+      ]
+    },
+    {
+      "name": "Filter",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "Top-level user fields, combined with AND."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type Filter = Record<\n  string,\n  | string\n  | number\n  | boolean\n  | null\n  | {\n      gt?: string | number;\n      gte?: string | number;\n      lt?: string | number;\n      lte?: string | number;\n    }\n>"
+    },
+    {
+      "name": "Json",
+      "kind": "type",
+      "summary": [],
+      "throws": [],
+      "signature": "type Json =\n  null | boolean | number | string | Json[] | { [key: string]: Json }"
+    },
+    {
+      "name": "NaruErrorCode",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "Why an operation failed. The list is closed for v1: a code a later server adds reaches this version as the nearest code here."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type NaruErrorCode =\n  | \"CONFLICT\"\n  | \"QUOTA_EXCEEDED\"\n  | \"AUTH_REQUIRED\"\n  | \"ACCESS_DENIED\"\n  | \"NOT_FOUND\"\n  | \"RATE_LIMITED\"\n  | \"INVALID_REQUEST\"\n  | \"UNAVAILABLE\""
+    },
+    {
+      "name": "Revision",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "An opaque concurrency token. Store and return it unchanged."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type Revision = string & { [revisionBrand]: true }"
+    },
+    {
+      "name": "Sort",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "One or two keys: a user field by name, or document metadata."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type Sort =\n  | readonly [\n      readonly [\n        string | { metadata: \"id\" | \"createdAt\" | \"updatedAt\" },\n        \"asc\" | \"desc\",\n      ],\n    ]\n  | readonly [\n      readonly [\n        string | { metadata: \"id\" | \"createdAt\" | \"updatedAt\" },\n        \"asc\" | \"desc\",\n      ],\n      readonly [\n        string | { metadata: \"id\" | \"createdAt\" | \"updatedAt\" },\n        \"asc\" | \"desc\",\n      ],\n    ]"
+    },
+    {
+      "name": "WriteCondition",
+      "kind": "type",
+      "summary": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "type": "text",
+              "value": "Write only at this revision, or only if the document does not exist yet."
+            }
+          ]
+        }
+      ],
+      "throws": [],
+      "signature": "type WriteCondition = { revision: Revision } | { absent: true }"
+    }
+  ],
+  "functions": "/**\n * What Naru hands a site's own code (SDK 1.2.0): queries in\n * `_naru/queries/`, mutations in `_naru/mutations/` and routes in\n * `_naru/routes.js`, run on Naru over the tables `_naru/migrations/*.sql`\n * create. For type checking only; nothing here exists at run time.\n *\n * ```ts\n * import type { Query, Mutation } from \"./functions.d.ts\";\n * export const posts: Query<{ board: string }> = async (ctx, { board }) =>\n *   (await ctx.sql`SELECT id, title FROM posts WHERE board = ${board}`).rows;\n * ```\n *\n * The code runs in QuickJS, not a browser or Node. Its globals are the\n * language's own (Object, Array, JSON, Math, Date, RegExp, Map, Set, WeakMap,\n * WeakSet, WeakRef, Promise, Proxy, Reflect, Symbol, BigInt, Iterator,\n * ArrayBuffer, DataView, the typed arrays, the Error types, the URI\n * functions, parseInt and the like) and: URL and URLSearchParams, as\n * browsers have them; structuredClone, for primitives, plain objects and\n * arrays, Date, RegExp, Map, Set, ArrayBuffer and Uint8Array (anything else\n * throws a DataCloneError); Math.random; Date.now, the server's clock (prefer\n * `ctx.now`; local time is the server's, so use UTC methods);\n * performance.now, queueMicrotask and DOMException. There is no Intl\n * (toLocaleString formats as English), TextEncoder, TextDecoder, atob, btoa,\n * crypto, console, fetch, setTimeout or other timers, WebAssembly, require or\n * process, whatever your editor's lib types say.\n *\n * Written by hand beside the generated naru.d.ts, whose `Json` this repeats\n * so this file stands on its own.\n * @packageDocumentation\n */\n\nexport type Json =\n  null | boolean | number | string | Json[] | { [key: string]: Json };\n\n/** The failure codes `ctx.fail` takes, as pages receive them in `error.code`. */\nexport type ErrorCode =\n  | \"CONFLICT\"\n  | \"QUOTA_EXCEEDED\"\n  | \"AUTH_REQUIRED\"\n  | \"ACCESS_DENIED\"\n  | \"NOT_FOUND\"\n  | \"RATE_LIMITED\"\n  | \"INVALID_REQUEST\"\n  | \"UNAVAILABLE\";\n\n/**\n * The member who called: their ID on this site, the same on every visit.\n * What they may do is the site's to keep, in its own tables.\n */\nexport interface CallingMember {\n  readonly id: string;\n}\n\n/** A value site SQL binds or returns (a boolean binds as 1 or 0). */\nexport type SqlValue = string | number | boolean | Uint8Array | null;\n/** What `ctx.sql` answers: the statement's rows, and how many it changed. */\nexport interface SqlResult<Row> {\n  rows: Row[];\n  changes: number;\n}\n\n/**\n * A query's or route's `ctx`: who calls, and the site's own tables through\n * `sql`. Anyone may call one, signed in or not, so its code decides what\n * each caller may see. A query's `sql` only reads. A call runs in one\n * transaction, for tens of milliseconds in 32 MiB, makes at most 100\n * database operations, 1,000 URL parses and 2,000 Math.random() draws,\n * reads at most 500,000 rows in all, and returns at most 1 MiB of JSON. Every method's promise must be\n * used (awaited, returned or chained), or the call fails.\n */\nexport interface QueryCtx {\n  /** The signed-in member, or null for the owner and visitors. */\n  readonly member: CallingMember | null;\n  /** The site's owner called. A visitor, signed in to nothing, has neither. */\n  readonly owner: boolean;\n  /** The site's owner's Naru login, whoever calls: the site's own name. */\n  readonly ownerName: string;\n  /** The call's time in milliseconds, fixed for the whole call. */\n  readonly now: number;\n  /**\n   * Refuses the request: nothing the call wrote is kept, and the page's\n   * `error.message` is `message` (1–1000 characters) as written, so write it\n   * for visitors. `details`, at most 4 KiB of JSON, arrives as\n   * `error.details`.\n   */\n  fail(code: ErrorCode, message: string, details?: Json): never;\n  /**\n   * One statement of SQL against the site's own tables, which its\n   * `_naru/migrations/*.sql` create. As a tag, ``ctx.sql`... ${value}` ``\n   * binds every interpolated value as a parameter; given text and values,\n   * it runs a query builder's compiled statement. SELECT, INSERT, UPDATE and\n   * DELETE run; a query only reads. Naru's own tables, pragmas, triggers,\n   * transactions and recursion are refused, but Naru's view\n   * `_naru_uploads (id, url, member, name, type, size, created_at)`, the\n   * owner's and members' finished uploads (`member` null for the owner's;\n   * visitors' uploads are not listed), may be read\n   * and joined. A statement is stopped once\n   * SQLite works on one step of it for 3 seconds; one stopped 3 times within\n   * a minute is paused for 5 minutes. It binds at most 100 values, returns at most 1,000 rows and 1 MiB, BLOB columns as\n   * Uint8Arrays, and counts as one database operation; a call's statements\n   * read at most 500,000 rows. A value a UNIQUE column already holds fails\n   * the call with CONFLICT, `details.unique` naming the column; any other\n   * mistake SQLite refuses, with its message.\n   *\n   * To stay fast, read a table whole at most once and reach every other\n   * table by key (join on an indexed column):\n   *\n   * - A list as one value: `WHERE id IN (SELECT value FROM json_each(?))`,\n   *   bound as `JSON.stringify(ids)`.\n   * - A row's JSON column: `FROM visits, json_each(visits.hours) j`.\n   * - An ordered aggregate per row: `(SELECT json_group_array(title) FROM\n   *   (SELECT title FROM titles WHERE ch = c.id ORDER BY ord))`, with an\n   *   index on `titles (ch, ord)`.\n   * - Past 1,000 rows: `WHERE id > ? ORDER BY id LIMIT 1000`, then again\n   *   after the last `id`.\n   */\n  sql<Row = Record<string, SqlValue>>(\n    strings: TemplateStringsArray,\n    ...values: SqlValue[]\n  ): Promise<SqlResult<Row>>;\n  sql<Row = Record<string, SqlValue>>(\n    text: string,\n    values?: SqlValue[],\n  ): Promise<SqlResult<Row>>;\n  /**\n   * Guests' passwords, kept by the site as hashes. `verify` allows ten wrong\n   * passwords an hour for each `key` (such as \"post:42\"), whoever tries,\n   * then fails with RATE_LIMITED. A call makes at most 3 password checks.\n   */\n  passwords: {\n    verify(password: string, hash: string, key: string): Promise<boolean>;\n  };\n}\n\n/** A mutation's `ctx`: a query's, writing, and notifying members. */\nexport interface MutationCtx extends QueryCtx {\n  passwords: QueryCtx[\"passwords\"] & {\n    /** A hash of `password` (1–256 characters) to keep in a table. */\n    hash(password: string): Promise<string>;\n  };\n  /**\n   * Notifies these members (at most 1,000 a call) in the Naru app, once the\n   * mutation returns: on their devices if they allowed the site there, or in\n   * the app's inbox until they do. Unknown, pending and banned members are\n   * skipped, and the site is not told who has the app. `path` (default \"/\")\n   * is a page of this site, opened when the notification is tapped. A title\n   * longer than 100 characters or a body longer than 500 is cut to fit.\n   * Notifications are best effort: one Naru cannot queue is dropped, and the\n   * mutation goes on. Member ids that are not ids, a blank title or another\n   * site's address still throw.\n   */\n  notify(\n    members: string[],\n    message: { title: string; body?: string; path?: string },\n  ): Promise<null>;\n}\n\n/** `export async function name(ctx, args)` in `_naru/queries/` or `_naru/mutations/`. */\nexport type Query<Args = Json, Result = Json> = (\n  ctx: QueryCtx,\n  args: Args,\n) => Result | Promise<Result>;\nexport type Mutation<Args = Json, Result = Json> = (\n  ctx: MutationCtx,\n  args: Args,\n) => Result | Promise<Result>;\n\n/** What a route is asked. */\nexport interface RouteRequest {\n  /** The path as asked, still percent-encoded. */\n  path: string;\n  /** The subdomain or custom domain it was asked on, such as `https://alice.naru.pub`. */\n  origin: string;\n  /** The query string's values, the last of a repeated name. */\n  query: Record<string, string>;\n}\n/**\n * What a route answers: a string of HTML, a body of one of these types, one\n * of the site's files with `head` added to its `<head>` when it is HTML, or a\n * redirect to a path or an `https://` URL. `status` is 200–599 (a redirect's\n * 301, 302, 303, 307 or 308, by default 302); `cache` the seconds (0–300) the\n * edge may keep the page, by default 0.\n */\nexport type RouteAnswer =\n  | string\n  | ({ status?: number; cache?: number } & (\n      | {\n          body: string;\n          type:\n            | \"text/html\"\n            | \"text/plain\"\n            | \"text/css\"\n            | \"text/calendar\"\n            | \"text/xml\"\n            | \"application/xml\"\n            | \"application/rss+xml\"\n            | \"application/atom+xml\"\n            | \"application/json\";\n        }\n      | { file: string; head?: string }\n      | { redirect: string }\n    ));\n/** `export default async function (ctx, request)` in `_naru/routes.js`. */\nexport type Route = (\n  ctx: QueryCtx,\n  request: RouteRequest,\n) => RouteAnswer | Promise<RouteAnswer>;\n"
+}

@@ -2,8 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { browser as page } from "./sdk-browser.mjs";
 
-// Every release this suite describes runs it: 1.0.0 here, and 1.1.0 through
-// naru-data-sdk-1.1.0.test.mjs, which sets the version and imports this file.
+// Every release this suite describes runs it: 1.0.0 here, and 1.1.0 and 1.2.0
+// through naru-data-sdk-<version>.test.mjs, which set the version and import
+// this file.
 const VERSION = process.env.NARU_SDK_VERSION ?? "1.0.0";
 const { createNaru, NaruError } = await import(
   `../public/sdk/${VERSION}/naru.js`
@@ -894,7 +895,7 @@ test("upload authorizes, sends the bytes straight to storage, then finalizes", a
   const { calls, stored, declared } = await upload(file);
   // What was stored; managing it by id is the media library's.
   assert.deepEqual(stored, {
-    ...(VERSION === "1.1.0" ? { id: "f1" } : {}),
+    ...(VERSION !== "1.0.0" ? { id: "f1" } : {}),
     url: "https://media",
     name: "photo.webp",
     contentType: "image/webp",

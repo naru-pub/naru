@@ -65,6 +65,9 @@ The package's version is the SDK's: `1.1.0` is `/sdk/1.1.0/naru.js`. While
 an SDK version is still being built, the file Naru serves at its address
 can change and a published package cannot, so it is published as
 prereleases, `<version>-dev.1` and on, under the dist-tag `dev`.
+`npm install @naru-pub/sdk@dev` installs SDK 1.2.0 as it is being built:
+visitors' uploads (`naru.media.upload()`, where the site's owner allows
+them) and `keepOriginal` for uploads that must stay byte for byte.
 
 ## Publishing
 

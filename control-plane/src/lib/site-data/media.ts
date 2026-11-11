@@ -13,7 +13,7 @@ import { db, requestDeadline } from "@/lib/database";
 import { s3Client } from "@/lib/s3";
 import { resolveSiteAccess } from "./service";
 import { callSiteObject } from "@/lib/edge/client";
-import { DataError, uuidId } from "./validation";
+import { DataError, rateLimited, uuidId } from "./validation";
 import { decodeCursor, encodeCursor, sorting } from "./pagination";
 import { mediaBucket, mediaOrigin } from "@/lib/site-urls";
 
@@ -27,6 +27,16 @@ export const MAX_MEDIA_FILES = 10000;
 // Members upload into the site's quota, which one of them could otherwise
 // fill for everyone; the owner's own uploads are not limited.
 export const MEMBER_UPLOADS_PER_HOUR = 30;
+// Visitors, signed in to nothing, upload only where the owner lets them
+// (users.site_visitor_uploads), and are told apart only by address: a
+// third of a member's hourly uploads for each address (an IPv6 one by its
+// /64, the block one subscriber is given whole), and a site's visitors
+// together no more than this an hour, since addresses are cheap to change
+// and the quota is the owner's.
+export const VISITOR_UPLOADS_PER_HOUR = 10;
+export const VISITOR_UPLOADS_PER_SITE_HOUR = 100;
+export const VISITOR_UPLOAD_SETTINGS = ["off", "images", "all"] as const;
+export type VisitorUploads = (typeof VISITOR_UPLOAD_SETTINGS)[number];
 const allowedTypes = new Set<string>(MEDIA_TYPES);
 
 /** The external object-store boundary, kept narrow so API contracts can run locally. */
@@ -64,6 +74,8 @@ type MediaCommand = {
   // An owner's or a member's token. Mutable: tokenScope and memberScope
   // report the expiry the renewed token now has.
   bearer?: { token: string; origin: string | null; expiresAt?: number };
+  /** A visitor's address, which limits their uploads. */
+  clientIp?: string;
   body?: Record<string, unknown>;
   after?: string;
   size?: number;
@@ -95,7 +107,7 @@ function output(file: {
     updatedAt: file.updated_at,
   };
 }
-function uploadInput(body: Record<string, unknown>) {
+function uploadInput(body: Record<string, unknown>, imagesOnly: boolean) {
   const filename = typeof body.name === "string" ? body.name.trim() : "";
   const contentType =
     typeof body.contentType === "string" ? body.contentType.toLowerCase() : "";
@@ -110,6 +122,11 @@ function uploadInput(body: Record<string, unknown>) {
       415,
       `${contentType ? `Naru does not store ${contentType} files` : "The file has no type"}. It stores ${[...allowedTypes].join(", ")}.`,
     );
+  if (imagesOnly && !contentType.startsWith("image/"))
+    throw new DataError(
+      415,
+      `This site takes only images from visitors: ${[...allowedTypes].filter((type) => type.startsWith("image/")).join(", ")}.`,
+    );
   if (
     !Number.isInteger(size) ||
     Number(size) < 1 ||
@@ -123,7 +140,9 @@ function uploadInput(body: Record<string, unknown>) {
  * Tells the site's object of finished uploads, for site SQL's _naru_uploads: one as it
  * is ready, or (`all`) every one, as the owner opens the library. Its
  * record helps site code check an upload, so a failure here does not fail
- * the upload; the next library visit records it again.
+ * the upload; the next library visit records it again. Visitors' uploads
+ * are never recorded: site code reads `member` null as the owner's, which
+ * SDK 1.1.0's functions.d.ts promises, and a visitor proves nothing.
  */
 async function recordUploads(
   site: string,
@@ -131,6 +150,7 @@ async function recordUploads(
     id: string;
     object_key: string;
     member_id: string | null;
+    uploader: "owner" | "member" | "visitor";
     original_name: string;
     content_type: string;
     size_bytes: number;
@@ -139,6 +159,7 @@ async function recordUploads(
   all = false,
 ) {
   try {
+    files = files.filter((file) => file.uploader !== "visitor");
     for (let at = 0; at < files.length; at += 1000)
       await callSiteObject(site, "recordMedia", {
         files: files.slice(at, at + 1000).map((file) => ({
@@ -176,6 +197,7 @@ export async function recordAllUploads(site: string, ownerId: string) {
       "id",
       "object_key",
       "member_id",
+      "uploader",
       "original_name",
       "content_type",
       "size_bytes",
@@ -191,17 +213,29 @@ export async function executeMedia(command: MediaCommand) {
   if (command.path.length > 1) throw new DataError(404, "Not found.");
   const { owner, allowedIds, memberId } = await resolveSiteAccess(command);
   const admin = command.adminUserId === owner.id || allowedIds !== undefined;
-  if (!admin && memberId === undefined)
-    throw new DataError(403, "Uploading needs an owner or member sign-in.");
   if (command.adminUserId !== undefined && command.adminUserId !== owner.id)
     throw new DataError(403, "Permission denied.");
-  // Listing and deleting remain the control panel's: a website, the owner's
-  // or a member's, only uploads.
+  // Signed in to nothing: a page's visitor, who uploads only where the
+  // owner lets them.
+  const visitor = !admin && memberId === undefined;
+  // Listing and deleting remain the control panel's: a website, the owner's,
+  // a member's or a visitor's, only uploads.
   const uploading =
     (command.method === "POST" && command.path.length === 0) ||
     (command.method === "PUT" && command.path.length === 1);
   if (command.bearer !== undefined && !uploading)
     throw new DataError(403, "Website tokens can only upload files.");
+  if (visitor && !uploading)
+    throw new DataError(403, "Visitors can only upload files.");
+  const visitorUploads = visitor
+    ? await readVisitorUploads(owner.id)
+    : undefined;
+  if (visitorUploads === "off")
+    throw new DataError(
+      403,
+      "This site does not take uploads from visitors. Its owner can allow them in the media library.",
+      "ACCESS_DENIED",
+    );
   const files = () =>
     db.selectFrom("site_data_files").where("user_id", "=", owner.id);
   const readUsage = async () => {
@@ -236,6 +270,7 @@ export async function executeMedia(command: MediaCommand) {
           "id",
           "object_key",
           "member_id",
+          "uploader",
           "original_name",
           "content_type",
           "size_bytes",
@@ -247,7 +282,10 @@ export async function executeMedia(command: MediaCommand) {
       // Every upload, as site SQL's _naru_uploads reads them: missed or stale records
       // are put right as the owner looks.
       await recordUploads(command.site, ready, true);
-      return { usage: await readUsage() };
+      return {
+        usage: await readUsage(),
+        visitorUploads: await readVisitorUploads(owner.id),
+      };
     }
     // Refused rather than ignored: a caller that still filters by what a file
     // belongs to would otherwise get the whole library back, and delete it.
@@ -302,6 +340,8 @@ export async function executeMedia(command: MediaCommand) {
     return {
       files: page.map((file) => ({
         ...output(file),
+        // Who uploaded it, for the owner to tell visitors' uploads apart.
+        uploader: file.uploader,
         ...(file.status === "ready" ? { referenced: used.has(file.id) } : {}),
         ...(file.status === "pending"
           ? {
@@ -325,9 +365,32 @@ export async function executeMedia(command: MediaCommand) {
           : null,
     };
   }
+  // The owner's own setting, from the control panel's media library only:
+  // the public route has no PATCH, and a website token is refused above.
+  if (
+    command.method === "PATCH" &&
+    command.path.length === 0 &&
+    command.adminUserId === owner.id
+  ) {
+    const setting = command.body?.visitorUploads;
+    if (!VISITOR_UPLOAD_SETTINGS.some((value) => value === setting))
+      throw new DataError(
+        400,
+        `visitorUploads must be one of ${VISITOR_UPLOAD_SETTINGS.join(", ")}.`,
+      );
+    await db
+      .updateTable("users")
+      .set({ site_visitor_uploads: setting as VisitorUploads })
+      .where("id", "=", owner.id)
+      .execute();
+    return { visitorUploads: setting as VisitorUploads };
+  }
   const id = command.path[0] ? uuidId(command.path[0]) : undefined;
   if (command.method === "POST" && command.path.length === 0) {
-    const input = uploadInput(command.body || {});
+    const input = uploadInput(command.body || {}, visitorUploads === "images");
+    // As http.ts was told it (TRUST_CLOUDFLARE_IP), or null: those visitors
+    // share one limit.
+    const address = visitor ? (command.clientIp ?? null) : undefined;
     const fileId = uuidv7();
     const extension = input.filename.includes(".")
       ? input.filename
@@ -383,6 +446,45 @@ export async function executeMedia(command: MediaCommand) {
             `A member can upload ${MEMBER_UPLOADS_PER_HOUR} files an hour. Try again later.`,
           );
       }
+      if (address !== undefined) {
+        const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        // The visitor's block: an IPv4 address alone, an IPv6 one's /64.
+        const same =
+          address === null
+            ? sql<boolean>`visitor_address is null`
+            : sql<boolean>`visitor_address <<= network(set_masklen(${address}::inet, case family(${address}::inet) when 6 then 64 else 32 end))`;
+        // Deleted uploads still count until they are gone for good, so
+        // deleting does not earn a visitor more.
+        const recent = await tx
+          .selectFrom("site_data_files")
+          .where("user_id", "=", owner.id)
+          .where("uploader", "=", "visitor")
+          .where("created_at", ">", hourAgo)
+          .select([
+            sql<number>`count(*)`.as("site"),
+            sql<number>`count(*) filter (where ${same})`.as("address"),
+            sql<Date | null>`min(created_at)`.as("siteOldest"),
+            sql<Date | null>`min(created_at) filter (where ${same})`.as(
+              "addressOldest",
+            ),
+          ])
+          .executeTakeFirstOrThrow();
+        // Until the oldest upload that counts is an hour old.
+        const wait = (oldest: Date | null) =>
+          oldest
+            ? (new Date(oldest).getTime() + 60 * 60 * 1000 - Date.now()) / 1000
+            : 60;
+        if (Number(recent.address) >= VISITOR_UPLOADS_PER_HOUR)
+          throw rateLimited(
+            `A visitor can upload ${VISITOR_UPLOADS_PER_HOUR} files an hour to a site. Try again later.`,
+            wait(recent.addressOldest),
+          );
+        if (Number(recent.site) >= VISITOR_UPLOADS_PER_SITE_HOUR)
+          throw rateLimited(
+            `This site takes ${VISITOR_UPLOADS_PER_SITE_HOUR} files an hour from visitors. Try again later.`,
+            wait(recent.siteOldest),
+          );
+      }
       return tx
         .insertInto("site_data_files")
         .values({
@@ -393,6 +495,12 @@ export async function executeMedia(command: MediaCommand) {
           content_type: input.contentType,
           size_bytes: input.size,
           member_id: memberId ?? null,
+          uploader: visitor
+            ? "visitor"
+            : memberId !== undefined
+              ? "member"
+              : "owner",
+          visitor_address: address ?? null,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -434,8 +542,14 @@ export async function executeMedia(command: MediaCommand) {
       .where("id", "=", id)
       .selectAll()
       .executeTakeFirst();
-    // A member finishes only their own upload.
-    if (!file || (memberId !== undefined && file.member_id !== memberId))
+    // A member finishes only their own upload, and a visitor only a
+    // visitor's, unfinished: its id, which only the page that started it
+    // was given, is all a visitor has to show.
+    if (
+      !file ||
+      (memberId !== undefined && file.member_id !== memberId) ||
+      (visitor && (file.uploader !== "visitor" || file.status !== "pending"))
+    )
       throw new DataError(404, "File not found.");
     let head;
     try {
@@ -475,6 +589,16 @@ export async function executeMedia(command: MediaCommand) {
     return { success: true };
   }
   throw new DataError(405, "Method not allowed.");
+}
+
+/** Whether, and what, the site's visitors may upload. */
+async function readVisitorUploads(ownerId: string): Promise<VisitorUploads> {
+  const { site_visitor_uploads } = await db
+    .selectFrom("users")
+    .select("site_visitor_uploads")
+    .where("id", "=", ownerId)
+    .executeTakeFirstOrThrow();
+  return site_visitor_uploads;
 }
 
 // Media live under <user id>/.
