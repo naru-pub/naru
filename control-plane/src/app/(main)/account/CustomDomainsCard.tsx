@@ -348,10 +348,11 @@ export default function CustomDomainsCard({
                                 상태가 됩니다.
                               </p>
                               <p className="text-muted-foreground">
-                                등록한 주소에 아래 1단계 레코드(루트
-                                도메인이라면 ALIAS/ANAME)를 넣어주세요.
-                                Cloudflare가 다시 확인하면 active로 돌아오니,
-                                잠시 뒤 상태 확인을 눌러주세요.
+                                등록한 주소에 아래 1단계 레코드를 넣어주세요.
+                                루트 도메인이라면 아래 안내대로 DNS를
+                                Cloudflare로 옮긴 뒤 넣어주세요. Cloudflare가
+                                다시 확인하면 active로 돌아오니, 잠시 뒤 상태
+                                확인을 눌러주세요.
                               </p>
                             </div>
                           )}
@@ -389,45 +390,53 @@ export default function CustomDomainsCard({
                                 {target}
                               </span>
                             </div>
-                            {/* An ALIAS/ANAME is flattened by the registrar into
-                              the target's Cloudflare IPs. Once the hostname
-                              resolves there, Cloudflare treats it as another
-                              Cloudflare zone's and refuses TXT validation, so
-                              apex domains must validate before pointing. */}
+                            {/* Korean registrars offer no ALIAS/ANAME, so a root
+                              domain needs Cloudflare DNS, which flattens a
+                              CNAME at the root. Flattened, the hostname
+                              resolves to Cloudflare IPs and Cloudflare treats
+                              it as another zone's and refuses TXT validation,
+                              so root domains validate before pointing. DNS
+                              only: a proxied record would route through the
+                              owner's own zone. */}
                             <div className="bg-background border border-border rounded p-2 space-y-1 text-muted-foreground">
                               <p className="font-medium text-foreground">
                                 루트 도메인(예: example.com)이라면
                               </p>
                               <p>
-                                루트 도메인에는 CNAME을 쓸 수 없고,
-                                ALIAS/ANAME을 먼저 추가하면 Cloudflare가 아래
-                                TXT 레코드로 소유권을 확인하지 못합니다. 다음
-                                순서를 지켜주세요.
+                                루트 도메인에는 일반 CNAME을 쓸 수 없고,
+                                호스팅케이알·가비아 같은 국내 도메인 업체는 대신
+                                쓸 ALIAS/ANAME 레코드를 지원하지 않습니다. DNS
+                                관리를 무료인 Cloudflare로 옮겨주세요. 도메인
+                                소유와 결제는 지금 업체에 그대로 남습니다.
                               </p>
                               <ol className="list-decimal pl-5 space-y-1">
                                 <li>
-                                  ALIAS/ANAME 레코드 없이 아래 TXT 레코드만 먼저
-                                  추가해주세요. 이미 추가했다면 잠시
-                                  삭제해주세요.
+                                  Cloudflare(dash.cloudflare.com)에 가입하고
+                                  도메인을 Free 요금제로 추가해주세요.
+                                </li>
+                                <li>
+                                  Cloudflare DNS에 아래 TXT 레코드만 먼저
+                                  추가해주세요. 루트 도메인을 가리키는 레코드가
+                                  있다면 잠시 삭제해주세요.
+                                </li>
+                                <li>
+                                  도메인 업체에서 네임서버를 Cloudflare가
+                                  알려주는 두 개로 바꿔주세요.
                                 </li>
                                 <li>
                                   상태 확인을 눌러 호스트와 SSL이 모두 active가
-                                  될 때까지 기다려주세요.
+                                  될 때까지 기다려주세요. 네임서버 변경에는 길면
+                                  하루가 걸립니다.
                                 </li>
                                 <li>
-                                  active가 되면{" "}
+                                  active가 되면 Cloudflare DNS에{" "}
                                   <span className="font-mono">
-                                    ALIAS {domain.hostname} → {target}
+                                    CNAME @ → {target}
                                   </span>{" "}
-                                  레코드를 추가해주세요.
+                                  레코드를 추가하고, 프록시 상태를 회색 구름(DNS
+                                  전용)으로 바꿔주세요.
                                 </li>
                               </ol>
-                              <p>
-                                가장 확실한 방법은 www 주소(예:
-                                www.example.com)를 CNAME으로 연결하고, 도메인
-                                등록기관의 URL 리디렉션으로 루트 도메인을 www
-                                주소로 보내는 것입니다.
-                              </p>
                             </div>
                           </div>
                           {domain.ownershipVerificationName &&
