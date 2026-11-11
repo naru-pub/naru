@@ -406,12 +406,14 @@ export default function CustomDomainsCard({
                               </p>
                               <p>
                                 루트 도메인에는 일반 CNAME을 쓸 수 없어
-                                ALIAS/ANAME 레코드가 필요합니다. 도메인 업체가
-                                이를 지원한다면 아래 순서에서 Cloudflare 대신
-                                업체 DNS에 TXT 레코드와 ALIAS/ANAME을
-                                넣어주세요. 지원하지 않는 업체라면 DNS 관리를
-                                무료인 Cloudflare로 옮겨주세요. 도메인 소유와
-                                결제는 지금 업체에 그대로 남습니다.
+                                ALIAS/ANAME 레코드가 필요합니다. 일부 국내
+                                도메인 업체는 ALIAS/ANAME을 지원하지 않는 경우가
+                                있습니다. 도메인 업체가 이를 지원한다면 아래
+                                순서에서 Cloudflare 대신 업체 DNS에 TXT 레코드와
+                                ALIAS/ANAME을 넣어주세요. 지원하지 않는 업체라면
+                                DNS 관리를 무료인 Cloudflare로 옮겨주세요.
+                                도메인 소유와 결제는 지금 업체에 그대로
+                                남습니다.
                               </p>
                               <ol className="list-decimal pl-5 space-y-1">
                                 <li>
