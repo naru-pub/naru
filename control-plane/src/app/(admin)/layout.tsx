@@ -119,12 +119,12 @@ export default async function AdminLayout({
                   className="flex gap-1 px-4 pb-3"
                 >
                   <label htmlFor="admin-user-search" className="sr-only">
-                    계정 아이디
+                    계정 아이디 또는 이메일
                   </label>
                   <Input
                     id="admin-user-search"
                     name="user"
-                    placeholder="계정 찾기"
+                    placeholder="아이디 / 이메일"
                     className="h-8 min-w-0 flex-1 text-sm"
                   />
                   <Button

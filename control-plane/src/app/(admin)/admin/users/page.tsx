@@ -38,20 +38,28 @@ export default async function UsersPage({
     if (found) redirect(`/admin/users/${encodeURIComponent(found.login_name)}`);
   }
 
-  // An exact login name opens the account; anything else lists the accounts
-  // whose login name contains it.
+  // An exact login name opens the account; otherwise list matches by login
+  // name or email. Emails can belong to more than one account.
   const pattern = query && `%${query.replace(/[\\%_]/g, "\\$&")}%`;
   const recent = await db
     .selectFrom("users")
     .select([
       "id",
       "login_name",
+      "email",
       "created_at",
       "deleted_at",
       "supporter_comp",
       supporterCondition(now).as("supporter"),
     ])
-    .$if(!!pattern, (qb) => qb.where("login_name", "like", pattern!))
+    .$if(!!pattern, (qb) =>
+      qb.where((eb) =>
+        eb.or([
+          eb("login_name", "like", pattern!),
+          eb("email", "ilike", pattern!),
+        ]),
+      ),
+    )
     .orderBy("created_at", "desc")
     .limit(50)
     .execute();
@@ -61,21 +69,21 @@ export default async function UsersPage({
       <div className="space-y-1">
         <h2 className="text-xl font-bold">계정</h2>
         <p className="text-sm text-muted-foreground">
-          아이디로 계정을 찾으면 그 계정의 사용량, 결제, 템플릿 적용을 한눈에
-          봅니다.
+          아이디나 이메일로 계정을 찾으면 그 계정의 사용량, 결제, 템플릿 적용을
+          한눈에 봅니다.
         </p>
       </div>
 
       <form action="/admin/users" className="flex items-center gap-2">
         <label htmlFor="users-search" className="sr-only">
-          계정 아이디
+          계정 아이디 또는 이메일
         </label>
         <Input
           id="users-search"
           name="user"
           defaultValue={query ?? ""}
-          placeholder="계정 아이디"
-          className="w-48"
+          placeholder="계정 아이디 또는 이메일"
+          className="w-72"
         />
         <Button type="submit" variant="outline">
           찾기
@@ -97,6 +105,7 @@ export default async function UsersPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>계정</TableHead>
+                  <TableHead>이메일</TableHead>
                   <TableHead>이용</TableHead>
                   <TableHead>가입</TableHead>
                 </TableRow>
@@ -111,6 +120,9 @@ export default async function UsersPage({
                       >
                         {user.login_name}
                       </Link>
+                    </TableCell>
+                    <TableCell className="break-all">
+                      {user.email ?? "-"}
                     </TableCell>
                     <TableCell>
                       {user.deleted_at ? (
