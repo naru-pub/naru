@@ -391,7 +391,7 @@ export default function CustomDomainsCard({
                                 {target}
                               </span>
                             </div>
-                            {/* Some Korean registrars (hosting.kr) offer no
+                            {/* Some Korean registrars offer no
                               ALIAS/ANAME; a root domain there needs Cloudflare
                               DNS, which flattens a
                               CNAME at the root. Flattened, the hostname
@@ -409,10 +409,9 @@ export default function CustomDomainsCard({
                                 ALIAS/ANAME 레코드가 필요합니다. 도메인 업체가
                                 이를 지원한다면 아래 순서에서 Cloudflare 대신
                                 업체 DNS에 TXT 레코드와 ALIAS/ANAME을
-                                넣어주세요. 호스팅케이알처럼 지원하지 않는
-                                업체라면 DNS 관리를 무료인 Cloudflare로
-                                옮겨주세요. 도메인 소유와 결제는 지금 업체에
-                                그대로 남습니다.
+                                넣어주세요. 지원하지 않는 업체라면 DNS 관리를
+                                무료인 Cloudflare로 옮겨주세요. 도메인 소유와
+                                결제는 지금 업체에 그대로 남습니다.
                               </p>
                               <ol className="list-decimal pl-5 space-y-1">
                                 <li>
