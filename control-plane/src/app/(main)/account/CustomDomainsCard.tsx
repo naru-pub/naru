@@ -327,6 +327,43 @@ export default function CustomDomainsCard({
 
                       {!isActive && !released && (
                         <div className="grid gap-2 text-sm">
+                          {/* Cloudflare's "moved": the hostname validated but
+                            its DNS no longer points here, often because the
+                            last record went on www instead of the hostname
+                            registered. Cloudflare rechecks it on its own. */}
+                          {domain.cloudflareStatus === "moved" && (
+                            <div className="border-2 border-destructive rounded p-3 space-y-2">
+                              <p className="font-medium text-destructive">
+                                도메인이 나루를 가리키지 않습니다 (moved)
+                              </p>
+                              <p className="text-muted-foreground">
+                                인증은 끝났지만{" "}
+                                <strong className="text-foreground break-all">
+                                  {domain.hostname}
+                                </strong>
+                                의 DNS 레코드가 없거나 다른 곳을 가리키고
+                                있습니다. 등록한 주소와 레코드를 넣은 주소가
+                                같은지 확인해주세요. 예를 들어 example.com을
+                                등록하고 www.example.com에 CNAME을 넣으면 이
+                                상태가 됩니다.
+                              </p>
+                              <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                                <li>
+                                  등록한 주소에 아래 1단계 레코드(루트
+                                  도메인이라면 ALIAS/ANAME)를 넣어주세요.
+                                  Cloudflare가 다시 확인하면 active로 돌아오니,
+                                  잠시 뒤 상태 확인을 눌러주세요.
+                                </li>
+                                <li>
+                                  도메인 등록기관이 루트 도메인에 ALIAS/ANAME을
+                                  지원하지 않는다면, 이 도메인을 삭제하고 www
+                                  주소(예: www.example.com)를 새로 등록한 뒤
+                                  등록기관의 URL 리디렉션으로 루트 도메인을 www
+                                  주소로 보내주세요.
+                                </li>
+                              </ul>
+                            </div>
+                          )}
                           <div className="bg-secondary border-2 border-primary rounded p-3 space-y-2">
                             <div className="flex items-center gap-2 font-bold text-foreground">
                               <Link2 size={16} />
