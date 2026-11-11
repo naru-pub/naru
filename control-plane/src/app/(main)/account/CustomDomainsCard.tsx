@@ -349,7 +349,8 @@ export default function CustomDomainsCard({
                               </p>
                               <p className="text-muted-foreground">
                                 등록한 주소에 아래 1단계 레코드를 넣어주세요.
-                                루트 도메인이라면 아래 안내대로 DNS를
+                                루트 도메인이라면 아래 안내대로 ALIAS/ANAME을
+                                쓰거나, 업체가 지원하지 않으면 DNS를
                                 Cloudflare로 옮긴 뒤 넣어주세요. Cloudflare가
                                 다시 확인하면 active로 돌아오니, 잠시 뒤 상태
                                 확인을 눌러주세요.
@@ -390,8 +391,9 @@ export default function CustomDomainsCard({
                                 {target}
                               </span>
                             </div>
-                            {/* Korean registrars offer no ALIAS/ANAME, so a root
-                              domain needs Cloudflare DNS, which flattens a
+                            {/* Some Korean registrars (hosting.kr) offer no
+                              ALIAS/ANAME; a root domain there needs Cloudflare
+                              DNS, which flattens a
                               CNAME at the root. Flattened, the hostname
                               resolves to Cloudflare IPs and Cloudflare treats
                               it as another zone's and refuses TXT validation,
@@ -403,11 +405,14 @@ export default function CustomDomainsCard({
                                 루트 도메인(예: example.com)이라면
                               </p>
                               <p>
-                                루트 도메인에는 일반 CNAME을 쓸 수 없고,
-                                호스팅케이알·가비아 같은 국내 도메인 업체는 대신
-                                쓸 ALIAS/ANAME 레코드를 지원하지 않습니다. DNS
-                                관리를 무료인 Cloudflare로 옮겨주세요. 도메인
-                                소유와 결제는 지금 업체에 그대로 남습니다.
+                                루트 도메인에는 일반 CNAME을 쓸 수 없어
+                                ALIAS/ANAME 레코드가 필요합니다. 도메인 업체가
+                                이를 지원한다면 아래 순서에서 Cloudflare 대신
+                                업체 DNS에 TXT 레코드와 ALIAS/ANAME을
+                                넣어주세요. 호스팅케이알처럼 지원하지 않는
+                                업체라면 DNS 관리를 무료인 Cloudflare로
+                                옮겨주세요. 도메인 소유와 결제는 지금 업체에
+                                그대로 남습니다.
                               </p>
                               <ol className="list-decimal pl-5 space-y-1">
                                 <li>
