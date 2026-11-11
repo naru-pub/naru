@@ -347,21 +347,12 @@ export default function CustomDomainsCard({
                                 등록하고 www.example.com에 CNAME을 넣으면 이
                                 상태가 됩니다.
                               </p>
-                              <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-                                <li>
-                                  등록한 주소에 아래 1단계 레코드(루트
-                                  도메인이라면 ALIAS/ANAME)를 넣어주세요.
-                                  Cloudflare가 다시 확인하면 active로 돌아오니,
-                                  잠시 뒤 상태 확인을 눌러주세요.
-                                </li>
-                                <li>
-                                  도메인 등록기관이 루트 도메인에 ALIAS/ANAME을
-                                  지원하지 않는다면, 이 도메인을 삭제하고 www
-                                  주소(예: www.example.com)를 새로 등록한 뒤
-                                  등록기관의 URL 리디렉션으로 루트 도메인을 www
-                                  주소로 보내주세요.
-                                </li>
-                              </ul>
+                              <p className="text-muted-foreground">
+                                등록한 주소에 아래 1단계 레코드(루트
+                                도메인이라면 ALIAS/ANAME)를 넣어주세요.
+                                Cloudflare가 다시 확인하면 active로 돌아오니,
+                                잠시 뒤 상태 확인을 눌러주세요.
+                              </p>
                             </div>
                           )}
                           <div className="bg-secondary border-2 border-primary rounded p-3 space-y-2">
