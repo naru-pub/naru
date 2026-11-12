@@ -25,42 +25,18 @@ jobs:
       - id: arch
         run: echo arch=arm64 >> "$GITHUB_OUTPUT"
       # Two targets of one Dockerfile: the Next.js standalone server, and the
-      # image worker and migrations run from. The second build reuses the
-      # first's dependency install from this builder's cache. Each is also
-      # loaded here for the smoke test below. Named: `mise run deploy naru`
-      # in infra starts pulling on the server once the jobs image is pushed.
-      - name: Build and push the web image
-        uses: docker/build-push-action@v6
-        with:
-          context: control-plane
-          target: web
-          pull: "true"
-          push: "true"
-          load: "true"
-          no-cache: "false"
-          build-args: GIT_COMMIT=${{ github.sha }}
-          tags: ghcr.io/${{ github.repository }}-control-plane:git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane:build-cache-${{ steps.arch.outputs.arch }}
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane:build-cache-${{ steps.arch.outputs.arch }},mode=max
-          provenance: false
-      - name: Build and push the jobs image
-        uses: docker/build-push-action@v6
-        with:
-          context: control-plane
-          target: jobs
-          pull: "true"
-          push: "true"
-          load: "true"
-          no-cache: "false"
-          build-args: GIT_COMMIT=${{ github.sha }}
-          tags: ghcr.io/${{ github.repository }}-control-plane-jobs:git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane-jobs:build-cache-${{ steps.arch.outputs.arch }}
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-control-plane-jobs:build-cache-${{ steps.arch.outputs.arch }},mode=max
-          provenance: false
+      # image worker and migrations run from, baked together
+      # (docker-bake.hcl) so their shared dependency install runs once and the
+      # rest side by side. Each is also loaded here for the smoke test below.
+      # Named: `mise run deploy naru` in infra starts pulling on the server
+      # once the jobs image is pushed.
+      - name: Build and push the web and jobs images
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-control-plane
+          TAG: git-${{ github.sha }}-${{ steps.arch.outputs.arch }}
+          GIT_COMMIT: ${{ github.sha }}
+          CACHE_ARCH: ${{ steps.arch.outputs.arch }}
+        run: docker buildx bake --push --load --provenance=false
       # Runs the images just built as a deploy would. A deploy takes only a
       # commit whose whole run succeeded, so a failure here keeps it off the
       # server.
