@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { displayHostname } from "@/lib/display-hostname";
 
 type CustomDomain = {
   id: string;
@@ -252,11 +253,11 @@ export default function CustomDomainsCard({
                               rel="noopener noreferrer"
                               className="font-medium text-primary underline break-all hover:opacity-80"
                             >
-                              {domain.hostname}
+                              {displayHostname(domain.hostname)}
                             </a>
                           ) : (
                             <p className="font-medium text-foreground break-all">
-                              {domain.hostname}
+                              {displayHostname(domain.hostname)}
                             </p>
                           )}
                           {released ? (
@@ -339,7 +340,7 @@ export default function CustomDomainsCard({
                               <p className="text-muted-foreground">
                                 인증은 끝났지만{" "}
                                 <strong className="text-foreground break-all">
-                                  {domain.hostname}
+                                  {displayHostname(domain.hostname)}
                                 </strong>
                                 의 DNS 레코드가 없거나 다른 곳을 가리키고
                                 있습니다. 등록한 주소와 레코드를 넣은 주소가
@@ -365,7 +366,7 @@ export default function CustomDomainsCard({
                             <p className="text-muted-foreground">
                               도메인 등록기관(DNS) 설정에서{" "}
                               <strong className="text-foreground break-all">
-                                {domain.hostname}
+                                {displayHostname(domain.hostname)}
                               </strong>
                               을(를){" "}
                               <strong className="text-foreground break-all">

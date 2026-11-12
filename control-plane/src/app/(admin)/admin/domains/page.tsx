@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "../_components/format";
 import { requireOperator } from "../_components/requireOperator";
+import { displayHostname } from "@/lib/display-hostname";
 
 export const metadata: Metadata = { title: "커스텀 도메인 · 운영 · 나루" };
 
@@ -188,10 +189,10 @@ export default async function DomainsPage({
                         rel="noreferrer"
                         className="underline"
                       >
-                        {domain.hostname}
+                        {displayHostname(domain.hostname)}
                       </a>
                     ) : (
-                      domain.hostname
+                      displayHostname(domain.hostname)
                     )}
                   </TableCell>
                   <TableCell>

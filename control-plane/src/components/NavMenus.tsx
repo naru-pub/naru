@@ -29,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { displayUrl } from "@/lib/display-hostname";
 
 const TRIGGER_CLASS =
   "inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap px-3 md:px-3.5 text-[15px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground";
@@ -320,7 +321,7 @@ export function AccountMenu({
 // The person's own site, opened in a new tab: its address on a wide screen,
 // a globe on a phone.
 export function SiteLink({ url }: { url: string }) {
-  const host = url.replace(/^https?:\/\//, "");
+  const host = displayUrl(url).replace(/^https?:\/\//, "");
   return (
     <a
       href={url}

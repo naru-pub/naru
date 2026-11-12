@@ -1,5 +1,6 @@
 import { createMessage } from "@upyo/core";
 import { ResendTransport } from "@upyo/resend";
+import { displayHostname } from "./display-hostname";
 import { generateId } from "./id";
 
 const transport = new ResendTransport({
@@ -288,9 +289,9 @@ export async function sendCustomDomainReleaseNoticeEmail(opts: {
   const supporterUrl = `${process.env.BASE_URL}/supporter`;
   const releaseLabel = formatKoreanDateTime(opts.releaseAt);
   const why = {
-    lapsed: `유료 이용 기간이 끝나 ${opts.hostname} 도메인의 연결이 해제됩니다. 그 전에 결제하시면 그대로 유지됩니다.`,
-    pending: `${opts.hostname} 도메인의 연결이 아직 끝나지 않아 등록이 해제됩니다. 그 전에 도메인 페이지의 안내대로 DNS 레코드를 추가해주세요.`,
-    dns: `${opts.hostname} 도메인의 DNS가 한동안 나루를 가리키지 않아 연결이 해제됩니다. 계속 쓰시려면 그 전에 DNS 레코드를 확인해주세요.`,
+    lapsed: `유료 이용 기간이 끝나 ${displayHostname(opts.hostname)} 도메인의 연결이 해제됩니다. 그 전에 결제하시면 그대로 유지됩니다.`,
+    pending: `${displayHostname(opts.hostname)} 도메인의 연결이 아직 끝나지 않아 등록이 해제됩니다. 그 전에 도메인 페이지의 안내대로 DNS 레코드를 추가해주세요.`,
+    dns: `${displayHostname(opts.hostname)} 도메인의 DNS가 한동안 나루를 가리키지 않아 연결이 해제됩니다. 계속 쓰시려면 그 전에 DNS 레코드를 확인해주세요.`,
   }[opts.reason];
   const after =
     "해제된 뒤에도 도메인 페이지에서 '다시 연결'을 누르면 다시 쓸 수 있습니다. 이때 DNS 인증 레코드를 다시 추가해야 할 수 있습니다.";
@@ -302,7 +303,7 @@ export async function sendCustomDomainReleaseNoticeEmail(opts: {
   const message = createMessage({
     from: process.env.FROM_EMAIL || "noreply@naru.pub",
     to: opts.email,
-    subject: `커스텀 도메인 ${opts.hostname}의 연결이 곧 해제됩니다`,
+    subject: `커스텀 도메인 ${displayHostname(opts.hostname)}의 연결이 곧 해제됩니다`,
     content: {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
