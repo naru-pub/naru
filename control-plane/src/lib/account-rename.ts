@@ -7,7 +7,7 @@ import { deleteObjects, listObjects } from "@/lib/board/storage";
 import { eraseSiteData, siteDataWorker } from "@/lib/edge/client";
 import { fetchDump, sendDump } from "@/lib/edge/dumps";
 import { pushEdgeDomainsSoon } from "@/lib/edge/domains";
-import { getSiteScreenshotKey } from "@/lib/site-urls";
+import { getSiteIconKey, getSiteScreenshotKey } from "@/lib/site-urls";
 import { PAYMENT_OPERATOR_USERS } from "@/lib/payments/support";
 
 // Renaming an account (operators only, /admin/users/<login>). The login is
@@ -140,12 +140,13 @@ export async function renameAccount(
   try {
     const files = await copyPrefix(siteBucket(), `${from}/`, `${to}/`);
     copied.push({ bucket: siteBucket(), keys: files });
-    const screenshots = await listObjects(getSiteScreenshotKey(from));
-    for (const { key } of screenshots)
-      if (key === getSiteScreenshotKey(from)) {
-        await copy(siteBucket(), key, getSiteScreenshotKey(to));
-        copied.push({ bucket: siteBucket(), keys: [getSiteScreenshotKey(to)] });
-      }
+    // The screenshot and the icon, each where it exists.
+    for (const keyOf of [getSiteScreenshotKey, getSiteIconKey])
+      for (const { key } of await listObjects(keyOf(from)))
+        if (key === keyOf(from)) {
+          await copy(siteBucket(), key, keyOf(to));
+          copied.push({ bucket: siteBucket(), keys: [keyOf(to)] });
+        }
     const runtime = await copyPrefix(
       privateBucket(),
       runtimePrefix(from),
@@ -213,7 +214,7 @@ async function removeOld(from: string) {
     ["files", () => deleteListed(`${from}/`, siteBucket())],
     [
       "screenshot",
-      () => deleteObjects([getSiteScreenshotKey(from)], siteBucket()),
+      () => deleteObjects([getSiteScreenshotKey(from), getSiteIconKey(from)], siteBucket()),
     ],
     ["runtime", () => deleteListed(runtimePrefix(from), privateBucket())],
     ["database", () => eraseSiteData(from)],

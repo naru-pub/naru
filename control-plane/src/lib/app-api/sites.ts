@@ -1,7 +1,7 @@
 import { db } from "@/lib/database";
 import { customDomainAccessEndsAt } from "@/lib/entitlements";
 import { isCurrentPlan } from "@/lib/payments/subscriptions";
-import { getHomepageUrl } from "@/lib/site-urls";
+import { getHomepageUrl, getSiteIconUrl } from "@/lib/site-urls";
 
 // Where the apps open a site: its custom domain when the edge serves one
 // (the conditions of lib/edge/domains.ts: active, verified, owner paid up),
@@ -13,6 +13,7 @@ import { getHomepageUrl } from "@/lib/site-urls";
 export interface AppSiteRow {
   login_name: string;
   site_title: string | null;
+  site_icon_rendered_at: Date | string | null;
 }
 
 /** Each site's address, by login name; the oldest served custom domain wins. */
@@ -60,7 +61,7 @@ export function appSite(site: AppSiteRow, origins: Map<string, string>) {
     name: site.login_name,
     title: site.site_title,
     url: origins.get(site.login_name) ?? getHomepageUrl(site.login_name),
-    iconUrl: null,
+    iconUrl: getSiteIconUrl(site.login_name, site.site_icon_rendered_at),
   };
 }
 

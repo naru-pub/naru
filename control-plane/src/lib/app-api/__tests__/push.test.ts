@@ -16,6 +16,7 @@ const message = {
   id: "1",
   site: "s",
   siteTitle: "s",
+  iconUrl: null,
   title: "t",
   body: "",
   url: "https://s.naru.pub/",

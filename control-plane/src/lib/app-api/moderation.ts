@@ -71,7 +71,7 @@ export async function listHiddenSites(user: AppUser) {
   const rows = await db
     .selectFrom("app_hidden_sites as h")
     .innerJoin("users as s", "s.id", "h.site_user_id")
-    .select(["s.login_name", "s.site_title", "h.created_at"])
+    .select(["s.login_name", "s.site_title", "s.site_icon_rendered_at", "h.created_at"])
     .where("h.user_id", "=", user.id)
     .where("s.deleted_at", "is", null)
     .orderBy("h.created_at", "desc")

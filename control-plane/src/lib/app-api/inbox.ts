@@ -11,8 +11,15 @@ import type { AppUser } from "./tokens";
 export const NOTIFICATIONS_PAGE_SIZE = 50;
 type ConsentState = "pending" | "allowed" | "muted";
 
-/** Newest first, only from allowed sites; `before` is the last id of the previous page. */
-export async function listNotifications(user: AppUser, before: string | null) {
+/**
+ * Newest first, only from allowed sites; `before` is the last id of the
+ * previous page, `site` a site's name to list only what it sent.
+ */
+export async function listNotifications(
+  user: AppUser,
+  before: string | null,
+  site: string | null = null,
+) {
   let query = db
     .selectFrom("app_notifications as n")
     .innerJoin("app_site_consents as c", (join) =>
@@ -30,6 +37,7 @@ export async function listNotifications(user: AppUser, before: string | null) {
       "n.read_at",
       "s.login_name",
       "s.site_title",
+      "s.site_icon_rendered_at",
     ])
     .where("n.user_id", "=", user.id)
     .where("n.site_user_id", "not in", hiddenSiteIds(user.id))
@@ -41,6 +49,7 @@ export async function listNotifications(user: AppUser, before: string | null) {
     if (!UUID.test(before)) throw new DataError(400, "잘못된 페이지입니다.");
     query = query.where("n.id", "<", before);
   }
+  if (site) query = query.where("s.login_name", "=", site);
   const rows = await query.execute();
   const page = rows.slice(0, NOTIFICATIONS_PAGE_SIZE);
   const origins = await siteOrigins(page.map((row) => row.login_name));
@@ -119,6 +128,7 @@ const consentFields = [
   "c.updated_at",
   "s.login_name",
   "s.site_title",
+  "s.site_icon_rendered_at",
 ] as const;
 
 function consentOf(
@@ -127,6 +137,7 @@ function consentOf(
     updated_at: Date | string;
     login_name: string;
     site_title: string | null;
+    site_icon_rendered_at: Date | string | null;
   },
   origins: Map<string, string>,
 ) {
@@ -166,7 +177,7 @@ export async function setSiteState(
     throw new DataError(400, "허용하거나 끌 수만 있습니다.");
   const site = await db
     .selectFrom("users")
-    .select(["id", "login_name", "site_title"])
+    .select(["id", "login_name", "site_title", "site_icon_rendered_at"])
     .where("login_name", "=", name)
     .where("deleted_at", "is", null)
     .executeTakeFirst();

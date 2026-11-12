@@ -1,4 +1,5 @@
 import { db } from "@/lib/database";
+import { getSiteIconUrl } from "@/lib/site-urls";
 import { uuidv7 } from "@/lib/uuid";
 import { push } from "./delivery";
 import type { PushSender } from "./push";
@@ -20,7 +21,7 @@ import { siteLine, siteOrigins } from "./sites";
 export async function pushStarredSiteUpdate(siteUserId: string, sender: PushSender) {
   const site = await db
     .selectFrom("users")
-    .select(["login_name", "site_title"])
+    .select(["login_name", "site_title", "site_icon_rendered_at"])
     .where("id", "=", siteUserId)
     .where("deleted_at", "is", null)
     .where("app_notifications_disabled", "=", false)
@@ -53,6 +54,7 @@ export async function pushStarredSiteUpdate(siteUserId: string, sender: PushSend
       id: uuidv7(),
       site: site.login_name,
       siteTitle: siteLine(site.site_title, origin),
+      iconUrl: getSiteIconUrl(site.login_name, site.site_icon_rendered_at),
       title: "별표한 사이트 업데이트",
       body: `${new URL(origin).host}에 새 소식이 있습니다.`,
       url: origin,

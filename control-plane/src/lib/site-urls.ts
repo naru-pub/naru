@@ -49,6 +49,25 @@ export function getRenderedSiteUrl(
   return `${base}?v=${stamp}`;
 }
 
+// A site's icon, its favicon rendered to a PNG (update-screenshots), beside
+// the screenshots under a prefix no login name can take.
+export function getSiteIconKey(username: string) {
+  return `_icons/${username}.png`;
+}
+
+/** The icon's URL, versioned by when it was rendered; null without one. */
+export function getSiteIconUrl(
+  username: string,
+  renderedAt: Date | string | null | undefined,
+) {
+  if (!renderedAt) return null;
+  const stamp =
+    renderedAt instanceof Date
+      ? renderedAt.getTime()
+      : Date.parse(renderedAt) || renderedAt;
+  return `${getSiteBucketUrl(getSiteIconKey(username))}?v=${stamp}`;
+}
+
 export function getUserHomeDirectory(loginName: string) {
   return `${loginName}`;
 }

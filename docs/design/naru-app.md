@@ -241,6 +241,8 @@ it. APNs `environment` follows the build (debug → sandbox); FCM always sends
 
 Newest first, 50 per page; `next` is null on the last page. Only allowed
 sites' notifications are listed.
+`GET /notifications?site=<name>&before=<id>` lists only what one site sent,
+paged the same way.
 
 `POST /notifications/read` `{ ids: [...] }` or `{ all: true }` → `{ unread }`.
 
@@ -306,21 +308,38 @@ APNs:
 ```json
 {
   "aps": { "alert": { "title": "새 댓글", "subtitle": "alice.naru.pub · Alice's board", "body": "…" },
-           "sound": "default", "badge": 3, "thread-id": "alice" },
-  "naru": { "id": "0199…", "url": "https://alice.naru.pub/posts/12" }
+           "sound": "default", "badge": 3, "thread-id": "alice", "mutable-content": 1 },
+  "naru": { "id": "0199…", "url": "https://alice.naru.pub/posts/12", "icon": "https://…" }
 }
 ```
+
+`naru.icon` and `mutable-content` come only when the site has an icon: the
+app's Notification Service Extension downloads it and attaches it.
 
 FCM (data message, so the app builds the notification and channel itself):
 
 ```json
 { "message": { "token": "…", "data": {
   "id": "0199…", "site": "alice", "siteTitle": "alice.naru.pub · Alice's board",
-  "title": "새 댓글", "body": "…", "url": "https://alice.naru.pub/posts/12"
+  "title": "새 댓글", "body": "…", "url": "https://alice.naru.pub/posts/12",
+  "iconUrl": "https://…"
 }, "android": { "priority": "high" } } }
 ```
 
+`iconUrl` only when the site has an icon; the app shows it as the
+notification's large icon.
+
 Tapping opens `url` and marks the notification read.
+
+### Site icons
+
+A site's `iconUrl` is its favicon, which `update-screenshots` renders to a
+128px PNG at `_icons/<login>.png` in the site bucket when it renders the
+site's screenshot: the largest `apple-touch-icon` or `icon` link, else
+`/favicon.ico`. It renders every site that has notified an account, besides
+the ones it renders for their screenshots. `users.site_icon_rendered_at`
+versions the URL; null (no icon) makes `iconUrl` null and the apps draw the
+site's initial.
 
 ## Control plane
 

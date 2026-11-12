@@ -9,16 +9,22 @@ import { templateFileKey, templatePreviewKey } from "@/lib/board/preview";
 import {
   getHomepageUrl,
   getRenderedSiteUrl,
+  getSiteIconKey,
   getSiteScreenshotKey,
 } from "@/lib/site-urls";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Browser, chromium } from "playwright";
+import { renderIcon } from "@/lib/site-icon";
 
 // Usage:
 //   pnpm exec tsx src/cli/update-screenshots.tsx
 //     → render all discoverable users, anyone with a live 사이트 자랑 board
 //       post, and any site an account starred, whose site was updated after
 //       the last render (the cron path)
+//
+//   Each site rendered also gets its icon (the apps' and their pushes'): its
+//   favicon, rendered to a 128px PNG. Sites that notify app accounts are
+//   rendered for the icon even when nothing else shows their screenshot.
 //   pnpm exec tsx src/cli/update-screenshots.tsx --user <login_name>
 //     → render a single user, still gated by the same predicate
 //   pnpm exec tsx src/cli/update-screenshots.tsx --force
@@ -97,6 +103,13 @@ async function selectTargets(
             .select(sql.lit(1).as("one"))
             .whereRef("st.site_user_id", "=", "users.id"),
         ),
+        // The apps show the icon of every site that notified an account.
+        eb.exists(
+          eb
+            .selectFrom("app_site_consents as c")
+            .select(sql.lit(1).as("one"))
+            .whereRef("c.site_user_id", "=", "users.id"),
+        ),
       ]),
     )
     .where("site_moderation", "is", null)
@@ -147,7 +160,13 @@ async function purgeCloudflareCache(url: string): Promise<void> {
   }
 }
 
-async function takeScreenshot(browser: Browser, url: string): Promise<Buffer> {
+async function takeScreenshot(browser: Browser, url: string): Promise<Buffer>;
+async function takeScreenshot(
+  browser: Browser,
+  url: string,
+  withIcon: true,
+): Promise<{ screenshot: Buffer; icon: Buffer | null }>;
+async function takeScreenshot(browser: Browser, url: string, withIcon = false) {
   // A context per site, closed whatever happens. One shared context kept every
   // site's cache and storage for the whole run, and a page whose goto timed out
   // was never closed, so its renderer stayed up until the browser did.
@@ -157,7 +176,13 @@ async function takeScreenshot(browser: Browser, url: string): Promise<Buffer> {
     await page.setViewportSize({ width: 640, height: 480 });
     await page.goto(url, { timeout: 10 * 1000 });
     await page.waitForTimeout(10 * 1000);
-    return await page.screenshot();
+    const screenshot = await page.screenshot();
+    if (!withIcon) return screenshot;
+    const icon = await renderIcon(context, page).catch((error) => {
+      console.error(`Icon for ${url} failed: ${error}`);
+      return null;
+    });
+    return { screenshot, icon };
   } finally {
     await context.close();
   }
@@ -166,7 +191,24 @@ async function takeScreenshot(browser: Browser, url: string): Promise<Buffer> {
 async function renderUser(browser: Browser, user: TargetUser): Promise<void> {
   const homepageUrl = getHomepageUrl(user.login_name);
 
-  const screenshot = await takeScreenshot(browser, homepageUrl);
+  const { screenshot, icon } = await takeScreenshot(browser, homepageUrl, true);
+
+  if (icon) {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME!,
+        Key: getSiteIconKey(user.login_name),
+        Body: icon,
+        ContentType: "image/png",
+      }),
+    );
+  }
+  // A versioned URL, so no cache purge; a site that dropped its icon has none.
+  await db
+    .updateTable("users")
+    .set({ site_icon_rendered_at: icon ? new Date() : null })
+    .where("id", "=", user.id)
+    .executeTakeFirst();
 
   if (screenshot.length === 0) {
     console.log(`Skipping ${user.login_name}: screenshot is 0 bytes`);

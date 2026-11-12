@@ -22,6 +22,8 @@ export interface PushMessage {
   id: string;
   site: string;
   siteTitle: string;
+  /** The site's icon (getSiteIconUrl), or null while it has none. */
+  iconUrl: string | null;
   title: string;
   body: string;
   url: string;
@@ -99,8 +101,14 @@ class Apns {
         sound: "default",
         badge: message.badge,
         "thread-id": message.site,
+        // The app's Notification Service Extension attaches the site's icon.
+        ...(message.iconUrl ? { "mutable-content": 1 } : {}),
       },
-      naru: { id: message.id, url: message.url },
+      naru: {
+        id: message.id,
+        url: message.url,
+        ...(message.iconUrl ? { icon: message.iconUrl } : {}),
+      },
     });
     return new Promise((resolve) => {
       let request: http2.ClientHttp2Stream;
@@ -194,6 +202,7 @@ class Fcm {
                 title: message.title,
                 body: message.body,
                 url: message.url,
+                ...(message.iconUrl ? { iconUrl: message.iconUrl } : {}),
               },
               android: { priority: "high" },
             },

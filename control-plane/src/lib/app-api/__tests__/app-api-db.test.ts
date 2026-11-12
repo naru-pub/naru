@@ -362,6 +362,19 @@ integration("the Naru app's API", () => {
       "https://board.example/posts/1",
     ]);
     expect(listed.notifications[0].site.url).toBe("https://board.example");
+    // One site's own list; no icon rendered yet, then a versioned one.
+    expect(
+      (await inbox.listNotifications(user, null, "app-site")).notifications,
+    ).toHaveLength(2);
+    expect(
+      (await inbox.listNotifications(user, null, "another-site")).notifications,
+    ).toEqual([]);
+    expect(listed.notifications[0].site.iconUrl).toBeNull();
+    const iconAt = new Date("2026-11-12T00:00:00Z");
+    await db.updateTable("users").set({ site_icon_rendered_at: iconAt }).where("id", "=", siteId).execute();
+    expect(
+      (await inbox.listNotifications(user, null)).notifications[0].site.iconUrl,
+    ).toMatch(new RegExp(`/_icons/app-site\\.png\\?v=${iconAt.getTime()}$`));
 
     // One notification deleted: gone from the inbox and the badge; deleting it
     // again, or an id that is not the account's, answers the same.

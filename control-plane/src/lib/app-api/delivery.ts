@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { db } from "@/lib/database";
+import { getSiteIconUrl } from "@/lib/site-urls";
 import {
   answerOf,
   callSiteObject,
@@ -159,6 +160,7 @@ async function deliverSite(name: string, sender: PushSender) {
         "id",
         "login_name",
         "site_title",
+        "site_icon_rendered_at",
         "app_notifications_disabled",
         "site_moderation",
       ])
@@ -186,6 +188,7 @@ async function deliverSite(name: string, sender: PushSender) {
           id,
           site: site.login_name,
           siteTitle: siteLine(site.site_title, origin),
+          iconUrl: getSiteIconUrl(site.login_name, site.site_icon_rendered_at),
           title: row.title,
           body: row.body,
           url: pageUrl(origin, row.path),

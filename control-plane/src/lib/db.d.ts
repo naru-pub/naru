@@ -994,6 +994,7 @@ export interface Users {
   password_hash: string;
   site_data_bytes_used: ColumnType<string, never, number>;
   site_data_document_count: ColumnType<string, never, number>;
+  site_icon_rendered_at: Timestamp | null;
   site_member_admission: ColumnType<"open" | "approval" | "closed", "open" | "approval" | "closed" | undefined>;
   site_member_supporters_only: Generated<boolean>;
   site_member_verified_email: Generated<boolean>;

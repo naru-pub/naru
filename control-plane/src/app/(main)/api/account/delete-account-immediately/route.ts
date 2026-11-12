@@ -13,7 +13,11 @@ import {
   DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 import { s3Client } from "@/lib/s3";
-import { getSiteScreenshotKey, getUserHomeDirectory } from "@/lib/site-urls";
+import {
+  getSiteIconKey,
+  getSiteScreenshotKey,
+  getUserHomeDirectory,
+} from "@/lib/site-urls";
 import { dispatchActorDelete } from "@/lib/federation";
 import { deleteCustomDomainsForUser } from "@/lib/customDomains";
 import { verify } from "@node-rs/argon2";
@@ -144,14 +148,14 @@ export async function POST(request: NextRequest) {
     await eraseSiteData(user.loginName);
     // Its releases, routes and restore points, in the private bucket.
     await deleteSiteRuntime(user.loginName);
-    // Template snapshots, export zips and the site screenshot live outside
+    // Template snapshots, export zips and the site screenshot and icon live outside
     // the home directory.
     await deleteUserTemplateObjects(user.id);
     await deleteUserExports(user.id, user.loginName);
     await s3Client.send(
       new DeleteObjectCommand({
         Bucket: process.env.S3_BUCKET_NAME!,
-        Key: getSiteScreenshotKey(user.loginName),
+        Key: getSiteIconKey(user.loginName),
       }),
     );
 
