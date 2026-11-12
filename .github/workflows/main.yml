@@ -113,11 +113,57 @@ jobs:
         env:
           NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
 
-  # Everything else in the control plane: the unit suites, then the board and
-  # site-data database tests, each against a throwaway PostgreSQL cluster and
-  # a local edge Worker its script starts. Like test-payments, part of
-  # the run a deploy checks.
+  # Everything else in the control plane that needs no PostgreSQL: the unit
+  # suites, the generated-file checks and the edge Worker's own tests. Like
+  # test-payments, part of the run a deploy checks.
   test-control-plane:
+    defaults:
+      run:
+        working-directory: control-plane
+    permissions:
+      contents: read
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Same pnpm as the Dockerfile.
+      - run: npm install --global pnpm@11.5.2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      # The committed SDK build and the /docs/sdk reference JSON are what
+      # their generators make now; a TypeScript, TypeDoc or Prettier bump
+      # that changes either shows up here rather than in a later commit.
+      - run: pnpm sdk:check
+      - run: pnpm sdk-reference:check
+      - run: pnpm test:data
+      - run: pnpm test:node
+      - run: pnpm install --frozen-lockfile
+        working-directory: edge
+      # The object's list query against SQLite, without a Worker.
+      - run: pnpm test
+        working-directory: edge
+      # The committed metered QuickJS is what quickjs/meter makes of the
+      # installed variant's WebAssembly. The meter's build is kept between
+      # runs: compiled from nothing, it takes ~20s.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: edge/quickjs/meter -> target
+      - run: pnpm check:meter
+        working-directory: edge
+
+  # The board and site-data database tests, each in its own job against its
+  # own throwaway PostgreSQL cluster and the local edge Worker its script
+  # starts (site databases are Durable Objects: scripts/with-edge-worker.sh),
+  # so neither waits on the other or on test-control-plane. Like
+  # test-payments, part of the run a deploy checks.
+  test-control-plane-db:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ["test:board", "test:data:db"]
+    name: test-control-plane-db (${{ matrix.suite }})
     defaults:
       run:
         working-directory: control-plane
@@ -142,14 +188,8 @@ jobs:
       # Same pnpm as the Dockerfile.
       - run: npm install --global pnpm@11.5.2
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      # The committed SDK build and the /docs/sdk reference JSON are what
-      # their generators make now; a TypeScript, TypeDoc or Prettier bump
-      # that changes either shows up here rather than in a later commit.
-      - run: pnpm sdk:check
-      - run: pnpm sdk-reference:check
-      - run: pnpm test:data
-      - run: pnpm test:node
+      - run: pnpm install --frozen-lockfile
+        working-directory: edge
       - name: Wait for PostgreSQL
         timeout-minutes: 5
         run: |
@@ -158,25 +198,7 @@ jobs:
             cat "$RUNNER_TEMP/postgresql.log"
             exit 1
           fi
-      # Site databases are Durable Objects: the database suites start the
-      # edge Worker under `wrangler dev` (scripts/with-edge-worker.sh).
-      - run: pnpm install --frozen-lockfile
-        working-directory: edge
-      # The object's list query against SQLite, without a Worker.
-      - run: pnpm test
-        working-directory: edge
-      # The committed metered QuickJS is what quickjs/meter makes of the
-      # installed variant's WebAssembly. The meter's build is kept between
-      # runs: compiled from nothing, it takes ~20s.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: edge/quickjs/meter -> target
-      - run: pnpm check:meter
-        working-directory: edge
-      - run: pnpm test:board
-        env:
-          NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
-      - run: pnpm test:data:db
+      - run: pnpm ${{ matrix.suite }}
         env:
           NARU_TEST_PG_BIN: /usr/lib/postgresql/18/bin
 
