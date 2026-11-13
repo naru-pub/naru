@@ -9,6 +9,7 @@ import { RetryPaymentTaskButton } from "../_components/RetryPaymentTaskButton";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { sql } from "kysely";
+import { PaymentOrigin, paymentOrigins } from "../_components/PaymentOrigin";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { db } from "@/lib/database";
 import { RefundPaymentButton } from "@/components/RefundPaymentButton";
@@ -115,6 +116,8 @@ export default async function PaymentOperatorPage({
     .orderBy("payments.created_at", "desc")
     .limit(200)
     .execute();
+
+  const origins = await paymentOrigins(payments.map((payment) => payment.id));
 
   return (
     <div className="space-y-6">
@@ -381,7 +384,7 @@ export default async function PaymentOperatorPage({
               <TableHead>사용자</TableHead>
               <TableHead>생성</TableHead>
               <TableHead>상태</TableHead>
-              <TableHead>구독</TableHead>
+              <TableHead>결제 구분 · 구독</TableHead>
               <TableHead className="text-right">결제</TableHead>
               <TableHead className="text-right">환불</TableHead>
               <TableHead>마지막 확인</TableHead>
@@ -406,7 +409,12 @@ export default async function PaymentOperatorPage({
                 <TableCell>
                   <Badge variant="outline">{payment.status}</Badge>
                 </TableCell>
-                <TableCell>{payment.subscription_status ?? "-"}</TableCell>
+                <TableCell>
+                  <PaymentOrigin origin={origins.get(payment.id)} />
+                  <div className="text-xs text-muted-foreground">
+                    {payment.subscription_status ?? "-"}
+                  </div>
+                </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {formatKrw(payment.amount)}
                 </TableCell>

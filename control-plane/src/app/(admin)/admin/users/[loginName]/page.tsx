@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/database";
+import { PaymentOrigin, paymentOrigins } from "../../_components/PaymentOrigin";
 import { isCurrentPlan, paidAccessEndsAt } from "@/lib/payments/subscriptions";
 import { getHomepageUrl } from "@/lib/site-urls";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +49,11 @@ export default async function AccountPage({
     .leftJoin("subscriptions", (join) =>
       join.onRef("subscriptions.user_id", "=", "users.id").on(isCurrentPlan),
     )
+    .leftJoin("supporter_trials", "supporter_trials.user_id", "users.id")
     .select([
+      "supporter_trials.claimed_at as trial_claimed_at",
+      "supporter_trials.ends_at as trial_ends_at",
+      "subscriptions.created_at as subscription_registered_at",
       "users.id",
       "users.login_name",
       "users.email",
@@ -142,6 +147,8 @@ export default async function AccountPage({
         .executeTakeFirstOrThrow(),
     ]);
 
+  const origins = await paymentOrigins(payments.map((payment) => payment.id));
+
   const until = user.supporter_until ? new Date(user.supporter_until) : null;
   const plan = user.supporter_comp
     ? { label: "무료 제공", variant: "secondary" as const }
@@ -234,6 +241,13 @@ export default async function AccountPage({
               ? `${SUBSCRIPTION_STATUS_LABELS[user.subscription_status] ?? user.subscription_status} · ${user.billing_interval === "year" ? "연" : "월"}`
               : "-"}
           </Field>
+          <Field label="무료 체험 시작">
+            {formatDate(user.trial_claimed_at)}
+          </Field>
+          <Field label="무료 체험 종료">{formatDate(user.trial_ends_at)}</Field>
+          <Field label="정기 결제 등록">
+            {formatDate(user.subscription_registered_at)}
+          </Field>
           <Field label="다음 결제">{formatDate(user.next_billing_at)}</Field>
         </dl>
       </Card>
@@ -298,6 +312,7 @@ export default async function AccountPage({
             <TableHeader>
               <TableRow>
                 <TableHead>생성</TableHead>
+                <TableHead>결제 구분</TableHead>
                 <TableHead>상태</TableHead>
                 <TableHead className="text-right">결제</TableHead>
                 <TableHead className="text-right">환불</TableHead>
@@ -309,6 +324,9 @@ export default async function AccountPage({
                 <TableRow key={payment.id}>
                   <TableCell className="whitespace-nowrap tabular-nums">
                     {formatDate(payment.created_at)}
+                  </TableCell>
+                  <TableCell>
+                    <PaymentOrigin origin={origins.get(payment.id)} />
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">{payment.status}</Badge>
@@ -329,7 +347,7 @@ export default async function AccountPage({
               {payments.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="py-6 text-center text-muted-foreground"
                   >
                     결제가 없습니다.
