@@ -20,6 +20,7 @@ export async function listStarredSites(user: AppUser) {
     .innerJoin("users as s", "s.id", "st.site_user_id")
     .select([
       "s.login_name",
+      "s.site_title",
       "s.site_moderation",
       "s.site_rendered_at",
       "s.site_updated_at",
@@ -36,6 +37,7 @@ export async function listStarredSites(user: AppUser) {
   return {
     sites: rows.map((row) => ({
       name: row.login_name,
+      title: row.site_title,
       url: origins.get(row.login_name)!,
       screenshotUrl:
         !row.site_moderation && row.site_rendered_at

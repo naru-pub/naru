@@ -56,6 +56,7 @@ export async function showcasePage(page: number, userId?: string, search?: strin
     .selectFrom("users")
     .select([
       "login_name",
+      "site_title",
       "discoverable",
       "site_moderation",
       "site_rendered_at",
@@ -95,6 +96,7 @@ export async function showcasePage(page: number, userId?: string, search?: strin
   return {
     sites: shown.map((row) => ({
       name: row.login_name,
+      title: row.site_title,
       url: origins.get(row.login_name)!,
       screenshotUrl: cardScreenshotUrl(row),
       updatedAt: new Date(

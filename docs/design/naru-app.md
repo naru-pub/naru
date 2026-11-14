@@ -235,12 +235,16 @@ it. APNs `environment` follows the build (debug → sandbox); FCM always sends
       "readAt": null
     }
   ],
-  "next": "0199…" 
+  "next": "0199…",
+  "unread": 75
 }
 ```
 
 Newest first, 50 per page; `next` is null on the last page. Only allowed
-sites' notifications are listed.
+sites' notifications are listed. `unread` is the total unread count across all
+allowed, visible sites, independent of pagination or the `site` filter. Apps
+mark individual notifications read when opened; entering a list preserves
+unread state. Older clients can ignore the added field.
 `GET /notifications?site=<name>&before=<id>` lists only what one site sent,
 paged the same way.
 
@@ -373,3 +377,7 @@ site's initial.
 
 `tools/mock-server.mjs` in naru-pub/apple implements this API with made-up
 data, for working on the apps without a control plane.
+
+Showcase and starred-site cards also include `title` (string or null), alongside
+`name`, `url`, `screenshotUrl`, and `updatedAt`. Apps fall back to `name` for
+missing or blank titles, including cached cards from earlier versions.

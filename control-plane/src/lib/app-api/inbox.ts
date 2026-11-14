@@ -64,6 +64,7 @@ export async function listNotifications(
       readAt: row.read_at ? new Date(row.read_at).toISOString() : null,
     })),
     next: rows.length > NOTIFICATIONS_PAGE_SIZE ? page[page.length - 1].id : null,
+    unread: await unreadCount(user.id),
   };
 }
 
@@ -114,9 +115,11 @@ export async function unreadCount(userId: string) {
         .onRef("c.user_id", "=", "n.user_id")
         .onRef("c.site_user_id", "=", "n.site_user_id"),
     )
+    .innerJoin("users as s", "s.id", "n.site_user_id")
     .select(sql<number>`count(*)::int`.as("count"))
     .where("n.user_id", "=", userId)
     .where("n.site_user_id", "not in", hiddenSiteIds(userId))
+    .where("s.deleted_at", "is", null)
     .where("n.read_at", "is", null)
     .where("c.state", "=", "allowed")
     .executeTakeFirstOrThrow();

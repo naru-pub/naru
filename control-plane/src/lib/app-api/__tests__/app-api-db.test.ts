@@ -196,6 +196,7 @@ integration("the Naru app's API", () => {
   test("shows discoverable sites in the showcase", async () => {
     const { sites } = await showcasePage(1);
     const site = sites.find((entry) => entry.name === "app-site");
+    expect(site?.title).toBe("앱 게시판");
     expect(site?.screenshotUrl).toContain("_screenshots/app-site.png");
   });
 
@@ -357,6 +358,7 @@ integration("the Naru app's API", () => {
       })
       .execute();
     const listed = await inbox.listNotifications(user, null);
+    expect(listed.unread).toBe(2);
     expect(listed.notifications.map((n) => n.url)).toEqual([
       "https://board.example/posts/1",
       "https://board.example/posts/1",
@@ -385,6 +387,20 @@ integration("the Naru app's API", () => {
     await expect(inbox.deleteNotification(user, "not-an-id")).rejects.toMatchObject({ status: 400 });
 
     expect(await inbox.markRead(user, { all: true })).toEqual({ unread: 0 });
+    expect((await inbox.listNotifications(user, null)).unread).toBe(0);
+
+    // The badge counts the whole inbox, even on a later page or a site-filtered list.
+    await sql`insert into app_notifications (user_id, site_user_id, outbox_id, title, body, path)
+      select ${user.id}, ${siteId}, uuid_v7(), 'Older update', '', '/'
+      from generate_series(1, 55)`.execute(db);
+    const full = await inbox.listNotifications(user, null);
+    expect(full.notifications).toHaveLength(50);
+    expect(full.unread).toBe(55);
+    const later = await inbox.listNotifications(user, full.next);
+    expect(later.notifications).toHaveLength(6);
+    expect(later.unread).toBe(55);
+    expect((await inbox.listNotifications(user, null, "another-site")).unread).toBe(55);
+    await inbox.markRead(user, { all: true });
 
     // Muted: forgotten, and nothing more arrives.
     await inbox.setSiteState(user, "app-site", { state: "muted" });
